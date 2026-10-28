@@ -106,7 +106,16 @@ test('详情推荐在卡片内滚动，换批回到顶部且标题操作保持�
   await expect.poll(() => list.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
   const shuffle = page.locator('.upnext-head').getByRole('button', { name: '换一批', exact: true })
   await expect(shuffle).toBeVisible()
+  // 人为挂起新批次响应，覆盖归位先于异步数据到达的顺序。
+  let releaseBatch!: () => void
+  const batchReady = new Promise<void>(resolve => { releaseBatch = resolve })
+  await page.route('**/api/v1/recommendations?**', async route => {
+    await batchReady
+    await route.fallback()
+  })
   await shuffle.click()
+  await expect(list).toHaveAttribute('aria-busy', 'true')
+  releaseBatch()
   await expect(list).toHaveAttribute('aria-busy', 'false')
   await expect(list.locator('.upnext-row').first()).toBeVisible()
   await expect.poll(() => list.evaluate(el => el.scrollTop)).toBe(0)

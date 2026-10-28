@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import { Shuffle } from 'lucide-react'
 import type { AssetSummary } from '@/api/generated'
@@ -27,7 +27,6 @@ export function UpNextList({
 }) {
   const [seed, setSeed] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { listRef.current?.scrollTo({ top: 0 }) }, [assetId, seed])
   // P1（E1 返工）：行跳转原样携带当前查询串（?tab/?period）——叠加组导航
   // 统一走 assetDetailWithSearch，否则详情→详情丢查询串，底衬 HomePage 翻回
   // recommend、CosRecommendTab 卸载（换一批 seed 丢失），返回时流已重置
@@ -42,6 +41,11 @@ export function UpNextList({
     cosOnly: !!cosWork,
     seed,
   })
+  // 新批次到达后再归位；instant也取消键盘End尚未结束的平滑滚动。
+  // CSS overflow-anchor 禁止浏览器按复用行恢复旧位置（见glass.css）。
+  useLayoutEffect(() => {
+    listRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+  }, [assetId, seed, data])
   // 类型谓词收窄 id：协议 AssetSummary.id 可空，但本列表行必须有 id 才可跳详情
   const items = (data ?? []).filter((a): a is AssetSummary & { id: string } => !!a.id && a.id !== assetId)
   // E5 批次导航快照：本列表（排除当前资产后）的 id 序即流快照，行下标即所点

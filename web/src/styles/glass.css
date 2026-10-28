@@ -1756,7 +1756,8 @@ button.pill.detail-tag-manage { cursor: pointer; }
 .author-name:hover { color: var(--qm-primary-strong); }
 
 /* 「接下来播放」（右栏）：行式列表 = 小缩略图 + 两行标题 + 作者副行 */
-.upnext-list { display: flex; flex-direction: column; max-height: clamp(240px, 45vh, 380px); overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding-right: 4px; }
+/* 换批归位由UpNextList负责，禁用复用行的浏览器滚动锚定。 */
+.upnext-list { display: flex; flex-direction: column; max-height: clamp(240px, 45vh, 380px); overflow-y: auto; overflow-anchor: none; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding-right: 4px; }
 .upnext-list:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; border-radius: var(--qm-radius-sm); }
 .upnext-card { display: flex; flex-direction: column; }
 .upnext-head { display: flex; align-items: center; justify-content: space-between; }

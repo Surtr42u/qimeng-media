@@ -38,7 +38,7 @@ src/
 - 上传链路 lib 内分工（2026-10-24 提取批）：队列状态（entries/XHR 句柄/取消旗标/恢复/订阅/终态推进）唯一持有在 `lib/upload-queue-store.ts`；「上传成功后挂靠」无状态服务（响应资产 id 解析、先 authors 替换后 sources append、失败转「已入库待挂靠」）在 `lib/upload-attach.ts`；分片传输在 `lib/upload-chunked.ts`；刷新持久化端口/装配在 `lib/upload-queue-persist*.ts`，IO 合并、失败重试与健康在 `lib/upload-persistence.ts`（不持传输状态）。纯提取，交互行为不变。
 - 出现硬编码颜色 = 违规（一律 `var(--qm-*)`）
 - 数据转换/业务判断放 hooks 或服务端，不进组件
-- 设置的配置草稿/修订/提交快照由 `use-config-form` 单独持有；慢 PUT 只确认自己的版本，保存期间的新输入保留。保存前作废在途旧 GET，扫描参数仍仅持久化预留。
+- 设置的配置草稿/修订/提交快照由 `use-config-form` 单独持有；慢 PUT 只确认自己的版本，保存期间的新输入保留。保存前作废在途旧 GET，扫描workers接入实际全量扫描准入；thumbEdge仍为预留项。
 - 开发代理目标默认 8420；隔离调试实例可用 `QIMENG_DEV_PROXY_TARGET=http://127.0.0.1:<port>` 覆盖
 
 ## 开发与验证
