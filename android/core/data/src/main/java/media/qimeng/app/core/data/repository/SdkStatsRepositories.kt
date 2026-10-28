@@ -170,6 +170,19 @@ class SdkStatsRepository @Inject constructor(
      * （rankingsPeriod 只产出 week/month/all，其余分支为防御性兜底——all=不设准入窗口的超集）；
      * 此处打日志即验收证据。
      */
+    override suspend fun discoveries(seed: Long, limit: Int): List<media.qimeng.app.core.model.DiscoveryEntry> {
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
+        val items = withContext(Dispatchers.IO) { api.apiV1DiscoveriesGet(seed = seed, limit = limit) }
+        return items.map { item ->
+            media.qimeng.app.core.model.DiscoveryEntry(
+                assetId = item.asset.id?.toString().orEmpty(),
+                title = item.asset.cosWork ?: item.asset.fileName.orEmpty(),
+                thumbUrl = item.asset.thumbUrl,
+                reason = item.reason.value,
+            )
+        }
+    }
+
     override suspend fun rankings(period: String, limit: Int): List<RankingEntry> {
         Log.d(SdkMediaRepository.LOG_TAG, "GET /rankings period=$period limit=$limit")
         val api = withContext(Dispatchers.IO) { apiFactory.create() }

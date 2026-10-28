@@ -8,9 +8,10 @@ import { TrendChart } from '@/components/data/TrendChart'
 import { PageHeading } from '@/components/ui/page-heading'
 import { QueryNotice } from '@/components/ui/query-notice'
 import { useDataDashboard } from '@/hooks/use-data-dashboard'
+import { useDiscoveries } from '@/hooks/use-discoveries'
 import { LOCALE_ZH } from '@/lib/constants'
 import { STATS_SEGMENTS, statsReadMessage } from '@/lib/stats-contract'
-import { assetDetail, AUTHORS_PATH, COLLECTION_AUTHOR, COLLECTION_TAG, MAINTENANCE_FILES_PATH, RANK_AUTHORS, RANK_CONTENT, RANK_TAGS, collectionPath, rankPath } from '@/lib/route-keys'
+import { assetDetail, AUTHORS_PATH, COLLECTION_AUTHOR, COLLECTION_TAG, MAINTENANCE_FILES_PATH, RANK_AUTHORS, RANK_TAGS, collectionPath, rankPath } from '@/lib/route-keys'
 
 const METRIC_ICONS: Record<string, typeof Eye> = { views: Eye, plays: Play, time: Clock3, average: Repeat2 }
 
@@ -20,7 +21,8 @@ export default function DataPage() {
   const [params, setParams] = useSearchParams()
   const current = STATS_SEGMENTS.find(segment => segment.trends === params.get('range')) ?? STATS_SEGMENTS[0]
   const data = useDataDashboard(current)
-  const { overviewQuery, overview, trendQuery, contentRank, tagQuery, authorQuery, authorsQuery } = data
+  const { overviewQuery, overview, trendQuery, tagQuery, authorQuery, authorsQuery } = data
+  const discovery = useDiscoveries()
   const selectRange = (range: string) => setParams(previous => { const next = new URLSearchParams(previous); next.set('range', range); return next }, { replace: true })
 
   return <div className="page personal-workspace data-workspace" id="page-data">
@@ -47,9 +49,9 @@ export default function DataPage() {
       </section>
     </div>
     <div className="data-secondary-grid">
-      <section className="rank-card data-content-panel" aria-label="内容榜">
-        <div className="workspace-card-head"><h3><Flame aria-hidden="true" />内容榜</h3><Link to={rankPath(RANK_CONTENT, current.trends)}>查看全部</Link></div><p className="rank-note">Top {data.contentPreviewCount} · 按热度排序 · {current.label}</p>
-        <StatsQueryContent query={contentRank} label="内容榜"><ContentRankGrid items={contentRank.data ?? []} onOpen={asset => { if (asset.id) navigate(assetDetail(asset.id)) }} /></StatsQueryContent>
+      <section className="rank-card data-content-panel" aria-label="此刻发现">
+        <div className="workspace-card-head"><h3><Flame aria-hidden="true" />此刻发现</h3><button type="button" className="browse-action" disabled={discovery.query.isFetching} onClick={discovery.change}>{discovery.query.isFetching ? '正在换组…' : '换一组'}</button></div><p className="rank-note">未看发现 · 久别重逢 · 近期兴趣，换个角度逛影库</p>
+        <StatsQueryContent query={discovery.query} label="此刻发现"><ContentRankGrid items={discovery.items} notes={discovery.notes} onOpen={asset => { if (asset.id) navigate(assetDetail(asset.id)) }} /></StatsQueryContent>
       </section>
       {overview || overviewQuery.isPending ? <DonutCard title="浏览量占比" sub={`按类型的浏览次数 · ${current.label}`} slices={data.viewSlices} loading={overviewQuery.isPending} emptyText="此窗口暂无浏览记录" centerValue={overview?.windowTotals.viewCount.toLocaleString(LOCALE_ZH)} centerLabel="浏览次数" /> : <section className="donut-card"><h3>浏览量占比</h3><p className="rank-note">统计概览尚不可用，恢复读取后显示。</p></section>}
     </div>

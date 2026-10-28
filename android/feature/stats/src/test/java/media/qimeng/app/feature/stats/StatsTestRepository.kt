@@ -13,6 +13,9 @@ internal fun statsOverview(totals: StatsTotals = StatsTotals(11, 7, 300)) = Stat
 )
 
 internal class StatsTestRepository : StatsRepository {
+    val discoverySeeds = mutableListOf<Long>()
+    var discoveriesProvider: suspend (Long, Int) -> List<DiscoveryEntry> = { _, _ -> emptyList() }
+    override suspend fun discoveries(seed: Long, limit: Int): List<DiscoveryEntry> { discoverySeeds += seed; return discoveriesProvider(seed, limit) }
     val overviewCalls = mutableListOf<String>()
     val trendCalls = mutableListOf<String>()
     val rankingCalls = mutableListOf<String>()

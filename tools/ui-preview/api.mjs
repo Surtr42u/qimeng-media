@@ -24,6 +24,12 @@ export function createPreviewApi(now = Date.now()) {
       sourceWindowTotals, viewedFilesCount: 61, viewedAuthorsCount: 6, viewedTagsCount: 4, avgViewsPerFile: window.viewCount / 61 }
   }
   return (pathname, method = 'GET', params = new URLSearchParams(), body = {}) => {
+    // 展示夹具只轮换合成条目，不复制生产选池算法。
+    if (pathname === '/api/v1/discoveries' && method === 'GET') {
+      const start = Number(params.get('seed') ?? 0) % catalog.length
+      const count = Math.min(12, Math.max(1, Number(params.get('limit') ?? 6)))
+      return reply(Array.from({ length: count }, (_, index) => ({ asset: catalog[(start + index) % catalog.length], reason: ['unseen', 'rediscover', 'interest'][index % 3] })))
+    }
     if (pathname === '/api/v1/auth/dev-login' && method === 'POST') return reply({ token: 'preview-session' })
     if (pathname === '/api/v1/events/view' && method === 'POST') return reply({ outcome: 'ok' }, 202)
     if (pathname === '/api/v1/recommendations/prefs') {

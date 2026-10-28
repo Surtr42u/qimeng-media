@@ -106,6 +106,32 @@ test('扫描自动和手动切换可保存，单文件上限输入已去除', as
   await page.getByRole('button', { name: '保存设置', exact: true }).click()
   await expect.poll(() => saved.scan.workers).toBe(16)
   await automatic.click()
+  await expect.poll(() => saved.scan.workers).toBe(0)
+  await expect(automatic).toBeEnabled()
+  await page.goto('/app/home')
+  await page.goto('/app/settings')
+  await expect(automatic).toBeChecked()
+})
+
+test('自动模式保存失败保留草稿，切页前明确提示并可继续保存', async ({ page }) => {
+  let fail = true
+  let saved = initial
+  await openSettings(page, async route => {
+    if (route.request().method() === 'PUT') {
+      if (fail) return route.fulfill({ status: 503, json: { message: 'synthetic failure' } })
+      saved = route.request().postDataJSON()
+    }
+    await route.fulfill({ json: saved })
+  })
+  const automatic = page.getByRole('switch', { name: '自动调整扫描并发', exact: true })
+  await expect(automatic).toBeEnabled()
+  await automatic.click()
+  await expect(page.getByText(/设置保存失败/)).toBeVisible()
+  await expect(automatic).toBeChecked()
+  await page.getByRole('link', { name: '首页', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('放弃未保存的修改')
+  await page.getByRole('button', { name: '继续编辑', exact: true }).click()
+  fail = false
   await page.getByRole('button', { name: '保存设置', exact: true }).click()
   await expect.poll(() => saved.scan.workers).toBe(0)
 })

@@ -16,7 +16,7 @@ import kotlinx.coroutines.CancellationException
 import media.qimeng.app.core.model.STATS_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.STATS_PROTOCOL_UPDATE_MESSAGE
 import media.qimeng.app.core.data.repository.MediaBatchIndex
-import media.qimeng.app.core.model.RankingEntry
+import media.qimeng.app.core.model.DiscoveryEntry
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.DEFAULT_STATS_RANGE
 import media.qimeng.app.core.model.StatsOverviewValues
@@ -25,7 +25,6 @@ import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.apiRange
-import media.qimeng.app.core.model.rankingsPeriod
 
 /** 数字卡/常看卡共享的 Top 条数（GUIDE_UI §数据统计页「紧凑文本列表 Top 3」） */
 internal const val TOP_CARD_LIMIT = 3
@@ -53,8 +52,9 @@ data class StatsUiState(
     val selectedRange: StatsRangeOption = DEFAULT_STATS_RANGE,
     val trends: List<TrendPoint> = emptyList(),
     val trendsLoading: Boolean = true,
-    /** 内容榜卡 Top3（GET /rankings；2026-09-18 批换源，失败/空=空表 → 卡内空态） */
-    val rankings: List<RankingEntry> = emptyList(),
+    val discoveries: List<DiscoveryEntry> = emptyList(),
+    val discoveriesLoading: Boolean = true,
+    val discoveriesError: String? = null,
     /** 常看作者卡数据源（详情页 Top15 亦用本通道，主页面只取前 3 混排） */
     val topAuthors: List<TopAuthorEntry> = emptyList(),
     /** 常看标签卡数据源 */
@@ -67,7 +67,7 @@ data class StatsUiState(
     val trendsEmpty: Boolean get() = !loadFailed && !trendsLoading && trends.isEmpty()
 
     /** 内容榜卡空态（加载完且无数据——空态保留口径） */
-    val rankingsEmpty: Boolean get() = !loadFailed && !trendsLoading && rankings.isEmpty()
+    val rankingsEmpty: Boolean get() = !discoveriesLoading && discoveriesError == null && discoveries.isEmpty()
 
     /** 常看作者与标签卡空态 */
     val topAuthorsTagsEmpty: Boolean get() = !loadFailed && !trendsLoading && topAuthors.isEmpty() && topTags.isEmpty()
@@ -114,7 +114,29 @@ class StatsViewModel @Inject constructor(
 
     private var requestJob: Job? = null
 
-    init { loadRange(DEFAULT_STATS_RANGE) }
+    private var discoveryJob: Job? = null
+    private var discoveryRequestId = 0L
+    private var discoverySeed = System.currentTimeMillis()
+
+    init { loadRange(DEFAULT_STATS_RANGE); changeDiscoveries() }
+
+    /** 独立于统计窗口；新请求取消旧请求，拒绝迟到覆盖，失败保留上一组并提示重试。 */
+    fun changeDiscoveries() {
+        discoveryJob?.cancel()
+        val requestId = ++discoveryRequestId
+        discoverySeed = maxOf(System.currentTimeMillis(), discoverySeed + 1)
+        val seed = discoverySeed
+        _uiState.update { it.copy(discoveriesLoading = true, discoveriesError = null) }
+        discoveryJob = viewModelScope.launch {
+            try {
+                val items = statsRepository.discoveries(seed, DISCOVERY_LIMIT)
+                if (requestId == discoveryRequestId) _uiState.update { it.copy(discoveries = items, discoveriesLoading = false) }
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                if (requestId == discoveryRequestId) _uiState.update { it.copy(discoveriesLoading = false, discoveriesError = "发现加载失败，请重试") }
+            }
+        }
+    }
 
     fun selectRange(option: StatsRangeOption) {
         if (_uiState.value.selectedRange == option && !_uiState.value.loadFailed && !_uiState.value.trendsLoading) return
@@ -133,17 +155,21 @@ class StatsViewModel @Inject constructor(
                 val result = coroutineScope {
                 val overview = async { statsRepository.overview(option.apiRange) }
                 val trends = async { statsRepository.trends(option.apiRange) }
-                val rankings = async { statsRepository.rankings(option.rankingsPeriod, TOP_CARD_LIMIT) }
                 val authors = async { statsRepository.topAuthors(option.apiRange, TOP_CARD_LIMIT) }
                 val tags = async { statsRepository.topTags(option.apiRange, TOP_CARD_LIMIT) }
-                StatsUiState(
+                _uiState.value.copy(
                     selectedRange = option, overview = overview.await(), trends = trends.await(),
-                    rankings = rankings.await(), topAuthors = authors.await(), topTags = tags.await(),
+                    topAuthors = authors.await(), topTags = tags.await(),
                     overviewLoading = false, trendsLoading = false, avgViewsLoading = false,
                     avgViewsPerFile = overview.await().avgViewsPerFile,
                 )
                 }
-                if (requestId == windowRequestId) _uiState.value = result
+                if (requestId == windowRequestId) _uiState.update { current -> current.copy(
+                    selectedRange = result.selectedRange, overview = result.overview, trends = result.trends,
+                    topAuthors = result.topAuthors, topTags = result.topTags,
+                    overviewLoading = false, trendsLoading = false, avgViewsLoading = false,
+                    avgViewsPerFile = result.avgViewsPerFile, loadFailed = false, errorMessage = null,
+                ) }
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) {
                 if (requestId == windowRequestId) _uiState.update { it.copy(
@@ -161,9 +187,11 @@ class StatsViewModel @Inject constructor(
      * DetailViewModel 既有消费零改动。参数保留 assetId 与同款签名对齐（触发时机语义）。
      */
     fun enterDetail(assetId: String) {
-        batchIndex.ids = _uiState.value.rankings.map { it.assetId }
+        batchIndex.ids = _uiState.value.discoveries.map { it.assetId }
     }
 }
+
+private const val DISCOVERY_LIMIT = 6
 
 internal fun statsFailureMessage(error: Exception): String =
     if (error.message == STATS_PROTOCOL_UPDATE_MESSAGE) STATS_PROTOCOL_UPDATE_MESSAGE else STATS_LOAD_FAILED_MESSAGE

@@ -109,11 +109,9 @@ fun StatsScreen(
             )
         }
         item {
-            ContentRankCard(
-                entries = state.rankings,
-                loading = state.trendsLoading,
-                empty = state.rankingsEmpty,
-                onOpen = { onOpenDetail(StatsDetailMode.MOST_VIEWED, state.selectedRange) },
+            DiscoveryCard(
+                state = state,
+                onChange = viewModel::changeDiscoveries,
                 onEntryClick = { entry ->
                     // 榜单作批次上下文（J1）：先写快照清单再导航，详情页 i/N 与滑动链以 Top3 榜为批次
                     viewModel.enterDetail(entry.assetId)
@@ -330,51 +328,6 @@ private fun DistributionEntryCard(onOpen: () -> Unit) {
  * 随档位联动（period 经 rankingsPeriod 映射），点击进常看文件详情（默认按热度档=本榜）。
  * 加载中/空数据卡内文案占位（空态保留，不隐藏卡）。
  */
-@Composable
-private fun ContentRankCard(
-    entries: List<RankingEntry>,
-    loading: Boolean,
-    empty: Boolean,
-    onOpen: () -> Unit,
-    onEntryClick: (RankingEntry) -> Unit,
-) {
-    Surface(
-        onClick = onOpen,
-        color = statsCardColor(),
-        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth().softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS)),
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "内容榜",
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
-                )
-                Text(
-                    text = "查看全部 ›",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            when {
-                loading -> CompactText(LOADING_TEXT)
-                empty -> CompactEmptyText()
-                else -> entries.forEach { entry ->
-                    CompactRow(
-                        text = entry.title,
-                        value = entry.viewCount.toDisplayText() + VIEW_SUFFIX,
-                        onClick = { onEntryClick(entry) },
-                    )
-                }
-            }
-        }
-    }
-}
-
 /**
  * 常看作者与标签卡（GUIDE_UI L216）：作者/标签按窗口浏览聚合混合 Top 3
  * （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情（双排行卡）。

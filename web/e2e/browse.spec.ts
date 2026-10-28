@@ -34,6 +34,59 @@ test('首页就近换批更新seed；媒体卡支持键盘打开并返回原流'
   await expect(page.getByRole('button', { name: '换一批', exact: true })).toBeEnabled()
 })
 
+test('长搜索词避开清空按钮，清空后仍可继续输入', async ({ page }) => {
+  await setup(page)
+  await page.goto('/app/home')
+  const input = page.getByPlaceholder('搜索你感兴趣的视频')
+  const word = '合成超长搜索标题 '.repeat(16)
+  await input.fill(word)
+  const gap = await input.evaluate(el => {
+    const style = getComputedStyle(el)
+    const clear = document.querySelector('.search-clear')!.getBoundingClientRect()
+    return el.getBoundingClientRect().right - parseFloat(style.paddingRight) - clear.left
+  })
+  expect(gap).toBeLessThanOrEqual(0)
+  await page.getByRole('button', { name: '清空搜索词', exact: true }).click()
+  await expect(input).toHaveValue('')
+  await expect(input).toBeFocused()
+})
+
+test('此刻发现提供理由与独立换组，不随统计窗口切换', async ({ page }) => {
+  await setup(page)
+  await page.goto('/app/data')
+  const panel = page.getByRole('region', { name: '此刻发现', exact: true })
+  await expect(panel.locator('.rank-item')).toHaveCount(6)
+  await expect(panel.locator('.discovery-reason')).toHaveCount(6)
+  const first = await panel.locator('.rank-title').allTextContents()
+  await page.getByRole('button', { name: '近 30 天', exact: true }).click()
+  expect(await panel.locator('.rank-title').allTextContents()).toEqual(first)
+  await panel.getByRole('button', { name: '换一组', exact: true }).click()
+  await expect.poll(() => panel.locator('.rank-title').allTextContents()).not.toEqual(first)
+})
+
+test('视频网页全屏保留退出入口，底边鼠标可唤出控制栏，Esc可退出', async ({ page }) => {
+  await setup(page)
+  await page.goto('/app/asset/10000000-0000-4000-8000-000000000001')
+  const player = page.locator('.art-video-player')
+  await player.locator('.art-control-fullscreenWeb').click()
+  await expect(player).toHaveClass(/art-fullscreen-web/)
+  const exit = page.getByRole('button', { name: '退出全屏', exact: true })
+  await expect(exit).toBeVisible()
+  const bounds = await exit.boundingBox()
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+  // 合成夹具不含视频字节；这里验证控件退场与鼠标唤醒，不宣称解码验收。
+  await player.evaluate(el => el.classList.remove('art-control-show', 'art-hover'))
+  const rect = await player.boundingBox()
+  await page.mouse.move(rect!.x + rect!.width / 2, rect!.y + rect!.height - 20)
+  await expect(player).toHaveClass(/qimeng-controls-hover/)
+  await expect(player.locator('.art-controls')).toHaveCSS('pointer-events', 'auto')
+  await exit.click()
+  await expect(player).not.toHaveClass(/art-fullscreen-web/)
+  await player.locator('.art-control-fullscreenWeb').click()
+  await page.keyboard.press('Escape')
+  await expect(player).not.toHaveClass(/art-fullscreen-web/)
+})
+
 test('相册类型筛选可收起，清空筛选恢复总数；全部选项有选中语义', async ({ page }) => {
   await setup(page)
   await page.goto('/app/albums')

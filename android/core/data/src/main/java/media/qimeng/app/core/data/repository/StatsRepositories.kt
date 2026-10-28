@@ -17,6 +17,10 @@ import media.qimeng.app.core.model.TrendPoint
  */
 interface StatsRepository {
 
+    /** 此刻发现；旧自定义实现须显式报不支持，不伪装成空库。 */
+    suspend fun discoveries(seed: Long, limit: Int): List<media.qimeng.app.core.model.DiscoveryEntry> =
+        error("当前数据源不支持此刻发现")
+
     /** 总览（无参数 = 协议缺省 range=all；库存两格静态数字卡数据源） */
     suspend fun overview(): StatsOverviewValues
 

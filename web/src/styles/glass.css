@@ -275,7 +275,9 @@ body::before {
   height: 34px;
   border: 1px solid var(--qm-border);
   border-radius: var(--qm-radius-full);
-  padding: 0 40px 0 16px;
+  padding: 0 66px 0 16px;
+  min-width: 0;
+  text-overflow: ellipsis;
   font-size: 13px;
   font-family: var(--qm-font);
   color: var(--qm-text);
@@ -286,6 +288,7 @@ body::before {
   backdrop-filter: blur(var(--qm-glass-blur)) saturate(var(--qm-glass-saturate));
 }
 .search input::placeholder { color: var(--qm-text-faint); }
+.search input:focus { text-overflow: clip; }
 .search input:focus {
   border-color: color-mix(in oklab, var(--qm-primary) 55%, transparent);
   box-shadow: 0 0 0 3px var(--qm-primary-soft);
@@ -1076,6 +1079,7 @@ button.follow-btn--idle:hover { filter: brightness(1.08); color: var(--qm-on-acc
 .settings-switch input:checked + i::after { transform: translateX(16px); }
 .settings-muted { display: flex; justify-content: space-between; margin-top: 12px; font-size: 13px; color: var(--qm-text-muted); }
 .settings-actions { display: flex; align-items: center; gap: 12px; }
+#page-settings > .settings-actions { position: sticky; bottom: 12px; z-index: 2; width: fit-content; max-width: 100%; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius-lg); background: var(--qm-surface); box-shadow: var(--qm-shadow-2); }
 button.save-btn {
   /* 2026-10-04 降调定稿（用户反馈「鲜艳突出，这种都降低」）：原实心主色 +
      主色辉光改为「主色淡染玻璃 + 描边 + 主色文字」——安静但仍是唯一主操作钮 */
@@ -1467,6 +1471,7 @@ button.more-filter,
   transition: background var(--qm-duration-fast) var(--qm-ease-out);
 }
 .search-clear svg { width: 10px; height: 10px; }
+.discovery-reason { align-self: flex-start; display: inline-flex; margin-top: 4px; padding: 2px 8px; border-radius: var(--qm-radius-full); background: var(--qm-primary-soft); color: var(--qm-primary-strong); font-size: 11px; line-height: 1.5; }
 .search-clear:hover { background: var(--qm-text-soft); }
 .search-clear[hidden] { display: none; }
 
@@ -2044,6 +2049,8 @@ button.pill.detail-tag-manage { cursor: pointer; }
 
 /* 全屏叠层穿透保障：无论网页全屏还是 HTML5 原生全屏，层级均压过顶栏 header (z-index: 20) */
 .art-video-player.art-fullscreen-web {
+  /* 与 html zoom / 图片查看器的倒数补偿同步；否则右边与底栏会超出窗口。 */
+  zoom: 0.9090909;
   position: fixed !important;
   inset: 0 !important;
   width: 100vw !important;
@@ -2051,8 +2058,20 @@ button.pill.detail-tag-manage { cursor: pointer; }
   z-index: 99999 !important;
 }
 .art-video-player:fullscreen {
+  zoom: 1;
   z-index: 99999 !important;
 }
+.art-video-player:is(.art-fullscreen-web, :fullscreen) .art-video { max-height: none; }
+.art-video-player:is(.art-fullscreen-web, :fullscreen) .art-layers { display: flex !important; }
+.art-video-player .art-layer-fullscreen-exit { position: absolute; top: 12px; right: 14px; }
+.video-fullscreen-exit { position: relative; width: 34px; height: 34px; font-size: 26px; line-height: 1; opacity: 0.65; }
+.video-fullscreen-exit[hidden] { display: none; }
+.art-control-show .video-fullscreen-exit, .qimeng-paused .video-fullscreen-exit,
+.video-fullscreen-exit:hover, .video-fullscreen-exit:focus-visible { opacity: 1; }
+/* 底边热区不覆盖画面、不接管点击；鼠标停在底部时保持进度与状态栏可操作。 */
+.art-video-player.qimeng-controls-hover .art-bottom { opacity: 1 !important; transform: none !important; }
+.art-video-player.qimeng-controls-hover .art-progress,
+.art-video-player.qimeng-controls-hover .art-controls { opacity: 1 !important; transform: none !important; pointer-events: auto !important; }
 .asset-overlay:has(.art-fullscreen-web) {
   z-index: 99999 !important;
 }

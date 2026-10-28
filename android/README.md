@@ -35,6 +35,8 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 
 稳定键继续只剥 exp/sig，保留 size/v。预取 revision 快照携带 thumbnailVersion，DataStore 与上次完成 revision 同次写入；策略指纹变化或旧记录无指纹时重拉，避免策略升级后错误跳过。当前仅接收v2备份，BackupValidator写前拦住旧v1/缺失/未知版本及缺事件数组，确认摘要按原始事件数展示；生成SDK和域句柄透传不变。旧聚合回放已退役（ADR-0050），已有legacy/无键历史身份仍保留；精简版已同签名覆盖原手机，当前来源与现场验证见HANDOVER。
 
+数据页原内容榜改为独立“此刻发现”，经core:data映射服务端资产与理由、支持换组，加载失败不拖垮窗口统计；窗口请求与换组各自取消/防迟到。现有播放器桥增全屏右上退出入口、暂停保留控制栏和鼠标底边唤醒；不新增AndroidView桥，实机验证边界仍单列。
+
 ## 构建与设备验证
 
 应用 versionName 读取 `server/internal/buildinfo/version.txt`，versionCode 读取相邻 `android-version-code.txt`；发布时 AI 同步递增安装序号，签名和 applicationId 保持。源码版本不能代替已安装 APK 的包信息/字节核对，内嵌 Go 的提交身份也须单独确认。主要持续支持路径为 arm64 手机内嵌与连接服务端；qimeng_api35 主要验证连接模式，x86_64内嵌尚未通过验收，已有SQLite初始化SIGSYS记录，不因本轮维护移除或假称已修复。

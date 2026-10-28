@@ -26,6 +26,7 @@ async function setup(page: Page, options: { tagFails?: boolean; oldOverview?: bo
     if (path === '/api/v1/stats/top-tags') return route.fulfill({ status: state.tagFails ? 503 : 200, json: state.tagFails ? { message: 'synthetic tag unavailable' } : [{ tag: '风景', views: 18 * scale }] })
     if (path === '/api/v1/stats/top-authors') return route.fulfill({ json: [{ authorId: 'author-a', displayName: '青禾', views: 20 * scale }] })
     if (path === '/api/v1/rankings') return route.fulfill({ json: [image] })
+    if (path === '/api/v1/discoveries') return route.fulfill({ json: [{ asset: image, reason: 'unseen' }] })
     if (path === '/api/v1/authors') return route.fulfill({ status: state.authorsFail ? 503 : 200, json: state.authorsFail ? { message: 'synthetic authors unavailable' } : state.authors })
     if (path === '/api/v1/authors/author-a/follow') {
       state.followRequests++
@@ -66,12 +67,7 @@ test('数据板块独立失败；窗口、库存与完整榜单保持各自口�
   await page.getByRole('button', { name: '近 30 天', exact: true }).click()
   await expect(page.locator('.data-metric--views')).toContainText('84')
   await expect(page.getByRole('region', { name: '媒体库概况', exact: true })).toContainText('100')
-  const more = page.getByRole('region', { name: '内容榜', exact: true }).getByRole('link', { name: '查看全部', exact: true })
-  await expect(more).toHaveAttribute('href', '/app/ranks/content?range=day')
-  await more.click()
-  await expect(page).toHaveURL(/\/app\/ranks\/content\?range=day$/)
-  await expect(page.getByRole('link', { name: '返回数据', exact: true })).toHaveAttribute('href', '/app/data?range=day')
-  await page.goBack()
+  await expect(page.getByRole('region', { name: '此刻发现', exact: true })).toContainText('未看发现')
   await expect(page.getByRole('button', { name: '近 30 天', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await tags.getByRole('button', { name: /风景/ }).press('Enter')
   await expect(page).toHaveURL(/\/app\/collection\/tag\//)
@@ -83,7 +79,7 @@ test('旧统计协议不伪装成零数据，其他统计区域保持可访问',
   await page.goto('/app/data')
   await expect(page.getByRole('alert')).toContainText('服务端统计协议较旧', { timeout: 10000 })
   await expect(page.locator('.data-metric--views strong')).toHaveText('—')
-  await expect(page.getByRole('heading', { name: '内容榜', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '此刻发现', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '作者榜', exact: true })).toBeVisible()
 })
 

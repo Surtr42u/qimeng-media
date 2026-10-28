@@ -11,13 +11,16 @@
  */
 
 import { useEffect } from 'react'
-import { getEventLedger } from '@/lib/ledger-instance'
+import { useQueryClient } from '@tanstack/react-query'
+import { getEventLedger, VIEW_EVENT_COMMITTED } from '@/lib/ledger-instance'
+import { invalidateActivityData } from '@/lib/query-invalidation'
 
 /** 周期兜底间隔（毫秒）：与账本全失败退避闸 FLUSH_FAILURE_BACKOFF_MS 同量级——
  * 闸开着的触发是 no-op，这里只负责闸关后的兜底重试节奏 */
 const FLUSH_INTERVAL_MS = 60_000
 
 export function useEventLedgerFlusher(): void {
+  const queryClient = useQueryClient()
   useEffect(() => {
     let disposed = false
 
@@ -31,6 +34,8 @@ export function useEventLedgerFlusher(): void {
     }
 
     // 挂载即补发（离线积压的重开页面路径）
+    const refresh = () => invalidateActivityData(queryClient)
+    window.addEventListener(VIEW_EVENT_COMMITTED, refresh)
     trigger()
     window.addEventListener('online', trigger)
     document.addEventListener('visibilitychange', trigger)
@@ -40,6 +45,7 @@ export function useEventLedgerFlusher(): void {
       window.removeEventListener('online', trigger)
       document.removeEventListener('visibilitychange', trigger)
       window.clearInterval(timer)
+      window.removeEventListener(VIEW_EVENT_COMMITTED, refresh)
     }
-  }, [])
+  }, [queryClient])
 }

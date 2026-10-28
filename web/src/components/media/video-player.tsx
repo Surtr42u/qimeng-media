@@ -19,6 +19,7 @@ import Artplayer from 'artplayer'
 import { useEffect, useRef, useState } from 'react'
 import { stepPlayGate, type PlayGateState } from '@/lib/engagement-reporting'
 import { PLAYBACK_RATES, qualityLabel } from '@/lib/player-labels'
+import { attachFullscreenChrome } from '@/lib/player-fullscreen'
 
 /** 进度条打点 */
 export interface PlayerHighlight {
@@ -456,6 +457,7 @@ export default function VideoPlayer({
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
 
     const detachSeekFix = attachProgressSeekFix(container, art)
+    const detachFullscreenChrome = attachFullscreenChrome(art)
 
     return () => {
       container.removeEventListener('click', onControlClick)
@@ -465,6 +467,7 @@ export default function VideoPlayer({
       document.removeEventListener('click', onDocumentClick)
       themeObserver.disconnect()
       detachSeekFix()
+      detachFullscreenChrome()
       art.destroy()
     }
   }, [initial.src, initial.poster, initial.startTime, initial.highlights])
