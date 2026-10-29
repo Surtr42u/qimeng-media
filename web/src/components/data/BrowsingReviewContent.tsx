@@ -12,7 +12,7 @@ export function ReviewMetrics({ review }: { review: BrowsingReview }) {
 
 /** 只呈现服务端口径；百分比变化在服务端计算，柱高仅作显示缩放。 */
 export function BrowsingReviewContent({ review }: { review: BrowsingReview }) {
-  const [selectedHour, setSelectedHour] = useState(0)
+  const [selectedHour, setSelectedHour] = useState<number | null>(null)
   const peak = Math.max(1, ...review.hours.map(hour => hour.views))
   return <div className="review-sections">
     <section className="chart-card" aria-label="探索与回访">
@@ -35,15 +35,22 @@ export function BrowsingReviewContent({ review }: { review: BrowsingReview }) {
                 ].map(period => <div className={`review-share-row ${period.tone}`} key={period.label}><span>{period.label}</span><div className="review-share-track" aria-hidden="true"><i style={{ width: `${period.share}%` }} /></div><b>{period.share.toFixed(1)}%</b><small>{period.views.toLocaleString(LOCALE_ZH)} 次浏览</small></div>)}</div>
               </li>)}</ul><p className="rank-note">份额按关联内容的浏览次数占本时段全部浏览计算；同一内容可关联多个作者或标签。</p></>}
     </section>
-    <section className="chart-card" aria-label="活跃时段">
-      <div className="workspace-card-head"><h3>活跃时段</h3><span>按服务端本地时间</span></div>
-      <div className="review-hour-chart"><div className="review-hour-scale" aria-hidden="true"><span>{peak} 次</span><span>0</span></div><div className="review-hour-plot">
-        <div className="review-hours" role="list" aria-label="24小时浏览次数">{review.hours.map(hour => <div key={hour.hour} role="listitem" aria-label={`${hour.hour}时，${hour.views}次`} title={`${hour.hour}时 · ${hour.views}次`} className={selectedHour === hour.hour ? 'selected' : ''} onMouseEnter={() => setSelectedHour(hour.hour)}><i style={{ height: `${hour.views / peak * 100}%` }} /></div>)}</div>
-        <div className="review-hour-labels" aria-hidden="true">{review.hours.map(hour => <span key={hour.hour}>{[0, 6, 12, 18, 23].includes(hour.hour) ? hour.hour : ''}</span>)}</div>
-      </div></div>
-      <div className="review-hour-detail" role="status"><strong>{String(selectedHour).padStart(2, '0')}:00–{String(selectedHour + 1).padStart(2, '0')}:00</strong><span>{review.hours[selectedHour].views.toLocaleString(LOCALE_ZH)} 次浏览</span></div>
-      <label className="review-hour-picker">查看小时<input aria-label="查看小时" type="range" min="0" max="23" step="1" value={selectedHour} onChange={event => setSelectedHour(Number(event.target.value))} /></label>
-      <p className="rank-note">汇总已记录的浏览次数；导入历史按保存的记录时间统计。</p>
+    <section className="chart-card review-activity" aria-label="活跃时段">
+      <div className="review-activity-head"><div><h3>活跃时段</h3><p>24小时浏览分布</p></div><div className="review-activity-total"><strong>{review.viewCount.toLocaleString(LOCALE_ZH)}</strong><span>次浏览</span></div></div>
+      <div className="review-hour-chart">
+        <div className="review-hour-plot">
+          <div className="review-hour-labels" aria-hidden="true">{review.hours.map(hour => <span key={hour.hour}>{[0, 6, 12, 18].includes(hour.hour) ? `${String(hour.hour).padStart(2, '0')}时` : ''}</span>)}</div>
+          <div className="review-hours" role="group" aria-label="24小时浏览次数">{review.hours.map(hour => <button key={hour.hour} type="button" aria-label={`${hour.hour}时，${hour.views}次`} aria-pressed={selectedHour === hour.hour} tabIndex={hour.hour === (selectedHour ?? 0) ? 0 : -1}
+            onMouseEnter={() => setSelectedHour(hour.hour)} onFocus={() => setSelectedHour(hour.hour)} onClick={() => setSelectedHour(hour.hour)}
+            onKeyDown={event => {
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? 23 : event.key === 'ArrowRight' ? Math.min(23, hour.hour + 1) : event.key === 'ArrowLeft' ? Math.max(0, hour.hour - 1) : null
+              if (next !== null) { event.preventDefault(); setSelectedHour(next); (event.currentTarget.parentElement!.children[next] as HTMLButtonElement).focus() }
+            }}><i style={{ height: `${hour.views / peak * 100}%` }} /></button>)}</div>
+        </div>
+        <div className="review-hour-scale" aria-hidden="true"><span>{peak}</span><span>0</span></div>
+      </div>
+      <div className="review-hour-detail" role="status"><span className="review-hour-legend">浏览次数</span>{selectedHour === null ? <span>悬停或点击查看小时详情</span> : <span><strong>{String(selectedHour).padStart(2, '0')}:00–{String(selectedHour + 1).padStart(2, '0')}:00</strong><b>{review.hours[selectedHour].views.toLocaleString(LOCALE_ZH)} 次</b></span>}</div>
+      <p className="rank-note">按服务端本地时间 · 导入历史按保存的记录时间统计</p>
     </section>
   </div>
 }

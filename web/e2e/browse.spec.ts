@@ -61,20 +61,20 @@ test('浏览回顾与榜单分开，进入报告保留窗口并呈现服务端�
   await expect(page).toHaveURL(/\/app\/data\/review\?range=day/)
   await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('2026-09-29')
   await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('份额上升')
-  await expect(page.getByRole('listitem', { name: '21时，20次', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '21时，20次', exact: true })).toBeVisible()
   const interest = page.getByRole('region', { name: '兴趣变化', exact: true })
   await expect(interest).toContainText('21 次浏览')
   await expect(interest).toContainText('10 次浏览')
-  const hourPicker = page.getByRole('slider', { name: '查看小时', exact: true })
+  const hourPicker = page.getByRole('button', { name: '0时，0次', exact: true })
   await hourPicker.press('End')
-  await hourPicker.press('ArrowLeft')
-  await hourPicker.press('ArrowLeft')
+  await page.getByRole('button', { name: '23时，0次', exact: true }).press('ArrowLeft')
+  await page.getByRole('button', { name: '22时，0次', exact: true }).press('ArrowLeft')
   await expect(page.locator('.review-hour-detail')).toContainText('21:00–22:00')
-  await expect(page.locator('.review-hour-detail')).toContainText('20 次浏览')
+  await expect(page.locator('.review-hour-detail')).toContainText('20 次')
   // 刻度与柱条必须共享同一小时列，避免flex等距标签造成错位。
   const alignment = await page.locator('.review-hour-plot').evaluate(el => {
-    const bars = el.querySelectorAll('.review-hours > div'), ticks = el.querySelectorAll('.review-hour-labels > span')
-    return [0, 6, 12, 18, 23].every(hour => {
+    const bars = el.querySelectorAll('.review-hours > button'), ticks = el.querySelectorAll('.review-hour-labels > span')
+    return [0, 6, 12, 18].every(hour => {
       const bar = bars[hour].getBoundingClientRect(), tick = ticks[hour].getBoundingClientRect()
       return Math.abs((bar.left + bar.right) / 2 - (tick.left + tick.right) / 2) < 1
     })
