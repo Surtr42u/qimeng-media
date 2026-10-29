@@ -24,6 +24,7 @@ export function createPreviewApi(now = Date.now()) {
       sourceWindowTotals, viewedFilesCount: 61, viewedAuthorsCount: 6, viewedTagsCount: 4, avgViewsPerFile: window.viewCount / 61 }
   }
   return (pathname, method = 'GET', params = new URLSearchParams(), body = {}) => {
+    if (pathname === '/api/v1/stats/review' && method === 'GET') return reply(reviewFixture(params.get('range') ?? '7d'))
     if (pathname === '/api/v1/auth/dev-login' && method === 'POST') return reply({ token: 'preview-session' })
     if (pathname === '/api/v1/events/view' && method === 'POST') return reply({ outcome: 'ok' }, 202)
     if (pathname === '/api/v1/recommendations/prefs') {
@@ -74,4 +75,20 @@ export function createPreviewApi(now = Date.now()) {
     }
     return reply({ code: 'PREVIEW_UNSUPPORTED', message: '此操作未纳入虚拟数据预览，不会连接真实后端。' }, method === 'GET' ? 404 : 405)
   }
+}
+
+/** 固定演示结果，不复制生产统计公式。日期只用于隔离预览。 */
+export function reviewFixture(range = '7d') {
+  return { range, fromDay: range === 'all' ? '' : range === 'day' ? '2026-09-29' : range === '90d' ? '2026-07-31' : '2026-10-22', toDay: '2026-10-28',
+    previousFromDay: range === 'all' ? '' : range === 'day' ? '2026-08-30' : range === '90d' ? '2026-05-02' : '2026-10-15',
+    previousToDay: range === 'all' ? '' : range === 'day' ? '2026-09-28' : range === '90d' ? '2026-07-30' : '2026-10-21',
+    seconds: 18660, imageSeconds: 16320, videoSeconds: 1300, animatedSeconds: 1040,
+    viewCount: 42, uniqueFiles: 24, firstViews: 18, repeatViews: 24, activeDays: 5, previousViewCount: range === 'all' ? 0 : 40,
+    comparisonAvailable: range !== 'all', interests: range === 'all' ? [] : [
+      { kind: 'author', id: 'synthetic-author', name: '青禾', currentViews: 21, previousViews: 10, currentShare: 50, previousShare: 25, changePoints: 25 },
+      { kind: 'tag', id: 'synthetic-tag', name: '风景', currentViews: 7, previousViews: 20, currentShare: 16.6666666667, previousShare: 50, changePoints: -33.3333333333 },
+    ], hours: [900, 180, 120, 360, 480, 720, 1800, 360, 1200, 900, 600, 1020, 720, 300, 1080, 480, 1500, 240, 960, 780, 840, 720, 1080, 1320].map((seconds, hour) => {
+      const videoSeconds = ({6:600,16:500,20:200})[hour] ?? 0, animatedSeconds = ({6:600,16:300,20:140})[hour] ?? 0
+      return {hour, views: hour === 21 ? 20 : hour === 12 ? 12 : hour === 9 ? 10 : 0, seconds, imageSeconds: seconds-videoSeconds-animatedSeconds, videoSeconds, animatedSeconds}
+    }) }
 }

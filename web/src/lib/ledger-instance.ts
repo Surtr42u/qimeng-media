@@ -62,7 +62,11 @@ export function createMemoryStorage(): EventLedgerStorage {
  * LedgerViewEvent 与协议 ViewEventReport 同形（clientEventId 必填），整行透传。 */
 async function sdkLedgerSender(event: LedgerViewEvent): Promise<void> {
   await unwrapSdkResult(postApiV1EventsView({ body: event }))
+  window.dispatchEvent(new Event(VIEW_EVENT_COMMITTED))
 }
+
+/** 包括离线补发；只在服务端确认后发信号，不把本地入账当作已保存。 */
+export const VIEW_EVENT_COMMITTED = 'qimeng:view-event-committed'
 
 let ledgerPromise: Promise<EventLedger> | null = null
 

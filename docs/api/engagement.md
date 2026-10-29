@@ -2,6 +2,10 @@
 
 > [API 目录与全局约定](../GUIDE_API.md)。本页解释用法，字段/路径/schema 以 [OpenAPI](../../api/openapi.yaml) 为准；正文日期只标记机制来源。
 
+## 此刻发现（旧客户端兼容）
+
+`GET /discoveries?seed=...&limit=6` 已弃用，仅兼容已安装旧客户端；新数据页使用浏览回顾。旧端点返回资产和发现理由，常规/COS 均可入选，保留规则见[推荐专题](../domain/recommendation.md)。该只读端点不写展示或浏览记录。
+
 ## 行为上报
 
 端点：POST /events/view、PUT /assets/{id}/like、PUT /assets/{id}/favorite
@@ -114,3 +118,9 @@ seed>0 的同分打散按桶首最高分限制 0.05 跨度，避免相邻小分�
 ## 统计重建事务
 
 回收站恢复以原身份与单资产日统计同事务提交；全量统计重建从同一写事务快照派生，避免覆盖新增量。stats 保持纯函数，eventstats 负责事务编排（ADR-0040）。
+
+## 浏览回顾
+
+`GET /api/v1/stats/review?range=7d|day|90d|all`返回首次/再次浏览、不同内容数、活跃天数、前期比较与24小时活动分布。无可比记录时comparisonAvailable=false，不伪造涨幅；确切口径见[统计专题](../domain/statistics.md#浏览回顾独立于推荐和排行)。此接口只读，旧`/discoveries`保留供旧版已安装客户端兼容，新数据页停止使用。
+
+浏览回顾新增`seconds/imageSeconds/videoSeconds/animatedSeconds`，报告与每小时均返回，表示dwell整数秒及静图/视频/动图构成；按记录开始小时归桶，不拆分跨小时段。视频为详情停留，非播放时长。原open次数及兴趣份额口径不变。

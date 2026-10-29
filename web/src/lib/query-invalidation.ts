@@ -16,3 +16,10 @@ export function invalidateLibraryContent(queryClient: QueryClient): void {
     void queryClient.invalidateQueries({ queryKey: key })
   }
 }
+
+/** 本端浏览事件确认后更新统计/周期榜/历史；不失效推荐顺序。 */
+export function invalidateActivityData(queryClient: QueryClient): void {
+  for (const key of [STATS_QUERY_KEY, RANKINGS_QUERY_KEY, HISTORY_QUERY_KEY]) {
+    void queryClient.invalidateQueries({ queryKey: key })
+  }
+}

@@ -1064,6 +1064,21 @@ paths:
           headers:
             X-Qimeng-Next-Offset: { $ref: "#/components/headers/NextOffset" }
           content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } }
+  /api/v1/discoveries:
+    get:
+      deprecated: true
+      summary: 此刻发现（旧版客户端兼容入口）
+      description: |
+        独立于周期热度榜，覆盖全部启用库（含常规与COS）。按最近一次open/play分为
+        从未看过、超过30天、近30天三池，按seed各自打散后轮流取项；不足由其他池补齐。
+        不计推荐展示次数，不写浏览事件。同seed及同候选状态可复现；客户端每次进入或换组使用新seed。
+      parameters:
+        - { name: seed, in: query, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 12, default: 6 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/DiscoveryItem" } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/rankings:
     get:
       summary: 排行榜（热度=view+play+like；周期过滤）
@@ -1077,6 +1092,22 @@ paths:
           headers:
             X-Qimeng-Next-Offset: { $ref: "#/components/headers/NextOffset" }
           content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } }
+  /api/v1/stats/review:
+    get:
+      summary: 浏览回顾（首次与重复浏览、兴趣变化、活跃时段）
+      description: |
+        仅统计现存资产的open记录，含常规/COS及停用库；不推荐作品、不改周期榜。
+        首次浏览为每个资产记录中的第一次open，再次浏览为窗口总open减首次浏览。
+        7d/day/90d分别为含今日的7/30/90个本地日历日；比较紧邻的前一等长窗口。
+        all不比较前期；任一窗口无浏览时comparisonAvailable=false，interests为空。
+        兴趣份额为关联作者/标签的open占该窗口全部open的百分比，可多重关联；
+        最多返回6项份额变化最大的兴趣。hours固定24项，按服务端本地时间归并记录时间。
+        只读多查询，不承诺持续写入时各字段的跨查询严格快照。
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [7d, day, 90d, all], default: 7d } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BrowsingReview" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/stats/overview:
     get:
       summary: 总览（文件数/类型分布/累计浏览/今日浏览/库容量/来源库存等）
@@ -1554,6 +1585,58 @@ components:
       properties:
         thumbnailVersion: { type: string, description: 缩略图策略/格式/配置指纹；客户端预取必须与 revision 一起比较，策略变化也须重拉列表 }
         revision: { type: integer, format: int64, description: 单调递增的库内容版本号；与上次取值相同即可跳过全量列表拉取 }
+
+    BrowsingReview:
+      type: object
+      required: [range, fromDay, toDay, previousFromDay, previousToDay, viewCount, uniqueFiles, firstViews, repeatViews, activeDays, previousViewCount, comparisonAvailable, interests, hours, seconds, imageSeconds, videoSeconds, animatedSeconds]
+      properties:
+        seconds: { type: integer, format: int64, minimum: 0, description: 已记录dwell的整数秒总和 }
+        imageSeconds: { type: integer, format: int64, minimum: 0, description: 静图浏览秒数 }
+        videoSeconds: { type: integer, format: int64, minimum: 0, description: 视频详情停留秒数，非播放时长 }
+        animatedSeconds: { type: integer, format: int64, minimum: 0, description: 动图浏览秒数 }
+        range: { type: string, enum: [7d, day, 90d, all] }
+        fromDay: { type: string, description: 本期首日本地日期；all为空串 }
+        toDay: { type: string, description: 本期末日本地日期（含） }
+        previousFromDay: { type: string, description: 前期首日本地日期；all为空串 }
+        previousToDay: { type: string, description: 前期末日本地日期；all为空串 }
+        viewCount: { type: integer, format: int64, minimum: 0 }
+        uniqueFiles: { type: integer, format: int64, minimum: 0 }
+        firstViews: { type: integer, format: int64, minimum: 0, description: 窗口内首次open的资产数，每个资产最多贡献一次 }
+        repeatViews: { type: integer, format: int64, minimum: 0, description: viewCount减firstViews，含同一窗口再次打开的新内容 }
+        activeDays: { type: integer, format: int64, minimum: 0, description: 至少一次open的本地日期数 }
+        previousViewCount: { type: integer, format: int64, minimum: 0 }
+        comparisonAvailable: { type: boolean }
+        interests: { type: array, maxItems: 6, items: { $ref: "#/components/schemas/ReviewInterest" } }
+        hours: { type: array, minItems: 24, maxItems: 24, items: { $ref: "#/components/schemas/ReviewHour" } }
+    ReviewInterest:
+      type: object
+      required: [kind, id, name, currentViews, previousViews, currentShare, previousShare, changePoints]
+      properties:
+        kind: { type: string, enum: [author, tag] }
+        id: { type: string }
+        name: { type: string }
+        currentViews: { type: integer, format: int64, minimum: 0 }
+        previousViews: { type: integer, format: int64, minimum: 0 }
+        currentShare: { type: number, format: double, minimum: 0, maximum: 100 }
+        previousShare: { type: number, format: double, minimum: 0, maximum: 100 }
+        changePoints: { type: number, format: double, description: 本期份额减前期份额，单位百分点 }
+    ReviewHour:
+      type: object
+      required: [hour, views, seconds, imageSeconds, videoSeconds, animatedSeconds]
+      properties:
+        seconds: { type: integer, format: int64, minimum: 0, description: 已记录dwell的整数秒总和 }
+        imageSeconds: { type: integer, format: int64, minimum: 0, description: 静图浏览秒数 }
+        videoSeconds: { type: integer, format: int64, minimum: 0, description: 视频详情停留秒数，非播放时长 }
+        animatedSeconds: { type: integer, format: int64, minimum: 0, description: 动图浏览秒数 }
+        hour: { type: integer, minimum: 0, maximum: 23 }
+        views: { type: integer, format: int64, minimum: 0 }
+
+    DiscoveryItem:
+      type: object
+      required: [asset, reason]
+      properties:
+        asset: { $ref: "#/components/schemas/AssetSummary" }
+        reason: { type: string, enum: [unseen, rediscover, interest], description: '未看发现 / 久别重逢 / 近期兴趣；仅说明候选池，不代表质量评价' }
 
     AssetSummary:
       type: object

@@ -17,6 +17,11 @@ import androidx.compose.ui.graphics.Color
  * 选中态胶囊浸润底都靠它，故登记为具名常量供组件批取用。
  */
 object QimengBrandColors {
+    /** 浏览回顾小时分布专用蓝色，双端同色；不改变全局中性主题。 */
+    val ActivityBlue: Color = Color(0xFF53A4E8)
+    val ActivityVideo: Color = Color(0xFFF5C95C)
+    val ActivityAnimated: Color = Color(0xFF68CD9E)
+
     // ---------- 页面背景 / 表面（colors.xml「中性极简：微灰白背景 + 纯白卡片」组） ----------
 
     /** 日间整页纯白：不叠加冷灰渐变；同步 app values/colors.xml 的 qm_bg。 */

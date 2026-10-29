@@ -83,6 +83,7 @@ class StatsDetailViewModelTest {
         for (mode in StatsDetailMode.entries) {
             var broken = true
             val repository = StatsTestRepository().apply {
+                reviewProvider = { if (broken) throw java.io.IOException("offline"); statsReview(it) }
                 overviewProvider = { if (broken) throw java.io.IOException("offline"); statsOverview() }
                 trendsProvider = { if (broken) throw java.io.IOException("offline"); emptyList() }
             }
@@ -93,6 +94,19 @@ class StatsDetailViewModelTest {
             broken = false; vm.retry(); advanceUntilIdle()
             assertFalse(vm.uiState.value.loadFailed)
         }
+    }
+
+    @Test fun `浏览回顾按入口时段独立加载且零记录仍显示报告`() = runTest {
+        val repository = StatsTestRepository().apply {
+            reviewProvider = { statsReview(it).copy(viewCount = 0, firstViews = 0, repeatViews = 0, uniqueFiles = 0, activeDays = 0, comparisonAvailable = false, hours = (0..23).map { ReviewHourValues(it, 0) }) }
+        }
+        val vm = StatsDetailViewModel(handle(StatsDetailMode.REVIEW, StatsRangeOption.THIRTY_DAYS), repository, MediaBatchIndex())
+        advanceUntilIdle()
+        assertEquals(listOf("day"), repository.reviewCalls)
+        assertTrue(repository.overviewCalls.isEmpty())
+        assertTrue(repository.trendCalls.isEmpty())
+        assertFalse(vm.uiState.value.isEmpty)
+        assertEquals(0L, vm.uiState.value.review?.viewCount)
     }
 
     @Test fun `空趋势为成功空态非法路由回落默认`() = runTest {

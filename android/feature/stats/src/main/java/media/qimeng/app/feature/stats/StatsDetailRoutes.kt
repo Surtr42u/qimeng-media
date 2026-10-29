@@ -7,10 +7,13 @@ import media.qimeng.app.core.model.StatsRangeOption
  * 路由串/参数键收敛在 feature:stats——feature 禁依赖 :app（ADR-0010），壳层 QimengNavHost
  * 反向引用此处合法；mode/range 取枚举 name（纯 ASCII 标识符，无需 URL 编码）。
  *
- * GUIDE_UI §统计详情页四模式（N4 消费批 I3b 全量落地——N3 协议批 #31 解冻三端点后
+ * 统计详情页模式（含浏览回顾）；原四模式（N4 消费批 I3b 全量落地——N3 协议批 #31 解冻三端点后
  * 常看文件/常看作者标签两模式由冻结转可达成；冻结期口径的历史记档见 CHANGELOG）。
  */
 enum class StatsDetailMode(val title: String) {
+
+    /** 首次/再次浏览、兴趣变化与活跃时段；只读报告。 */
+    REVIEW("浏览回顾"),
 
     /** 分类型趋势（图片/视频/动图多系列折线 + 来源浏览趋势 常规/COS 双系列） */
     TYPE_TREND("分类型趋势"),

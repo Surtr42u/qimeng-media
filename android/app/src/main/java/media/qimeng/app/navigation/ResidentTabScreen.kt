@@ -46,10 +46,7 @@ internal fun ResidentTabScreen(
                 onOpenDetail = { mode, range ->
                     navController.navigate(StatsDetailRoutes.statsDetailRoute(mode, range))
                 },
-                // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：常看文件条目→详情页（批次
-                // 上下文已由 StatsViewModel.enterDetail 写入）、作者条目→作者集合页、
-                // 标签条目→搜索页携词（query 编码见 Routes.searchRoute）
-                onOpenAsset = links.onOpenAsset,
+                // 作者与标签仍跳转现有集合/搜索页。
                 onOpenAuthor = links.onOpenAuthor,
                 onOpenTagSearch = links.onOpenTagSearch,
             )

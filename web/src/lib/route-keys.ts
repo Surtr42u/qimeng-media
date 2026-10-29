@@ -19,6 +19,7 @@ export const MINE_PATH = '/app/mine'
 
 /** 数据页路由（Sidebar 主导航第四项） */
 export const DATA_PATH = '/app/data'
+export const BROWSING_REVIEW_PATH = '/app/data/review'
 
 /** 作者管理入口；与按名字浏览作者作品的集合路由不同。 */
 export const AUTHORS_PATH = '/app/authors'

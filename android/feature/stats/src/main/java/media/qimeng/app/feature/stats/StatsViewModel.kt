@@ -15,8 +15,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import media.qimeng.app.core.model.STATS_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.STATS_PROTOCOL_UPDATE_MESSAGE
-import media.qimeng.app.core.data.repository.MediaBatchIndex
-import media.qimeng.app.core.model.RankingEntry
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.DEFAULT_STATS_RANGE
 import media.qimeng.app.core.model.StatsOverviewValues
@@ -25,7 +23,6 @@ import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.apiRange
-import media.qimeng.app.core.model.rankingsPeriod
 
 /** 数字卡/常看卡共享的 Top 条数（GUIDE_UI §数据统计页「紧凑文本列表 Top 3」） */
 internal const val TOP_CARD_LIMIT = 3
@@ -53,8 +50,6 @@ data class StatsUiState(
     val selectedRange: StatsRangeOption = DEFAULT_STATS_RANGE,
     val trends: List<TrendPoint> = emptyList(),
     val trendsLoading: Boolean = true,
-    /** 内容榜卡 Top3（GET /rankings；2026-09-18 批换源，失败/空=空表 → 卡内空态） */
-    val rankings: List<RankingEntry> = emptyList(),
     /** 常看作者卡数据源（详情页 Top15 亦用本通道，主页面只取前 3 混排） */
     val topAuthors: List<TopAuthorEntry> = emptyList(),
     /** 常看标签卡数据源 */
@@ -65,9 +60,6 @@ data class StatsUiState(
 ) {
     /** 趋势空态（规格 §数据统计页：空态文案「暂无趋势数据」） */
     val trendsEmpty: Boolean get() = !loadFailed && !trendsLoading && trends.isEmpty()
-
-    /** 内容榜卡空态（加载完且无数据——空态保留口径） */
-    val rankingsEmpty: Boolean get() = !loadFailed && !trendsLoading && rankings.isEmpty()
 
     /** 常看作者与标签卡空态 */
     val topAuthorsTagsEmpty: Boolean get() = !loadFailed && !trendsLoading && topAuthors.isEmpty() && topTags.isEmpty()
@@ -103,7 +95,6 @@ data class StatsUiState(
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
-    private val batchIndex: MediaBatchIndex,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StatsUiState())
@@ -115,6 +106,11 @@ class StatsViewModel @Inject constructor(
     private var requestJob: Job? = null
 
     init { loadRange(DEFAULT_STATS_RANGE) }
+
+    private var hasBeenVisible = false
+    fun onVisible() {
+        if (hasBeenVisible) retry() else hasBeenVisible = true
+    }
 
     fun selectRange(option: StatsRangeOption) {
         if (_uiState.value.selectedRange == option && !_uiState.value.loadFailed && !_uiState.value.trendsLoading) return
@@ -133,17 +129,21 @@ class StatsViewModel @Inject constructor(
                 val result = coroutineScope {
                 val overview = async { statsRepository.overview(option.apiRange) }
                 val trends = async { statsRepository.trends(option.apiRange) }
-                val rankings = async { statsRepository.rankings(option.rankingsPeriod, TOP_CARD_LIMIT) }
                 val authors = async { statsRepository.topAuthors(option.apiRange, TOP_CARD_LIMIT) }
                 val tags = async { statsRepository.topTags(option.apiRange, TOP_CARD_LIMIT) }
-                StatsUiState(
+                _uiState.value.copy(
                     selectedRange = option, overview = overview.await(), trends = trends.await(),
-                    rankings = rankings.await(), topAuthors = authors.await(), topTags = tags.await(),
+                    topAuthors = authors.await(), topTags = tags.await(),
                     overviewLoading = false, trendsLoading = false, avgViewsLoading = false,
                     avgViewsPerFile = overview.await().avgViewsPerFile,
                 )
                 }
-                if (requestId == windowRequestId) _uiState.value = result
+                if (requestId == windowRequestId) _uiState.update { current -> current.copy(
+                    selectedRange = result.selectedRange, overview = result.overview, trends = result.trends,
+                    topAuthors = result.topAuthors, topTags = result.topTags,
+                    overviewLoading = false, trendsLoading = false, avgViewsLoading = false,
+                    avgViewsPerFile = result.avgViewsPerFile, loadFailed = false, errorMessage = null,
+                ) }
             } catch (error: CancellationException) { throw error
             } catch (error: Exception) {
                 if (requestId == windowRequestId) _uiState.update { it.copy(
@@ -154,15 +154,6 @@ class StatsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 内容榜条目进详情前的批次上下文写入（任务J J1，GUIDE_UI L218-224 跳转链；
-     * HomeViewModel/FavoriteViewModel 的 enterDetail 同款范式）：「已加载=当前显示清单」
-     * 口径——主页面内容榜卡即 Top3 榜单，快照式整体替换 [MediaBatchIndex.ids]，
-     * DetailViewModel 既有消费零改动。参数保留 assetId 与同款签名对齐（触发时机语义）。
-     */
-    fun enterDetail(assetId: String) {
-        batchIndex.ids = _uiState.value.rankings.map { it.assetId }
-    }
 }
 
 internal fun statsFailureMessage(error: Exception): String =

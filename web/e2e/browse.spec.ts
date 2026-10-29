@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { createPreviewApi } from '../../tools/ui-preview/api.mjs'
+import { createPreviewApi, reviewFixture } from '../../tools/ui-preview/api.mjs'
 import { coverSvg } from '../../tools/ui-preview/fixtures/catalog.mjs'
 
 /** 与人工预览共享同一纯合成API；仅拦截浏览器请求，不启动后端或接触真实库。 */
@@ -32,6 +32,99 @@ test('首页就近换批更新seed；媒体卡支持键盘打开并返回原流'
   await page.getByRole('button', { name: '换一批', exact: true }).click()
   await expect.poll(() => state.seeds.some(seed => Number(seed) > 0)).toBe(true)
   await expect(page.getByRole('button', { name: '换一批', exact: true })).toBeEnabled()
+})
+
+test('长搜索词避开清空按钮，清空后仍可继续输入', async ({ page }) => {
+  await setup(page)
+  await page.goto('/app/home')
+  const input = page.getByPlaceholder('搜索你感兴趣的视频')
+  const word = '合成超长搜索标题 '.repeat(16)
+  await input.fill(word)
+  const gap = await input.evaluate(el => {
+    const style = el.ownerDocument.defaultView!.getComputedStyle(el)
+    const clear = el.ownerDocument.querySelector('.search-clear')!.getBoundingClientRect()
+    return el.getBoundingClientRect().right - parseFloat(style.paddingRight) - clear.left
+  })
+  expect(gap).toBeLessThanOrEqual(0)
+  await page.getByRole('button', { name: '清空搜索词', exact: true }).click()
+  await expect(input).toHaveValue('')
+  await expect(input).toBeFocused()
+})
+
+test('浏览回顾与榜单分开，进入报告保留窗口并呈现服务端比较值', async ({ page }) => {
+  await setup(page)
+  await page.goto('/app/data?range=day')
+  const panel = page.getByRole('region', { name: '浏览回顾', exact: true })
+  await expect(panel).toContainText('首次浏览')
+  await expect(panel.locator('.rank-item')).toHaveCount(0)
+  await panel.getByRole('link', { name: '查看回顾' }).click()
+  await expect(page).toHaveURL(/\/app\/data\/review\?range=day/)
+  await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('2026-09-29')
+  await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('↑ 25.0')
+  await expect(page.getByRole('button', { name: '21时，720秒，20次浏览', exact: true })).toBeVisible()
+  const interest = page.getByRole('region', { name: '兴趣变化', exact: true })
+  await expect(interest).toContainText('25.0%')
+  await expect(interest.locator('.review-share-track')).toHaveCount(0)
+  await expect(page.locator('.review-activity-legend')).toContainText('图片')
+  await expect(page.locator('.review-activity-total')).toContainText('5')
+  const hourPicker = page.getByRole('button', { name: '0时，900秒，0次浏览', exact: true })
+  await hourPicker.press('End')
+  await page.getByRole('button', { name: '23时，1320秒，0次浏览', exact: true }).press('ArrowLeft')
+  await page.getByRole('button', { name: '22时，1080秒，0次浏览', exact: true }).press('ArrowLeft')
+  await expect(page.locator('.review-hour-detail')).toContainText('21:00–22:00')
+  await expect(page.locator('.review-hour-detail')).toContainText('20 次浏览')
+  // 刻度与柱条必须共享同一小时列，避免flex等距标签造成错位。
+  const alignment = await page.locator('.review-hour-plot').evaluate(el => {
+    const bars = el.querySelectorAll('.review-hours > button'), ticks = el.querySelectorAll('.review-hour-labels > span')
+    return [0, 6, 12, 18].every(hour => {
+      const bar = bars[hour].getBoundingClientRect(), tick = ticks[hour].getBoundingClientRect()
+      return Math.abs((bar.left + bar.right) / 2 - (tick.left + tick.right) / 2) < 1
+    })
+  })
+  expect(alignment).toBe(true)
+  await page.getByRole('button', { name: '全部', exact: true }).click()
+  await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('选择近7天')
+  await page.getByRole('link', { name: '返回数据' }).click()
+  await expect(page).toHaveURL(/\/app\/data\?range=all/)
+})
+
+test('浏览回顾请求失败明确重试，零记录不冒充比较结果', async ({ page }) => {
+  await setup(page)
+  let broken = true
+  await page.route('**/api/v1/stats/review*', route => route.fulfill(broken ? { status: 503, json: { message: 'synthetic review failure' } } : {
+    json: { ...reviewFixture(), seconds: 0, imageSeconds: 0, videoSeconds: 0, animatedSeconds: 0, viewCount: 0, uniqueFiles: 0, firstViews: 0, repeatViews: 0, activeDays: 0, previousViewCount: 0, comparisonAvailable: false, interests: [], hours: Array.from({ length: 24 }, (_, hour) => ({ hour, views: 0, seconds: 0, imageSeconds: 0, videoSeconds: 0, animatedSeconds: 0 })) },
+  }))
+  await page.goto('/app/data/review')
+  await expect(page.getByRole('alert')).toContainText('浏览回顾读取失败', { timeout: 15000 })
+  await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toHaveCount(0)
+  broken = false
+  await page.getByRole('button', { name: '重新读取', exact: true }).click()
+  await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('这个时段还没有浏览记录')
+  await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('前后两个时段都有浏览记录后')
+  await expect(page.getByRole('group', { name: '24小时浏览时长', exact: true }).getByRole('button')).toHaveCount(24)
+})
+
+test('视频网页全屏保留退出入口，底边鼠标可唤出控制栏，Esc可退出', async ({ page }) => {
+  await setup(page)
+  await page.goto('/app/asset/10000000-0000-4000-8000-000000000001')
+  const player = page.locator('.art-video-player')
+  await player.locator('.art-control-fullscreenWeb').click()
+  await expect(player).toHaveClass(/art-fullscreen-web/)
+  const exit = page.getByRole('button', { name: '退出全屏', exact: true })
+  await expect(exit).toBeVisible()
+  const bounds = await exit.boundingBox()
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+  // 合成夹具不含视频字节；这里验证控件退场与鼠标唤醒，不宣称解码验收。
+  await player.evaluate(el => el.classList.remove('art-control-show', 'art-hover'))
+  const rect = await player.boundingBox()
+  await page.mouse.move(rect!.x + rect!.width / 2, rect!.y + rect!.height - 20)
+  await expect(player).toHaveClass(/qimeng-controls-hover/)
+  await expect(player.locator('.art-controls')).toHaveCSS('pointer-events', 'auto')
+  await exit.click()
+  await expect(player).not.toHaveClass(/art-fullscreen-web/)
+  await player.locator('.art-control-fullscreenWeb').click()
+  await page.keyboard.press('Escape')
+  await expect(player).not.toHaveClass(/art-fullscreen-web/)
 })
 
 test('相册类型筛选可收起，清空筛选恢复总数；全部选项有选中语义', async ({ page }) => {

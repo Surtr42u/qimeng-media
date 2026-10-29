@@ -161,6 +161,7 @@ class BiliPlayerView @JvmOverloads constructor(
     private val tagsContainer: LinearLayout
 
     private val fullscreenBtn: ImageView
+    private val fullscreenExit: ImageView
     private var isFullscreen = false
 
     /**
@@ -208,6 +209,11 @@ class BiliPlayerView @JvmOverloads constructor(
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             updatePlayPauseButton()
+            if (!isPlaying) showController(true)
+            else if (controllerVisible) {
+                removeCallbacks(hideControllerRunnable)
+                postDelayed(hideControllerRunnable, HIDE_DELAY)
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -231,7 +237,7 @@ class BiliPlayerView @JvmOverloads constructor(
         }
     }
 
-    private val hideControllerRunnable = Runnable { showController(false) }
+    private val hideControllerRunnable = Runnable { if (playerView.player?.isPlaying == true) showController(false) }
     private val hideTopIndicatorRunnable = Runnable {
         topIndicator.isVisible = false
     }
@@ -379,9 +385,21 @@ class BiliPlayerView @JvmOverloads constructor(
         lockSpeedHint.addView(lockSpeedHintText)
         addView(lockSpeedHint)
 
-        // 适配点⑫（S10 用户拍板「去掉播放器的上方返回键」）：旧顶部栏（topBar+backBtn）
-        // 整条退役——原条仅含返回钮一枚，播放器退出走系统返回手势（onBack 链保留无入口，
-        // 见属性 KDoc）；横屏全屏覆盖层与本视图同源，同批生效
+        // 当前用户要求全屏右上角保留明确退出入口；只退出全屏，不返回详情页。
+        fullscreenExit = ImageView(context).apply {
+            setImageResource(R.drawable.ic_player_fullscreen_exit)
+            setColorFilter(Color.WHITE)
+            contentDescription = "退出全屏"
+            setPadding(10.dp(context), 10.dp(context), 10.dp(context), 10.dp(context))
+            background = GradientDrawable().apply { setColor(0x88000000.toInt()); cornerRadius = 10.dp(context).toFloat() }
+            visibility = View.GONE
+            layoutParams = LayoutParams(44.dp(context), 44.dp(context)).apply {
+                gravity = Gravity.TOP or Gravity.END
+                topMargin = 12.dp(context); marginEnd = 14.dp(context)
+            }
+            setOnClickListener { onFullscreen?.invoke() }
+        }
+        addView(fullscreenExit)
 
         bottomBar = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -1080,7 +1098,7 @@ class BiliPlayerView @JvmOverloads constructor(
         onControllerVisibilityChanged?.invoke(visible)
         if (visible) {
             removeCallbacks(hideControllerRunnable)
-            postDelayed(hideControllerRunnable, HIDE_DELAY)
+            if (playerView.player?.isPlaying == true) postDelayed(hideControllerRunnable, HIDE_DELAY)
         } else {
             removeCallbacks(hideControllerRunnable)
             dismissAllPopups()
@@ -1243,11 +1261,14 @@ class BiliPlayerView @JvmOverloads constructor(
     /** 设置全屏状态，更新按钮图标，横屏时默认隐藏控制器，处理导航栏内边距 */
     fun setFullscreen(fullscreen: Boolean) {
         isFullscreen = fullscreen
+        fullscreenExit.isVisible = fullscreen
         fullscreenBtn.setImageResource(
             if (fullscreen) R.drawable.ic_player_fullscreen_exit else R.drawable.ic_player_fullscreen
         )
-        if (fullscreen) {
+        if (fullscreen && playerView.player?.isPlaying == true) {
             showController(false)
+        } else if (fullscreen) {
+            showController(true)
         }
         // 横屏全屏时为底部栏添加导航栏内边距，防止被系统导航栏遮挡
         applyBottomBarInsets()
@@ -1274,6 +1295,14 @@ class BiliPlayerView @JvmOverloads constructor(
 
     /** 当前是否处于全屏状态 */
     fun getFullscreen(): Boolean = isFullscreen
+
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean {
+        if (isFullscreen && event.actionMasked == MotionEvent.ACTION_HOVER_MOVE &&
+            event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE && event.y >= height - 100.dp(context)) {
+            showController(true)
+        }
+        return super.dispatchHoverEvent(event)
+    }
 
     /** 时长格式化（W5 #50 三件套：方法体已搬至 PlayerMath.formatDurationMs 纯函数，本委托保留调用面） */
     internal fun formatMs(ms: Long): String = formatDurationMs(ms)

@@ -28,10 +28,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarker
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarkerController
-import media.qimeng.app.core.model.RankingEntry
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
@@ -49,23 +49,21 @@ import media.qimeng.app.core.ui.glass.TabDockDefaults
  * - 浏览趋势卡（L213）：点击数据点高亮+数值气泡（Vico DefaultCartesianMarker，
  *   rememberTrendValueMarker + rememberToggleOnTap）；点击卡片/右上「分类型趋势 ›」进统计详情页；
  * - 分布统计小入口卡（L214）：纯文字卡，点击进分布统计详情（来源构成 N3 #31b 解冻，详情页呈现）；
- * - 内容榜卡（L215，2026-09-18 批换源：原「常看文件」卡）：文件名+浏览次数紧凑 Top3
- *   （GET /rankings，Web 数据页同款口径——热度=浏览+播放+点赞累计、period 准入、排除 COS），
- *   点击进常看文件详情（默认按热度档=本榜）；常看作者与标签卡（L216）：作者/标签混合 Top3
- *   （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情——空数据卡内空态保留；
- * - 详情页跳转链（任务J J1，GUIDE_UI L218-224）：内容榜**条目**→详情页（榜单作批次
- *   上下文，[StatsViewModel.enterDetail] 写快照清单）；常看作者条目→作者集合页（真实
- *   authorId）；常看标签条目→搜索页携词——均经回调上抛壳层导航，本层零路由耦合。
+ * - 浏览回顾仅显示标题入口，点击后按所选窗口加载独立报告；主页面不预取报告或候选。
+ * - 常看作者与标签保留原有窗口与跳转。
  */
 @Composable
 fun StatsScreen(
     onOpenDetail: (mode: StatsDetailMode, range: StatsRangeOption) -> Unit,
-    onOpenAsset: (assetId: String) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit,
     onOpenTagSearch: (tag: String) -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(viewModel) {
+        viewModel.onVisible()
+        onPauseOrDispose { }
+    }
     if (state.loadFailed) {
         StatsLoadError(state.errorMessage, viewModel::retry)
         return
@@ -109,17 +107,7 @@ fun StatsScreen(
             )
         }
         item {
-            ContentRankCard(
-                entries = state.rankings,
-                loading = state.trendsLoading,
-                empty = state.rankingsEmpty,
-                onOpen = { onOpenDetail(StatsDetailMode.MOST_VIEWED, state.selectedRange) },
-                onEntryClick = { entry ->
-                    // 榜单作批次上下文（J1）：先写快照清单再导航，详情页 i/N 与滑动链以 Top3 榜为批次
-                    viewModel.enterDetail(entry.assetId)
-                    onOpenAsset(entry.assetId)
-                },
-            )
+            BrowsingReviewEntry(onOpen = { onOpenDetail(StatsDetailMode.REVIEW, state.selectedRange) })
         }
         item {
             TopAuthorsTagsCard(
@@ -319,58 +307,6 @@ private fun DistributionEntryCard(onOpen: () -> Unit) {
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
                 color = MaterialTheme.colorScheme.primary,
             )
-        }
-    }
-}
-
-/**
- * 内容榜卡（2026-09-18 批换源：原「常看文件」卡 /stats/most-viewed metric=views →
- * GET /rankings，Web 数据页同款口径——热度=浏览+播放+点赞累计倒序、period 只做准入过滤、
- * 排除 COS；角标=累计浏览次数「N 次」）：文件名 + 浏览次数紧凑文本列表 Top 3，
- * 随档位联动（period 经 rankingsPeriod 映射），点击进常看文件详情（默认按热度档=本榜）。
- * 加载中/空数据卡内文案占位（空态保留，不隐藏卡）。
- */
-@Composable
-private fun ContentRankCard(
-    entries: List<RankingEntry>,
-    loading: Boolean,
-    empty: Boolean,
-    onOpen: () -> Unit,
-    onEntryClick: (RankingEntry) -> Unit,
-) {
-    Surface(
-        onClick = onOpen,
-        color = statsCardColor(),
-        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth().softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS)),
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "内容榜",
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
-                )
-                Text(
-                    text = "查看全部 ›",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            when {
-                loading -> CompactText(LOADING_TEXT)
-                empty -> CompactEmptyText()
-                else -> entries.forEach { entry ->
-                    CompactRow(
-                        text = entry.title,
-                        value = entry.viewCount.toDisplayText() + VIEW_SUFFIX,
-                        onClick = { onEntryClick(entry) },
-                    )
-                }
-            }
         }
     }
 }

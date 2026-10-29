@@ -164,12 +164,45 @@ class SdkStatsRepository @Inject constructor(
         }
     }
 
-    /**
-     * 内容榜（2026-09-18 内容榜批：GET /rankings；Web 数据页同款口径——热度=浏览+播放+点赞
-     * 累计倒序、period 只做准入过滤、排除 COS）。period 只认协议六值
-     * （rankingsPeriod 只产出 week/month/all，其余分支为防御性兜底——all=不设准入窗口的超集）；
-     * 此处打日志即验收证据。
-     */
+    override suspend fun browsingReview(range: String): media.qimeng.app.core.model.BrowsingReviewValues {
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
+        val sdkRange = when (range) {
+            "7d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsReviewGet._7d
+            "day" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsReviewGet.day
+            "90d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsReviewGet._90d
+            "all" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsReviewGet.all
+            else -> error("Unsupported browsing review range")
+        }
+        val review = withContext(Dispatchers.IO) { api.apiV1StatsReviewGet(range = sdkRange) }
+        return media.qimeng.app.core.model.BrowsingReviewValues(
+            range = review.range.value, fromDay = review.fromDay, toDay = review.toDay,
+            previousFromDay = review.previousFromDay, previousToDay = review.previousToDay,
+            viewCount = review.viewCount, uniqueFiles = review.uniqueFiles, firstViews = review.firstViews,
+            repeatViews = review.repeatViews, activeDays = review.activeDays, previousViewCount = review.previousViewCount,
+            comparisonAvailable = review.comparisonAvailable,
+            interests = review.interests.map { media.qimeng.app.core.model.ReviewInterestValues(
+                it.kind.value, it.id, it.name, it.currentViews, it.previousViews, it.currentShare, it.previousShare, it.changePoints,
+            ) },
+            seconds = review.seconds, imageSeconds = review.imageSeconds, videoSeconds = review.videoSeconds, animatedSeconds = review.animatedSeconds,
+            hours = review.hours.map { media.qimeng.app.core.model.ReviewHourValues(it.hour, it.views, it.seconds, it.imageSeconds, it.videoSeconds, it.animatedSeconds) },
+        )
+    }
+
+    /** 独立混合发现；签名相对地址绑定本次API实例，避免切服后接错来源。 */
+    override suspend fun discoveries(seed: Long, limit: Int): List<media.qimeng.app.core.model.DiscoveryEntry> {
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
+        val items = withContext(Dispatchers.IO) { api.apiV1DiscoveriesGet(seed = seed, limit = limit) }
+        return items.map { item ->
+            media.qimeng.app.core.model.DiscoveryEntry(
+                assetId = item.asset.id?.toString().orEmpty(),
+                title = item.asset.cosWork ?: item.asset.fileName.orEmpty(),
+                thumbUrl = item.asset.thumbUrl?.let { SdkMappers.absolutize(it, api.baseUrl) },
+                reason = item.reason.value,
+            )
+        }
+    }
+
+    /** 周期排行按窗口热度排序；卡片计数字段仍为累计值。 */
     override suspend fun rankings(period: String, limit: Int): List<RankingEntry> {
         Log.d(SdkMediaRepository.LOG_TAG, "GET /rankings period=$period limit=$limit")
         val api = withContext(Dispatchers.IO) { apiFactory.create() }
