@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import type { BrowsingReview } from '../src/api/generated/index.js'
+import type { BrowsingReview } from '../src/api/generated/types.gen.js'
 import { createPreviewApi, reviewFixture } from '../../tools/ui-preview/api.mjs'
 import { coverSvg } from '../../tools/ui-preview/fixtures/catalog.mjs'
 
