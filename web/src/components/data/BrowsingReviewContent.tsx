@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { BrowsingReview } from '@/api/generated'
 import { LOCALE_ZH } from '@/lib/constants'
+import { ReviewInterestCard } from './ReviewInterestCard'
 
 export function ReviewMetrics({ review }: { review: BrowsingReview }) {
   const metrics: [string, number, string][] = [
@@ -18,7 +19,6 @@ function Duration({ seconds }: { seconds: number }) {
 /** 只呈现服务端口径；柱高仅作显示缩放。 */
 export function BrowsingReviewContent({ review }: { review: BrowsingReview }) {
   const [selectedHour, setSelectedHour] = useState<number | null>(null)
-  const [showInterestDetails, setShowInterestDetails] = useState(false)
   const peak = Math.max(1, ...review.hours.map(hour => hour.seconds))
   const categories = [
     { key: 'imageSeconds', label: '图片', tone: 'image' },
@@ -52,17 +52,16 @@ export function BrowsingReviewContent({ review }: { review: BrowsingReview }) {
       {review.range === 'all' ? <p className="workspace-empty-note">选择近7天、近30天或近90天，查看与前一时段的变化。</p>
         : !review.comparisonAvailable ? <p className="workspace-empty-note">前后两个时段都有浏览记录后，这里会显示兴趣变化。</p>
           : review.interests.length === 0 ? <p className="workspace-empty-note">与前一时段相比，兴趣份额没有变化。</p>
-            : <><div className="review-interest-guide"><span>浏览份额 · 越靠右越常看</span><span>○ 上期　● 本期</span></div>
-            <ul className="review-interests">{review.interests.map(item => <li key={`${item.kind}:${item.id}`}>
-              <div className="review-interest-name"><small>{item.kind === 'author' ? '作者' : '标签'}</small><strong>{item.name}</strong></div>
-              <span className={`review-interest-direction ${item.changePoints > 0 ? 'rising' : 'falling'}`}>{item.changePoints > 0 ? '↗ 更多关注' : '↙ 较少关注'}</span>
-              <div className="review-interest-track" role="img" aria-label={`浏览份额，上期 ${item.previousShare.toFixed(1)}%，本期 ${item.currentShare.toFixed(1)}%，${item.changePoints > 0 ? '上升' : '下降'} ${Math.abs(item.changePoints).toFixed(1)} 个百分点`}>
-                <span className="movement" style={{ left: `${Math.min(item.previousShare, item.currentShare)}%`, width: `${Math.abs(item.currentShare - item.previousShare)}%` }} />
-                <i className="previous" style={{ left: `${item.previousShare}%` }} />
-                <i className="current" style={{ left: `${item.currentShare}%` }} />
-              </div>
-              {showInterestDetails && <p className="review-interest-detail">上期 {item.previousShare.toFixed(1)}% · {item.previousViews} 次　→　本期 {item.currentShare.toFixed(1)}% · {item.currentViews} 次<span>{item.changePoints > 0 ? '上升' : '下降'} {Math.abs(item.changePoints).toFixed(1)} 个百分点</span></p>}
-            </li>)}</ul><button type="button" className="review-interest-toggle" aria-expanded={showInterestDetails} onClick={() => setShowInterestDetails(value => !value)}>{showInterestDetails ? '收起详细数据' : '查看详细数据'} <span aria-hidden="true">{showInterestDetails ? '−' : '+'}</span></button><p className="rank-note">同一刻度对比前一等长时段（0–100%）；作者与标签可多关联。</p></>}
+            : <><p className="review-interest-comparison">对比 {review.previousFromDay} — {review.previousToDay}</p>
+              <div className="review-interest-groups">{[true, false].map(rising => {
+                const items = review.interests.filter(item => (item.changePoints > 0) === rising)
+                return items.length > 0 && <section className="review-interest-group" key={String(rising)} aria-label={rising ? '更多关注' : '较少关注'}>
+                  <h4>{rising ? '更多关注' : '较少关注'}</h4>
+                  <ul className="review-interests">{items.map(item => <ReviewInterestCard key={`${review.range}:${item.kind}:${item.id}`} item={item} />)}</ul>
+                </section>
+              })}</div>
+              <p className="rank-note">点击卡片查看详情 · 比较前一等长时段的浏览份额；作者与标签可多关联。</p></>}
+
     </section>
   </div>
 }

@@ -2886,26 +2886,31 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .review-metrics dd small { color: var(--qm-text-muted); margin-left: 5px; font-size: 11px; font-weight: 400; }
 .review-window-totals { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-top: 20px; color: var(--qm-text-muted); font-size: 13px; }
 .review-window-totals strong { color: var(--qm-text); font-size: 20px; font-variant-numeric: tabular-nums; margin: 0 5px; }
-.review-interest-guide { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 20px; color: var(--qm-text-muted); font-size: 11px; }
-.review-interests { list-style: none; padding: 0 44px 0 0; margin: 4px 0 12px; }
-.review-interests li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 18px 0; border-bottom: 1px solid var(--qm-border); }
-.review-interests li:last-child { border-bottom: 0; }
-.review-interest-name { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.review-interest-comparison { margin: 16px 0 20px; color: var(--qm-text-muted); font-size: 12px; }
+.review-interest-groups { padding-right: 44px; }
+.review-interest-group + .review-interest-group { margin-top: 24px; }
+.review-interest-group h4 { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; color: var(--qm-text-muted); font-size: 12px; font-weight: 400; }
+.review-interest-group h4::after { content: ''; flex: 1; height: 1px; background: var(--qm-border); }
+.review-interests { display: grid; gap: 10px; list-style: none; padding: 0; margin: 0; }
+.review-interest-card { overflow: hidden; border: 1px solid var(--qm-border); border-radius: var(--qm-radius); background: var(--qm-surface-soft); }
+.review-interest-trigger { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 16px; padding: 18px 20px; border: 0; text-align: left; color: var(--qm-text); background: transparent; cursor: pointer; }
+.review-interest-trigger:hover { background: var(--qm-hover); }
+.review-interest-trigger:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: -3px; border-radius: var(--qm-radius); }
+.review-interest-copy { min-width: 0; }
+.review-interest-name { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.review-interest-name strong { font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
 .review-interest-name small { color: var(--qm-text-muted); font-size: 11px; flex-shrink: 0; }
-.review-interest-name strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
-.review-interest-direction { color: var(--qm-text-soft); font-size: 11px; white-space: nowrap; }
-.review-interest-direction.rising { color: var(--qm-primary); }
-.review-interest-track { grid-column: 1 / -1; position: relative; height: 22px; margin: 0 6px; }
-.review-interest-track::before { content: ''; position: absolute; inset: 9px 0; border-radius: 9px; background: var(--qm-hover-strong); }
-.review-interest-track .movement { position: absolute; top: 9px; height: 4px; border-radius: 9px; background: linear-gradient(90deg, var(--qm-chart-2), var(--qm-primary)); opacity: .7; }
-.review-interest-track i { position: absolute; top: 5px; width: 12px; height: 12px; border-radius: 50%; transform: translateX(-50%); box-sizing: border-box; }
-.review-interest-track .previous { border: 2px solid var(--qm-text-muted); background: var(--qm-surface-strong); }
-.review-interest-track .current { background: var(--qm-primary); border: 2px solid var(--qm-surface-strong); box-shadow: 0 0 0 1px var(--qm-primary); }
-.review-interest-detail { grid-column: 1 / -1; margin: 0; color: var(--qm-text-muted); font-size: 11px; line-height: 1.8; font-variant-numeric: tabular-nums; }
-.review-interest-detail span { display: block; }
-.review-interest-toggle { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--qm-text-soft); font-size: 12px; cursor: pointer; }
-.review-interest-toggle:hover { color: var(--qm-primary); }
-.review-interest-toggle:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 4px; border-radius: 4px; }
+.review-interest-caption { display: block; margin-top: 7px; color: var(--qm-text-muted); font-size: 12px; }
+.review-interest-action { color: var(--qm-text-muted); font-size: 11px; flex-shrink: 0; }
+.review-interest-trigger[aria-expanded="true"] .review-interest-action { color: var(--qm-text); }
+.review-interest-detail { margin: 0 20px; padding: 15px 0 16px; border-top: 1px solid var(--qm-border); }
+.review-interest-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 0; }
+.review-interest-values > div + div { border-left: 1px solid var(--qm-border); padding-left: 20px; }
+.review-interest-values dt { margin-bottom: 6px; color: var(--qm-text-muted); font-size: 11px; }
+.review-interest-values dd { margin: 0; font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.review-interest-values dd small { margin-left: 2px; font-size: 12px; font-weight: 400; }
+.review-interest-values dd span { display: block; margin-top: 5px; color: var(--qm-text-muted); font-size: 11px; font-weight: 400; }
+.review-interest-detail p { margin: 13px 0 0; color: var(--qm-text-muted); font-size: 11px; }
 .review-activity { background: var(--qm-surface-strong); }
 .review-activity-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 36px; }
 .review-activity-head h3 { font-size: 30px; font-weight: 400; margin: 0; letter-spacing: 1px; }
@@ -2940,7 +2945,8 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 @media (max-width: 680px) {
   .review-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-hours, .review-hour-labels { gap: 3px; }
-  .review-interests li { gap: 6px 8px; }
+  .review-interest-trigger { padding: 16px; }
+  .review-interest-detail { margin: 0 16px; }
   .review-interest-name { gap: 5px; }
   .review-activity-head { gap: 8px; }
   .review-activity-head h3 { font-size: 20px; white-space: nowrap; flex-shrink: 0; }

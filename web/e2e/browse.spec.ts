@@ -62,14 +62,24 @@ test('浏览回顾与榜单分开，进入报告保留窗口并呈现服务端�
   await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('2026-09-29')
   await expect(page.getByRole('button', { name: '21时，720秒，20次浏览', exact: true })).toBeVisible()
   const interest = page.getByRole('region', { name: '兴趣变化', exact: true })
-  await expect(interest).toContainText('更多关注')
-  await expect(interest.getByRole('img', { name: /上期 25.0%，本期 50.0%/ })).toBeVisible()
-  await expect(interest.locator('.review-interest-detail')).toHaveCount(0)
-  await interest.getByRole('button', { name: '查看详细数据' }).click()
-  await expect(interest).toContainText('上升 25.0 个百分点')
-  await expect(interest.getByRole('button', { name: '收起详细数据' })).toHaveAttribute('aria-expanded', 'true')
-  await interest.getByRole('button', { name: '收起详细数据' }).click()
-  await expect(interest.locator('.review-interest-detail')).toHaveCount(0)
+  const more = interest.getByRole('region', { name: '更多关注', exact: true })
+  const less = interest.getByRole('region', { name: '较少关注', exact: true })
+  await expect(more).toContainText('青禾')
+  await expect(less).toContainText('风景')
+  await expect(interest.getByRole('img')).toHaveCount(0)
+  await expect(interest.locator('svg')).toHaveCount(0)
+  await expect(interest.locator('.review-interest-detail:visible')).toHaveCount(0)
+  const qinghe = more.getByRole('button', { name: '青禾，查看详情', exact: true })
+  await qinghe.press('Enter')
+  await expect(more).toContainText('份额上升 25.0 个百分点')
+  await expect(more).toContainText('10 次浏览')
+  await expect(more.getByRole('button', { name: '青禾，收起详情', exact: true })).toHaveAttribute('aria-expanded', 'true')
+  await expect(less.locator('.review-interest-detail:visible')).toHaveCount(0)
+  await less.getByRole('button', { name: '风景，查看详情', exact: true }).click()
+  await expect(less).toContainText('份额下降 33.3 个百分点')
+  await more.getByRole('button', { name: '青禾，收起详情', exact: true }).click()
+  await expect(more.locator('.review-interest-detail:visible')).toHaveCount(0)
+  await expect(less.locator('.review-interest-detail:visible')).toHaveCount(1)
   await expect(page.locator('.review-activity-legend')).toContainText('图片')
   await expect(page.locator('.review-activity-total')).toContainText('5')
   const hourPicker = page.getByRole('button', { name: '0时，900秒，0次浏览', exact: true })
@@ -92,6 +102,20 @@ test('浏览回顾与榜单分开，进入报告保留窗口并呈现服务端�
   await page.getByRole('link', { name: '返回数据' }).click()
   await expect(page).toHaveURL(/\/app\/data\?range=all/)
 })
+
+for (const rising of [true, false]) {
+  test(`兴趣卡片只有${rising ? '增加' : '减少'}项时不显示空分组`, async ({ page }) => {
+    await setup(page)
+    const review = reviewFixture()
+    await page.route('**/api/v1/stats/review*', route => route.fulfill({ json: {
+      ...review, interests: review.interests.filter(item => (item.changePoints > 0) === rising),
+    } }))
+    await page.goto('/app/data/review')
+    const interest = page.getByRole('region', { name: '兴趣变化', exact: true })
+    await expect(interest.getByRole('region', { name: rising ? '更多关注' : '较少关注', exact: true })).toBeVisible()
+    await expect(interest.getByRole('region', { name: rising ? '较少关注' : '更多关注', exact: true })).toHaveCount(0)
+  })
+}
 
 test('浏览回顾请求失败明确重试，零记录不冒充比较结果', async ({ page }) => {
   await setup(page)
