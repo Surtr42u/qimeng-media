@@ -137,7 +137,7 @@
 
 ## 3. 当前维护结果与后续边界
 
-- **作者管理双端优化（2026-10-30，开发中）**：确认本地两个功能分支：desktop-browse-fixes 已由 PR #24 合并，review-interest-visual 的 PR #29 在当前 head 16 项检查成功后合并为 e5b8caa9。后续作者管理在 codex/author-management-ui 开发：同步改名/别名与来源编辑、COS 操作限制、失败/草稿保护，并完善设置状态与入口；验证结果另据当前 head 记录。未安装或启动两端，不改真实媒体或历史数据。
+- **作者管理双端优化（2026-10-30，PR #30）**：确认本地两个功能分支：desktop-browse-fixes 已由 PR #24 合并，review-interest-visual 的 PR #29 在当前 head 16 项检查成功后合并为 e5b8caa9。[PR #30](https://github.com/Surtr42u/qimeng-media/pull/30)同步改名/别名与来源编辑、COS 操作限制、失败/草稿保护，并完善设置状态与入口；源码 c4bf1ba3 的完整CI40910398593、安全40910398642及文档40910398615共16项通过（Web39个浏览器场景、Android构建/单测/Lint），最终Web桌面/窄屏/来源弹层合成截图已核对，自审无可确认发现。当前PR尚未合并，未另触发机器人审查；后补文档不重标源码验证来源。未安装或启动两端、未做Android实机视觉验收，不改真实媒体或历史数据。
 
 - **界面统一已合入并安装电脑（2026-10-27）**：[PR #16](https://github.com/Surtr42u/qimeng-media/pull/16)的紧凑维护、管理/上传内部重组、数据/我的及三栏对齐已进入主分支；[PR #17](https://github.com/Surtr42u/qimeng-media/pull/17)仅修正扫描测试时序及云端依赖准备。安装来源816e8eb1同SHA完整门禁/主分支PC包与后台现场核验见§2；既有接口/领域及真实数据保留，手机未操作，原生桌面/NAS/业务全回归边界不扩大。
 
