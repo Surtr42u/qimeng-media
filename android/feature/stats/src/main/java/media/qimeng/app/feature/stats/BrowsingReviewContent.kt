@@ -17,7 +17,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -28,6 +31,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -35,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 import media.qimeng.app.core.model.BrowsingReviewValues
+import media.qimeng.app.core.model.ReviewInterestValues
 import media.qimeng.app.core.ui.theme.QimengBrandColors
 import media.qimeng.app.core.ui.theme.softDaylightShadow
 import media.qimeng.app.core.ui.icon.ChevronRightIcon
@@ -83,22 +88,67 @@ internal fun BrowsingReviewContent(review: BrowsingReviewValues) {
                 else -> {
                     Text("对比 ${review.previousFromDay} — ${review.previousToDay}",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    review.interests.forEach { item ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(item.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                Text(if (item.kind == "author") "作者" else "标签", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    listOf(true, false).forEach { rising ->
+                        val items = review.interests.filter { (it.changePoints > 0) == rising }
+                        if (items.isNotEmpty()) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(if (rising) "更多关注" else "较少关注", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
                             }
-                            Text(String.format(Locale.CHINA, "%.1f%% → %.1f%%", item.previousShare, item.currentShare), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(String.format(Locale.CHINA, "%s %.1f", if (item.changePoints > 0) "↑" else "↓", kotlin.math.abs(item.changePoints)) + "\n百分点",
-                                style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            items.forEach { item ->
+                                key(review.range, item.kind, item.id) { ReviewInterestCard(item) }
+                            }
                         }
                     }
                 }
             }
-            Text("比较前一等长时段的浏览份额；作者与标签可多关联。",
+            Text("点击卡片查看详情 · 比较前一等长时段的浏览份额；作者与标签可多关联。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun ReviewInterestCard(item: ReviewInterestValues) {
+    var expanded by remember { mutableStateOf(false) }
+    val rising = item.changePoints > 0
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = if (expanded) "收起详情" else "查看详情") { expanded = !expanded }
+                .semantics { stateDescription = if (expanded) "已展开" else "已收起" }.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(item.name, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text(if (item.kind == "author") "作者" else "标签", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("在浏览中的份额" + if (rising) "增加" else "减少", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (expanded) "收起" else "详情", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (expanded) {
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                        ReviewInterestValue("上期份额", item.previousShare, item.previousViews, Modifier.weight(1f))
+                        ReviewInterestValue("本期份额", item.currentShare, item.currentViews, Modifier.weight(1f))
+                    }
+                    Text(String.format(Locale.CHINA, "份额%s %.1f 个百分点", if (rising) "上升" else "下降", kotlin.math.abs(item.changePoints)),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewInterestValue(label: String, share: Double, views: Long, modifier: Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(String.format(Locale.CHINA, "%.1f%%", share), style = MaterialTheme.typography.titleLarge)
+        Text("$views 次浏览", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
