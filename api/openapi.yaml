@@ -1588,8 +1588,12 @@ components:
 
     BrowsingReview:
       type: object
-      required: [range, fromDay, toDay, previousFromDay, previousToDay, viewCount, uniqueFiles, firstViews, repeatViews, activeDays, previousViewCount, comparisonAvailable, interests, hours]
+      required: [range, fromDay, toDay, previousFromDay, previousToDay, viewCount, uniqueFiles, firstViews, repeatViews, activeDays, previousViewCount, comparisonAvailable, interests, hours, seconds, imageSeconds, videoSeconds, animatedSeconds]
       properties:
+        seconds: { type: integer, format: int64, minimum: 0, description: 已记录dwell的整数秒总和 }
+        imageSeconds: { type: integer, format: int64, minimum: 0, description: 静图浏览秒数 }
+        videoSeconds: { type: integer, format: int64, minimum: 0, description: 视频详情停留秒数，非播放时长 }
+        animatedSeconds: { type: integer, format: int64, minimum: 0, description: 动图浏览秒数 }
         range: { type: string, enum: [7d, day, 90d, all] }
         fromDay: { type: string, description: 本期首日本地日期；all为空串 }
         toDay: { type: string, description: 本期末日本地日期（含） }
@@ -1618,8 +1622,12 @@ components:
         changePoints: { type: number, format: double, description: 本期份额减前期份额，单位百分点 }
     ReviewHour:
       type: object
-      required: [hour, views]
+      required: [hour, views, seconds, imageSeconds, videoSeconds, animatedSeconds]
       properties:
+        seconds: { type: integer, format: int64, minimum: 0, description: 已记录dwell的整数秒总和 }
+        imageSeconds: { type: integer, format: int64, minimum: 0, description: 静图浏览秒数 }
+        videoSeconds: { type: integer, format: int64, minimum: 0, description: 视频详情停留秒数，非播放时长 }
+        animatedSeconds: { type: integer, format: int64, minimum: 0, description: 动图浏览秒数 }
         hour: { type: integer, minimum: 0, maximum: 23 }
         views: { type: integer, format: int64, minimum: 0 }
 

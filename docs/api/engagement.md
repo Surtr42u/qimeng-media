@@ -122,3 +122,5 @@ seed>0 的同分打散按桶首最高分限制 0.05 跨度，避免相邻小分�
 ## 浏览回顾
 
 `GET /api/v1/stats/review?range=7d|day|90d|all`返回首次/再次浏览、不同内容数、活跃天数、前期比较与24小时活动分布。无可比记录时comparisonAvailable=false，不伪造涨幅；确切口径见[统计专题](../domain/statistics.md#浏览回顾独立于推荐和排行)。此接口只读，旧`/discoveries`保留供旧版已安装客户端兼容，新数据页停止使用。
+
+浏览回顾新增`seconds/imageSeconds/videoSeconds/animatedSeconds`，报告与每小时均返回，表示dwell整数秒及静图/视频/动图构成；按记录开始小时归桶，不拆分跨小时段。视频为详情停留，非播放时长。原open次数及兴趣份额口径不变。

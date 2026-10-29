@@ -54,8 +54,22 @@ LIMIT sqlc.arg(max_items);
 -- service host's local zone, matching the statistics local-calendar contract.
 -- name: ListReviewHours :many
 SELECT CAST(strftime('%H', v.started_at, 'localtime') AS INTEGER) AS hour,
-       COUNT(*) AS views
+       CAST(SUM(CASE WHEN v.kind = 'open' THEN 1 ELSE 0 END) AS INTEGER) AS views,
+       CAST(SUM(CASE WHEN v.kind = 'dwell' THEN v.seconds ELSE 0 END) AS INTEGER) AS seconds,
+       CAST(SUM(CASE WHEN v.kind = 'dwell' AND a.media_type = 'image' THEN v.seconds ELSE 0 END) AS INTEGER) AS image_seconds,
+       CAST(SUM(CASE WHEN v.kind = 'dwell' AND a.media_type = 'video' THEN v.seconds ELSE 0 END) AS INTEGER) AS video_seconds,
+       CAST(SUM(CASE WHEN v.kind = 'dwell' AND a.media_type = 'animated_image' THEN v.seconds ELSE 0 END) AS INTEGER) AS animated_seconds
 FROM view_events v JOIN assets a ON a.asset_id = v.asset_id
-WHERE v.kind = 'open' AND v.started_at >= sqlc.arg(from_stamp) AND v.started_at < sqlc.arg(to_stamp)
+WHERE v.kind IN ('open', 'dwell') AND v.started_at >= sqlc.arg(from_stamp) AND v.started_at < sqlc.arg(to_stamp)
   AND strftime('%H', v.started_at, 'localtime') IS NOT NULL
 GROUP BY hour ORDER BY hour;
+
+-- Dwell totals use the same daily materialization as the overview, including
+-- days with dwell but no new open. Video dwell is not playback duration.
+-- name: SummarizeReviewDuration :one
+SELECT CAST(COALESCE(SUM(d.browse_seconds), 0) AS INTEGER) AS seconds,
+       CAST(COALESCE(SUM(CASE WHEN a.media_type = 'image' THEN d.browse_seconds ELSE 0 END), 0) AS INTEGER) AS image_seconds,
+       CAST(COALESCE(SUM(CASE WHEN a.media_type = 'video' THEN d.browse_seconds ELSE 0 END), 0) AS INTEGER) AS video_seconds,
+       CAST(COALESCE(SUM(CASE WHEN a.media_type = 'animated_image' THEN d.browse_seconds ELSE 0 END), 0) AS INTEGER) AS animated_seconds
+FROM asset_daily_stats d JOIN assets a ON a.asset_id = d.asset_id
+WHERE d.day >= sqlc.arg(from_day) AND d.day <= sqlc.arg(to_day);
