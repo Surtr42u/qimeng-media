@@ -2886,7 +2886,7 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .review-metrics dd small { color: var(--qm-text-muted); margin-left: 5px; font-size: 11px; font-weight: 400; }
 .review-window-totals { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-top: 20px; color: var(--qm-text-muted); font-size: 13px; }
 .review-window-totals strong { color: var(--qm-text); font-size: 20px; font-variant-numeric: tabular-nums; margin: 0 5px; }
-.review-interests { list-style: none; padding: 0; margin: 12px 0; }
+.review-interests { list-style: none; padding: 0 44px 0 0; margin: 12px 0; }
 .review-interests li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--qm-border); }
 .review-interests li:last-child { border-bottom: 0; }
 .review-interest-name { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
@@ -2930,14 +2930,17 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 @media (max-width: 680px) {
   .review-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-hours, .review-hour-labels { gap: 3px; }
-  .review-interests li { gap: 8px; }
+  .review-interests li { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; }
+  .review-interest-shares { grid-column: 1 / -1; grid-row: 2; }
+  .review-change { grid-column: 2; grid-row: 1; }
   .review-change { min-width: auto; font-size: 12px; }
   .review-change small { display: block; margin-top: 2px; }
   .review-interest-name { gap: 5px; }
   .review-interest-shares { font-size: 11px; }
-  .review-activity-head h3 { font-size: 24px; }
-  .review-activity-total b { font-size: 34px; }
-  .review-activity-total small { font-size: 10px; }
+  .review-activity-head { gap: 8px; }
+  .review-activity-head h3 { font-size: 20px; white-space: nowrap; flex-shrink: 0; }
+  .review-activity-total b { font-size: 28px; }
+  .review-activity-total small { font-size: 9px; margin: 0 2px; }
 }
 .mine-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; padding: 24px; background: linear-gradient(115deg, var(--qm-primary-soft), transparent), var(--qm-surface); }
 .mine-hero-main { display: flex; align-items: center; gap: 16px; min-width: 0; }
