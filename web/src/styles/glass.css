@@ -2911,7 +2911,7 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .review-hour-labels { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 6px; margin: 8px 0 18px; text-align: center; color: var(--qm-text-muted); font-size: 11px; }
 .review-hour-detail { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; padding: 12px 16px; background: var(--qm-hover); border-radius: var(--qm-radius-sm); font-size: 13px; font-variant-numeric: tabular-nums; }
 .review-hour-detail span { color: var(--qm-primary); }
-.review-hour-picker { display: flex; align-items: center; gap: 16px; margin: 12px 0; color: var(--qm-text-muted); font-size: 12px; }
+.review-hour-picker { display: flex; align-items: center; gap: 16px; margin: 12px 0; padding-right: 48px; color: var(--qm-text-muted); font-size: 12px; }
 .review-hour-picker input { flex: 1; min-width: 0; height: 32px; accent-color: var(--qm-primary); }
 @media (max-width: 680px) {
   .review-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
