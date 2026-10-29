@@ -99,7 +99,7 @@ test('浏览回顾请求失败明确重试，零记录不冒充比较结果', as
   await page.getByRole('button', { name: '重新读取', exact: true }).click()
   await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('这个时段还没有浏览记录')
   await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('前后两个时段都有浏览记录后')
-  await expect(page.getByRole('list', { name: '24小时浏览次数', exact: true }).getByRole('listitem')).toHaveCount(24)
+  await expect(page.getByRole('group', { name: '24小时浏览次数', exact: true }).getByRole('button')).toHaveCount(24)
 })
 
 test('视频网页全屏保留退出入口，底边鼠标可唤出控制栏，Esc可退出', async ({ page }) => {
