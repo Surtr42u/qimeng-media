@@ -17,6 +17,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -55,6 +60,7 @@ internal fun BrowsingReviewEntry(onOpen: () -> Unit) {
 
 @Composable
 internal fun BrowsingReviewContent(review: BrowsingReviewValues) {
+    var showInterestDetails by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ReviewActivity(review)
         ReviewSection {
@@ -83,22 +89,57 @@ internal fun BrowsingReviewContent(review: BrowsingReviewValues) {
                 else -> {
                     Text("对比 ${review.previousFromDay} — ${review.previousToDay}",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("浏览份额 · 越靠右越常看\n○ 上期　● 本期", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     review.interests.forEach { item ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(item.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                Text(if (item.kind == "author") "作者" else "标签", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text(if (item.kind == "author") "作者" else "标签", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text(if (item.changePoints > 0) "↗ 更多关注" else "↙ 较少关注",
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text(String.format(Locale.CHINA, "%.1f%% → %.1f%%", item.previousShare, item.currentShare), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(String.format(Locale.CHINA, "%s %.1f", if (item.changePoints > 0) "↑" else "↓", kotlin.math.abs(item.changePoints)) + "\n百分点",
-                                style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            ReviewInterestTrack(item.previousShare, item.currentShare)
+                            if (showInterestDetails) Text(String.format(Locale.CHINA,
+                                "上期 %.1f%% · %d 次 → 本期 %.1f%% · %d 次\n%s %.1f 个百分点",
+                                item.previousShare, item.previousViews, item.currentShare, item.currentViews,
+                                if (item.changePoints > 0) "上升" else "下降", kotlin.math.abs(item.changePoints)),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                    }
+                    TextButton(onClick = { showInterestDetails = !showInterestDetails }) {
+                        Text(if (showInterestDetails) "收起详细数据 −" else "查看详细数据 +")
                     }
                 }
             }
-            Text("比较前一等长时段的浏览份额；作者与标签可多关联。",
+            Text("同一刻度对比前一等长时段（0–100%）；作者与标签可多关联。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+/** 固定0–100刻度，仅将服务端份额映射为位置。 */
+@Composable
+private fun ReviewInterestTrack(previous: Double, current: Double) {
+    val track = MaterialTheme.colorScheme.outlineVariant
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val ink = MaterialTheme.colorScheme.primary
+    val surface = MaterialTheme.colorScheme.surface
+    val description = String.format(Locale.CHINA, "浏览份额，上期 %.1f%%，本期 %.1f%%", previous, current)
+    Canvas(Modifier.fillMaxWidth().height(28.dp).clearAndSetSemantics { contentDescription = description }) {
+        val radius = 5.dp.toPx()
+        val start = radius + 1.dp.toPx()
+        val width = size.width - start * 2
+        val before = Offset(start + width * previous.toFloat() / 100, center.y)
+        val after = Offset(start + width * current.toFloat() / 100, center.y)
+        drawLine(track.copy(alpha = 0.5f), Offset(start, center.y), Offset(size.width - start, center.y), 3.dp.toPx(), StrokeCap.Round)
+        drawLine(ink.copy(alpha = 0.5f), before, after, 3.dp.toPx(), StrokeCap.Round)
+        drawCircle(surface, radius, before)
+        drawCircle(muted, radius, before, style = Stroke(1.5.dp.toPx()))
+        drawCircle(surface, radius + 1.dp.toPx(), after)
+        drawCircle(ink, radius, after)
     }
 }
 
