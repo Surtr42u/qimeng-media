@@ -173,6 +173,7 @@ class AuthorViewModel @Inject constructor(
     fun saveSources() {
         val editor = _uiState.value.sourcesEditor ?: return
         if (!editor.loaded || editor.saving) return
+        sourcesJob?.cancel()
         _uiState.value = _uiState.value.copy(sourcesEditor = editor.copy(saving = true, error = null))
         sourcesJob = viewModelScope.launch {
             try {

@@ -89,6 +89,8 @@ test('浏览回顾与榜单分开，进入报告保留窗口并呈现服务端�
   await page.setViewportSize(viewport)
   await expect(page.locator('.review-activity-legend')).toContainText('图片')
   await expect(page.locator('.review-activity-total')).toContainText('5')
+  // 键盘用例先将鼠标移出图表，避免焦点滚动后的 hover 改选小时。
+  await page.mouse.move(0, 0)
   const hourPicker = page.getByRole('button', { name: '0时，900秒，0次浏览', exact: true })
   await hourPicker.press('End')
   await page.getByRole('button', { name: '23时，1320秒，0次浏览', exact: true }).press('ArrowLeft')

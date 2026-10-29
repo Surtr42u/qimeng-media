@@ -55,6 +55,7 @@ test('作者来源读取失败不开放保存；来源草稿关闭先确认', as
   await page.getByRole('button', { name: '编辑资料', exact: true }).click()
   await page.getByRole('button', { name: '来源 / 出处', exact: true }).click()
   await expect(page.getByRole('button', { name: '保存来源', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重试', exact: true })).toBeVisible()
   state.failRead = false
   await page.getByRole('button', { name: '重试', exact: true }).click()
   await page.getByRole('button', { name: 'site-b', exact: true }).click()
