@@ -2908,7 +2908,7 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .review-activity-total { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 .review-activity-total strong { font-size: 34px; font-weight: 650; line-height: 1; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
 .review-activity-total span { color: var(--qm-text-muted); font-size: 12px; }
-.review-hour-chart { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 10px; margin-top: 26px; }
+.review-hour-chart { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 10px; margin-top: 26px; padding-right: 36px; }
 .review-hour-scale { height: 144px; margin-top: 28px; display: flex; flex-direction: column; justify-content: space-between; color: var(--qm-text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .review-hour-labels { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 5px; height: 28px; text-align: center; color: var(--qm-text-muted); font-size: 10px; }
 .review-hour-labels span { white-space: nowrap; overflow: visible; }
