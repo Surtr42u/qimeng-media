@@ -15,6 +15,7 @@ internal fun statsOverview(totals: StatsTotals = StatsTotals(11, 7, 300)) = Stat
 internal fun statsReview(range: String = "7d") = BrowsingReviewValues(
     range = range, fromDay = "2026-10-22", toDay = "2026-10-28", previousFromDay = "2026-10-15", previousToDay = "2026-10-21",
     viewCount = 6, uniqueFiles = 3, firstViews = 2, repeatViews = 4, activeDays = 3, previousViewCount = 4,
+    seconds = 0, imageSeconds = 0, videoSeconds = 0, animatedSeconds = 0,
     comparisonAvailable = true, interests = emptyList(), hours = (0..23).map { ReviewHourValues(it, if (it == 12) 6 else 0) },
 )
 

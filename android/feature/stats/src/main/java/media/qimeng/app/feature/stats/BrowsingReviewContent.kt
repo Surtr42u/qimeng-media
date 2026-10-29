@@ -56,6 +56,7 @@ internal fun BrowsingReviewEntry(onOpen: () -> Unit) {
 @Composable
 internal fun BrowsingReviewContent(review: BrowsingReviewValues) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ReviewActivity(review)
         ReviewSection {
             Text("探索与回访", style = MaterialTheme.typography.titleMedium)
             Text(if (review.range == "all") "全部已记录浏览" else "${review.fromDay} — ${review.toDay}",
@@ -83,92 +84,86 @@ internal fun BrowsingReviewContent(review: BrowsingReviewValues) {
                     Text("对比 ${review.previousFromDay} — ${review.previousToDay}",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     review.interests.forEach { item ->
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("${if (item.kind == "author") "作者" else "标签"} · ${item.name}", style = MaterialTheme.typography.titleSmall)
-                            Text(String.format(Locale.CHINA, "%s %.1f 个百分点", if (item.changePoints > 0) "↗ 份额上升" else "↘ 份额下降", kotlin.math.abs(item.changePoints)),
-                                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                            ReviewShareRow("上期", item.previousViews, item.previousShare, previous = true)
-                            ReviewShareRow("本期", item.currentViews, item.currentShare, previous = false)
-                        }
-                    }
-                }
-            }
-            Text("份额按关联浏览占本期全部浏览计算，同一内容可关联多个作者或标签。",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        ReviewSection {
-            var selectedHour by remember { mutableStateOf<Int?>(null) }
-            val peak = (review.hours.maxOfOrNull { it.views } ?: 0L).coerceAtLeast(1L)
-            val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-            val activityColor = QimengBrandColors.ActivityBlue
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("活跃时段", style = MaterialTheme.typography.titleMedium)
-                    Text("24小时浏览分布", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(formatCountCompact(review.viewCount), fontSize = 32.sp, style = MaterialTheme.typography.headlineMedium)
-                    Text("次浏览", Modifier.padding(bottom = 3.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        review.hours.forEach { hour ->
-                            Text(if (hour.hour in listOf(0, 6, 12, 18)) String.format(Locale.CHINA, "%02d", hour.hour) else "", Modifier.weight(1f),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, maxLines = 1)
-                        }
-                    }
-                    Row(Modifier.fillMaxWidth().height(136.dp).drawBehind {
-                        for (line in 0..3) {
-                            val y = size.height * line / 3f
-                            drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
-                        }
-                    }, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        review.hours.forEach { hour ->
-                            Box(Modifier.weight(1f).fillMaxHeight()
-                                .background(if (hour.hour == selectedHour) activityColor.copy(alpha = 0.09f) else androidx.compose.ui.graphics.Color.Transparent)
-                                .clickable(role = Role.Button) { selectedHour = hour.hour }
-                                .semantics { contentDescription = "${hour.hour}时，${hour.views}次"; selected = hour.hour == selectedHour }, contentAlignment = Alignment.BottomCenter) {
-                                Box(Modifier.fillMaxWidth().height((hour.views.toFloat() / peak * 136).dp)
-                                    .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)).background(activityColor))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Text(if (item.kind == "author") "作者" else "标签", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            Text(String.format(Locale.CHINA, "%.1f%% → %.1f%%", item.previousShare, item.currentShare), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(String.format(Locale.CHINA, "%s %.1f", if (item.changePoints > 0) "↑" else "↓", kotlin.math.abs(item.changePoints)) + "\n百分点",
+                                style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
                         }
                     }
                 }
-                Column(Modifier.padding(top = 24.dp).height(136.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatCountCompact(peak), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
-                    Text("0", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
-                }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(activityColor))
-                    Text("浏览次数", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text(selectedHour?.let { String.format(Locale.CHINA, "%02d:00–%02d:00 · %d 次", it, it + 1, review.hours[it].views) } ?: "点击柱形查看详情",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text("按服务端本地时间 · 导入历史按保存的记录时间统计", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("比较前一等长时段的浏览份额；作者与标签可多关联。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun ReviewShareRow(label: String, views: Long, share: Double, previous: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("$label · $views 次浏览", style = MaterialTheme.typography.bodySmall)
-            Text(String.format(Locale.CHINA, "%.1f%%", share), style = MaterialTheme.typography.labelMedium)
+private fun ReviewActivity(review: BrowsingReviewValues) {
+    ReviewSection {
+        var selectedHour by remember { mutableStateOf<Int?>(null) }
+        val peak = (review.hours.maxOfOrNull { it.seconds } ?: 0L).coerceAtLeast(1L)
+        val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+        val colors = listOf(QimengBrandColors.ActivityBlue, QimengBrandColors.ActivityVideo, QimengBrandColors.ActivityAnimated)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(when (review.range) { "all" -> "全部"; "day" -> "近30天"; "90d" -> "近90天"; else -> "近7天" }, fontSize = 24.sp)
+            ReviewDurationText(review.seconds, large = true)
         }
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(4.dp), modifier = Modifier.fillMaxWidth().height(8.dp)) {
-            Box {
-                Surface(color = if (previous) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.fillMaxWidth((share / 100).toFloat()).height(8.dp), shape = RoundedCornerShape(4.dp)) {}
+        Column(Modifier.padding(top = 16.dp)) {
+            Row(Modifier.fillMaxWidth().height(28.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                review.hours.forEach { hour ->
+                    Text(if (hour.hour in listOf(0, 6, 12, 18)) String.format(Locale.CHINA, "%02d", hour.hour) else "", Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, maxLines = 1)
+                }
+            }
+            Row(Modifier.fillMaxWidth().height(136.dp).drawBehind {
+                for (line in 0..2) { val y = size.height * line / 2f; drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx()) }
+                for (line in 0..3) { val x = size.width * line / 4f; drawLine(gridColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx()) }
+            }, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                review.hours.forEach { hour ->
+                    Box(Modifier.weight(1f).fillMaxHeight()
+                        .background(if (hour.hour == selectedHour) colors[0].copy(alpha = 0.09f) else androidx.compose.ui.graphics.Color.Transparent)
+                        .clickable(role = Role.Button) { selectedHour = hour.hour }
+                        .semantics { contentDescription = "${hour.hour}时，${hour.seconds}秒，${hour.views}次浏览"; selected = hour.hour == selectedHour }, contentAlignment = Alignment.BottomCenter) {
+                        Column(Modifier.fillMaxWidth().height((hour.seconds.toFloat() / peak * 136).dp).clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))) {
+                            listOf(hour.imageSeconds, hour.videoSeconds, hour.animatedSeconds).forEachIndexed { index, seconds ->
+                                Box(Modifier.fillMaxWidth().height((seconds.toFloat() / peak * 136).dp).background(colors[index]))
+                            }
+                        }
+                    }
+                }
             }
         }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf("图片" to review.imageSeconds, "视频" to review.videoSeconds, "动图" to review.animatedSeconds).forEachIndexed { index, (name, seconds) ->
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(colors[index]))
+                        Text(name, fontSize = 16.sp, color = colors[index])
+                    }
+                    Text(formatDurationDetail(seconds), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Text(selectedHour?.let { String.format(Locale.CHINA, "%02d:00–%02d:00 · %s · %d 次浏览", it, it + 1, formatDurationDetail(review.hours[it].seconds), review.hours[it].views) } ?: "点击柱形查看小时详情",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("按服务端本地时间 · 统计详情停留，视频不等同播放时长", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ReviewDurationText(seconds: Long, large: Boolean) {
+    val hours = seconds / 3600
+    val minutes = seconds % 3600 / 60
+    Row(verticalAlignment = Alignment.Bottom) {
+        if (hours > 0) { Text(hours.toString(), fontSize = if (large) 32.sp else 12.sp); Text("小时", Modifier.padding(bottom = 4.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Text((if (seconds >= 60) minutes else seconds).toString(), fontSize = if (large) 32.sp else 12.sp)
+        Text(if (seconds >= 60) "分钟" else "秒", Modifier.padding(bottom = 4.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

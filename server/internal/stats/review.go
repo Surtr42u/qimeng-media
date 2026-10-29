@@ -1,7 +1,13 @@
 package stats
 
-// ReviewCounts is the bounded aggregate input; only open events contribute.
+// ReviewDuration contains recorded dwell seconds, partitioned by media type.
+type ReviewDuration struct {
+	Seconds, ImageSeconds, VideoSeconds, AnimatedSeconds int64
+}
+
+// ReviewCounts is the bounded aggregate input; count fields use open events.
 type ReviewCounts struct {
+	ReviewDuration
 	Views, Files, FirstViews, ActiveDays, PreviousViews int64
 }
 
@@ -16,6 +22,7 @@ type InterestChange struct {
 }
 
 type HourCount struct {
+	ReviewDuration
 	Hour  int
 	Views int64
 }
@@ -38,7 +45,7 @@ func BuildReview(counts ReviewCounts, interests []InterestCounts, hours []HourCo
 		out.Hours[hour].Hour = hour
 	}
 	for _, hour := range hours {
-		out.Hours[hour.Hour].Views = hour.Views
+		out.Hours[hour.Hour] = hour
 	}
 	if out.ComparisonAvailable {
 		for _, item := range interests {

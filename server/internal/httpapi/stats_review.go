@@ -33,9 +33,9 @@ func (s *Server) GetApiV1StatsReview(w http.ResponseWriter, r *http.Request, par
 	}
 	hours := make([]gen.ReviewHour, len(data.Hours))
 	for i, hour := range data.Hours {
-		hours[i] = gen.ReviewHour{Hour: hour.Hour, Views: hour.Views}
+		hours[i] = gen.ReviewHour{Hour: hour.Hour, Views: hour.Views, Seconds: hour.Seconds, ImageSeconds: hour.ImageSeconds, VideoSeconds: hour.VideoSeconds, AnimatedSeconds: hour.AnimatedSeconds}
 	}
-	writeJSON(w, http.StatusOK, gen.BrowsingReview{Range: gen.BrowsingReviewRange(rng), FromDay: result.FromDay, ToDay: result.ToDay,
+	writeJSON(w, http.StatusOK, gen.BrowsingReview{Seconds: data.Seconds, ImageSeconds: data.ImageSeconds, VideoSeconds: data.VideoSeconds, AnimatedSeconds: data.AnimatedSeconds, Range: gen.BrowsingReviewRange(rng), FromDay: result.FromDay, ToDay: result.ToDay,
 		PreviousFromDay: result.PreviousFromDay, PreviousToDay: result.PreviousToDay, ViewCount: data.Views,
 		UniqueFiles: data.Files, FirstViews: data.FirstViews, RepeatViews: data.RepeatViews, ActiveDays: data.ActiveDays,
 		PreviousViewCount: data.PreviousViews, ComparisonAvailable: data.ComparisonAvailable, Interests: interests, Hours: hours})

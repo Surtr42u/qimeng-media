@@ -27,7 +27,7 @@ bcdf67ffe8f72dfb9aa5110cca1fa6235c4ccc4d716eddb0b517d1912815421c  android/sdk/do
 9ad6e74907e886d68eb5dc52a5234b6e09579b284e59f8a3167326ad027c6132  android/sdk/docs/BackupInfo.md
 771f166b34a48aa14a9abdac3c7ef1524802225b133393ba457aef0ed6203886  android/sdk/docs/BackupList.md
 43df6095fc8130242ef2b82507b46e327f22cdbc15726fb49af41c570d44885f  android/sdk/docs/BackupSchedule.md
-ea59c909e72df821ee6854072b11aef3915b9807791b61720277d0eb8a649f8b  android/sdk/docs/BrowsingReview.md
+64a473cde120b23134ef19cc7101b47bc9e6dab2765056afbf019db8ce786ca0  android/sdk/docs/BrowsingReview.md
 daf0567c855e7148e7f1e3fbabe2b098cbdcce6cacbf0b7278aae3ac91105702  android/sdk/docs/ClientConfig.md
 d4b9630edbf8b0245696590c3f9382ace9d730663b0716983a5d06e9171bde6e  android/sdk/docs/ClientConfigScan.md
 12695c840c69b6ab163e5d97ed1f50fcfaab74b8c4cafb7323611c1e6dbfbf6d  android/sdk/docs/ClientConfigUpload.md
@@ -85,7 +85,7 @@ ba96a7ade40badb7e900c2b94d96861302308ec84c3fb6104e8f23c27894f36a  android/sdk/do
 91aaf4c54d6d9778e21f11b042fa74d56b3b29c19c030fb7c9a8d751a22d7299  android/sdk/docs/PortableViewEvent.md
 0cd7fdeee744dc24ca7032358587ccb69d3168cd4c045e5b9237fc4f846c7369  android/sdk/docs/ProgressUpdate.md
 2fbdde2ebf3a6d97bf99fd378a0d8a193e8346096da421f424fef7e076ed1d73  android/sdk/docs/RecommendPrefs.md
-da772941b5a1f2734d82b2e19c85be70582cc12215b051d169424c3274d0a8f4  android/sdk/docs/ReviewHour.md
+f097f4bc082fcc4d9a4e9f48db634ad7f9285752d4bc368a9f6ba538cb3ee1ab  android/sdk/docs/ReviewHour.md
 788eb791e4ebe0bbfffb363e64ecb458b797d7e9219b84e45a5b6bb1b783449f  android/sdk/docs/ReviewInterest.md
 8677ec689a44011e27a43347e3ed9d6e7a10025b040da0ef006fa568aa07a22d  android/sdk/docs/ScanProgressEvent.md
 fdcb409c93cda30fcf7a6dd611396ba178760fd9e0668a75de6bcaabcf7b7e61  android/sdk/docs/SearchSuggestion.md
@@ -164,7 +164,7 @@ fb12197173a83e8259541e3725c2065310f7eec11afce41619d3c9ee13767568  android/sdk/sr
 3043259a6e33d5eb14141aaad6378bc84c9cc7ad9b5781b2f8d4d0c0f4a78453  android/sdk/src/main/kotlin/media/qimeng/sdk/models/BackupInfo.kt
 f966184ee02cfa9667b301790dc89e37c7b2d0666be44c2e8ae70f0ee9b2a533  android/sdk/src/main/kotlin/media/qimeng/sdk/models/BackupList.kt
 aa6a73d75c22b39e5103179a67a38dee13f40ebc8442b0f1e8f8c8839e84049e  android/sdk/src/main/kotlin/media/qimeng/sdk/models/BackupSchedule.kt
-4a51ca7d4bf947e692b00e308af0410b0824545a217a7504649a72409f067b17  android/sdk/src/main/kotlin/media/qimeng/sdk/models/BrowsingReview.kt
+1c8deb8068713951d9ea9ccc47b689c48c5129c5e177e2e7e920f80d096cc4d0  android/sdk/src/main/kotlin/media/qimeng/sdk/models/BrowsingReview.kt
 2c90d88f47c2faaab9fe1e6f633ef9ec7de5c37b5f85e2d5dce9bdad6f635ab4  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ClientConfig.kt
 344ea4a16d8c86aa7c2420e4f4c1d7ca2cf2cac0c4f3f3b4531bfd44cafc8d70  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ClientConfigScan.kt
 f74d0aae8896230c369afaf1aec4fa55744f5f3029bd61f6549a3a34d2bfbd66  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ClientConfigUpload.kt
@@ -221,7 +221,7 @@ ac16322ce4891f8f442e17e8cf1629211b039c24fd044877b7fd15c5256737cd  android/sdk/sr
 6e2e6730289df663b485dba6d9dd920216bb82257620dc0ce052cc5c67ec4e5a  android/sdk/src/main/kotlin/media/qimeng/sdk/models/PortableViewEvent.kt
 79a2f4e41025ee372c4ca933f5ce3e2b23103218bd9df9b07354a95c278f448f  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ProgressUpdate.kt
 6bc71a8f7fe86067e890bbf96a45952aa872589fe5c33f6fd16d6ddebf12adac  android/sdk/src/main/kotlin/media/qimeng/sdk/models/RecommendPrefs.kt
-fe3ef8a39db1287aad9206723bee70eea6fb14eec4b0e7bed0650f1a1ba7a83c  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ReviewHour.kt
+33a7b6ae0af8465ee21b1820c5415704c995304b0b9eaba67392f16b60d9dc71  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ReviewHour.kt
 a38578e8ee1a5154f72a34b7bad300c7f35c506e0335e1b7704d684cfbd50ef0  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ReviewInterest.kt
 87ba6ba5b2fbc92aa98c3d7fd5a445846a6c0298c42ffd8b49f4766ef2127e17  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ScanProgressEvent.kt
 82b48ddf675802cb9824a828e5a871a5c66195b609ade65008ef5f032949cba9  android/sdk/src/main/kotlin/media/qimeng/sdk/models/SearchSuggestion.kt
@@ -250,7 +250,7 @@ d72caf8c201b50a292fef05a2751c2f4cdd493b80b89d9fcc63f80dcd8c4cc93  android/sdk/sr
 3267541c502ac93fc4acd7b7b20889807d3851ff4d1085a4dda783bef3777af9  android/sdk/src/main/kotlin/media/qimeng/sdk/models/UploadDoneEvent.kt
 39bab73102d66dd5a725589df8657636c49d244ca55a9dd1e2adb15d4a27f455  android/sdk/src/main/kotlin/media/qimeng/sdk/models/UploadSession.kt
 0141334124c6a34a98d54f0ab04c73f5c6b93d2dc73167e694f7a029d2d2776a  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ViewEventReport.kt
-b1c7cb462ba375c539c472f2afc83f207f8045e8d23d0e3e9261c1a84792969f  server/internal/httpapi/gen/types.gen.go
+6117ed78691df51d0058366dbc6585c8df7cdb9294168b1587b8e0c0666d1a41  server/internal/httpapi/gen/types.gen.go
 b325822184abc7aed91c42bb1ea0697bb8ae178833c3fca97f6ec498398c1377  web/src/api/generated/client.gen.ts
 8a17b0bf1540258734a128f176f6cb915c849b97d8064a613dba5ef8390e58d9  web/src/api/generated/client/client.gen.ts
 949cc7333527c91928c32410c4a4a2dd2b90b99fe080eb8ce4505647852fbe1b  web/src/api/generated/client/index.ts
@@ -266,4 +266,4 @@ df993567abbe3e5b477d81517fb967cf63cf40b7866957d5dc6cc03238cb1426  web/src/api/ge
 1b637c521d8136dfdbf8dfc4fcc8bb73e0c554466e4d2ca9c9086d4c712983c4  web/src/api/generated/core/utils.gen.ts
 beb88540407402ecddbf4d1d6a3234cc1733ff2ed2e7be624c823db644622397  web/src/api/generated/index.ts
 4ed61b65844892967a5344cccbecaead6f1255b0a3c264e26c780bf5c0303f37  web/src/api/generated/sdk.gen.ts
-ada121b9e51837d76aa6e0be6d79f52229d719361cc3aac0371e013c97d8b00c  web/src/api/generated/types.gen.ts
+9ff87ae6819fe654bd81d1fd95cecb41514f8abe567a93ccff425b5e583dd9fe  web/src/api/generated/types.gen.ts

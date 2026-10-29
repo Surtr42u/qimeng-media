@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Color
 object QimengBrandColors {
     /** 浏览回顾小时分布专用蓝色，双端同色；不改变全局中性主题。 */
     val ActivityBlue: Color = Color(0xFF53A4E8)
+    val ActivityVideo: Color = Color(0xFFF5C95C)
+    val ActivityAnimated: Color = Color(0xFF68CD9E)
 
     // ---------- 页面背景 / 表面（colors.xml「中性极简：微灰白背景 + 纯白卡片」组） ----------
 

@@ -16,6 +16,7 @@ data class BrowsingReviewValues(
     val comparisonAvailable: Boolean,
     val interests: List<ReviewInterestValues>,
     val hours: List<ReviewHourValues>,
+    val seconds: Long, val imageSeconds: Long, val videoSeconds: Long, val animatedSeconds: Long,
 )
 
 data class ReviewInterestValues(
@@ -24,4 +25,4 @@ data class ReviewInterestValues(
     val currentShare: Double, val previousShare: Double, val changePoints: Double,
 )
 
-data class ReviewHourValues(val hour: Int, val views: Long)
+data class ReviewHourValues(val hour: Int, val views: Long, val seconds: Long = 0, val imageSeconds: Long = 0, val videoSeconds: Long = 0, val animatedSeconds: Long = 0)

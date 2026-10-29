@@ -11,10 +11,10 @@ import org.junit.Test
 
 class SdkStatsRepositoryTest {
     @Test fun `浏览回顾通过真实SDK保留服务端窗口与份额变化`() = runTest {
-        val hours = (0..23).joinToString(",") { """{"hour":$it,"views":${if (it == 12) 6 else 0}}""" }
+        val hours = (0..23).joinToString(",") { """{"hour":$it,"seconds":120,"imageSeconds":60,"videoSeconds":30,"animatedSeconds":30,"views":${if (it == 12) 6 else 0}}""" }
         val body = """{"range":"day","fromDay":"2026-09-29","toDay":"2026-10-28",
           "previousFromDay":"2026-08-30","previousToDay":"2026-09-28","viewCount":6,"uniqueFiles":3,
-          "firstViews":2,"repeatViews":4,"activeDays":3,"previousViewCount":4,"comparisonAvailable":true,
+          "seconds":2880,"imageSeconds":1440,"videoSeconds":720,"animatedSeconds":720,"firstViews":2,"repeatViews":4,"activeDays":3,"previousViewCount":4,"comparisonAvailable":true,
           "interests":[{"kind":"author","id":"synthetic","name":"甲","currentViews":3,"previousViews":4,"currentShare":50,"previousShare":100,"changePoints":-50}],"hours":[$hours]}"""
         val value = repository(body) { assertTrue(it.contains("/stats/review?range=day")) }.browsingReview("day")
         assertEquals("2026-08-30", value.previousFromDay)
@@ -23,6 +23,8 @@ class SdkStatsRepositoryTest {
         assertEquals(-50.0, value.interests.single().changePoints, 0.0)
         assertEquals(24, value.hours.size)
         assertEquals(6L, value.hours[12].views)
+        assertEquals(2880L, value.seconds)
+        assertEquals(30L, value.hours[12].animatedSeconds)
     }
 
     @Test fun `发现SDK保留理由并以请求来源补全签名缩略图地址`() = runTest {

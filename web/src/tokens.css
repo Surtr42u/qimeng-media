@@ -94,6 +94,8 @@
   --qm-err-text: oklch(0.5 0.18 25);
 
   /* 图表五色（主色 + 极光三辅色 + 警示红；甜甜圈 arc-1..4 / recharts 曲线共用） */
+  --qm-activity-video: #f5c95c;
+  --qm-activity-animated: #68cd9e;
   --qm-activity: #53a4e8; /* 浏览回顾小时柱图，双端共用蓝色 */
   --qm-chart-1: var(--qm-primary);
   --qm-chart-2: oklch(0.62 0.12 220);

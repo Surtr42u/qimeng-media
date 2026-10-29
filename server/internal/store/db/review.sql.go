@@ -11,9 +11,13 @@ import (
 
 const listReviewHours = `-- name: ListReviewHours :many
 SELECT CAST(strftime('%H', v.started_at, 'localtime') AS INTEGER) AS hour,
-       COUNT(*) AS views
+       CAST(SUM(CASE WHEN v.kind = 'open' THEN 1 ELSE 0 END) AS INTEGER) AS views,
+       CAST(SUM(CASE WHEN v.kind = 'dwell' THEN v.seconds ELSE 0 END) AS INTEGER) AS seconds,
+       CAST(SUM(CASE WHEN v.kind = 'dwell' AND a.media_type = 'image' THEN v.seconds ELSE 0 END) AS INTEGER) AS image_seconds,
+       CAST(SUM(CASE WHEN v.kind = 'dwell' AND a.media_type = 'video' THEN v.seconds ELSE 0 END) AS INTEGER) AS video_seconds,
+       CAST(SUM(CASE WHEN v.kind = 'dwell' AND a.media_type = 'animated_image' THEN v.seconds ELSE 0 END) AS INTEGER) AS animated_seconds
 FROM view_events v JOIN assets a ON a.asset_id = v.asset_id
-WHERE v.kind = 'open' AND v.started_at >= ?1 AND v.started_at < ?2
+WHERE v.kind IN ('open', 'dwell') AND v.started_at >= ?1 AND v.started_at < ?2
   AND strftime('%H', v.started_at, 'localtime') IS NOT NULL
 GROUP BY hour ORDER BY hour
 `
@@ -24,8 +28,12 @@ type ListReviewHoursParams struct {
 }
 
 type ListReviewHoursRow struct {
-	Hour  int64
-	Views int64
+	Hour            int64
+	Views           int64
+	Seconds         int64
+	ImageSeconds    int64
+	VideoSeconds    int64
+	AnimatedSeconds int64
 }
 
 // Persisted timestamps are canonical UTC. SQLite localtime applies the
@@ -39,7 +47,14 @@ func (q *Queries) ListReviewHours(ctx context.Context, arg ListReviewHoursParams
 	var items []ListReviewHoursRow
 	for rows.Next() {
 		var i ListReviewHoursRow
-		if err := rows.Scan(&i.Hour, &i.Views); err != nil {
+		if err := rows.Scan(
+			&i.Hour,
+			&i.Views,
+			&i.Seconds,
+			&i.ImageSeconds,
+			&i.VideoSeconds,
+			&i.AnimatedSeconds,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -179,6 +194,41 @@ func (q *Queries) SummarizeBrowsingReview(ctx context.Context, arg SummarizeBrow
 		&i.FirstViews,
 		&i.ActiveDays,
 		&i.PreviousViewCount,
+	)
+	return i, err
+}
+
+const summarizeReviewDuration = `-- name: SummarizeReviewDuration :one
+SELECT CAST(COALESCE(SUM(d.browse_seconds), 0) AS INTEGER) AS seconds,
+       CAST(COALESCE(SUM(CASE WHEN a.media_type = 'image' THEN d.browse_seconds ELSE 0 END), 0) AS INTEGER) AS image_seconds,
+       CAST(COALESCE(SUM(CASE WHEN a.media_type = 'video' THEN d.browse_seconds ELSE 0 END), 0) AS INTEGER) AS video_seconds,
+       CAST(COALESCE(SUM(CASE WHEN a.media_type = 'animated_image' THEN d.browse_seconds ELSE 0 END), 0) AS INTEGER) AS animated_seconds
+FROM asset_daily_stats d JOIN assets a ON a.asset_id = d.asset_id
+WHERE d.day >= ?1 AND d.day <= ?2
+`
+
+type SummarizeReviewDurationParams struct {
+	FromDay string
+	ToDay   string
+}
+
+type SummarizeReviewDurationRow struct {
+	Seconds         int64
+	ImageSeconds    int64
+	VideoSeconds    int64
+	AnimatedSeconds int64
+}
+
+// Dwell totals use the same daily materialization as the overview, including
+// days with dwell but no new open. Video dwell is not playback duration.
+func (q *Queries) SummarizeReviewDuration(ctx context.Context, arg SummarizeReviewDurationParams) (SummarizeReviewDurationRow, error) {
+	row := q.db.QueryRowContext(ctx, summarizeReviewDuration, arg.FromDay, arg.ToDay)
+	var i SummarizeReviewDurationRow
+	err := row.Scan(
+		&i.Seconds,
+		&i.ImageSeconds,
+		&i.VideoSeconds,
+		&i.AnimatedSeconds,
 	)
 	return i, err
 }

@@ -22,7 +22,7 @@ func TestBrowsingReviewContract(t *testing.T) {
 		if err := response.Body.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if len(result.Hours) != 24 || result.FirstViews+result.RepeatViews != result.ViewCount || result.Interests == nil {
+		if len(result.Hours) != 24 || result.FirstViews+result.RepeatViews != result.ViewCount || result.Interests == nil || result.Seconds != result.ImageSeconds+result.VideoSeconds+result.AnimatedSeconds {
 			t.Fatal(result)
 		}
 	}

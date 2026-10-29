@@ -59,6 +59,18 @@ func TestReviewWindowsPartitionsAndReadOnly(t *testing.T) {
 			}
 		}
 	}
+	// Duration includes dwell-only days and excludes play/orphan events.
+	for _, statement := range []string{
+		`UPDATE asset_daily_stats SET browse_seconds=120 WHERE asset_id='new' AND day='2026-10-23'`,
+		`UPDATE asset_daily_stats SET browse_seconds=60 WHERE asset_id='off' AND day='2026-10-24'`,
+		`INSERT INTO assets(asset_id,library_id,rel_path,file_name,media_type,size_bytes,mtime,created_at,updated_at) VALUES('gif','on','a.gif','a.gif','animated_image',1,'2026-01-01','2026-01-01','2026-01-01')`,
+		`INSERT INTO asset_daily_stats(asset_id,day,view_count,play_count,browse_seconds) VALUES('gif','2026-10-25',0,0,30)`,
+		`INSERT INTO view_events(asset_id,kind,session_id,started_at,seconds) VALUES('new','dwell','d1','2026-10-23T12:00:00.000Z',120),('off','dwell','d2','2026-10-24T21:00:00.000Z',60),('gif','dwell','d3','2026-10-25T21:00:00.000Z',30),('off','play','p1','2026-10-24T21:00:00.000Z',999),('deleted','dwell','orphan-d','2026-10-24T21:00:00.000Z',999)`,
+	} {
+		if _, err := conn.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// Orphan history is retained in the event stream but excluded from this report.
 	if _, err := conn.Exec(`INSERT INTO view_events(asset_id,kind,session_id,started_at) VALUES('deleted','open','orphan','2026-10-24T12:00:00.000Z'); PRAGMA query_only=ON`); err != nil {
 		t.Fatal(err)
@@ -77,6 +89,9 @@ func TestReviewWindowsPartitionsAndReadOnly(t *testing.T) {
 		t.Fatal(d)
 	}
 	if len(d.Interests) != 3 || d.Interests[0].ID != "old-author" || d.Interests[0].ChangePoints != -50 || d.Hours[12].Views != 6 {
+		t.Fatal(d)
+	}
+	if d.Seconds != 210 || d.ImageSeconds != 120 || d.VideoSeconds != 60 || d.AnimatedSeconds != 30 || d.Hours[21].Seconds != 90 || d.Hours[12].ImageSeconds != 120 {
 		t.Fatal(d)
 	}
 	all, err := LoadReview(context.Background(), q, stats.RangeAll, now)

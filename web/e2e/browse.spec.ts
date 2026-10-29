@@ -60,17 +60,19 @@ test('浏览回顾与榜单分开，进入报告保留窗口并呈现服务端�
   await panel.getByRole('link', { name: '查看回顾' }).click()
   await expect(page).toHaveURL(/\/app\/data\/review\?range=day/)
   await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('2026-09-29')
-  await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('份额上升')
-  await expect(page.getByRole('button', { name: '21时，20次', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('↑ 25.0')
+  await expect(page.getByRole('button', { name: '21时，720秒，20次浏览', exact: true })).toBeVisible()
   const interest = page.getByRole('region', { name: '兴趣变化', exact: true })
-  await expect(interest).toContainText('21 次浏览')
-  await expect(interest).toContainText('10 次浏览')
-  const hourPicker = page.getByRole('button', { name: '0时，0次', exact: true })
+  await expect(interest).toContainText('25.0%')
+  await expect(interest.locator('.review-share-track')).toHaveCount(0)
+  await expect(page.locator('.review-activity-legend')).toContainText('图片')
+  await expect(page.locator('.review-activity-total')).toContainText('5')
+  const hourPicker = page.getByRole('button', { name: '0时，900秒，0次浏览', exact: true })
   await hourPicker.press('End')
-  await page.getByRole('button', { name: '23时，0次', exact: true }).press('ArrowLeft')
-  await page.getByRole('button', { name: '22时，0次', exact: true }).press('ArrowLeft')
+  await page.getByRole('button', { name: '23时，1320秒，0次浏览', exact: true }).press('ArrowLeft')
+  await page.getByRole('button', { name: '22时，1080秒，0次浏览', exact: true }).press('ArrowLeft')
   await expect(page.locator('.review-hour-detail')).toContainText('21:00–22:00')
-  await expect(page.locator('.review-hour-detail')).toContainText('20 次')
+  await expect(page.locator('.review-hour-detail')).toContainText('20 次浏览')
   // 刻度与柱条必须共享同一小时列，避免flex等距标签造成错位。
   const alignment = await page.locator('.review-hour-plot').evaluate(el => {
     const bars = el.querySelectorAll('.review-hours > button'), ticks = el.querySelectorAll('.review-hour-labels > span')
@@ -90,7 +92,7 @@ test('浏览回顾请求失败明确重试，零记录不冒充比较结果', as
   await setup(page)
   let broken = true
   await page.route('**/api/v1/stats/review*', route => route.fulfill(broken ? { status: 503, json: { message: 'synthetic review failure' } } : {
-    json: { ...reviewFixture(), viewCount: 0, uniqueFiles: 0, firstViews: 0, repeatViews: 0, activeDays: 0, previousViewCount: 0, comparisonAvailable: false, interests: [], hours: Array.from({ length: 24 }, (_, hour) => ({ hour, views: 0 })) },
+    json: { ...reviewFixture(), seconds: 0, imageSeconds: 0, videoSeconds: 0, animatedSeconds: 0, viewCount: 0, uniqueFiles: 0, firstViews: 0, repeatViews: 0, activeDays: 0, previousViewCount: 0, comparisonAvailable: false, interests: [], hours: Array.from({ length: 24 }, (_, hour) => ({ hour, views: 0, seconds: 0, imageSeconds: 0, videoSeconds: 0, animatedSeconds: 0 })) },
   }))
   await page.goto('/app/data/review')
   await expect(page.getByRole('alert')).toContainText('浏览回顾读取失败', { timeout: 15000 })
@@ -99,7 +101,7 @@ test('浏览回顾请求失败明确重试，零记录不冒充比较结果', as
   await page.getByRole('button', { name: '重新读取', exact: true }).click()
   await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('这个时段还没有浏览记录')
   await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('前后两个时段都有浏览记录后')
-  await expect(page.getByRole('group', { name: '24小时浏览次数', exact: true }).getByRole('button')).toHaveCount(24)
+  await expect(page.getByRole('group', { name: '24小时浏览时长', exact: true }).getByRole('button')).toHaveCount(24)
 })
 
 test('视频网页全屏保留退出入口，底边鼠标可唤出控制栏，Esc可退出', async ({ page }) => {

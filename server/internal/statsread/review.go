@@ -49,15 +49,19 @@ func LoadReview(ctx context.Context, q *db.Queries, rng stats.Range, now time.Ti
 	if err != nil {
 		return result, err
 	}
+	duration, err := q.SummarizeReviewDuration(ctx, db.SummarizeReviewDurationParams{FromDay: result.FromDay, ToDay: result.ToDay})
+	if err != nil {
+		return result, err
+	}
 	interests := make([]stats.InterestCounts, len(changes))
 	for i, row := range changes {
 		interests[i] = stats.InterestCounts{Kind: row.Kind, ID: row.ID, Name: row.Name, Current: row.CurrentViews, Previous: row.PreviousViews}
 	}
 	hours := make([]stats.HourCount, len(hourRows))
 	for i, row := range hourRows {
-		hours[i] = stats.HourCount{Hour: int(row.Hour), Views: row.Views}
+		hours[i] = stats.HourCount{Hour: int(row.Hour), Views: row.Views, ReviewDuration: stats.ReviewDuration{Seconds: row.Seconds, ImageSeconds: row.ImageSeconds, VideoSeconds: row.VideoSeconds, AnimatedSeconds: row.AnimatedSeconds}}
 	}
-	result.Data = stats.BuildReview(stats.ReviewCounts{Views: counts.ViewCount, Files: counts.UniqueFiles, FirstViews: counts.FirstViews,
+	result.Data = stats.BuildReview(stats.ReviewCounts{ReviewDuration: stats.ReviewDuration{Seconds: duration.Seconds, ImageSeconds: duration.ImageSeconds, VideoSeconds: duration.VideoSeconds, AnimatedSeconds: duration.AnimatedSeconds}, Views: counts.ViewCount, Files: counts.UniqueFiles, FirstViews: counts.FirstViews,
 		ActiveDays: counts.ActiveDays, PreviousViews: counts.PreviousViewCount}, interests, hours, result.FromDay != "")
 	return result, nil
 }

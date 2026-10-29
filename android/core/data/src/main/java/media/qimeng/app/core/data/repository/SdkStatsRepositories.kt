@@ -183,7 +183,8 @@ class SdkStatsRepository @Inject constructor(
             interests = review.interests.map { media.qimeng.app.core.model.ReviewInterestValues(
                 it.kind.value, it.id, it.name, it.currentViews, it.previousViews, it.currentShare, it.previousShare, it.changePoints,
             ) },
-            hours = review.hours.map { media.qimeng.app.core.model.ReviewHourValues(it.hour, it.views) },
+            seconds = review.seconds, imageSeconds = review.imageSeconds, videoSeconds = review.videoSeconds, animatedSeconds = review.animatedSeconds,
+            hours = review.hours.map { media.qimeng.app.core.model.ReviewHourValues(it.hour, it.views, it.seconds, it.imageSeconds, it.videoSeconds, it.animatedSeconds) },
         )
     }
 
