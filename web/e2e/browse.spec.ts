@@ -81,6 +81,12 @@ test('浏览回顾与榜单分开，进入报告保留窗口并呈现服务端�
   await more.getByRole('button', { name: '青禾，收起详情', exact: true }).click()
   await expect(more.locator('.review-interest-detail:visible')).toHaveCount(0)
   await expect(less.locator('.review-interest-detail:visible')).toHaveCount(1)
+  const viewport = page.viewportSize()!
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await less.locator('.review-interest-detail:visible dd').evaluateAll(values => values.every(value =>
+    value.scrollWidth <= value.clientWidth && value.getBoundingClientRect().right <= value.closest('.review-interest-card')!.getBoundingClientRect().right,
+  ))).toBe(true)
+  await page.setViewportSize(viewport)
   await expect(page.locator('.review-activity-legend')).toContainText('图片')
   await expect(page.locator('.review-activity-total')).toContainText('5')
   const hourPicker = page.getByRole('button', { name: '0时，900秒，0次浏览', exact: true })

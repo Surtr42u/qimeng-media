@@ -2945,8 +2945,12 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 @media (max-width: 680px) {
   .review-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-hours, .review-hour-labels { gap: 3px; }
+  .review-interest-groups { padding-right: 0; }
   .review-interest-trigger { padding: 16px; }
   .review-interest-detail { margin: 0 16px; }
+  .review-interest-values { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 16px; }
+  .review-interest-values > div + div { padding-left: 0; border-left: 0; }
+  .review-interest-values dd { font-size: 18px; }
   .review-interest-name { gap: 5px; }
   .review-activity-head { gap: 8px; }
   .review-activity-head h3 { font-size: 20px; white-space: nowrap; flex-shrink: 0; }
