@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { batchFailureReason } from '@/lib/batch'
 import type { RecommendPrefs } from '@/api/generated'
@@ -62,8 +63,14 @@ export default function SettingsPage() {
 
   return (
     <div className="page" id="page-settings">
+      <div className="page-head"><h1>设置</h1><p>调整浏览体验与媒体库行为</p></div>
+      <nav className="settings-quicklinks" aria-label="设置分类">
+        <a className="pill" href="#settings-preferences">浏览偏好</a>
+        <a className="pill" href="#settings-library">媒体库</a>
+        <Link className="pill" to="/app/authors">作者资料</Link>
+      </nav>
       <ManageUnsavedGuard dirty={dirty} description="设置仍有未保存的修改或正在保存。请等待保存成功后离开；放弃离开会丢弃未保存草稿。" />
-      <div className="settings-card">
+      <div className="settings-card" id="settings-library">
         <h3>扫描</h3>
         <p>媒体库扫描并发 · 保存后用于后续扫描</p>
         <div className="settings-grid">
@@ -115,9 +122,10 @@ export default function SettingsPage() {
       </div>
       <div className="settings-card">
         <h3>来源与镜像</h3>
-        <p>通用来源词表与作者总表镜像已移至「数据管理 → 上传文件」页维护（与上传挂靠同页）。</p>
+        <p>维护常用获取渠道，或将作者总表单向导出到服务器本地 TXT。</p>
+        <div className="settings-options"><Link className="pill" to="/app/authors">编辑作者资料</Link><Link className="pill" to="/app/maintenance/files/upload">维护来源与镜像</Link></div>
       </div>
-      <div className="settings-preferences">
+      <div className="settings-preferences" id="settings-preferences">
         <div className="settings-card">
           <h3>界面</h3>
           <p>外观与主题</p>

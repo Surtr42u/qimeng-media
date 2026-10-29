@@ -152,11 +152,11 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Web 实际交互（合成 API，无后端）
         run: npm run test:e2e
-      - name: 浏览器失败证据
-        if: failure()
+      - name: 浏览器交互与界面证据
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: web-browser-failure
+          name: web-browser-evidence
           path: web/test-results/
           if-no-files-found: ignore
 

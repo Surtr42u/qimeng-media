@@ -101,7 +101,7 @@ fun SettingsScreen(
                 QimengSettingsGroup("我的内容") {
                     QimengSettingsRow(FavoriteBookmarkIcon, "收藏", "留住喜欢的图片和视频", onOpenFavorite)
                     QimengSettingsRow(HistoryRecentIcon, "浏览历史", "接着查看最近打开的作品", onOpenHistory)
-                    QimengSettingsRow(AuthorPeopleIcon, "作者总览", "发现作者，查看作品与关注", onOpenAuthors)
+                    QimengSettingsRow(AuthorPeopleIcon, "作者管理", "名称、别名、来源与关注", onOpenAuthors)
                 }
             }
             item(key = "manage") {
@@ -112,8 +112,8 @@ fun SettingsScreen(
             }
             item(key = "preferences") {
                 QimengSettingsGroup("使用偏好") {
-                    QimengSettingsRow(PaletteColorIcon, APPEARANCE_TITLE, "主题与底部导航材质", { showThemePage = true })
-                    QimengSettingsRow(TuneSlidersIcon, ROW_PREFS, "选择适合自己的推荐方式", viewModel::openPrefsSheet)
+                    QimengSettingsRow(PaletteColorIcon, APPEARANCE_TITLE, "${stringResource(listOf(R.string.settings_appearance_system, R.string.settings_appearance_light, R.string.settings_appearance_dark)[appearanceMode.ordinal])} · ${stringResource(listOf(R.string.settings_tab_material_liquid, R.string.settings_tab_material_frosted, R.string.settings_tab_material_solid, R.string.settings_tab_material_classic)[tabBarMaterial.ordinal])}", { showThemePage = true })
+                    QimengSettingsRow(TuneSlidersIcon, ROW_PREFS, if (state.prefsLoading) "正在读取…" else if (state.prefsLoadFailed) "读取失败，点击重试" else state.appliedPreset?.label ?: "自定义偏好", viewModel::openPrefsSheet)
                 }
             }
             item(key = "about") {

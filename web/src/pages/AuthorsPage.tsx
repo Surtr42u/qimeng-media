@@ -5,7 +5,7 @@ import type { Author } from '@/api/generated'
 import { SearchIcon } from '@/components/shell/icons'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
-import { PromptDialog } from '@/components/ui/prompt-dialog'
+import { AuthorEditDialog } from '@/components/manage/AuthorEditDialog'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import {
   useAuthors,
@@ -48,8 +48,6 @@ const A_SORTERS: Record<AuthorSort, (a: Author, b: Author) => number> = {
   works: (a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0),
 }
 
-/** 作者显示名 rune 上限：与 api/openapi.yaml 三端点 displayName maxLength: 200 双写同步 */
-const AUTHOR_NAME_MAX_RUNES = 200
 
 /** 对话框状态：新建 | 改名（预填当前显示名）；null=关闭（按条件挂载，打开即复位） */
 type AuthorPromptState = { mode: 'create' } | { mode: 'rename'; author: Author }
@@ -75,7 +73,7 @@ function manageFailureText(err: unknown): string {
  */
 export default function AuthorsPage() {
   const navigate = useNavigate()
-  const { data: authors = [], isLoading } = useAuthors()
+  const { data: authors = [], isLoading, isError, refetch } = useAuthors()
   const toggleFollow = useToggleFollow()
   const createAuthor = useCreateAuthor()
   const renameAuthor = useRenameAuthor()
@@ -106,14 +104,14 @@ export default function AuthorsPage() {
     if (prompt === null) return
     if (prompt.mode === 'create') {
       createAuthor.mutate(text, {
-        onSuccess: (author) => toast.success(`已添加作者：${author.displayName ?? text}`),
+        onSuccess: (author) => { setPrompt(null); toast.success(`已添加作者：${author.displayName ?? text}`) },
         onError: (err) => toast.error(`添加失败：${manageFailureText(err)}`),
       })
     } else if (prompt.author.id) {
       renameAuthor.mutate(
         { authorId: prompt.author.id, displayName: text },
         {
-          onSuccess: (author) => toast.success(`已改名：${author.displayName ?? text}`),
+          onSuccess: (author) => { setPrompt(null); toast.success(`已改名：${author.displayName ?? text}`) },
           onError: (err) => toast.error(`改名失败：${manageFailureText(err)}`),
         },
       )
@@ -124,16 +122,16 @@ export default function AuthorsPage() {
   const confirmDelete = (): void => {
     if (deleteTarget?.id) {
       deleteAuthor.mutate(deleteTarget.id, {
-        onSuccess: () => toast.success(`已删除作者：${authorDisplayName(deleteTarget)}（关联文件已保留）`),
+        onSuccess: () => { setDeleteTarget(null); toast.success('已删除作者，关联文件已保留') },
         onError: (err) => toast.error(`删除失败：${manageFailureText(err)}`),
       })
     }
-    setDeleteTarget(null)
   }
 
   return (
     <div className="page" id="page-authors">
       <ManagePageHeader title="作者管理" description={`全部作者 · ${authors.length} 位`} />
+      <p className="a-guide">管理作者名称、别名与来源记录；COS 作者随媒体目录自动维护。</p>
       <div className="a-toolbar">
         <div className="a-zones">
           {ZONES.map((z) => (
@@ -180,54 +178,24 @@ export default function AuthorsPage() {
         </button>
       </div>
       <div className="rank-card a-list">
-        {isLoading ? (
+        {isError ? (<p className="a-empty" role="alert">作者列表读取失败 <button className="pill" onClick={() => void refetch()}>重试</button></p>) : isLoading ? (
           <LoadingHint className="a-empty" />
         ) : rows.length ? (
           <ul>
             {rows.map((a) => (
-              <li
-                key={a.id}
-                onClick={() =>
-                  a.displayName && navigate(collectionPath(COLLECTION_AUTHOR, a.displayName))
-                }
-              >
-                <span className="rank-name">{authorDisplayName(a)}</span>
-                {/* 副标题第二行「N 个文件」（原型 .a-sub，.a-list .a-sub order:1 让按钮
-                    留第一行右侧）；浏览次数不展示（2026-09-05 反馈⑤，旧版无此元素） */}
-                <span className="a-sub">{a.fileCount ?? 0} 个文件</span>
-                <button
-                  type="button"
-                  className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`}
-                  disabled={toggleFollow.isPending}
-                  onClick={(e) => {
-                    // 行本身可点进作者文件页：关注按钮拦截冒泡，避免误触发跳转
-                    e.stopPropagation()
-                    if (a.id) toggleFollow.mutate({ authorId: a.id, follow: !a.followed })
-                  }}
-                >
+              <li key={a.id}>
+                <button type="button" className="author-identity" onClick={() => a.displayName && navigate(collectionPath(COLLECTION_AUTHOR, a.displayName))}>
+                  <span className="author-avatar" aria-hidden="true">{Array.from(a.displayName ?? '?')[0]}</span>
+                  <span className="author-info"><strong>{authorDisplayName(a)}</strong><small>{a.fileCount ?? 0} 个文件 · {a.type === 'cos' ? '目录管理' : '常规作者'}</small></span>
+                </button>
+                <button type="button" className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`} disabled={toggleFollow.isPending}
+                  onClick={() => a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed }, { onError: err => toast.error(manageFailureText(err)) })}>
                   {a.followed ? '已关注' : '关注'}
                 </button>
-                {/* 行操作（2026-10-13 作者管理族）：拦截冒泡避免触发跳转 */}
-                <button
-                  type="button"
-                  className="pill"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setPrompt({ mode: 'rename', author: a })
-                  }}
-                >
-                  改名
-                </button>
-                <button
-                  type="button"
-                  className="pill"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setDeleteTarget(a)
-                  }}
-                >
-                  删除
-                </button>
+                {a.type !== 'cos' && <>
+                  <button type="button" className="pill" onClick={() => setPrompt({ mode: 'rename', author: a })}>编辑资料</button>
+                  <button type="button" className="pill" onClick={() => setDeleteTarget(a)}>删除</button>
+                </>}
               </li>
             ))}
           </ul>
@@ -239,12 +207,9 @@ export default function AuthorsPage() {
       {/* 新建/改名：共享单输入框（词表维护页同源组件）；同名复用由服务端语义决定、
           toast 以返回作者显示名如实反馈 */}
       {prompt !== null ? (
-        <PromptDialog
-          title={prompt.mode === 'create' ? '新建作者' : '修改作者名'}
-          description="多个别名用「 / 」分隔（如：hornyherring / Horny Herring Studios）"
-          placeholder="作者名"
-          initial={prompt.mode === 'rename' ? (prompt.author.displayName ?? '') : ''}
-          maxRunes={AUTHOR_NAME_MAX_RUNES}
+        <AuthorEditDialog
+          author={prompt.mode === 'rename' ? prompt.author : undefined}
+          busy={createAuthor.isPending || renameAuthor.isPending}
           onConfirm={submitPrompt}
           onDismiss={() => setPrompt(null)}
         />
@@ -258,6 +223,8 @@ export default function AuthorsPage() {
         confirmText="删除"
         cancelText="取消"
         danger
+        busy={deleteAuthor.isPending}
+        keepOpenOnConfirm
         onConfirm={confirmDelete}
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null)

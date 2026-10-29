@@ -91,6 +91,7 @@ export function SourceSelectField({
             }
           }}
         />
+        <button type="button" className="pill" disabled={disabled || !input.trim()} onClick={addTyped}>添加</button>
       </div>
       <small>{disabled ? disabledHint : hint}</small>
     </div>
