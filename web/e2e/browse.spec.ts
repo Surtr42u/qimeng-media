@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import type { BrowsingReview } from '../src/api/generated/index.js'
 import { createPreviewApi, reviewFixture } from '../../tools/ui-preview/api.mjs'
 import { coverSvg } from '../../tools/ui-preview/fixtures/catalog.mjs'
 
@@ -108,7 +109,7 @@ for (const rising of [true, false]) {
     await setup(page)
     const review = reviewFixture()
     await page.route('**/api/v1/stats/review*', route => route.fulfill({ json: {
-      ...review, interests: review.interests.filter(item => (item.changePoints > 0) === rising),
+      ...review, interests: (review.interests as BrowsingReview['interests']).filter(item => (item.changePoints > 0) === rising),
     } }))
     await page.goto('/app/data/review')
     const interest = page.getByRole('region', { name: '兴趣变化', exact: true })
