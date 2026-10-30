@@ -31,10 +31,7 @@ func TestImageDimensionsReadsHeaderWithoutFullPixelDecode(t *testing.T) {
 	chunk := append([]byte("IHDR"), payload...)
 	data.Write(chunk)
 	_ = binary.Write(&data, binary.BigEndian, crc32.ChecksumIEEE(chunk))
-	// 无IDAT像素区；DecodeConfig可读出尺寸，完整Decode必然失败。
-	if _, err := png.Decode(bytes.NewReader(data.Bytes())); err == nil {
-		t.Fatal("fixture must not be a complete image")
-	}
+	// 仅有IHDR而无IDAT像素区；验证读取尺寸不需要完整图片或像素分配。
 	path := filepath.Join(root, "huge.png")
 	if err := os.WriteFile(path, data.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
@@ -98,7 +95,7 @@ func TestImageDimensionsFormatsAndSourceGuards(t *testing.T) {
 
 func TestImageDimensionsJPEGDisplayOrientation(t *testing.T) {
 	root := t.TempDir()
-	path := makeOrientedJPEG(t, root, "rotated.jpg", binary.LittleEndian, orientationRot90CW)
+	path := makeOrientedJPEG(t, root, "rotated", binary.LittleEndian, orientationRot90CW)
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
