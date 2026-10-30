@@ -135,7 +135,12 @@ internal fun ZoomableOriginalImage(
                 view.setImageDrawable(null)
             },
             update = { view ->
-                if (view.drawable !== displayedDrawable) view.setImageDrawable(displayedDrawable)
+                if (view.drawable !== displayedDrawable) {
+                    view.setImageDrawable(displayedDrawable)
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        (view.drawable as? Animatable)?.start()
+                    }
+                }
             },
         )
 
