@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,10 +24,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import coil3.BitmapImage
 import coil3.Image
 import coil3.SingletonImageLoader
 import coil3.asDrawable
 import coil3.request.CachePolicy
+import coil3.request.Disposable
 import coil3.request.ImageRequest
 import coil3.size.Size
 import coil3.target.Target
@@ -79,6 +85,8 @@ internal fun ZoomableOriginalImage(
     onSwipe: (direction: Int) -> Unit,
     onZoomImmersiveChanged: (Boolean) -> Unit = {},
     onExitDetail: () -> Unit = {},
+    onImageLoading: () -> Unit = {},
+    onImageLoaded: (Int, Int, Double?) -> Unit = { _, _, _ -> },
 ) {
     // 手势回调在 factory 里只 set 一次，经此桥转发到最新动作（组合局部值变化不重建 View）
     val bridge = remember { ZoomGestureBridge() }
@@ -87,7 +95,18 @@ internal fun ZoomableOriginalImage(
     bridge.onZoomImmersiveChanged = onZoomImmersiveChanged
 
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOnLoading by rememberUpdatedState(onImageLoading)
+    val currentOnLoaded by rememberUpdatedState(onImageLoaded)
     var zoomView by remember { mutableStateOf<ZoomImageView?>(null) }
+    var displayedUrl by remember(zoomView) { mutableStateOf<String?>(null) }
+    DisposableEffect(zoomView) {
+        val view = zoomView
+        onDispose {
+            (view?.drawable as? Animatable)?.stop()
+            view?.setImageDrawable(null)
+        }
+    }
 
     // 解码失败态（RES #27）：只反映「最近一次完成的结果」——请求发起时清零，
     // onError 置位、onSuccess 清零；重试经 [retryAttempt] 递增触发请求重建
@@ -136,56 +155,90 @@ internal fun ZoomableOriginalImage(
 
     // 原图加载：请求随资产切换/重试重建；离屏（切资产 push 叠栈/返回/覆盖层关闭）dispose 取消在途
     // 请求——与预加载 Disposable 同语义（LEGACY_REQUIREMENTS E：生命周期清理）
-    DisposableEffect(zoomView, asset.id, retryAttempt) {
+    DisposableEffect(zoomView, asset.id, asset.origUrl, retryAttempt, lifecycleOwner) {
         val view = zoomView
         val url = asset.origUrl
         if (view == null || url.isNullOrEmpty()) {
             onDispose { }
         } else {
-            // 新请求在途：清旧失败态（失败态只反映最近一次完成的结果）；占位翼已撤
-            // （修复B记档见上），加载期透出调用方 backdrop，旧版同款不闪白
-            decodeFailed = false
-            failureKind = ImageFailureKind.DECODE
-            val request = ImageRequest.Builder(context)
-                .data(url)
-                // 口径②：不降采样（LEGACY_REQUIREMENTS 用户拍板；堆水位对齐旧版由
-                // manifest largeHeap 承担——2026-09-20 OOM 复发根因即迁移时丢失该声明）
-                .size(Size.ORIGINAL)
-                // 任务U10-5（2026-09-14 用户拍板）：原图即看即取**不落盘**——
-                // 磁盘缓存只留给缩略图；原件体积大，落盘会让缓存无谓膨胀且损耗存储，
-                // 联网观看的预期是「即看即取」而非「下载留存」（对齐旧版本地直读体验）。
-                // 会话内回看由内存缓存兜底（memoryCachePolicy 全局 ENABLED）。
-                .diskCachePolicy(CachePolicy.DISABLED)
-                // 失败归因（文案分档）：异常经 cause 链判传输类（见 isNetworkTransferFailure）
-                .listener(
-                    onError = { _, result ->
-                        failureKind = classifyImageFailure(result.throwable)
-                    },
-                )
-                .target(
-                    object : Target {
-                        // coil3 多平台 Image → Android Drawable（asDrawable 官方转换，
-                        // Coil ImageViewTarget 同款；参数为 Resources 档）
-                        override fun onSuccess(result: Image) {
-                            decodeFailed = false
-                            val drawable = result.asDrawable(context.resources)
-                            // setImageDrawable 内部做智能分层 + resetZoom（搬运件行为）
-                            view.setImageDrawable(drawable)
-                            // 旧版 Coil load() 的 ImageViewTarget 语义：动图（GIF）目标需显式
-                            // start()，否则 AnimatedImageDrawable 停在第 0 帧（M4-3 D6 自查发现）
-                            (drawable as? Animatable)?.start()
-                        }
+            var generation = 0
+            var disposable: Disposable? = null
+            fun stop() {
+                generation++
+                disposable?.dispose()
+                disposable = null
+                (view.drawable as? Animatable)?.stop()
+            }
+            fun start() {
+                if (disposable != null) return
+                if (displayedUrl == url && view.drawable != null) {
+                    (view.drawable as? Animatable)?.start()
+                    return
+                }
+                val requestGeneration = ++generation
+                // 新请求在途：清旧失败态（失败态只反映最近一次完成的结果）；占位翼已撤
+                // （修复B记档见上），加载期透出调用方 backdrop，旧版同款不闪白
+                currentOnLoading()
+                decodeFailed = false
+                failureKind = ImageFailureKind.DECODE
+                val request = ImageRequest.Builder(context)
+                    .data(url)
+                    // 口径②：不降采样（LEGACY_REQUIREMENTS 用户拍板；堆水位对齐旧版由
+                    // manifest largeHeap 承担——2026-09-20 OOM 复发根因即迁移时丢失该声明）
+                    .size(Size.ORIGINAL)
+                    // 任务U10-5（2026-09-14 用户拍板）：原图即看即取**不落盘**——
+                    // 磁盘缓存只留给缩略图；原件体积大，落盘会让缓存无谓膨胀且损耗存储，
+                    // 联网观看的预期是「即看即取」而非「下载留存」（对齐旧版本地直读体验）。
+                    // 会话内回看由内存缓存兜底（memoryCachePolicy 全局 ENABLED）。
+                    .diskCachePolicy(CachePolicy.DISABLED)
+                    // 失败归因（文案分档）：异常经 cause 链判传输类（见 isNetworkTransferFailure）
+                    .listener(
+                        onError = { _, result ->
+                            if (generation == requestGeneration) failureKind = classifyImageFailure(result.throwable)
+                        },
+                    )
+                    .target(
+                        object : Target {
+                            // coil3 多平台 Image → Android Drawable（asDrawable 官方转换，
+                            // Coil ImageViewTarget 同款；参数为 Resources 档）
+                            override fun onSuccess(result: Image) {
+                                if (generation != requestGeneration) return
+                                displayedUrl = url
+                                decodeFailed = false
+                                val drawable = result.asDrawable(context.resources)
+                                // setImageDrawable 内部做智能分层 + resetZoom（搬运件行为）
+                                view.setImageDrawable(drawable)
+                                // 旧版 Coil load() 的 ImageViewTarget 语义：动图（GIF）目标需显式
+                                // start()，否则 AnimatedImageDrawable 停在第 0 帧（M4-3 D6 自查发现）
+                                (drawable as? Animatable)?.start()
+                                val bitmap = (result as? BitmapImage)?.bitmap
+                                val luminance = bitmap?.let { sampleTopRegionLuminance(it.width, it.height, it::getPixel) }
+                                currentOnLoaded(result.width, result.height, luminance)
+                            }
 
-                        // 解码/加载失败（RES #27）：置失败态 → 舞台中央中文提示（Target
-                        // 恒回调语义见 coil3 RealImageLoader.onError，无 error placeholder 例外）
-                        override fun onError(error: Image?) {
-                            decodeFailed = true
-                        }
-                    },
-                )
-                .build()
-            val disposable = SingletonImageLoader.get(context).enqueue(request)
-            onDispose { disposable.dispose() }
+                            // 解码/加载失败（RES #27）：置失败态 → 舞台中央中文提示（Target
+                            // 恒回调语义见 coil3 RealImageLoader.onError，无 error placeholder 例外）
+                            override fun onError(error: Image?) {
+                                if (generation == requestGeneration) decodeFailed = true
+                            }
+                        },
+                    )
+                    .build()
+                disposable = SingletonImageLoader.get(context).enqueue(request)
+            }
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> start()
+                    Lifecycle.Event.ON_PAUSE -> stop()
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) start()
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                stop()
+            }
         }
     }
 }

@@ -10,9 +10,13 @@ package media.qimeng.app.feature.detail
  * - 已知尺寸长边 > 4096 的「超大图」窗口内最多预载 1 张（距当前最近优先）——8192² 原图
  *   解码后 ≈150MB/张，多张同存易 OOM；
  * - heapUsedRatio ≥ 0.6 视为内存紧张：跳过全部超大图（普通图照预）；
- * - 宽高未知（该资产尚未拉过详情）按普通图处理。
+ * - 此窗口只决定邻位详情候选；实际媒体预取在详情返回后由 eligibleTargets 按字节/像素/内存重新准入。
  */
 object DetailPreloadPolicy {
+    /** 仅限制机会性预取；不限制用户打开原件。避免大文件抢占当前图并撑大临时缓冲。 */
+    const val MAX_ORIGINAL_PREFETCH_BYTES = 8L * 1024 * 1024
+    /** 已知尺寸时按ARGB8888估计，预取不超过32MiB像素；当前原图仍保持原尺寸。 */
+    const val MAX_DECODED_PREFETCH_BYTES = 32L * 1024 * 1024
 
     /** 窗口向前张数（旧版 preloadAround 基础档 backCount=1） */
     const val PRELOAD_BACK = 1
@@ -33,7 +37,7 @@ object DetailPreloadPolicy {
     const val HEAP_PRESSURE_RATIO = 0.6f
 
     /**
-     * 计算应预载的资产 id 列表（按距当前距离升序：+1、-1、+2）。
+     * 计算邻位详情候选（按距当前距离升序：+1、-1、+2），不代表原件可直接开始预取。
      *
      * @param currentIndex 当前资产在 [ids] 中的序号（0 基；不在批次内返回空表）
      * @param ids 已加载批次清单（拍板④内存传递）
@@ -67,6 +71,24 @@ object DetailPreloadPolicy {
             result += id
         }
         return result
+    }
+
+    /** 详情到齐后再裁决实际媒体任务，不能用拉详情前的尺寸快照直接放行未知大图。 */
+    fun eligibleTargets(targets: List<DetailPreloadTarget>, heapUsedRatio: Float): List<DetailPreloadTarget> {
+        var uncertainOrHuge = 0
+        return targets.filter { target ->
+            if (target.isVideo) return@filter true // 这里只取小海报，不预取视频原件。
+            if (heapUsedRatio >= HEAP_PRESSURE_RATIO) return@filter false
+            val bytes = target.sizeBytes ?: return@filter false
+            if (bytes <= 0 || bytes > MAX_ORIGINAL_PREFETCH_BYTES) return@filter false
+            val dims = target.dims?.takeIf { it.width > 0 && it.height > 0 }
+            if (dims != null && dims.width.toLong() * dims.height > MAX_DECODED_PREFETCH_BYTES / 4) return@filter false
+            if (dims == null || maxOf(dims.width, dims.height) > HUGE_IMAGE_LONG_SIDE) {
+                if (uncertainOrHuge >= MAX_HUGE_PRELOAD) return@filter false
+                uncertainOrHuge++
+            }
+            true
+        }
     }
 }
 

@@ -129,6 +129,8 @@ internal fun DetailMediaStage(
     onExitToChromeBrowse: () -> Unit,
     /** 图片态解码失败覆盖层「返回」（RES #27；离开详情页 popBackStack 语义，仅图片分支消费） */
     onExitDetail: () -> Unit = {},
+    onImageLoading: () -> Unit = {},
+    onImageLoaded: (Int, Int, Double?) -> Unit = { _, _, _ -> },
     /** 起播回调（3d 打点 play 用；图片舞台无此语义不传） */
     onPlaybackStarted: () -> Unit,
     /** 播放进度 tick 秒（3d 节流上报用） */
@@ -173,6 +175,8 @@ internal fun DetailMediaStage(
                 onToggleChrome = onToggleChrome,
                 onZoomImmersiveChanged = onZoomImmersiveChanged,
                 onExitDetail = onExitDetail,
+                onImageLoading = onImageLoading,
+                onImageLoaded = onImageLoaded,
             )
         }
     }

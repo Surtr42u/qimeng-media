@@ -7,10 +7,8 @@ package media.qimeng.app.feature.detail
  * 实际亮度自适应——顶部亮（白图）→ 深色图标、顶部暗（黑图）→ 浅色图标，手机相册语义。
  *
  * 两段均为纯函数（无 IO、无 Android 类型依赖，JVM 单测锁定 StatusBarLuminanceTest）：
- * - [topRegionAverageLuminance]：展平像素 → 顶部 1/3 区域平均亮度。像素由 48px 采样小图
- *   （Coil 请求 `allowHardware(false)` 解码的软件位图——硬件位图禁 getPixels）经
- *   Bitmap.getPixels 展平后传入；只算顶部 1/3——状态栏浮在图片顶部，中/下部亮度与
- *   本判定无关。
+ * - [sampleTopRegionLuminance]：从舞台已经解码的软件位图有界读取顶部像素，不再为取色下载原件。
+ *   只算顶部 1/3；[topRegionAverageLuminance] 保留小像素数组的相同加权口径。
  * - [statusBarIconsDarkForLuminance]：亮度 → 图标明暗阈值判定。阈值口径见
  *   [STATUS_BAR_LUMINANCE_DARK_ICONS]：>0.35 → 深色图标（含 0.35~0.5 中灰灰区取深，
  *   拍板口径「灰区取深」的等价化简——宁深勿浅，防白图标压浅图不可辨）；≤0.35 → 浅色
@@ -22,8 +20,7 @@ package media.qimeng.app.feature.detail
  * 原话直读。失败/未加载兜底（null → 浅色图标）在 DetailScreen 消费点裁决，不在本函数。
  */
 
-/** chrome 隐藏态图标反色的采样小图边长（px，Coil `.size(48)` 解码目标档）：判明暗只需
- *  数百像素；仅作解码降采样目标，网络层仍取原件（磁盘缓存按 U10-5 口径禁用） */
+/** 取色采样网格边长；最多读取48×16个像素，不分配整张原图的像素数组。 */
 internal const val STATUS_BAR_SAMPLE_SIZE_PX = 48
 
 /** 顶部采样区占比（1/3）：状态栏浮在图片顶部，取顶部 1/3 高度的平均亮度作判定面 */
@@ -53,6 +50,23 @@ internal fun topRegionAverageLuminance(pixels: IntArray, cols: Int, rows: Int): 
     }
     val count = sampleRows * cols
     return total / count
+}
+
+/** 在原图顶部1/3按网格中心取样；像素访问由已解码位图提供，不产生网络或二次解码。 */
+internal fun sampleTopRegionLuminance(cols: Int, rows: Int, pixelAt: (Int, Int) -> Int): Double {
+    if (cols <= 0 || rows <= 0) return 0.0
+    val regionRows = maxOf(1, (rows * STATUS_BAR_SAMPLE_TOP_REGION_RATIO).toInt())
+    val sampleCols = minOf(cols, STATUS_BAR_SAMPLE_SIZE_PX)
+    val sampleRows = minOf(regionRows, maxOf(1, (STATUS_BAR_SAMPLE_SIZE_PX * STATUS_BAR_SAMPLE_TOP_REGION_RATIO).toInt()))
+    var total = 0.0
+    repeat(sampleRows) { y ->
+        val sourceY = ((y + 0.5) * regionRows / sampleRows).toInt()
+        repeat(sampleCols) { x ->
+            val sourceX = ((x + 0.5) * cols / sampleCols).toInt()
+            total += pixelLuminance(pixelAt(sourceX, sourceY))
+        }
+    }
+    return total / (sampleCols * sampleRows)
 }
 
 /** 亮度 → 图标明暗阈值判定（true=深色图标；口径见 [STATUS_BAR_LUMINANCE_DARK_ICONS]） */

@@ -60,6 +60,7 @@ class DetailViewModelTest {
 
         /** 置非空则 assetDetail 挂起直至放行（ADR-0037：文件身份等待/超时路径断言用） */
         var detailGate: CompletableDeferred<Unit>? = null
+        val detailGatesById = mutableMapOf<String, CompletableDeferred<Unit>>()
 
         var likeResult: LikeToggleResult? = null
         var likeError: Exception? = null
@@ -141,6 +142,7 @@ class DetailViewModelTest {
             detailCallCount += 1
             detailCallsById.merge(assetId, 1, Int::plus)
             detailGate?.await()
+            detailGatesById[assetId]?.await()
             detailError?.let { throw it }
             return detailById[assetId] ?: requireNotNull(detailResult)
         }
@@ -219,13 +221,14 @@ class DetailViewModelTest {
         width: Int? = null,
         height: Int? = null,
         durationMs: Long? = null,
+        sizeBytes: Long? = 1024L * 1024,
         lastPositionSeconds: Double? = null,
     ) = AssetDetail(
         id = id,
         fileName = "$id.jpg",
         title = cosWork ?: "$id.jpg",
         mediaType = mediaType,
-        sizeBytes = null,
+        sizeBytes = sizeBytes,
         modifiedAtMs = null,
         source = null,
         isFavorite = isFavorite,
@@ -449,13 +452,44 @@ class DetailViewModelTest {
     // ---------- 预加载窗口（拍板③，3b） ----------
 
     @Test
+    fun `预载窗口 - 邻位返回后以真实体积和像素预算阻止大图`() = runTest(mainDispatcherRule.testDispatcher) {
+        val batch = MediaBatchIndex().apply { ids = listOf("a", "b", "c", "d") }
+        val gate = CompletableDeferred<Unit>()
+        val repo = FakeDetailRepository().apply {
+            detailById["b"] = detail("b", origUrl = "b.orig")
+            detailById["a"] = detail("a", origUrl = "a.orig", width = 6000, height = 6000)
+            detailById["c"] = detail("c", origUrl = "c.orig", sizeBytes = 60L * 1024 * 1024)
+            detailById["d"] = detail("d", origUrl = "d.orig", width = 512, height = 512)
+            detailGatesById["c"] = gate
+        }
+        val vm = viewModel(repo, batchIndex = batch)
+        vm.heapUsedRatioProvider = { 0.3f }
+        runCurrent()
+        assertEquals(listOf("d"), vm.uiState.value.preloadTargets.map { it.assetId })
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("d"), vm.uiState.value.preloadTargets.map { it.assetId })
+    }
+
+    @Test
+    fun `原图解码尺寸 - API缺宽高时记录实际尺寸供后续页面预取保护`() = runTest(mainDispatcherRule.testDispatcher) {
+        val dims = DetailImageDimCache()
+        val repo = FakeDetailRepository().apply { detailResult = detail("b") }
+        val vm = viewModel(repo, imageDimCache = dims)
+        advanceUntilIdle()
+        assertNull(dims.dimsOf("b"))
+        vm.onOriginalImageLoaded(7680, 4320)
+        assertEquals(ImageDims(7680, 4320), dims.dimsOf("b"))
+    }
+
+    @Test
     fun `预载窗口 - 进入后按前1后2拉邻位详情并按最近序发布目标`() = runTest(mainDispatcherRule.testDispatcher) {
         val batchIndex = MediaBatchIndex()
         batchIndex.ids = listOf("a", "b", "c", "d", "e")
         val repo = FakeDetailRepository().apply {
             detailById["b"] = detail("b", origUrl = "https://x/b.orig")
-            detailById["a"] = detail("a", origUrl = "https://x/a.orig")
-            detailById["c"] = detail("c", origUrl = "https://x/c.orig")
+            detailById["a"] = detail("a", origUrl = "https://x/a.orig", width = 1000, height = 800)
+            detailById["c"] = detail("c", origUrl = "https://x/c.orig", width = 1000, height = 800)
             detailById["d"] = detail("d", mediaType = MediaKind.VIDEO, thumbUrl = "https://x/d.thumb")
             // e 在窗口外（+3），不预载——越界加载策略：不主动拉批次窗口外资产
         }
@@ -476,7 +510,7 @@ class DetailViewModelTest {
     }
 
     @Test
-    fun `预载窗口 - 已知超大图限量一张且堆占用达阈值全部跳过`() = runTest(mainDispatcherRule.testDispatcher) {
+    fun `预载窗口 - 超过解码预算不预载且内存紧张停止原图预载`() = runTest(mainDispatcherRule.testDispatcher) {
         val batchIndex = MediaBatchIndex()
         batchIndex.ids = listOf("a", "b", "c", "d", "e")
         val dimCache = DetailImageDimCache().apply {
@@ -491,19 +525,19 @@ class DetailViewModelTest {
             detailById["d"] = detail("d", origUrl = "https://x/d.orig")
         }
 
-        // 内存宽裕（heap 0.3）：窗口 [c(超大→预), a(超大→撞限量跳过), d(普通→预)]
+        // 大图像素超过32MiB预取预算，只保留普通d；不影响当前原件查看。
         val repo = repoWithAll()
         val vm = viewModel(repo, batchIndex = batchIndex, imageDimCache = dimCache)
         vm.heapUsedRatioProvider = { 0.3f }
         advanceUntilIdle()
-        assertEquals(listOf("c", "d"), vm.uiState.value.preloadTargets.map { it.assetId })
+        assertEquals(listOf("d"), vm.uiState.value.preloadTargets.map { it.assetId })
 
-        // 内存紧张（heap 0.6 达阈值）：超大图 c/a 全跳过，只留普通 d
+        // 内存紧张时暂停所有原图预取，为当前图保留空间。
         val repo2 = repoWithAll()
         val vm2 = viewModel(repo2, batchIndex = batchIndex, imageDimCache = dimCache)
         vm2.heapUsedRatioProvider = { 0.6f }
         advanceUntilIdle()
-        assertEquals(listOf("d"), vm2.uiState.value.preloadTargets.map { it.assetId })
+        assertTrue(vm2.uiState.value.preloadTargets.isEmpty())
     }
 
     @Test

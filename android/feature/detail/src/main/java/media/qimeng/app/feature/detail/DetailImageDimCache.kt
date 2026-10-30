@@ -10,13 +10,13 @@ import javax.inject.Singleton
  * 为什么是进程级单例而不是 VM 内 Map：兄弟资产左右滑 = push 新栈（QimengNavHost 冻结口径，
  * 叠栈即浏览历史），每屏一个 DetailViewModel——单 VM 内的 Map 换屏即丢，超大图判定
  * （长边>4096 限量预载）在连续滑动场景会退化为「尺寸永远未知」。列表批次只传 id
- * （拍板④），尺寸要等详情拉取才知道，因此谁拉过详情谁把宽高写进来（当前资产、窗口内
+ * （拍板④），尺寸来自详情或当前原图实际解码，因此拿到尺寸就写入（当前资产、窗口内
  * 邻位资产都写），后续屏的策略即可基于已知尺寸收紧。
  *
  * 有界性（审计 R13，2026-09-20）：原 ConcurrentHashMap 无上限——进程级单例
  * 随长会话无限增长。改访问序 LRU 上限 [MAX_ENTRIES]（远大于预载窗口与连续
  * 滑动的活跃集，命中语义不变；超出只丢最老尺寸记录，代价是那条资产下次
- * 按未知尺寸走普通图策略，无正确性影响）。不用 android.util.LruCache：
+ * 按未知尺寸走限量与字节预算，无正确性影响）。不用 android.util.LruCache：
  * JVM 单测（DetailViewModelTest 直构本类）避开 android.jar stub。
  *
  * 线程安全：读发生在主线程（schedulePreload），写可能来自并发详情请求；

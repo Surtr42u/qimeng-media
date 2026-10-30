@@ -30,6 +30,8 @@ internal fun ImageStage(
     onToggleChrome: () -> Unit,
     onZoomImmersiveChanged: (Boolean) -> Unit = {},
     onExitDetail: () -> Unit = {},
+    onImageLoading: () -> Unit = {},
+    onImageLoaded: (Int, Int, Double?) -> Unit = { _, _, _ -> },
 ) {
     ZoomableOriginalImage(
         asset = asset,
@@ -38,5 +40,7 @@ internal fun ImageStage(
         onSwipe = onSiblingNavigate,
         onZoomImmersiveChanged = onZoomImmersiveChanged,
         onExitDetail = onExitDetail,
+        onImageLoading = onImageLoading,
+        onImageLoaded = onImageLoaded,
     )
 }
