@@ -266,10 +266,12 @@ fun DetailScreen(
             cancel
         }
     }
+    // 在组合阶段读取就绪/生命周期状态，状态变化才会触发队列更新；不能只在SideEffect里读取。
+    val preloadEnabled = isResumed && !playerActive && (imageReady || state.asset?.mediaType == MediaKind.VIDEO)
     SideEffect {
         preloadQueue.update(
             state.preloadTargets,
-            enabled = isResumed && !playerActive && (imageReady || state.asset?.mediaType == MediaKind.VIDEO),
+            enabled = preloadEnabled,
         )
     }
     DisposableEffect(preloadQueue, lifecycleOwner) {
