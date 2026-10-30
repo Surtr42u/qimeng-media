@@ -12,6 +12,27 @@ import org.junit.Test
  * - [statusBarIconsDarkForLuminance]：阈值口径（白→深/黑→浅/中灰灰区取深/暗灰→浅）。
  */
 class StatusBarLuminanceTest {
+    @Test
+    fun sampledOriginalReadsOnlyTopThirdWithBoundedWork() {
+        var reads = 0
+        val result = sampleTopRegionLuminance(7680, 4320) { x, y ->
+            assertTrue(x in 0 until 7680)
+            assertTrue(y in 0 until 1440)
+            reads++
+            0xFFFFFFFF.toInt()
+        }
+        assertEquals(1.0, result, 1e-9)
+        assertEquals(48 * 16, reads)
+    }
+
+    @Test
+    fun sampledOriginalKeepsTopRegionWeightAndHandlesTinyImages() {
+        assertEquals(0.299, sampleTopRegionLuminance(1, 1) { _, _ -> 0xFFFF0000.toInt() }, 1e-9)
+        assertEquals(0.0, sampleTopRegionLuminance(0, 3) { _, _ -> error("must not read") }, 1e-9)
+        assertEquals(1.0, sampleTopRegionLuminance(6, 9) { _, y ->
+            if (y < 3) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+        }, 1e-9)
+    }
 
     /** 造 rows×cols 纯色图像素（行优先展平） */
     private fun solidPixels(argb: Int, cols: Int, rows: Int): IntArray =

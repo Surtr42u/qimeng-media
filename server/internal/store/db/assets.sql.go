@@ -299,7 +299,7 @@ func (q *Queries) ListCosWorkForAssets(ctx context.Context, assetIdsJson interfa
 }
 
 const listThumbnailWarmupAssetsPage = `-- name: ListThumbnailWarmupAssetsPage :many
-SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime, a.library_id, a.updated_at, a.width, a.height
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
 WHERE l.enabled = 1
@@ -322,6 +322,10 @@ type ListThumbnailWarmupAssetsPageRow struct {
 	MediaType string
 	SizeBytes int64
 	Mtime     string
+	LibraryID string
+	UpdatedAt string
+	Width     sql.NullInt64
+	Height    sql.NullInt64
 }
 
 // Small, bounded JSON ID sets allow primary-key probes; no all-library filter
@@ -342,6 +346,10 @@ func (q *Queries) ListThumbnailWarmupAssetsPage(ctx context.Context, arg ListThu
 			&i.MediaType,
 			&i.SizeBytes,
 			&i.Mtime,
+			&i.LibraryID,
+			&i.UpdatedAt,
+			&i.Width,
+			&i.Height,
 		); err != nil {
 			return nil, err
 		}
@@ -357,7 +365,7 @@ func (q *Queries) ListThumbnailWarmupAssetsPage(ctx context.Context, arg ListThu
 }
 
 const listThumbnailWarmupLibraryPage = `-- name: ListThumbnailWarmupLibraryPage :many
-SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime, a.library_id, a.updated_at, a.width, a.height
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
 WHERE l.enabled = 1 AND a.library_id = ?1
@@ -379,6 +387,10 @@ type ListThumbnailWarmupLibraryPageRow struct {
 	MediaType string
 	SizeBytes int64
 	Mtime     string
+	LibraryID string
+	UpdatedAt string
+	Width     sql.NullInt64
+	Height    sql.NullInt64
 }
 
 // A typed library change must not probe unrelated libraries' thumbnail caches.
@@ -398,6 +410,10 @@ func (q *Queries) ListThumbnailWarmupLibraryPage(ctx context.Context, arg ListTh
 			&i.MediaType,
 			&i.SizeBytes,
 			&i.Mtime,
+			&i.LibraryID,
+			&i.UpdatedAt,
+			&i.Width,
+			&i.Height,
 		); err != nil {
 			return nil, err
 		}
@@ -413,7 +429,7 @@ func (q *Queries) ListThumbnailWarmupLibraryPage(ctx context.Context, arg ListTh
 }
 
 const listThumbnailWarmupPage = `-- name: ListThumbnailWarmupPage :many
-SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime, a.library_id, a.updated_at, a.width, a.height
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
 WHERE l.enabled = 1 AND a.asset_id > ?1
@@ -433,6 +449,10 @@ type ListThumbnailWarmupPageRow struct {
 	MediaType string
 	SizeBytes int64
 	Mtime     string
+	LibraryID string
+	UpdatedAt string
+	Width     sql.NullInt64
+	Height    sql.NullInt64
 }
 
 // Keyset paging bounds both candidate memory and queued work. Stored source
@@ -454,6 +474,10 @@ func (q *Queries) ListThumbnailWarmupPage(ctx context.Context, arg ListThumbnail
 			&i.MediaType,
 			&i.SizeBytes,
 			&i.Mtime,
+			&i.LibraryID,
+			&i.UpdatedAt,
+			&i.Width,
+			&i.Height,
 		); err != nil {
 			return nil, err
 		}
@@ -466,6 +490,50 @@ func (q *Queries) ListThumbnailWarmupPage(ctx context.Context, arg ListThumbnail
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateAssetImageDimensions = `-- name: UpdateAssetImageDimensions :execrows
+UPDATE assets SET width=?1, height=?2
+WHERE asset_id=?3 AND library_id=?4
+  AND rel_path=?5 AND size_bytes=?6
+  AND mtime=?7 AND updated_at=?8
+  AND media_type IN ('image','animated_image')
+  AND (width IS NULL OR width<=0 OR height IS NULL OR height<=0)
+  AND EXISTS (SELECT 1 FROM libraries l WHERE l.id=assets.library_id
+              AND l.enabled=1 AND l.root_path=?9)
+`
+
+type UpdateAssetImageDimensionsParams struct {
+	Width     sql.NullInt64
+	Height    sql.NullInt64
+	AssetID   string
+	LibraryID string
+	RelPath   string
+	SizeBytes int64
+	Mtime     string
+	UpdatedAt string
+	RootPath  string
+}
+
+// Publish derived dimensions only for the same enabled library, path and source
+// version observed before reading. Do not overwrite concurrent edits or a valid
+// result, and do not change source timestamps/business identity.
+func (q *Queries) UpdateAssetImageDimensions(ctx context.Context, arg UpdateAssetImageDimensionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateAssetImageDimensions,
+		arg.Width,
+		arg.Height,
+		arg.AssetID,
+		arg.LibraryID,
+		arg.RelPath,
+		arg.SizeBytes,
+		arg.Mtime,
+		arg.UpdatedAt,
+		arg.RootPath,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updatePlaybackProgress = `-- name: UpdatePlaybackProgress :execrows

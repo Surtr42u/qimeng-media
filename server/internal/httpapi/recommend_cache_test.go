@@ -9,6 +9,23 @@ import (
 	"qimeng-media/server/internal/events"
 )
 
+func TestImageMetadataRefreshDoesNotInvalidateRecommendationOrCollectionRevision(t *testing.T) {
+	env := newTestEnv(t)
+	_ = recList(t, env, "?seed=5")
+	cacheBefore, revisionBefore := env.s.recommendCache.revision(), env.revisionNow(t)
+	if err := env.s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged, LibraryChange: &events.LibraryChangeScope{MetadataOnly: true}}); err != nil {
+		t.Fatal(err)
+	}
+	// 同订阅FIFO的普通事件作处理屏障；正常变更应且只应推进一次。
+	if err := env.s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+		t.Fatal(err)
+	}
+	env.waitRevision(t, revisionBefore+1)
+	if got := env.s.recommendCache.revision(); got != cacheBefore+1 {
+		t.Fatalf("metadata caused redundant cold recomputation: %d -> %d", cacheBefore, got)
+	}
+}
+
 // 冷算需要事件表，取页摘要不需要；预热后临时改名使错误键无法重新冷算。
 func TestRecommendPrewarmCoversWebAndApp(t *testing.T) {
 	env := newTestEnv(t)

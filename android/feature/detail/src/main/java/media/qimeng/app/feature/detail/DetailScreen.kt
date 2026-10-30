@@ -47,15 +47,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.BitmapImage
-import coil3.Image
 import coil3.SingletonImageLoader
 import coil3.request.CachePolicy
-import coil3.request.Disposable
 import coil3.request.ImageRequest
-import coil3.request.allowHardware
 import coil3.size.Size
-import coil3.target.Target
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -103,7 +98,7 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 状态栏图标随背景反色（任务S 批S10 件1，2026-09-19 用户拍板「状态栏和背景一个色了，
  * 应该是白色上面状态栏就是反色这种……就是手机相册那种」）：图标明暗收敛本页单值
  * statusBarDark——视频态恒浅（黑底）、chrome 显态随系统明暗（主题背景）、chrome 隐藏态
- * 按原图顶部 1/3 亮度采样自适应（48px allowHardware(false) 小图，纯函数判定
+ * 按舞台已解码原图顶部 1/3 有界取色自适应（纯函数判定
  * StatusBarLuminance.kt，失败兜底浅）；同批修复 apply 处「取反后 apply」双重否定
  * （S7 引入，净输出恒与判定相反=用户反馈根因，记档见 SystemBarsImmersiveEffect KDoc）。
  *
@@ -188,10 +183,11 @@ fun DetailScreen(
     // S10 件1（2026-09-19 用户拍板「白色上面状态栏就是反色这种……就是手机相册那种」）：
     // 图片资产原图顶部 1/3 亮度采样值（null=未加载/失败/视频资产）——chrome 隐藏后状态栏
     // 浮在图片内容上，图标明暗按本值自适应反色（相册语义）；null 兜底浅色图标（黑底语义，
-    // 沉浸舞台底=黑）。采样链见下方 DisposableEffect（48px allowHardware(false) 小图），
+    // 沉浸舞台底=黑）。采样随舞台原图成功回调，不额外发请求，
     // 判定纯函数见 [statusBarIconsDarkForLuminance]（StatusBarLuminance.kt，单测锁定）。
     // remember 非 saveable：采样值是图片内容派生态，进程重建随采样重跑自愈，不持久化
-    var imageTopLuminance by remember { mutableStateOf<Double?>(null) }
+    var imageTopLuminance by remember(assetId, state.asset?.origUrl) { mutableStateOf<Double?>(null) }
+    var imageReady by remember(assetId, state.asset?.origUrl) { mutableStateOf(false) }
     // 系统状态栏图标明暗单值（S10 收敛进本页单一状态，SystemBarsImmersiveEffect 只消费）：
     // - 视频播放态（playerActive）→ 恒 false 浅色图标（舞台底=黑，U4 拍板，与控制条显隐
     //   无关——显示态控制条也是黑底渐变，B 站同款浅图标）；
@@ -231,8 +227,12 @@ fun DetailScreen(
     // 开新段（分段累加口径，见 DwellSessionTracker）；onDispose（组合离场，先于 VM onCleared
     // 且 viewModelScope 存活，是补报的可靠送达路径）→ dwell leave flush + 进度 force 补报
     val lifecycleOwner = LocalLifecycleOwner.current
+    var isResumed by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
+            isResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> viewModel.onScreenPaused()
                 Lifecycle.Event.ON_RESUME -> viewModel.onScreenResumed()
@@ -246,33 +246,43 @@ fun DetailScreen(
         }
     }
 
-    // 3b 预载链消费（拍板③）：VM 只发目标清单，Coil 预取入队/取消在 UI 层——图片按原图
-    // 尺寸（口径②：.size(Size.ORIGINAL) 不降采样），视频海报帧是小缩略图按默认档；
-    // memoryCachePolicy 显式 ENABLED 确保预取产物写内存缓存（邻位切换首帧即出图）。
-    // key=目标清单：清单变化（新邻位 url 就绪）或离场时，先 dispose 全部旧 Disposable
-    // 再入新（对照旧版 preloadDisposables 按 key 取消语义；Map<id,Disposable> 兼防
-    // 清单内重复 id 重复入队；LEGACY_REQUIREMENTS E 生命周期清理）
-    DisposableEffect(state.preloadTargets) {
-        val disposables = mutableMapOf<String, Disposable>()
-        state.preloadTargets.forEach { target ->
-            if (target.assetId in disposables) return@forEach // 防御：重复 id 不重复入队
+    // 当前原图就绪后才串行预取；队列清单更新只增删变化项，不撤销仍有效的请求。
+    val imageLoader = SingletonImageLoader.get(context)
+    val preloadQueue = remember(imageLoader, context) {
+        DetailPreloadQueue { target, finished ->
             val request = ImageRequest.Builder(context)
                 .data(target.url)
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .apply {
                     if (!target.isVideo) {
                         size(Size.ORIGINAL)
-                        // 任务U10-5（2026-09-14 用户拍板）：原图即看即取**不落盘**——
-                        // 图片原件体积大，落盘缓存会让磁盘缓存无谓膨胀（用户实测 2.9GB），
-                        // 且反复写盘损耗存储；会话内回看由内存缓存兜底，离场即弃。
-                        // 视频海报帧是小缩略图，保持磁盘缓存（减少流量）。
                         diskCachePolicy(CachePolicy.DISABLED)
                     }
                 }
+                .listener(onSuccess = { _, _ -> finished() }, onError = { _, _ -> finished() })
                 .build()
-            disposables[target.assetId] = SingletonImageLoader.get(context).enqueue(request)
+            val disposable = imageLoader.enqueue(request)
+            val cancel: () -> Unit = { disposable.dispose() }
+            cancel
         }
-        onDispose { disposables.values.forEach { it.dispose() } }
+    }
+    // 在组合阶段读取就绪/生命周期状态，状态变化才会触发队列更新；不能只在SideEffect里读取。
+    val preloadEnabled = isResumed && !playerActive && (imageReady || state.asset?.mediaType == MediaKind.VIDEO)
+    SideEffect {
+        preloadQueue.update(
+            state.preloadTargets,
+            enabled = preloadEnabled,
+        )
+    }
+    DisposableEffect(preloadQueue, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) preloadQueue.pause()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            preloadQueue.clear()
+        }
     }
 
     // 兄弟资产切换回调单源（拍板③：目标解析失败（越界/无批次/缺参）静默不动；批次清单
@@ -305,47 +315,6 @@ fun DetailScreen(
         }
     } else {
         val asset = requireNotNull(state.asset)
-        // S10 件1：图片资产原图顶部亮度采样（与原图加载同时发起，chrome 隐藏反色判定面
-        // 就绪在先——2026-09-19 用户拍板「白色上面状态栏就是反色这种……手机相册那种」）。
-        // 48px 小图请求（allowHardware(false)=软件位图，硬件位图禁 getPixels；size 参与
-        // Coil 内存缓存 key，与口径②原图请求互不命中、互不干扰）。缓存口径：内存 ENABLED
-        // （会话内回看秒回）；磁盘 DISABLED——守 U10-5 拍板「原件不落盘防磁盘缓存膨胀」，
-        // 采样请求同样不得把原件写进磁盘缓存。仅图片资产采样：视频资产无「原图」语义
-        // （origUrl 是视频原件），海报态沉浸按 null 兜底浅色图标。onError 不回调即保持
-        // null → 兜底浅图标（黑底语义）。纯函数判定见 StatusBarLuminance.kt（单测锁定）
-        val sampleOrigUrl = asset.origUrl
-        DisposableEffect(asset.id, sampleOrigUrl) {
-            imageTopLuminance = null // 切资产先回兜底值，旧资产采样值不串新资产
-            if (asset.mediaType == MediaKind.VIDEO || sampleOrigUrl.isNullOrEmpty()) {
-                onDispose { }
-            } else {
-                val request = ImageRequest.Builder(context)
-                    .data(sampleOrigUrl)
-                    .size(STATUS_BAR_SAMPLE_SIZE_PX)
-                    .allowHardware(false)
-                    .memoryCachePolicy(CachePolicy.ENABLED)
-                    .diskCachePolicy(CachePolicy.DISABLED)
-                    .target(
-                        object : Target {
-                            override fun onSuccess(result: Image) {
-                                val bitmap = (result as? BitmapImage)?.bitmap ?: return
-                                val pixels = IntArray(bitmap.width * bitmap.height)
-                                bitmap.getPixels(
-                                    pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height,
-                                )
-                                imageTopLuminance = topRegionAverageLuminance(
-                                    pixels = pixels,
-                                    cols = bitmap.width,
-                                    rows = bitmap.height,
-                                )
-                            }
-                        },
-                    )
-                    .build()
-                val disposable = SingletonImageLoader.get(context).enqueue(request)
-                onDispose { disposable.dispose() }
-            }
-        }
         // 舞台底色单源裁决（任务K K1 黑底污染清偿，对齐旧版 MediaDetailFragment 颜色口径）：
         // chrome 有效显示=主题背景（≈旧 qmColorBg，日 #FAFAFA/夜 #1A1A1A，非纯黑——媒体
         // contain letterbox 与状态栏后区域同色，negate-inset 平移出的顶部区无黑条/主题色条
@@ -516,6 +485,16 @@ fun DetailScreen(
                         backdrop = stageBackdrop,
                         modifier = Modifier.fillMaxSize(),
                         onSiblingNavigate = onSiblingNavigate,
+                        onImageLoading = {
+                            preloadQueue.pause()
+                            imageReady = false
+                            imageTopLuminance = null
+                        },
+                        onImageLoaded = { width, height, luminance ->
+                            imageTopLuminance = luminance
+                            viewModel.onOriginalImageLoaded(width, height)
+                            imageReady = true
+                        },
                         // 放大态单击=无操作（2026-09-13 拍板口径）：放大期 chromeEffective 已被
                         // zoomImmersive 压 false，单击若照常翻转 chromeVisible 会在缩回后以
                         // 反转态恢复（奇偶漂移），故门控掉

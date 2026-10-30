@@ -103,24 +103,35 @@ func buildTagRelevanceMap(items []Item, tagsByItem [][]string) map[string]float6
 }
 
 // topTagsOf 取相关度降序前 Top-20 的标签集合（偏好标签集，Jaccard 用）。
-// 同相关度按字典序（map 迭代无序——先排序再稳定排序，保证确定性；
-// 旧项目用 Kotlin sortedByDescending 的稳定排序，语义等价）。
+// 同相关度按字典序；有界选择与旧版字典序后稳定降序全量排序严格同输出。
 func topTagsOf(m map[string]float64) map[string]bool {
 	if len(m) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+	// 只消费Top-20集合，维护固定大小的有序候选即可；不为全部标签分配切片和排序两次。
+	type weightedTag struct {
+		name   string
+		weight float64
 	}
-	sort.Strings(keys)
-	sort.SliceStable(keys, func(i, j int) bool { return m[keys[i]] > m[keys[j]] })
-	if len(keys) > topTagCount {
-		keys = keys[:topTagCount]
+	var selected [topTagCount]weightedTag
+	n := 0
+	for tag, weight := range m {
+		better := func(i int) bool {
+			return weight > selected[i].weight || (weight == selected[i].weight && tag < selected[i].name)
+		}
+		if n == topTagCount && !better(n-1) {
+			continue
+		}
+		at := sort.Search(n, better)
+		if n < topTagCount {
+			n++
+		}
+		copy(selected[at+1:n], selected[at:n-1])
+		selected[at] = weightedTag{tag, weight}
 	}
-	top := make(map[string]bool, len(keys))
-	for _, k := range keys {
-		top[k] = true
+	top := make(map[string]bool, n)
+	for _, tag := range selected[:n] {
+		top[tag.name] = true
 	}
 	return top
 }

@@ -248,7 +248,7 @@ class DetailViewModel @Inject constructor(
     /**
      * 堆占用比例读取（超大图预载收紧依据）。internal var 供单测注入定值——
      * 生产默认**双通道取 max**（旧版 isMemoryComfortable 口径）：Java 堆 (total-free)/max
-     * 与 native 堆 allocated/total——API26+ 大图 bitmap 像素数据在 native 堆，只看 Java 堆
+     * 与 native 堆 allocated/max——两者都对照应用堆预算。API26+ 大图 bitmap 在 native 堆，只看 Java 堆
      * 会漏判真紧张（native 已涨爆而 Java 堆空闲）。native 读取 runCatching 兜底回 0
      * （JVM 单测 android.jar stub 不可调，回退只看 Java 通道=宽松不收紧）。
      */
@@ -257,8 +257,8 @@ class DetailViewModel @Inject constructor(
         val max = runtime.maxMemory().toFloat()
         val javaRatio = if (max <= 0f) 0f else (runtime.totalMemory() - runtime.freeMemory()) / max
         val nativeRatio = runCatching {
-            val nativeTotal = Debug.getNativeHeapSize().toFloat()
-            if (nativeTotal <= 0f) 0f else Debug.getNativeHeapAllocatedSize().toFloat() / nativeTotal
+            // 当前native分配区大小不是内存上限；两类占用都对照应用堆预算。
+            if (max <= 0f) 0f else Debug.getNativeHeapAllocatedSize().toFloat() / max
         }.getOrDefault(0f)
         maxOf(javaRatio, nativeRatio)
     }
@@ -300,7 +300,7 @@ class DetailViewModel @Inject constructor(
                         val url = if (isVideo) neighbor.thumbUrl else neighbor.origUrl
                         if (url != null) {
                             preloadTargetsById[neighbor.id] =
-                                DetailPreloadTarget(neighbor.id, url, isVideo)
+                                DetailPreloadTarget(neighbor.id, url, isVideo, neighbor.sizeBytes, imageDimCache.dimsOf(neighbor.id))
                             publishPreloadTargets()
                         }
                     }
@@ -313,8 +313,17 @@ class DetailViewModel @Inject constructor(
     /** 按窗口序发布目标清单（只含 url 已就绪的邻位） */
     private fun publishPreloadTargets() {
         _uiState.value = _uiState.value.copy(
-            preloadTargets = preloadWindowOrder.mapNotNull(preloadTargetsById::get),
+            preloadTargets = DetailPreloadPolicy.eligibleTargets(
+                preloadWindowOrder.mapNotNull(preloadTargetsById::get), heapUsedRatioProvider(),
+            ),
         )
+    }
+
+    /** 服务端静图尺寸缺省时，由真正完成的原图解码补充会话内尺寸，不回写服务端。 */
+    fun onOriginalImageLoaded(width: Int, height: Int) {
+        val id = assetId ?: return
+        imageDimCache.put(id, ImageDims(width, height))
+        publishPreloadTargets()
     }
 
     /** 详情落地后登记已知尺寸（预载策略超大图判定的数据源，进程级共享跨兄弟叠栈屏） */

@@ -9,6 +9,32 @@ import org.junit.Test
  * 堆占用 ≥0.6 跳过全部超大图 / 宽高未知按普通图。纯函数零 Android 依赖（JVM 最快档）。
  */
 class DetailPreloadPolicyTest {
+    private fun target(id: String, size: Long? = 1024L * 1024, dims: ImageDims? = null, video: Boolean = false) =
+        DetailPreloadTarget(id, "$id.url", video, size, dims)
+
+    @Test
+    fun `实际预取 - 未知尺寸最多一张且不放行超字节预算原件`() {
+        val candidates = listOf(target("huge", 60L * 1024 * 1024), target("near"), target("far"), target("poster", null, video = true))
+        assertEquals(listOf("near", "poster"), DetailPreloadPolicy.eligibleTargets(candidates, 0.3f).map { it.assetId })
+        assertEquals(listOf("poster"), DetailPreloadPolicy.eligibleTargets(candidates, 0.6f).map { it.assetId })
+    }
+
+    @Test
+    fun `实际预取 - 同时约束压缩体积与解码像素且预算边界可用`() {
+        val candidates = listOf(
+            target("compressedHuge", dims = ImageDims(7680, 4320)),
+            target("invalid", 0), target("unknown", null),
+            target("boundary", DetailPreloadPolicy.MAX_ORIGINAL_PREFETCH_BYTES, ImageDims(4096, 2048)),
+            target("small", dims = ImageDims(512, 512)),
+        )
+        assertEquals(listOf("boundary", "small"), DetailPreloadPolicy.eligibleTargets(candidates, 0.3f).map { it.assetId })
+    }
+
+    @Test
+    fun `实际预取 - 非法尺寸按未知限量而非当成零像素`() {
+        val candidates = listOf(target("a", dims = ImageDims(0, 0)), target("b", dims = ImageDims(-1, 2)))
+        assertEquals(listOf("a"), DetailPreloadPolicy.eligibleTargets(candidates, 0.3f).map { it.assetId })
+    }
 
     private fun noDims(id: String): ImageDims? = null
 

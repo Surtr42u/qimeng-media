@@ -63,4 +63,6 @@ data class DetailPreloadTarget(
     val assetId: String,
     val url: String,
     val isVideo: Boolean,
+    val sizeBytes: Long? = null,
+    val dims: ImageDims? = null,
 )
