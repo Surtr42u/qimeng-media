@@ -8,6 +8,24 @@ import discover_lan
 
 
 class DiscoveryTest(unittest.TestCase):
+    def test_unreachable_saved_address_does_not_prevent_next_address(self):
+        with patch.object(discover_lan.socket, "socket") as factory:
+            fake = factory.return_value.__enter__.return_value
+            attempts = []
+
+            def receive(_size):
+                request, target = fake.sendto.call_args.args
+                attempts.append(target[0])
+                if target[0] == "127.0.0.2":
+                    raise OSError("synthetic expired route")
+                nonce = request.rstrip().decode().split(":")[1]
+                return f"QIMENG_SERVER_V1:{nonce}:18080".encode(), (target[0], discover_lan.PORT)
+
+            fake.recvfrom.side_effect = receive
+            result = discover_lan.discover(["http://127.0.0.2:8420", "http://127.0.0.1:8420"], [])
+            self.assertEqual(["127.0.0.2", "127.0.0.1"], attempts)
+            self.assertEqual(["http://127.0.0.1:18080"], result)
+
     def test_prefers_saved_address_preserves_http_port_and_rejects_stale_reply(self):
         errors = []
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as responder:

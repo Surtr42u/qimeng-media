@@ -54,7 +54,11 @@ def discover(preferred, broadcasts):
             except OSError:
                 # 旧网段已无路由属于预期失效，继续历史/当前网卡广播。
                 continue
-            receive(time.monotonic() + PREFERRED_SECONDS, str(address))
+            try:
+                receive(time.monotonic() + PREFERRED_SECONDS, str(address))
+            except OSError:
+                # Windows可能把已失效地址的ICMP错误交给recvfrom；仍继续后续地址。
+                continue
             if found:
                 return sorted(found)
         deadline = time.monotonic() + SCAN_SECONDS
