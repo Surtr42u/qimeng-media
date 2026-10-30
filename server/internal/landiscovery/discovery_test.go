@@ -1,6 +1,7 @@
 package landiscovery
 
 import (
+	"log/slog"
 	"net"
 	"strings"
 	"testing"
@@ -47,7 +48,7 @@ func TestServeAndClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- serve(conn, 18080) }()
+	go func() { done <- serve(conn, 18080, slog.Default()) }()
 	t.Cleanup(func() {
 		if err := conn.Close(); err != nil {
 			t.Error(err)

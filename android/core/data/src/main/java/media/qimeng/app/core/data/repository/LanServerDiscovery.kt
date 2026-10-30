@@ -60,6 +60,9 @@ class UdpLanServerDiscovery @Inject constructor() : LanServerDiscovery {
                         socket.receive(packet)
                     } catch (_: SocketTimeoutException) {
                         continue
+                    } catch (_: IOException) {
+                        // 已失效历史地址的ICMP/路由错误不阻断后续历史与广播。
+                        break
                     }
                     if (packet.address != target || packet.port != LanDiscoveryProtocol.PORT) continue
                     val port = LanDiscoveryProtocol.parsePort(packet.data.copyOf(packet.length), nonce) ?: continue

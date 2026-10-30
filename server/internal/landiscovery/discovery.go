@@ -45,7 +45,7 @@ func Start(httpAddress string, logger *slog.Logger) (func(), error) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		if err := serve(conn, port); err != nil {
+		if err := serve(conn, port, logger); err != nil {
 			logger.Warn("局域网发现已停止，仍可手动填写地址", "error", err)
 		}
 	}()
@@ -57,11 +57,12 @@ func Start(httpAddress string, logger *slog.Logger) (func(), error) {
 	}, nil
 }
 
-func serve(conn *net.UDPConn, httpPort int) error {
+func serve(conn *net.UDPConn, httpPort int, logger *slog.Logger) error {
 	// 多一个字节检出超长/截断包；串行处理且不维护按来源增长的集合。
 	buffer := make([]byte, packetSize+1)
 	window := time.Now()
 	count := 0
+	var lastWriteWarning time.Time
 	for {
 		n, peer, err := conn.ReadFromUDP(buffer)
 		if err != nil {
@@ -92,7 +93,11 @@ func serve(conn *net.UDPConn, httpPort int) error {
 			if errors.Is(err, net.ErrClosed) {
 				return nil
 			}
-			return err
+			// 换网瞬间旧路由可能已失效；只放弃本次回应，不能让发现永久停止。
+			if now.Sub(lastWriteWarning) >= time.Second {
+				logger.Warn("局域网发现回应失败，等待下次查询", "error", err)
+				lastWriteWarning = now
+			}
 		}
 	}
 }
@@ -109,7 +114,7 @@ func response(packet []byte, httpPort int) []byte {
 	if _, err := hex.DecodeString(nonce); err != nil || nonce != strings.ToLower(nonce) {
 		return nil
 	}
-	if strings.TrimSpace(request[len(requestPrefix)+nonceLength:]) != "" {
+	if strings.Trim(request[len(requestPrefix)+nonceLength:], " ") != "" {
 		return nil
 	}
 	return []byte(responsePrefix + nonce + ":" + strconv.Itoa(httpPort))
