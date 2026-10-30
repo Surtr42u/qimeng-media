@@ -27,7 +27,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with: { python-version: '3.13' }
       # 与 ci.yml/Makefile 同版本生成器；生成物不入库，SDK 锁由完整 CI 重算。
       - name: 生成 Go 接口层
