@@ -1,6 +1,9 @@
 package media.qimeng.app.feature.login
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import media.qimeng.app.core.data.repository.LanServerDiscovery
+import media.qimeng.app.core.data.repository.AuthRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -23,6 +26,67 @@ class LoginViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
+    private fun newViewModel(repository: AuthRepository, discovery: LanServerDiscovery = LanServerDiscovery { emptyList() }) =
+        LoginViewModel(repository, discovery)
+
+    @Test
+    fun `single discovered server replaces stale address without logging in`() {
+        val repository = FakeAuthRepository(initialServerUrl = "http://192.0.2.1:8420")
+        val vm = newViewModel(repository, LanServerDiscovery { listOf("http://192.0.2.2:8420") })
+        driveIdle()
+        vm.discoverServers()
+        driveIdle()
+        assertEquals("http://192.0.2.2:8420", vm.uiState.value.serverUrl)
+        assertTrue(repository.loginCalls.isEmpty())
+    }
+
+    @Test
+    fun `manual address is not overwritten by delayed discovery and switching local cancels scan`() {
+        val gate = CompletableDeferred<List<String>>()
+        val vm = newViewModel(FakeAuthRepository(initialServerUrl = "http://192.0.2.1:8420"),
+            LanServerDiscovery { gate.await() })
+        driveIdle()
+        vm.discoverServers()
+        driveIdle()
+        vm.onServerUrlChange("http://192.0.2.3:8420")
+        gate.complete(listOf("http://192.0.2.2:8420"))
+        driveIdle()
+        assertEquals("http://192.0.2.3:8420", vm.uiState.value.serverUrl)
+        vm.onEndpointSelected(DefaultEndpoint.LOCAL)
+        assertEquals(DefaultEndpoint.LOCAL, vm.uiState.value.selected)
+        assertTrue(!vm.uiState.value.isDiscovering)
+    }
+
+    @Test
+    fun `switch local cancels in flight scan without changing local selection`() {
+        var cancelled = false
+        val vm = newViewModel(FakeAuthRepository(initialServerUrl = "http://192.0.2.1:8420"),
+            LanServerDiscovery { try { awaitCancellation() } finally { cancelled = true } })
+        driveIdle()
+        vm.discoverServers()
+        driveIdle()
+        vm.onEndpointSelected(DefaultEndpoint.LOCAL)
+        driveIdle()
+        assertTrue(cancelled)
+        assertTrue(!vm.uiState.value.isDiscovering)
+        assertEquals(DefaultEndpoint.LOCAL, vm.uiState.value.selected)
+    }
+
+    @Test
+    fun `multiple discoveries require choice and preserve password without submitting`() {
+        val repository = FakeAuthRepository(initialServerUrl = "http://192.0.2.1:8420")
+        val vm = newViewModel(repository, LanServerDiscovery { listOf("http://192.0.2.2:8420", "http://192.0.2.3:8420") })
+        driveIdle()
+        vm.onPasswordChange("synthetic password")
+        vm.discoverServers()
+        driveIdle()
+        assertEquals("http://192.0.2.1:8420", vm.uiState.value.serverUrl)
+        vm.selectDiscoveredServer("http://192.0.2.3:8420")
+        assertEquals("http://192.0.2.3:8420", vm.uiState.value.serverUrl)
+        assertEquals("synthetic password", vm.uiState.value.password)
+        assertTrue(repository.loginCalls.isEmpty())
+    }
+
     private fun driveIdle() = mainDispatcherRule.testDispatcher.scheduler.advanceUntilIdle()
 
     // ---------- 进页预选与地址解析 ----------
@@ -34,7 +98,7 @@ class LoginViewModelTest {
             initialRememberedNasUrl = "http://192.0.2.8:8420",
             initialDefaultEndpoint = DefaultEndpoint.NAS,
         )
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         assertEquals(DefaultEndpoint.NAS, viewModel.uiState.value.selected)
         assertEquals("http://192.0.2.8:8420", viewModel.uiState.value.serverUrl)
@@ -43,7 +107,7 @@ class LoginViewModelTest {
     @Test
     fun `默认端未设置时按当前地址端型预选NAS`() {
         val repository = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420")
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         assertEquals(DefaultEndpoint.NAS, viewModel.uiState.value.selected)
         assertEquals("http://10.0.2.2:8420", viewModel.uiState.value.serverUrl)
@@ -52,7 +116,7 @@ class LoginViewModelTest {
     @Test
     fun `默认端未设置且当前是本机地址时预选本机`() {
         val repository = FakeAuthRepository(initialServerUrl = ServerAddress.LOCAL_MODE_PRESET)
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         assertEquals(DefaultEndpoint.LOCAL, viewModel.uiState.value.selected)
     }
@@ -66,7 +130,7 @@ class LoginViewModelTest {
             initialRememberedNasUrl = "http://192.0.2.8:8420",
             initialDefaultEndpoint = DefaultEndpoint.NAS,
         )
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         assertEquals("http://192.0.2.50:8420", viewModel.uiState.value.serverUrl)
     }
@@ -74,20 +138,20 @@ class LoginViewModelTest {
     @Test
     fun `本机选项地址取记忆无记忆回退预设`() {
         val rememberedLocal = ServerAddress.LOCAL_MODE_PRESET.dropLast(1) + "1"
-        val withMemory = LoginViewModel(
+        val withMemory = newViewModel(
             FakeAuthRepository(initialRememberedLocalUrl = rememberedLocal),
         )
         driveIdle()
         assertEquals(rememberedLocal, withMemory.uiState.value.localUrl)
 
-        val withoutMemory = LoginViewModel(FakeAuthRepository())
+        val withoutMemory = newViewModel(FakeAuthRepository())
         driveIdle()
         assertEquals(ServerAddress.LOCAL_MODE_PRESET, withoutMemory.uiState.value.localUrl)
     }
 
     @Test
     fun `全新安装未设置时不预选`() {
-        val viewModel = LoginViewModel(FakeAuthRepository())
+        val viewModel = newViewModel(FakeAuthRepository())
         driveIdle()
         assertNull(viewModel.uiState.value.selected)
         assertEquals("", viewModel.uiState.value.serverUrl)
@@ -98,7 +162,7 @@ class LoginViewModelTest {
     @Test
     fun `点选本机后提交透传本机地址`() {
         val repository = FakeAuthRepository()
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         viewModel.onEndpointSelected(DefaultEndpoint.LOCAL)
         viewModel.submit()
@@ -113,7 +177,7 @@ class LoginViewModelTest {
             initialRememberedNasUrl = "http://192.0.2.8:8420",
             initialDefaultEndpoint = DefaultEndpoint.NAS,
         )
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         viewModel.submit()
         driveIdle()
@@ -124,7 +188,7 @@ class LoginViewModelTest {
     @Test
     fun `未选端就提交报地址错误且不发仓库调用`() {
         val repository = FakeAuthRepository()
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle() // 全空环境：不预选
         viewModel.submit()
         driveIdle()
@@ -135,7 +199,7 @@ class LoginViewModelTest {
     @Test
     fun `点选选项可清除旧错误`() {
         val repository = FakeAuthRepository()
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         viewModel.submit()
         driveIdle()
@@ -150,7 +214,7 @@ class LoginViewModelTest {
             initialRememberedNasUrl = "http://192.0.2.8:8420",
             initialDefaultEndpoint = DefaultEndpoint.NAS,
         )
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         viewModel.onServerUrlChange("http://192.0.2.50:8420")
         viewModel.submit()
@@ -166,7 +230,7 @@ class LoginViewModelTest {
             initialRememberedNasUrl = "http://192.0.2.8:8420",
             initialDefaultEndpoint = DefaultEndpoint.NAS,
         )
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         viewModel.onPasswordChange("secret")
         viewModel.submit()
@@ -183,7 +247,7 @@ class LoginViewModelTest {
             initialDefaultEndpoint = DefaultEndpoint.NAS,
         )
         repository.nextLoginResult = LoginResult.Failure(LoginError.ServerUnreachable)
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         viewModel.submit()
         driveIdle()
@@ -198,7 +262,7 @@ class LoginViewModelTest {
         )
         val gate = CompletableDeferred<Unit>()
         repository.loginGate = gate
-        val viewModel = LoginViewModel(repository)
+        val viewModel = newViewModel(repository)
         driveIdle()
         viewModel.submit()
         viewModel.submit()

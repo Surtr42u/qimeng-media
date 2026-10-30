@@ -87,3 +87,7 @@ Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固
 Web 云端浏览器检查将合成作者管理场景的窄屏/桌面截图与失败 trace 保存为 `web-browser-evidence` artifact（CI 无论成功失败均尝试上传 `web/test-results/`）。截图仅使用合成 API，不读取真实媒体或凭据；用于界面检查，不替代 Android 实机验证。
 
 推荐标签选择的云端对照基准为`BenchmarkTopTagsSelection`：50/20000个合成标签，旧两次全量排序与固定Top-20候选保持同输出，记录时间和分配；不作为整页延迟或推荐质量证明。
+
+## 局域网发现调试接口
+
+`python -X utf8 tools/discover_lan.py --json`输出`{status, servers}`，退出码0=找到、1=未找到、2=网络/参数错误。重复`--prefer http://192.0.2.8:8420`按顺序优先查最多五个地址，`--broadcast 192.0.2.255`可选指定网卡广播地址（示例为文档测试网段）。默认广播255.255.255.255，多网卡调试可显式指定广播地址。与App/Go共用[发现线协议](../server/README.md#局域网发现)，不登录、不发送token、不请求业务库。优先历史的单播与广播均有界，地址输出是本机隐私，落盘只放忽略的`build/*.local/`；它不证明密码、媒体访问或目标实例身份正确。

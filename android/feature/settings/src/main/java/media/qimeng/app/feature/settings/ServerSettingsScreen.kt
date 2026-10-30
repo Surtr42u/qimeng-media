@@ -180,6 +180,10 @@ fun ServerSettingsScreen(
                 if (state.isLocalMode) "当前使用本机模式，媒体库由这台设备管理。"
                 else "当前连接远端服务器，可在这里管理地址和登录偏好。",
             )
+            Button(onClick = viewModel::switchToNasDiscovery, enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth().padding(bottom = QimengDimens.SpaceL)) {
+                Text("切换到 NAS / 重新寻找影库")
+            }
             ServerUrlEditCard(
                 currentUrl = state.currentUrl,
                 urlInput = state.urlInput,

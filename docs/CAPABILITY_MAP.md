@@ -22,6 +22,7 @@
 | 检索/筛选 | FTS5、出处/角色/作者维度、建议补全；[筛选](domain/filtering.md)、[匹配](domain/matching.md) | 检索高亮 | 已有 |
 | 缩略图 | 三档、封面/代表帧策略、EXIF 转正、表示版本；共用生成、分页回填及前台优先准入已云端验证并部署 PC/arm64 内嵌，范围见 HANDOVER；[缩略图](domain/thumbnails.md) | 实时首帧/预生成代表帧双管分派、孤儿全量对账；大库需求触发 | 已有；增强待办 |
 | 桌面播放 | Tauri WebView2 + 标准 ArtPlayer，共享 Web UI；[桌面说明](../desktop/README.md) | 无自动更新器（自用接受）；libmpv 路线已废弃，不列未来接线任务 | 已有 |
+| 局域网连接 | Android本机/NAS切换、最近5个成功地址记忆、历史优先及IPv4 UDP发现；[连接说明](../android/README.md#登录与局域网连接) | 源码已接入；云端/呈现与实际安装见HANDOVER；IPv6-only/容器bridge走手填，跨Wi-Fi/网线与NAS设备另验 | 部分已有 |
 | 外网访问 | 隧道访问架构已决策；SECURITY 远程访问节 | Tailscale 实际启用/引导待远程需求，不能写成已部署 | 设计已定；启用规划中 |
 | 多用户 | 表结构预留，当前单用户实现 | 多用户运行时能力；用户需求触发 | 规划中 |
 | 便携备份/迁移 | 当前源码仅v2原事件身份合并、TXT keep；v1导入按ADR-0050退役，其他版本写前拒绝；[备份规则](domain/migration.md) | 已入库legacy/无键历史不清理；分段失败/字段边界保留，源码与实际包见HANDOVER | v2已有；精简版同源门禁与双端安装/隔离后端验证通过，现场范围见HANDOVER |

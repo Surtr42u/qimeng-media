@@ -1,6 +1,7 @@
 package media.qimeng.app.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import media.qimeng.app.core.network.DefaultEndpoint
 
 /** 登录失败分类：驱动登录页分文案（「地址不通」与「密码错」必须分开给中文提示，M4-1 冻结口径）。 */
@@ -39,6 +40,9 @@ interface AuthRepository {
 
     /** 最近一次成功登录的 NAS 地址记忆（批S3 服务器地址固化；透传自 ServerConfigDataSource，本机模式不覆盖）。 */
     val rememberedNasUrl: Flow<String>
+
+    val rememberedNasUrls: Flow<List<String>>
+        get() = rememberedNasUrl.map { listOf(it).filter(String::isNotEmpty) }
 
     /** 最近一次成功登录的本机模式地址记忆（M6 单机形态口；与 NAS 记忆各归各槽、切换互换回填）。 */
     val rememberedLocalUrl: Flow<String>

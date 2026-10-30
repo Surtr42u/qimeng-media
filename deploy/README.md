@@ -116,3 +116,9 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.hardened.ym
 - compose 部署后：`GET /api/v1/healthz` 200（局域网 2ms）、Web UI 托管正常、
   容器状态 `healthy`；`restart=unless-stopped` 经服务重启验证自动拉起；
 - 全链路：注册库（白名单内）→ 扫描 8 个合成测试文件 → 缩略图/时长 → 局域网播放 → 上传 201 入库。
+
+## 局域网自动发现
+
+原生Windows/Linux服务默认通配监听时使用UDP18421回答App，HTTP仍用原端口。宿主机防火墙需允许受信局域网的UDP18421入站及HTTP端口；程序更新可能使防火墙规则失配。手机与主机必须可互通，访客Wi-Fi/AP隔离、VPN路由和VLAN可能阻断广播或后续HTTP。换网后重新寻找，无需固定IP；这不提高链路速度，也不跨互联网自动连接。
+
+NAS Docker的默认bridge样例继续支持手填HTTP地址，不能接收物理网卡广播；仅增加UDP端口映射不能保证广播被转发。若需要自动发现，在支持的Linux NAS上使用host网络（`network_mode: host`，移除`ports`映射，HTTP实际端口须与访问端口一致），并按NAS防火墙放行。host会扩大容器网络可见面，部署时须核对端口冲突与原鉴权配置；本轮没有目标NAS设备验收，不修改现有生产compose的网络策略。IPv6-only、绑定指定IP和HTTPS反代继续使用手填地址。

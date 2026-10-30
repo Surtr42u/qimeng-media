@@ -32,6 +32,7 @@ import (
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
+	"qimeng-media/server/internal/landiscovery"
 	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/safego"
@@ -302,6 +303,12 @@ func main() {
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	closeDiscovery, discoveryErr := landiscovery.Start(cfg.Listen, logger)
+	if discoveryErr != nil {
+		logger.Warn("局域网发现不可用，仍可手动填写地址", "error", discoveryErr)
+	} else {
+		defer closeDiscovery()
+	}
 	writeService.StartLibraryMetrics(ctx)
 	// 回填主管随进程取消；开机静默窗、变更通知及周期兜底由业务服务统一处理。
 	apiSrv.StartThumbnailWarmup(ctx)

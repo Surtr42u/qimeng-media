@@ -160,6 +160,17 @@ class ServerSettingsViewModel @Inject constructor(
      * 一键切换本机模式（原 SettingsViewModel.fillLocalModeForNextLogin 迁入，语义不变）：
      * 预填值默认=预设常量，编辑过则=编辑值（都经同一规范化）。
      */
+    /** 已登录端也能回到NAS自动查找，无需先知道新IP。 */
+    fun switchToNasDiscovery() {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true) }
+        viewModelScope.launch {
+            authRepository.setDefaultEndpoint(DefaultEndpoint.NAS)
+            authRepository.logoutWithStagedUrl(authRepository.rememberedNasUrl.first())
+            _events.send(ServerSettingsEvent.LoggedOut)
+        }
+    }
+
     fun switchToLocalMode() {
         stageAndLogout(_uiState.value.localUrlInput) { _uiState.update { it.copy(localUrlInvalid = true) } }
     }
