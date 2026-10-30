@@ -43,6 +43,8 @@ def discover(preferred, broadcasts):
                 if not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
                     continue
                 found.add(f"http://{peer[0]}:{int(port_text)}")
+                if expected:
+                    return
 
         for url in preferred[:5]:
             parsed = urlsplit(url)
