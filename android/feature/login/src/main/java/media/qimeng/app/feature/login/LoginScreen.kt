@@ -35,7 +35,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,7 +49,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.network.DefaultEndpoint
@@ -92,12 +91,14 @@ fun LoginScreen(modifier: Modifier = Modifier, viewModel: LoginViewModel = hiltV
         if (needsPermission()) launcher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
         else viewModel.submit()
     }
-    LaunchedEffect(state.selected) {
-        if (state.selected == DefaultEndpoint.NAS) discover()
-    }
-    LifecycleStartEffect(state.selected) {
-        if (state.selected == DefaultEndpoint.NAS && !needsPermission()) viewModel.discoverServers()
-        onStopOrDispose { viewModel.stopDiscovery() }
+    // 冷启动权限由MainActivity请求；自动发现等恢复到前台且已授权后再开始，
+    // 避免与壳层同时弹两份权限请求。主动点NAS/重新寻找仍走页面权限门。
+    LifecycleResumeEffect(state.selected) {
+        if (state.selected == DefaultEndpoint.NAS && !needsPermission()) {
+            guidance = false
+            viewModel.discoverServers()
+        }
+        onPauseOrDispose { viewModel.stopDiscovery() }
     }
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -124,6 +125,7 @@ fun LoginScreen(modifier: Modifier = Modifier, viewModel: LoginViewModel = hiltV
                     ModeButton(stringResource(R.string.login_option_server), stringResource(R.string.login_nas_caption),
                         state.selected == DefaultEndpoint.NAS, !state.isSubmitting, Modifier.weight(1f)) {
                         viewModel.onEndpointSelected(DefaultEndpoint.NAS)
+                        discover()
                     }
                 }
                 Spacer(Modifier.height(20.dp))
