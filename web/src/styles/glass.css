@@ -3020,3 +3020,25 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
   .mine-content-tabs > button > svg { width: 15px; height: 15px; }
   .mine-history-search { width: 100%; }
 }
+
+/* 作者管理沿用 Aurora Glass，身份、浏览和编辑操作分区。 */
+.a-guide { color: var(--qm-text-muted); font-size: 13px; margin-top: 12px; }
+.a-toolbar, .a-sortrow { flex-wrap: wrap; gap: 12px; padding-inline: 0; }
+.a-zones { gap: 12px; }
+.a-list li { padding: 14px 6px; gap: 12px; }
+.author-identity { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 140px; text-align: left; color: inherit; background: none; border: 0; cursor: pointer; }
+.author-avatar { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border-radius: 50%; background: var(--qm-hover); color: var(--qm-primary-strong); font-size: 18px; }
+.author-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.author-info small { color: var(--qm-text-muted); }
+.author-editor { max-height: 85dvh; overflow-y: auto; }
+.author-editor .settings-options, .author-editor .settings-field { margin-top: 16px; }
+.settings-quicklinks { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+#settings-library, #settings-preferences { scroll-margin-top: 24px; }
+@media (max-width: 600px) {
+  .a-toolbar .hist-search { width: 100%; }
+  .a-sortrow { gap: 6px; }
+  .a-sortrow .sort-pill { padding-inline: 10px; font-size: 12px; }
+  .a-list li { gap: 8px; }
+  .a-list .author-identity { flex-basis: 100%; }
+  .a-list .follow-btn { margin-left: 0; }
+}

@@ -1,6 +1,7 @@
 package media.qimeng.app.feature.author
 
 import androidx.compose.foundation.clickable
+import media.qimeng.app.core.model.AuthorType
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,6 +9,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.unit.dp
+import media.qimeng.app.core.ui.theme.softDaylightBackground
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,7 +117,7 @@ fun AuthorScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().softDaylightBackground()) {
         QimengTopBar(title = "作者管理", onBack = onBack)
 
         // 计数行（G2：Web page-head 副行；N=全量作者数不随体系/关键词过滤，
@@ -223,7 +228,7 @@ fun AuthorScreen(
                     // 首载中不占位（既有行为保持）；无匹配行给卡内小字空态（Web .a-empty 口径）
                     if (!state.isLoading) {
                         Text(
-                            text = EMPTY_AUTHORS,
+                            text = if (state.errorMessage != null) "读取失败，请下拉重试" else if (state.keyword.isNotBlank()) "没有匹配的作者" else EMPTY_AUTHORS,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = QimengDimens.SpaceL),
@@ -243,6 +248,7 @@ fun AuthorScreen(
                                 author = author,
                                 onToggleFollow = { viewModel.toggleFollow(author) },
                                 onAuthorClick = onAuthorClick,
+                                onSources = { viewModel.openSourcesEditor(author) },
                                 onRename = { viewModel.openRenameDialog(author) },
                                 onDelete = { viewModel.openDeleteDialog(author) },
                             )
@@ -253,6 +259,11 @@ fun AuthorScreen(
         }
     }
 
+    state.sourcesEditor?.let { editor ->
+        AuthorSourcesDialog(editor, viewModel::changeSources, viewModel::saveSources,
+            { viewModel.openSourcesEditor(editor.author) }, viewModel::dismissSourcesEditor)
+    }
+
     // 作者管理对话框（新建/改名共用输入框；删除走确认框）——状态机与提交在 ViewModel
     when (val dialog = state.manageDialog) {
         null -> Unit
@@ -260,6 +271,7 @@ fun AuthorScreen(
         is AuthorManageDialog.Delete -> AuthorDeleteDialog(
             displayName = dialog.displayName,
             fileCount = dialog.fileCount,
+            error = state.errorMessage,
             submitting = state.manageSubmitting,
             onConfirm = viewModel::submitManageDialog,
             onDismiss = viewModel::dismissManageDialog,
@@ -267,7 +279,9 @@ fun AuthorScreen(
 
         else -> AuthorNameDialog(
             title = if (dialog is AuthorManageDialog.Rename) RENAME_DIALOG_TITLE else CREATE_DIALOG_TITLE,
+            initial = (dialog as? AuthorManageDialog.Rename)?.currentDisplayName ?: "",
             value = state.manageInput,
+            error = state.errorMessage,
             submitting = state.manageSubmitting,
             onValueChange = viewModel::onManageInputChange,
             onConfirm = viewModel::submitManageDialog,
@@ -331,6 +345,7 @@ private fun AuthorRow(
     author: AuthorSummary,
     onToggleFollow: () -> Unit,
     onAuthorClick: (authorId: String, displayName: String) -> Unit,
+    onSources: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -345,6 +360,12 @@ private fun AuthorRow(
             .padding(horizontal = QimengDimens.SpaceXXS, vertical = QimengDimens.SpaceL),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.padding(end = QimengDimens.SpaceM).size(44.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(author.displayName.take(1), style = MaterialTheme.typography.titleMedium)
+            }
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = author.displayLabel,
@@ -354,7 +375,7 @@ private fun AuthorRow(
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             )
             Text(
-                text = "${author.fileCount ?: 0} 个文件",
+                text = "${author.fileCount ?: 0} 个文件 · ${if (author.type == AuthorType.COS) "目录管理" else "常规作者"}",
                 // 任务Z Z3：对齐旧版副行 12sp（M3 labelSmall 基线 11sp）；与名字间
                 // 补 SpaceXS=4dp（旧版名字与计数 4dp 间距）；色保持 onSurfaceVariant 系
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
@@ -383,11 +404,11 @@ private fun AuthorRow(
                 modifier = Modifier.padding(horizontal = QimengDimens.ChipHorizontalPadding, vertical = QimengDimens.SpaceS),
             )
         }
-        Box {
+        if (author.type != AuthorType.COS) Box {
             IconButton(onClick = { menuOpen = true }) {
                 Icon(
                     imageVector = MoreVertIcon,
-                    contentDescription = AUTHOR_MENU_DESC,
+                    contentDescription = "${author.displayName}：$AUTHOR_MENU_DESC",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -395,6 +416,7 @@ private fun AuthorRow(
                 expanded = menuOpen,
                 onDismissRequest = { menuOpen = false },
             ) {
+                DropdownMenuItem(text = { Text("来源 / 出处") }, onClick = { menuOpen = false; onSources() })
                 DropdownMenuItem(
                     text = { Text(text = RENAME_MENU_LABEL) },
                     onClick = {
@@ -423,18 +445,33 @@ private fun AuthorRow(
 @Composable
 private fun AuthorNameDialog(
     title: String,
+    initial: String,
     value: String,
+    error: String?,
     submitting: Boolean,
     onValueChange: (String) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var discard by remember { mutableStateOf(false) }
+    val dismiss = {
+        if (!submitting) {
+            if (value != initial) discard = true else onDismiss()
+        }
+    }
+    if (discard) AlertDialog(
+        onDismissRequest = { discard = false }, title = { Text("放弃未保存的修改？") },
+        text = { Text("本次名称修改将丢弃。") },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("放弃修改") } },
+        dismissButton = { TextButton(onClick = { discard = false }) { Text("继续编辑") } },
+    )
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         title = { Text(text = title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS)) {
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 QimengCapsuleTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -455,7 +492,7 @@ private fun AuthorNameDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !submitting) {
+            TextButton(onClick = dismiss, enabled = !submitting) {
                 Text(text = CANCEL_LABEL)
             }
         },
@@ -470,6 +507,7 @@ private fun AuthorNameDialog(
 private fun AuthorDeleteDialog(
     displayName: String,
     fileCount: Int,
+    error: String?,
     submitting: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
@@ -479,7 +517,10 @@ private fun AuthorDeleteDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         title = { Text(text = DELETE_DIALOG_TITLE) },
         text = {
+            Column {
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Text(text = "确定删除「$displayName」吗？\n关联的 $fileCount 个文件会保留，仅解除关联。")
+            }
         },
         confirmButton = {
             TextButton(onClick = onConfirm, enabled = !submitting) {

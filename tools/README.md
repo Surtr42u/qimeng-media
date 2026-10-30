@@ -83,3 +83,5 @@ Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固
 ## 候选包门禁回归
 
 `test_release_gate.py`随既有docs云端unittest运行，固定检查APK模板的完整单测/Lint命令、默认success条件和上传先后；受控错误配置覆盖吞退出码、continue-on-error、always上传和提前上传。它是本仓文本契约，不是YAML通用解析器，也不等于Release整包失败注入；交付继续核对同SHA完整检查、签名/内嵌哈希，新增自动审查边界按用户当前授权和[部署入口](../deploy/README.md#android-候选包与发布资格)处理。
+
+Web 云端浏览器检查将合成作者管理场景的窄屏/桌面截图与失败 trace 保存为 `web-browser-evidence` artifact（CI 无论成功失败均尝试上传 `web/test-results/`）。截图仅使用合成 API，不读取真实媒体或凭据；用于界面检查，不替代 Android 实机验证。

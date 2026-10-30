@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import media.qimeng.app.core.model.AuthorType
 import media.qimeng.app.core.data.repository.AuthorManageRejectedException
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
@@ -32,7 +35,19 @@ sealed interface AuthorManageDialog {
     data class Delete(val authorId: String, val displayName: String, val fileCount: Int) : AuthorManageDialog
 }
 
+data class AuthorSourcesEditor(
+    val author: AuthorSummary,
+    val sources: List<String> = emptyList(),
+    val original: List<String> = emptyList(),
+    val options: List<String> = emptyList(),
+    val loading: Boolean = true,
+    val saving: Boolean = false,
+    val error: String? = null,
+    val loaded: Boolean = false,
+)
+
 data class AuthorUiState(
+    val sourcesEditor: AuthorSourcesEditor? = null,
     val authors: List<AuthorSummary> = emptyList(),
     /** 作者管理胶囊：全部/常规/COS（客户端筛选——GET /authors 无参数全量数组） */
     val zone: Zone = Zone.ALL,
@@ -114,6 +129,64 @@ class AuthorViewModel @Inject constructor(
 
     // ---- 作者管理族（新建/改名/删除；对话框状态机 + 成功重拉） ----
 
+    private var sourcesJob: Job? = null
+
+    fun openSourcesEditor(author: AuthorSummary) {
+        if (author.type == AuthorType.COS) return
+        sourcesJob?.cancel()
+        _uiState.value = _uiState.value.copy(sourcesEditor = AuthorSourcesEditor(author))
+        sourcesJob = viewModelScope.launch {
+            try {
+                val sources = authorRepository.authorSourcesById(author.id)
+                _uiState.value = _uiState.value.copy(sourcesEditor = AuthorSourcesEditor(
+                    author, sources = sources, original = sources, loading = false, loaded = true,
+                ))
+                // 建议失败不影响已读取的作者记录和自由输入。
+                val options = authorRepository.sourceVocabulary()
+                _uiState.value.sourcesEditor?.let {
+                    _uiState.value = _uiState.value.copy(sourcesEditor = it.copy(options = options))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value.sourcesEditor?.let {
+                    _uiState.value = _uiState.value.copy(sourcesEditor = it.copy(
+                        loading = false, error = if (it.loaded) "来源建议读取失败，可继续自由输入" else "来源读取失败，请重试",
+                    ))
+                }
+            }
+        }
+    }
+
+    fun changeSources(sources: List<String>) {
+        val editor = _uiState.value.sourcesEditor ?: return
+        if (!editor.loaded || editor.saving) return
+        _uiState.value = _uiState.value.copy(sourcesEditor = editor.copy(sources = sources))
+    }
+
+    fun dismissSourcesEditor() {
+        if (_uiState.value.sourcesEditor?.saving == true) return
+        sourcesJob?.cancel()
+        _uiState.value = _uiState.value.copy(sourcesEditor = null)
+    }
+
+    fun saveSources() {
+        val editor = _uiState.value.sourcesEditor ?: return
+        if (!editor.loaded || editor.saving) return
+        sourcesJob?.cancel()
+        _uiState.value = _uiState.value.copy(sourcesEditor = editor.copy(saving = true, error = null))
+        sourcesJob = viewModelScope.launch {
+            try {
+                authorRepository.replaceAuthorSources(editor.author.id, editor.sources)
+                _uiState.value = _uiState.value.copy(sourcesEditor = null, noticeMessage = "来源已保存")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(sourcesEditor = editor.copy(error = "来源保存失败，请重试"))
+            }
+        }
+    }
+
     fun openCreateDialog() {
         _uiState.value = _uiState.value.copy(
             manageDialog = AuthorManageDialog.Create, manageInput = "", errorMessage = null,
@@ -121,6 +194,7 @@ class AuthorViewModel @Inject constructor(
     }
 
     fun openRenameDialog(author: AuthorSummary) {
+        if (author.type == AuthorType.COS) return
         _uiState.value = _uiState.value.copy(
             manageDialog = AuthorManageDialog.Rename(author.id, author.displayName),
             manageInput = author.displayName,
@@ -129,6 +203,7 @@ class AuthorViewModel @Inject constructor(
     }
 
     fun openDeleteDialog(author: AuthorSummary) {
+        if (author.type == AuthorType.COS) return
         _uiState.value = _uiState.value.copy(
             manageDialog = AuthorManageDialog.Delete(author.id, author.displayName, author.fileCount ?: 0),
             errorMessage = null,
