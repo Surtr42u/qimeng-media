@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import okhttp3.Call
@@ -40,6 +41,11 @@ internal class CancellableCoilNetworkClient(private val callFactory: Call.Factor
         }
         try {
             delegate.executeRequest(request, block)
+        } catch (failure: Exception) {
+            // Call.cancel打断阻塞读通常抛SocketException；已取消时必须保留取消语义，
+            // 不能变成图片加载失败。仍活跃的请求照常传播真实I/O错误。
+            requestJob.ensureActive()
+            throw failure
         } finally {
             completed.set(true)
             cancellation.cancel()
