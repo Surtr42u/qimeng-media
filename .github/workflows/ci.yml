@@ -93,6 +93,8 @@ jobs:
         run: go test ./internal/recommendfeed -run '^$' -bench '^BenchmarkRecommendationPrewarmSeeds$' -benchmem -benchtime=300ms -count=3
       - name: 完整 ID 顺序与 seed 准备基准（同输出合成候选）
         run: go test ./internal/recommend -run '^$' -bench '^BenchmarkRecommend(IDOrder|PreparedSeeds)$' -benchmem -benchtime=300ms -count=3
+      - name: 偏好标签有界选择基准（旧算法同输出对照）
+        run: go test ./internal/recommend -run '^$' -bench '^BenchmarkTopTagsSelection$' -benchmem -benchtime=100ms -count=3
       - name: 窄扫描快照与冷首屏（含 SQL 装载）
         run: |
           go test ./internal/scanner -run '^$' -bench '^BenchmarkScanSnapshotLoad$' -benchmem -benchtime=300ms -count=3

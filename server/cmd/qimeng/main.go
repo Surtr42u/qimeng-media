@@ -373,6 +373,9 @@ func main() {
 	// 工作池先收：等在途缩略图任务排空；再关总线让 SSE 订阅者收流结束，
 	// 最后关库连接——顺序反了会出现"关库后任务/总线还在投递"的竞态窗口。
 	apiSrv.CloseRecommendCache()
+	if err := apiSrv.WaitThumbnailWarmup(shutdownCtx); err != nil {
+		logger.Warn("等待缩略图及图片尺寸回填退出超时", "error", err)
+	}
 	thumbs.Close()
 	// 在途上传会话与临时分片文件的关停清理（ADR-0028）：尽力而为，删不掉
 	// 的遗留由下轮孤儿清理兜底；须在 HTTP 已 Shutdown（无在途 PATCH）后执行。

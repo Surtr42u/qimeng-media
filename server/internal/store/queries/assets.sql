@@ -100,7 +100,7 @@ WHERE a.cos_work IS NOT NULL
 -- Keyset paging bounds both candidate memory and queued work. Stored source
 -- metadata selects the current representation without reopening every original;
 -- generation and media delivery still validate the live source.
-SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime, a.library_id, a.updated_at, a.width, a.height
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
 WHERE l.enabled = 1 AND a.asset_id > sqlc.arg(after_id)
@@ -109,7 +109,7 @@ LIMIT sqlc.arg(page_size);
 
 -- name: ListThumbnailWarmupLibraryPage :many
 -- A typed library change must not probe unrelated libraries' thumbnail caches.
-SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime, a.library_id, a.updated_at, a.width, a.height
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
 WHERE l.enabled = 1 AND a.library_id = sqlc.arg(library_id)
@@ -120,7 +120,7 @@ LIMIT sqlc.arg(page_size);
 -- name: ListThumbnailWarmupAssetsPage :many
 -- Small, bounded JSON ID sets allow primary-key probes; no all-library filter
 -- with an OR branch that could force a full scan for each uploaded asset.
-SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime, a.library_id, a.updated_at, a.width, a.height
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
 WHERE l.enabled = 1
@@ -148,3 +148,16 @@ SELECT CAST(COUNT(*) AS INTEGER) FROM assets WHERE asset_id = ?;
 -- channel (ListAssetsByFileName, earliest-first bail), the realtime path
 -- never guesses.
 SELECT asset_id, rel_path FROM assets WHERE file_name = ?;
+
+-- name: UpdateAssetImageDimensions :execrows
+-- Publish derived dimensions only for the same enabled library, path and source
+-- version observed before reading. Do not overwrite concurrent edits or a valid
+-- result, and do not change source timestamps/business identity.
+UPDATE assets SET width=sqlc.arg(width), height=sqlc.arg(height)
+WHERE asset_id=sqlc.arg(asset_id) AND library_id=sqlc.arg(library_id)
+  AND rel_path=sqlc.arg(rel_path) AND size_bytes=sqlc.arg(size_bytes)
+  AND mtime=sqlc.arg(mtime) AND updated_at=sqlc.arg(updated_at)
+  AND media_type IN ('image','animated_image')
+  AND (width IS NULL OR width<=0 OR height IS NULL OR height<=0)
+  AND EXISTS (SELECT 1 FROM libraries l WHERE l.id=assets.library_id
+              AND l.enabled=1 AND l.root_path=sqlc.arg(root_path));

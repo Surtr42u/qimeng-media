@@ -15,6 +15,8 @@ func (s *Server) StartThumbnailWarmup(ctx context.Context) {
 
 func (s *Server) WarmupAfterScan() { s.thumbWarmup.Notify() }
 
+func (s *Server) WaitThumbnailWarmup(ctx context.Context) error { return s.thumbWarmup.Wait(ctx) }
+
 func (s *Server) GetApiV1ThumbnailsProgress(w http.ResponseWriter, r *http.Request) {
 	snap, err := s.thumbWarmup.Progress(r.Context())
 	if err != nil {

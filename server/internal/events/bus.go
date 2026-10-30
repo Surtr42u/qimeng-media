@@ -46,6 +46,8 @@ type Event struct {
 type LibraryChangeScope struct {
 	LibraryID string
 	AssetID   string
+	// 仅派生尺寸变化：客户端仍刷新展示，服务端不重算推荐/表示或推进资产集合修订号。
+	MetadataOnly bool
 }
 
 // Subscription 一次订阅的句柄。C 只读；用完必须 Close，

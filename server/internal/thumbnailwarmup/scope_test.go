@@ -22,6 +22,10 @@ type scopeCandidates struct {
 	onFull                              func()
 }
 
+func (q *scopeCandidates) UpdateAssetImageDimensions(context.Context, db.UpdateAssetImageDimensionsParams) (int64, error) {
+	return 0, nil
+}
+
 func (q *scopeCandidates) ListThumbnailWarmupPage(_ context.Context, p db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
 	q.fullCalls++
 	if q.onFull != nil {
@@ -86,7 +90,7 @@ func scopeFixture(t *testing.T) (*Service, *scopeCandidates, *[]string) {
 		}
 	}
 	submitted := []string{}
-	s := New(q, fakeThumbs{has: func(string, int64, string) bool { return false }, submit: func(task thumbnail.Task) error { submitted = append(submitted, task.AssetID); return nil }}, nil, time.Now())
+	s := New(q, fakeThumbs{has: func(string, int64, string) bool { return false }, submit: func(task thumbnail.Task) error { submitted = append(submitted, task.AssetID); return nil }}, nil, time.Now(), nil)
 	return s, q, &submitted
 }
 

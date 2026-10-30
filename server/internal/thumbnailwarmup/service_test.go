@@ -35,7 +35,7 @@ func TestProgressWaiterCancellationDoesNotWaitForActiveQuery(t *testing.T) {
 		<-release
 		return nil, nil
 	})
-	s := New(q, fakeThumbs{}, nil, time.Now())
+	s := New(q, fakeThumbs{}, nil, time.Now(), nil)
 	first := make(chan error, 1)
 	go func() { _, err := s.Progress(t.Context()); first <- err }()
 	<-entered
@@ -68,15 +68,27 @@ func (fn candidateFunc) ListThumbnailWarmupPage(ctx context.Context, p db.ListTh
 	return fn(ctx, p)
 }
 
+func (fn candidateFunc) UpdateAssetImageDimensions(context.Context, db.UpdateAssetImageDimensionsParams) (int64, error) {
+	return 0, nil
+}
+
 type fakeThumbs struct {
-	has    func(string, int64, string) bool
-	submit func(thumbnail.Task) error
+	has        func(string, int64, string) bool
+	submit     func(thumbnail.Task) error
+	dimensions func(context.Context, string, string, int64, string) (int, int, error)
 }
 
 func (f fakeThumbs) HasStoredThumbnail(id string, _ thumbnail.Size, bytes int64, mtime string) bool {
 	return f.has(id, bytes, mtime)
 }
 func (f fakeThumbs) Submit(task thumbnail.Task) error { return f.submit(task) }
+
+func (f fakeThumbs) ReadImageDimensions(ctx context.Context, root, rel string, size int64, mtime string) (int, int, error) {
+	if f.dimensions != nil {
+		return f.dimensions(ctx, root, rel, size, mtime)
+	}
+	return 0, 0, errors.New("synthetic dimensions unavailable")
+}
 
 func TestProgressPagesEntireLibraryAndSharesReconciliationSnapshot(t *testing.T) {
 	const total = 20000
@@ -107,7 +119,7 @@ func TestProgressPagesEntireLibraryAndSharesReconciliationSnapshot(t *testing.T)
 		}
 		return true
 	}, submit: func(thumbnail.Task) error { t.Fatal("已覆盖资产不应投递"); return nil }}
-	s := New(q, thumbs, nil, time.Time{})
+	s := New(q, thumbs, nil, time.Time{}, nil)
 	s.reconcile(context.Background())
 	snap, err := s.Progress(context.Background())
 	if err != nil || snap.Total != total || snap.Covered != total {
@@ -150,7 +162,7 @@ func TestMissingTasksStreamSafelyAndClosedPoolStops(t *testing.T) {
 			t.Fatalf("不安全或错误任务: %+v", task)
 		}
 		return thumbnail.ErrPoolClosed
-	}}, nil, time.Time{})
+	}}, nil, time.Time{}, nil)
 	_, _, err := s.inspect(context.Background(), true)
 	if !errors.Is(err, thumbnail.ErrPoolClosed) || submitted != 1 {
 		t.Fatalf("关闭后继续投递: %v %d", err, submitted)
@@ -159,7 +171,7 @@ func TestMissingTasksStreamSafelyAndClosedPoolStops(t *testing.T) {
 
 func TestQueueBackpressureAndBootWaitCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := New(nil, fakeThumbs{submit: func(thumbnail.Task) error { cancel(); return thumbnail.ErrQueueFull }}, nil, time.Now().Add(time.Hour))
+	s := New(nil, fakeThumbs{submit: func(thumbnail.Task) error { cancel(); return thumbnail.ErrQueueFull }}, nil, time.Now().Add(time.Hour), nil)
 	if err := s.submit(ctx, thumbnail.Task{}); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
@@ -171,7 +183,7 @@ func TestAcceptedTaskDoesNotWaitForFixedPause(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	calls := 0
-	s := New(nil, fakeThumbs{submit: func(thumbnail.Task) error { calls++; cancel(); return nil }}, nil, time.Time{})
+	s := New(nil, fakeThumbs{submit: func(thumbnail.Task) error { calls++; cancel(); return nil }}, nil, time.Time{}, nil)
 	// 队列已接受即成功，取消只阻止后续投递；不能再经过固定睡眠变成失败。
 	if err := s.submit(ctx, thumbnail.Task{}); err != nil {
 		t.Fatal(err)
@@ -200,7 +212,7 @@ func TestNotificationDuringReconciliationRunsAnotherPass(t *testing.T) {
 		}
 		return nil, nil
 	})
-	s := New(q, fakeThumbs{}, nil, time.Time{})
+	s := New(q, fakeThumbs{}, nil, time.Time{}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})
@@ -236,7 +248,7 @@ func TestChangeCooldownMergesAndCancelsWithoutAnotherQuery(t *testing.T) {
 		entered <- struct{}{}
 		return nil, nil
 	})
-	s := New(q, fakeThumbs{}, nil, time.Time{})
+	s := New(q, fakeThumbs{}, nil, time.Time{}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})
@@ -280,7 +292,7 @@ func TestConcurrentProgressFailureAndNotifyDuringRead(t *testing.T) {
 		}
 		return nil, nil
 	})
-	s = New(q, fakeThumbs{}, nil, time.Time{})
+	s = New(q, fakeThumbs{}, nil, time.Time{}, nil)
 	if _, err := s.Progress(context.Background()); err == nil {
 		t.Fatal("查询失败被吞掉")
 	}
@@ -319,7 +331,7 @@ func TestUnavailableSourceDoesNotStarveLaterWarmupAssets(t *testing.T) {
 			return fmt.Errorf("synthetic stat: %w", thumbnail.ErrSourceUnavailable)
 		}
 		return nil
-	}}, nil, time.Now())
+	}}, nil, time.Now(), nil)
 	snap, submitted, err := s.inspect(t.Context(), true)
 	if err != nil || snap.Total != 2 || submitted != 1 || len(visited) != 2 || visited[1] != "b-healthy" {
 		t.Fatalf("offline asset blocked traversal: %+v %d %v %v", snap, submitted, visited, err)

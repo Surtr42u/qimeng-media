@@ -4,17 +4,20 @@ package media.qimeng.app.feature.detail
 internal class DetailPreloadQueue(
     private val start: (target: DetailPreloadTarget, onFinished: () -> Unit) -> (() -> Unit),
 ) {
-    private class Running(val target: DetailPreloadTarget, var cancel: () -> Unit = {})
+    private data class Key(val assetId: String, val url: String, val isVideo: Boolean)
+    private fun key(target: DetailPreloadTarget) = Key(target.assetId, target.url, target.isVideo)
+    private class Running(val key: Key, var cancel: () -> Unit = {})
     private var targets = emptyList<DetailPreloadTarget>()
-    private val finished = mutableSetOf<DetailPreloadTarget>()
+    private val finished = mutableSetOf<Key>()
     private var running: Running? = null
     private var enabled = false
 
     fun update(targets: List<DetailPreloadTarget>, enabled: Boolean) {
         this.targets = targets.distinctBy { it.assetId }
         this.enabled = enabled
-        finished.retainAll(this.targets.toSet())
-        running?.takeIf { !enabled || it.target !in this.targets }?.let {
+        val keys = this.targets.map(::key).toSet()
+        finished.retainAll(keys)
+        running?.takeIf { !enabled || it.key !in keys }?.let {
             running = null
             it.cancel()
         }
@@ -26,14 +29,14 @@ internal class DetailPreloadQueue(
 
     private fun advance() {
         if (!enabled || running != null) return
-        val target = targets.firstOrNull { it !in finished } ?: return
-        val task = Running(target)
+        val target = targets.firstOrNull { key(it) !in finished } ?: return
+        val task = Running(key(target))
         running = task
         task.cancel = start(target) {
             if (running === task) {
                 running = null
                 // 成功或失败都不因无关重组自动重试；换页/新URL重新准入。
-                finished += target
+                finished += task.key
                 advance()
             }
         }

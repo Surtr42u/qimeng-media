@@ -34,6 +34,20 @@ class DetailPreloadQueueTest {
     }
 
     @Test
+    fun metadataBackfillDoesNotRestartSameMediaUrl() {
+        val r = Requests()
+        val measured = a.copy(sizeBytes = 1024, dims = ImageDims(512, 512))
+        r.queue.update(listOf(a), true)
+        r.queue.update(listOf(measured, b), true)
+        assertEquals(listOf(a), r.started)
+        assertEquals(emptyList<DetailPreloadTarget>(), r.cancelled)
+        r.callbacks[0]()
+        r.callbacks[1]()
+        r.queue.update(listOf(measured, b), true)
+        assertEquals(listOf(a, b), r.started)
+    }
+
+    @Test
     fun currentImageAndPausedScreenBlockPreloadAndLateCompletion() {
         val r = Requests()
         r.queue.update(listOf(a, b), false)

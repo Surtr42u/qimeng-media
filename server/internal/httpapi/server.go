@@ -314,7 +314,7 @@ func New(deps Deps) (*Server, error) {
 		startedAt:      now(),
 	}
 	s.writes = deps.Writes
-	s.thumbWarmup = thumbnailwarmup.New(s.q, s.thumbs, logger, s.startedAt.Add(s.cfg.Thumbnail.WarmupDelay))
+	s.thumbWarmup = thumbnailwarmup.New(s.q, s.thumbs, logger, s.startedAt.Add(s.cfg.Thumbnail.WarmupDelay), s.bus)
 	if s.writes == nil {
 		s.writes = mediawrite.New(mediawrite.Options{Conn: deps.Conn, Queries: deps.Queries,
 			Bus: deps.Bus, Config: deps.Cfg, Thumbs: deps.Thumbs, Logger: logger, Now: now,
@@ -364,6 +364,10 @@ func New(deps Deps) (*Server, error) {
 	} else {
 		safego.Go(logger, "库变更订阅", func() {
 			for event := range sub.C {
+				// 后台仅补齐尺寸不改变评分/集合或表示，避免触发全量推荐冷算和自唤醒回填。
+				if event.LibraryChange != nil && event.LibraryChange.MetadataOnly {
+					continue
+				}
 				s.invalidateRecommendCache()
 				s.bumpLibraryRevision()
 				if event.LibraryChange == nil {

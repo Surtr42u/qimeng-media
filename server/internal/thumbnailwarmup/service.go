@@ -4,6 +4,7 @@ package thumbnailwarmup
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/thumbnail"
@@ -29,22 +31,26 @@ const (
 
 type Candidates interface {
 	ListThumbnailWarmupPage(context.Context, db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error)
+	UpdateAssetImageDimensions(context.Context, db.UpdateAssetImageDimensionsParams) (int64, error)
 }
 
 type Thumbnails interface {
 	HasStoredThumbnail(string, thumbnail.Size, int64, string) bool
 	Submit(thumbnail.Task) error
+	ReadImageDimensions(context.Context, string, string, int64, string) (int, int, error)
 }
 
 type Snapshot struct {
-	Covered int
-	Total   int
-	at      time.Time
-	epoch   uint64
+	dimensionsUpdated int
+	Covered           int
+	Total             int
+	at                time.Time
+	epoch             uint64
 }
 
 type Service struct {
 	q         Candidates
+	bus       *events.Bus
 	thumbs    Thumbnails
 	logger    *slog.Logger
 	readyAt   time.Time
@@ -56,13 +62,14 @@ type Service struct {
 	progressGate chan struct{}
 	cacheMu      sync.Mutex
 	cache        *Snapshot
+	done         chan struct{}
 }
 
-func New(q Candidates, thumbs Thumbnails, logger *slog.Logger, readyAt time.Time) *Service {
+func New(q Candidates, thumbs Thumbnails, logger *slog.Logger, readyAt time.Time, bus *events.Bus) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{q: q, thumbs: thumbs, logger: logger, readyAt: readyAt, wake: make(chan struct{}, 1), progressGate: make(chan struct{}, 1)}
+	return &Service{q: q, bus: bus, thumbs: thumbs, logger: logger, readyAt: readyAt, wake: make(chan struct{}, 1), progressGate: make(chan struct{}, 1), done: make(chan struct{})}
 }
 
 // Notify 合并突发变更；当前回填期间的通知保留为下一轮，补游标前的新行。
@@ -70,7 +77,23 @@ func (s *Service) Notify() { s.notifyScope(changeScope{all: true}) }
 
 // Run 由组合根仅启动一次，等待、SQL 与队列背压均随停机取消。
 func (s *Service) Run(ctx context.Context) {
+	defer close(s.done)
 	s.run(ctx, changeInterval)
+}
+
+// Wait 在停机取消后等待主管退出，不能关库后仍发布尺寸元数据。
+func (s *Service) Wait(ctx context.Context) error {
+	select {
+	case <-s.done:
+		return nil
+	default:
+	}
+	select {
+	case <-s.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Service) run(ctx context.Context, changeDelay time.Duration) {
@@ -125,9 +148,18 @@ func (s *Service) reconcileScope(ctx context.Context, scope changeScope) {
 		scope = changeScope{all: true}
 	}
 	start := time.Now()
+	metadataChanged := false
+	defer func() {
+		if metadataChanged && s.bus != nil && ctx.Err() == nil {
+			if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged, LibraryChange: &events.LibraryChangeScope{MetadataOnly: true}}); err != nil && !errors.Is(err, events.ErrBusClosed) {
+				s.logger.Warn("广播图片尺寸补齐失败", "error", err)
+			}
+		}
+	}()
 	candidates, submitted := 0, 0
 	for _, work := range scope.work() {
 		snap, n, err := s.inspectScope(ctx, true, work)
+		metadataChanged = metadataChanged || snap.dimensionsUpdated > 0
 		if err != nil {
 			if ctx.Err() == nil && !errors.Is(err, thumbnail.ErrPoolClosed) {
 				s.logger.Warn("缩略图回填失败（保留范围待办）", "err", err)
@@ -198,6 +230,13 @@ func (s *Service) inspectScope(ctx context.Context, submit bool, scope workScope
 	snap := Snapshot{at: time.Now(), epoch: s.epoch.Load()}
 	after := ""
 	submitted := 0
+	metadataFailed := 0
+	var firstMetadataErr error
+	defer func() {
+		if metadataFailed > 0 && ctx.Err() == nil {
+			s.logger.Warn("图片尺寸后台补齐部分失败，后续对账重试", "failed", metadataFailed, "error", firstMetadataErr)
+		}
+	}()
 	for {
 		if err := ctx.Err(); err != nil {
 			return snap, submitted, err
@@ -214,6 +253,28 @@ func (s *Service) inspectScope(ctx context.Context, submit bool, scope workScope
 				return snap, submitted, err
 			}
 			snap.Total++
+			// 仅后台回填缺失项；覆盖进度请求保持只读，已知尺寸不再打开原件。
+			if submit && (r.MediaType == "image" || r.MediaType == "animated_image") &&
+				(!r.Width.Valid || r.Width.Int64 <= 0 || !r.Height.Valid || r.Height.Int64 <= 0) {
+				width, height, readErr := s.thumbs.ReadImageDimensions(ctx, r.RootPath, r.RelPath, r.SizeBytes, r.Mtime)
+				if ctx.Err() != nil {
+					return snap, submitted, ctx.Err()
+				}
+				if readErr != nil {
+					metadataFailed++
+					if firstMetadataErr == nil {
+						firstMetadataErr = readErr
+					}
+				} else if updated, err := s.q.UpdateAssetImageDimensions(ctx, db.UpdateAssetImageDimensionsParams{
+					Width: sql.NullInt64{Int64: int64(width), Valid: true}, Height: sql.NullInt64{Int64: int64(height), Valid: true},
+					AssetID: r.AssetID, LibraryID: r.LibraryID, RootPath: r.RootPath, RelPath: r.RelPath,
+					SizeBytes: r.SizeBytes, Mtime: r.Mtime, UpdatedAt: r.UpdatedAt,
+				}); err != nil {
+					return snap, submitted, err
+				} else {
+					snap.dimensionsUpdated += int(updated)
+				}
+			}
 			// 命中只触碰缓存，不逐个 Stat 原件或检查祖先目录。
 			if s.thumbs.HasStoredThumbnail(r.AssetID, thumbnail.SizeGrid, r.SizeBytes, r.Mtime) {
 				snap.Covered++
