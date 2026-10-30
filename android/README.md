@@ -117,4 +117,6 @@ Q08已将统计详情的无状态展示行/文案提取到StatsDetailPresentatio
 
 地址/密码/当前token仍经原AuthRepository与ServerConfigDataSource流转。发现只产生候选，不自动登录、切换已登录端或迁移上传目标；Wi-Fi/网线切换后回到NAS页或点重新寻找；已登录时服务器设置提供「切换到NAS / 重新寻找影库」，经原登出链进入NAS登录模式，无历史地址也能使用。手填与显式选择不被迟到候选覆盖；页面停止、选本机或提交时取消发现，恢复前台重新查找。发现和登录共用本地网络权限门，拒绝不发包。局域网无法互通/隔离、IPv6-only、旧服务端或容器bridge时可用折叠的手填入口；具体协议与部署条件见[服务端入口](../server/README.md#局域网发现)。
 
+MainActivity显式使用`adjustResize`，按[Android边到边适配说明](https://developer.android.com/develop/ui/compose/system/setup-e2e)接收IME insets，由页面padding/滚动让位键盘，避免系统整窗平移把标题顶入状态栏。
+
 布局沿用中性主题和日间轻影，标题、模式按钮、连接卡、密码和主操作建立层级；内容可滚动以适应窄屏/键盘，地址允许换行，状态不伪称登录成功。新页面源码与实际安装/呈现证据见HANDOVER。
