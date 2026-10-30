@@ -11,7 +11,7 @@ import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
 import coil3.memory.MemoryCache
 import coil3.network.ConnectivityChecker
-import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.network.NetworkFetcher
 import coil3.request.crossfade
 import coil3.request.allowHardware
 import dagger.Lazy
@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import media.qimeng.app.core.data.coil.CachePool
+import media.qimeng.app.core.data.coil.CancellableCoilNetworkClient
 import media.qimeng.app.core.data.coil.LEGACY_DISK_CACHE_DIR
 import media.qimeng.app.core.data.coil.LOCAL_DISK_CACHE_DIR
 import media.qimeng.app.core.data.coil.LOG_TAG
@@ -102,14 +103,15 @@ object CoilModule {
             // 工厂胜出，且用户组件排在 service-loader 组件之前（RealImageLoader 装配顺序），
             // 显式装配必然覆盖默认注册（已对 3.4.0 源码核实，非凭记忆）。
             add(
-                OkHttpNetworkFetcherFactory(
-                    callFactory = {
-                        OkHttpClient.Builder()
+                NetworkFetcher.Factory(
+                    networkClient = {
+                        val client = OkHttpClient.Builder()
                             .connectTimeout(NETWORK_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                             .readTimeout(NETWORK_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                             // callTimeout=0 即 OkHttp 官方语义「不设总时限」：原件长传输不设上限
                             .callTimeout(NETWORK_CALL_TIMEOUT_DISABLED, TimeUnit.SECONDS)
                             .build()
+                        CancellableCoilNetworkClient(client)
                     },
                     // 批S6（2026-09-19 断外网图片误报「无法解码」修复）：官方「naive always-online」
                     // 常量 ConnectivityChecker.ONLINE（恒返回 true），替换默认的 ConnectivityCheckerApi23
