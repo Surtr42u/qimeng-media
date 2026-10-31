@@ -59,9 +59,6 @@ func RepairUploadTimes(ctx context.Context, conn *sql.DB, requestPath, archiveRo
 	if err != nil {
 		return err
 	}
-	if len(rows) != req.ExpectedCount {
-		return fmt.Errorf("校正匹配数量为%d，要求%d；未修改文件", len(rows), req.ExpectedCount)
-	}
 	report := struct {
 		Request UploadTimeRepairRequest
 		Before  []store.UploadTimeRepairRow
@@ -77,6 +74,9 @@ func RepairUploadTimes(ctx context.Context, conn *sql.DB, requestPath, archiveRo
 	}
 	if err = writeReport(); err != nil {
 		return err
+	}
+	if len(rows) != req.ExpectedCount {
+		return fmt.Errorf("校正匹配数量为%d，要求%d；未修改文件", len(rows), req.ExpectedCount)
 	}
 	if req.Apply {
 		// 先预检全部原件，数量/版本/路径不符时整批不动。
@@ -142,6 +142,9 @@ func repairUploadFile(r store.UploadTimeRepairRow, archiveRoot string) error {
 		if err = repairArchiveTimes(r, archiveRoot, stamp); err != nil {
 			return err
 		}
+	}
+	if err = checkRepairFile(r); err != nil {
+		return err
 	}
 	return root.Chtimes(filepath.FromSlash(r.Rel), stamp, stamp)
 }
