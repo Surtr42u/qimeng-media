@@ -199,7 +199,7 @@
 - **CI（GitHub Actions，`.github/workflows/ci.yml`）七 job**，push/PR 全绿才许合并：
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
   2. `server`：Linux runner 上重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ 两万合成记录的扫描路径索引基准（仅索引构建）→ go build
-  3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config/thumbnail/thumbnailwarmup 包测试及隔离启动脚本回归，覆盖文件操作、fsnotify 生命周期/身份保护、配置和缩略图资源边界；不代表真实网络盘验收
+  3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config/thumbnail/thumbnailwarmup/mediawrite 包测试及隔离启动脚本回归，覆盖文件操作、fsnotify 生命周期/身份保护、配置和缩略图资源边界；不代表真实网络盘验收
   4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）→ 锁定 Playwright/Chromium 的合成 API 浏览器交互回归
   5. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
   6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + Debug 单测 + core:model:test + Debug/Release Lint；Release 出包同样以单测/Lint 成功作为候选包上传前提

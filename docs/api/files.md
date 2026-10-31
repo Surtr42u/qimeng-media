@@ -40,7 +40,7 @@ libraryId 空 400/库不存在 404）**
 
 ## 上传任务重放、源时间与容量（ADR-0049）
 
-直传 query 与分片创建 body 可选 uploadId（UUID）和 sourceMtime（Unix 毫秒）。双端新任务持久保留 uploadId，重试不得换 ID；参数变更须新建任务。源时间未知不发送，addedAt 保持入库时间。完成凭据与资产行同事务提交，七天内重复请求返回原资产，不重复计数、富化或发通知；任务参数冲突 409 UPLOAD_ID_CONFLICT，原资产已删除 410 UPLOAD_ASSET_GONE。旧无 ID 直传仍兼容但不保证去重；未提交资产的文件发布中断不属于完成凭据保障。
+直传 query 与分片创建 body 可选 uploadId（UUID）和 sourceMtime（Unix 毫秒）。双端新任务持久保留 uploadId，重试不得换 ID；参数变更须新建任务。调用方未提供时间时使用接收时间；Android首次上传固定本次入队时间，归档副本写入同刻，归档再传PC/NAS沿用该时间，未知归档时间省略。addedAt 仍为当前接收实例的入库时间，日期展示/分组使用modifiedAt；详细语义见[文件规则](../domain/files.md#上传目标时间与重试边界adr-00420049)。完成凭据与资产行同事务提交，七天内重复请求返回原资产，不重复计数、富化或发通知；任务参数冲突 409 UPLOAD_ID_CONFLICT，原资产已删除 410 UPLOAD_ASSET_GONE。旧无 ID 直传仍兼容但不保证去重；未提交资产的文件发布中断不属于完成凭据保障。
 
 Web 队列存储故障可见并能重试本地 IO，不因此重发上传或改 uploadId。终态删除失败尽力写本地 terminal 标记，恢复跳过它；删除和标记都失败时旧条目仍可能出现，应核对已入库事实。该标记只属客户端 IndexedDB 元数据，不改变服务端协议或七天凭据保障；本地存储提交以事务 complete 确认为准，不能据 request 成功承诺可恢复。
 
