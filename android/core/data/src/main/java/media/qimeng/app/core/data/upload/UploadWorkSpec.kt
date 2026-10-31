@@ -88,6 +88,10 @@ object UploadWorkSpec {
     const val KEY_CANCELLED = "cancelled"
     const val KEY_SOURCE_MTIME = "source_mtime"
 
+    /** 首次上传固定本次入队时间；归档再传保留手机入库时间，重试不重新取时。 */
+    fun uploadTimestamp(alreadyArchived: Boolean, sourceMtime: Long?, enqueuedAt: Long): Long? =
+        if (alreadyArchived) sourceMtime else enqueuedAt
+
     /**
      * 重试上限（次）。第 1 次执行 + 最多 3 次重试 = 4 次尝试；超过即终局失败
      * （文案进 KEY_ERROR_MESSAGE）。退避节奏由请求侧 BackoffPolicy.EXPONENTIAL +

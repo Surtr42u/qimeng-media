@@ -273,6 +273,7 @@ class UploadWorker @AssistedInject constructor(
                     requireNotNull(archiveRoot),
                     spec.libraryName,
                     File(spec.uri),
+                    spec.sourceMtime,
                 )
                 useArchiveRoot && isContentUri -> inboxFileStore.archiveUriToLibraryRoot(
                     applicationContext,
@@ -280,8 +281,9 @@ class UploadWorker @AssistedInject constructor(
                     spec.libraryName,
                     Uri.parse(spec.uri),
                     spec.displayName,
+                    spec.sourceMtime,
                 )
-                isAbsolute && isInboxSource(File(spec.uri)) -> inboxFileStore.archiveToUploaded(spec.uri)
+                isAbsolute && isInboxSource(File(spec.uri)) -> inboxFileStore.archiveToUploaded(spec.uri, spec.sourceMtime)
                 // 非收件箱来源：不动源文件、返回空注记（语义见 KDoc b 分支）
                 else -> null
             }
@@ -370,9 +372,9 @@ class UploadWorker @AssistedInject constructor(
         private const val ATTACH_NO_ASSET_ID = "服务端未返回资产 id，无法挂靠"
 
         /** 收件箱源文件归档失败的完成通知提示（不阻断上传完成口径；b/c 回退路径用） */
-        private const val ARCHIVE_FAILED_NOTE = "（收件箱归档失败：源文件保留在收件箱）"
+        private const val ARCHIVE_FAILED_NOTE = "（收件箱归档未完成，请核对源文件与 uploaded 目录）"
 
         /** 归档文件夹路径归档失败的完成通知提示（a 新路径用；不阻断上传完成口径） */
-        private const val ARCHIVE_ROOT_FAILED_NOTE = "（归档到归档文件夹失败：源文件保留在原位置）"
+        private const val ARCHIVE_ROOT_FAILED_NOTE = "（归档未完成，请核对源文件与归档目录）"
     }
 }

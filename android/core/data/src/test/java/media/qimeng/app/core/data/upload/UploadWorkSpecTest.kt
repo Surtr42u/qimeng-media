@@ -12,6 +12,22 @@ import org.junit.Test
 class UploadWorkSpecTest {
 
     @Test
+    fun `首次上传忽略下载旧时间且队列重建保留上传时间`() {
+        val timestamp = UploadWorkSpec.uploadTimestamp(false, 1000L, 9000L)
+        val restored = UploadWorkSpec.specFromInputData(
+            UploadWorkSpec.itemToInputData(spec().copy(sourceMtime = timestamp)),
+        )!!
+        assertEquals(9000L, restored.sourceMtime)
+        assertEquals(9000L, UploadWorkSpec.uploadTimestamp(false, null, 9000L))
+    }
+
+    @Test
+    fun `归档隔天上传电脑仍保留App时间且不伪造未知时间`() {
+        assertEquals(9000L, UploadWorkSpec.uploadTimestamp(true, 9000L, 90000L))
+        assertNull(UploadWorkSpec.uploadTimestamp(true, null, 90000L))
+    }
+
+    @Test
     fun `归档清理失败仍持久成功并保留提示而不重传`() {
         val result = UploadWorkSpec.outcomeToResult(UploadOutcome.Success("done.jpg", "asset"), 0,
             ArchiveUploadCleanup.FAILED_NOTE)

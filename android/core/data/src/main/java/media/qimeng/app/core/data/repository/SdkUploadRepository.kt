@@ -117,7 +117,7 @@ class SdkUploadRepository @Inject constructor(
             val spec = UploadWorkSpec.UploadRequestSpec(
                 localId = localId,
                 targetServerUrl = targetServerUrl,
-                sourceMtime = item.sourceMtime,
+                sourceMtime = UploadWorkSpec.uploadTimestamp(item.alreadyArchived, item.sourceMtime, System.currentTimeMillis()),
                 uri = item.uri,
                 libraryId = libraryId,
                 dir = itemDir,

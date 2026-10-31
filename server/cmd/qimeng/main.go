@@ -140,6 +140,14 @@ func main() {
 	}
 	queries := db.New(conn)
 
+	// 显式本地维护请求只在扫描/监听启动前执行，不开放网络写入口。
+	if requestPath := os.Getenv("QIMENG_UPLOAD_TIME_REPAIR_REQUEST"); requestPath != "" {
+		if err := mediawrite.RepairUploadTimes(context.Background(), conn, requestPath, os.Getenv("QIMENG_UPLOAD_TIME_REPAIR_ARCHIVE")); err != nil {
+			logger.Error("上传时间校正失败", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	secret, err := loadOrCreateMediaSecret(cfg, logger)
 	if err != nil {
 		logger.Error("准备直链密钥失败", "error", err)
