@@ -46,6 +46,12 @@ func TestUploadTimeRepairScopedPreviewAndApply(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err = conn.Exec(`INSERT INTO authors(id,display_name,type,followed) VALUES('author','Liepraag','regular',0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Exec(`INSERT INTO asset_authors(asset_id,author_id) VALUES('Liepraag-new.jpg','author'),('Liepraag-old.jpg','author')`); err != nil {
+		t.Fatal(err)
+	}
 	archived := filepath.Join(archive, "images", "original-download-name.jpg")
 	different := filepath.Join(archive, "images", "different.jpg")
 	for path, data := range map[string]string{archived: "synthetic", different: "different"} {
@@ -57,7 +63,7 @@ func TestUploadTimeRepairScopedPreviewAndApply(t *testing.T) {
 		}
 	}
 	request := filepath.Join(base, "request.json")
-	req := UploadTimeRepairRequest{From: "2026-10-30T00:00:00+08:00", To: "2026-10-31T00:00:00+08:00", Keyword: "Liepraag", ExpectedCount: 1}
+	req := UploadTimeRepairRequest{From: "2026-10-30T00:00:00+08:00", To: "2026-10-31T00:00:00+08:00", AuthorName: "Liepraag", ExpectedCount: 1}
 	write := func() {
 		t.Helper()
 		b, e := json.Marshal(req)

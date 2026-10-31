@@ -26,7 +26,7 @@ const repairArchiveLimit = 4096
 type UploadTimeRepairRequest struct {
 	From          string `json:"from"`
 	To            string `json:"to"`
-	Keyword       string `json:"keyword"`
+	AuthorName    string `json:"authorName"`
 	ExpectedCount int    `json:"expectedCount"`
 	Apply         bool   `json:"apply"`
 }
@@ -52,10 +52,10 @@ func RepairUploadTimes(ctx context.Context, conn *sql.DB, requestPath, archiveRo
 	}
 	from, e1 := time.Parse(time.RFC3339Nano, req.From)
 	to, e2 := time.Parse(time.RFC3339Nano, req.To)
-	if e1 != nil || e2 != nil || !to.After(from) || to.Sub(from) > repairWindowLimit || strings.TrimSpace(req.Keyword) == "" || req.ExpectedCount < 1 || req.ExpectedCount > repairBatchLimit {
+	if e1 != nil || e2 != nil || !to.After(from) || to.Sub(from) > repairWindowLimit || strings.TrimSpace(req.AuthorName) == "" || req.ExpectedCount < 1 || req.ExpectedCount > repairBatchLimit {
 		return errors.New("校正需要明确的至多48小时时间窗、名称与1至32项精确数量")
 	}
-	rows, err := store.UploadTimeRepairRows(ctx, conn, store.FormatTimestamp(from), store.FormatTimestamp(to), req.Keyword)
+	rows, err := store.UploadTimeRepairRows(ctx, conn, store.FormatTimestamp(from), store.FormatTimestamp(to), req.AuthorName)
 	if err != nil {
 		return err
 	}
