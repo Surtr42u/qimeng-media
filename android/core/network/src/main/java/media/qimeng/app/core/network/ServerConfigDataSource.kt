@@ -1,6 +1,7 @@
 package media.qimeng.app.core.network
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /**
  * 默认登录端选项（2026-09-20 用户拍板）：用户在服务器设置页指定「下次登录预填哪个端」。
@@ -41,6 +42,10 @@ interface ServerConfigDataSource {
      * 从本机模式切回 NAS 时，设置页地址卡用它回填，用户免重输。
      */
     val rememberedNasUrl: Flow<String>
+
+    /** 最近五个成功 NAS 地址，新到旧；旧存储只有单槽时直接沿用。 */
+    val rememberedNasUrls: Flow<List<String>>
+        get() = rememberedNasUrl.map { listOf(it).filter(String::isNotEmpty) }
 
     /**
      * 最近一次成功登录的本机模式地址记忆（M6 单机形态口；可含自定义端口回环地址）。

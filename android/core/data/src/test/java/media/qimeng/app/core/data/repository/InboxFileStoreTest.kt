@@ -23,6 +23,31 @@ class InboxFileStoreTest {
 
     private val store = InboxFileStore()
 
+    @Test
+    fun `归档时间使用App上传时间供隔天同步`() {
+        val source = tmp.newFile("download.jpg").apply {
+            writeText("synthetic media")
+            assertTrue(setLastModified(1000L))
+        }
+        val root = tmp.root.resolve("archive")
+        assertTrue(store.archiveToLibraryRoot(root.path, "images", source, 9000L))
+        val archived = File(root, "images/download.jpg")
+        assertEquals(9000L, archived.lastModified())
+        assertEquals("synthetic media", archived.readText())
+        // 再次上传相同内容，复用归档文件也须更新为这次上传的时间。
+        source.writeText("synthetic media")
+        assertTrue(store.archiveToLibraryRoot(root.path, "images", source, 19000L))
+        assertEquals(19000L, archived.lastModified())
+        assertFalse(source.exists())
+    }
+
+    @Test
+    fun `uploaded回退归档也保留本次上传时间`() {
+        val source = tmp.newFile("fallback.jpg").apply { writeText("synthetic") }
+        assertTrue(store.archiveToUploaded(source.path, 9000L))
+        assertEquals(9000L, File(source.parentFile, "uploaded/fallback.jpg").lastModified())
+    }
+
     // ---- 目录浏览 ----
 
     @Test

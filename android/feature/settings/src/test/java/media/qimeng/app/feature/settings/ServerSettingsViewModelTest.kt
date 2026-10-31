@@ -48,6 +48,20 @@ class ServerSettingsViewModelTest {
     )
 
     @Test
+    fun `NAS discovery shortcut works from local mode without a remembered address`() = runTest(mainDispatcherRule.testDispatcher) {
+        val auth = FakeAuthRepository(initialServerUrl = ServerAddress.LOCAL_MODE_PRESET, initialLoggedIn = true)
+        val vm = viewModel(auth)
+        launch { vm.events.take(1).toList() }
+        advanceUntilIdle()
+        vm.switchToNasDiscovery()
+        advanceUntilIdle()
+        assertEquals(DefaultEndpoint.NAS, auth.defaultEndpoint.first())
+        assertFalse(auth.isLoggedIn.first())
+        assertEquals("", auth.serverUrl.first())
+        assertEquals(1, auth.logoutCount)
+    }
+
+    @Test
     fun `进页展示当前地址并回填输入框`() = runTest(mainDispatcherRule.testDispatcher) {
         val vm = viewModel()
         advanceUntilIdle()

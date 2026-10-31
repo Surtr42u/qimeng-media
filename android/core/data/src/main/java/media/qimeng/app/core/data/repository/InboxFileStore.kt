@@ -47,14 +47,16 @@ class InboxFileStore @Inject constructor() {
      * 同名目标已存在时保留源与目标，避免覆盖用户之前归档的文件。
      * 消费方为 worker 的收件箱来源回退归档分支（UploadWorker.archiveNote，红线链路）。
      */
-    fun archiveToUploaded(sourcePath: String): Boolean {
+    fun archiveToUploaded(sourcePath: String, uploadTimestamp: Long? = null): Boolean {
         val file = File(sourcePath)
         if (!file.isFile) return false
         val parent = file.parentFile ?: return false
         val uploadedDir = File(parent, StagingRepository.UPLOADED_DIR_NAME)
         if (!uploadedDir.isDirectory && !uploadedDir.mkdirs()) return false
         if (!isDirectChildDirectory(parent, uploadedDir)) return false
-        return moveFileNoReplace(file, File(uploadedDir, file.name))
+        if (Files.isSymbolicLink(file.toPath())) return false
+        val target = File(uploadedDir, file.name)
+        return moveFileNoReplace(file, target) && applyUploadTimestamp(target, uploadTimestamp)
     }
 
     /**
@@ -103,8 +105,9 @@ class InboxFileStore @Inject constructor() {
      *   无覆盖发布 + 删源」（跨挂载点兜底；[copyFallback]）。
      * 失败不抛、返回 false（调用方只记提示不阻断上传完成，与 [archiveToUploaded] 同口径）。
      */
-    fun archiveToLibraryRoot(archiveRoot: String, libraryName: String, sourceFile: File): Boolean {
+    fun archiveToLibraryRoot(archiveRoot: String, libraryName: String, sourceFile: File, uploadTimestamp: Long? = null): Boolean {
         if (!sourceFile.isFile) return false
+        if (Files.isSymbolicLink(sourceFile.toPath())) return false
         val dirName = sanitizeLibraryDirName(libraryName) ?: return false
         val root = File(archiveRoot)
         val targetDir = File(root, dirName)
@@ -114,14 +117,14 @@ class InboxFileStore @Inject constructor() {
         return try {
             if (target.exists()) {
                 // 上传源本来就在目标归档位置时是幂等成功；绝不能先删目标再把同一文件当源搬一次。
-                if (sourceFile.canonicalFile == target.canonicalFile) return true
+                if (sourceFile.canonicalFile == target.canonicalFile) return applyUploadTimestamp(target, uploadTimestamp)
                 if (sameContent(sourceFile, target)) {
                     // 同内容已有归档就是完整副本：保留用户可能整理过的目标文件，仅移除重复源。
-                    return sourceFile.delete()
+                    return applyUploadTimestamp(target, uploadTimestamp) && sourceFile.delete()
                 }
                 target = resolveConflictName(targetDir, sourceFile.name) ?: return false
             }
-            moveOrCopyNoReplace(sourceFile, target)
+            moveOrCopyNoReplace(sourceFile, target, uploadTimestamp)
         } catch (e: Exception) {
             false
         }
@@ -142,6 +145,7 @@ class InboxFileStore @Inject constructor() {
         libraryName: String,
         uri: Uri,
         displayName: String,
+        uploadTimestamp: Long? = null,
     ): Boolean {
         // displayName 来自外部 ContentProvider，必须先拒绝路径分隔符/控制字符，
         // 避免目标路径逸出库归档目录。文件名保持原样，不做静默改名。
@@ -157,7 +161,7 @@ class InboxFileStore @Inject constructor() {
                 // 已存在同内容归档：不重写/不删除目标文件，也不删除源 URI。
                 // 通用 SAF URI 无法证明与 target 是不同物理文件；删源可能把归档本体一起删掉。
                 // 此分支按安全备份语义成功，宁保留一份重复源，也不冒误删唯一归档的风险。
-                return true
+                return applyUploadTimestamp(target, uploadTimestamp)
             }
             target = resolveConflictName(targetDir, displayName) ?: return false
         }
@@ -175,6 +179,7 @@ class InboxFileStore @Inject constructor() {
                     inStream.copyTo(outStream)
                 }
             }
+            if (!applyUploadTimestamp(part, uploadTimestamp)) return false
             // 不能为了发布成功而删掉首检后被其他进程创建的目标；检测到冲突时保留源与目标。
             // 注意：标准 Files.move 的存在性检查与底层移动不是跨进程原子操作，仍有窄 TOCTOU 窗口。
             if (!moveFileNoReplace(part, target)) return false
@@ -247,13 +252,14 @@ class InboxFileStore @Inject constructor() {
      * 创建的临时文件。注意标准 Files.move 的检查与移动不是跨进程原子操作，仍有窄 TOCTOU
      * 窗口。删源失败时目标是完整副本、源仍在，返回 false 提醒用户人工核对。
      */
-    private fun copyFallback(sourceFile: File, target: File): Boolean {
+    private fun copyFallback(sourceFile: File, target: File, uploadTimestamp: Long?): Boolean {
         var part: File? = null
         try {
             val parent = target.parentFile ?: return false
             // 唯一临时名避免覆盖同目录中由其他操作创建的 .part 文件。
             part = Files.createTempFile(parent.toPath(), "qimeng-archive-", ARCHIVE_PART_SUFFIX).toFile()
             sourceFile.copyTo(part, overwrite = true)
+            if (!applyUploadTimestamp(part, uploadTimestamp)) return false
             // Files.move 不指定 REPLACE_EXISTING：目标竞争时失败，而不是覆盖竞争者文件。
             if (!moveFileNoReplace(part, target)) return false
             return sourceFile.delete()
@@ -275,12 +281,18 @@ class InboxFileStore @Inject constructor() {
      * 检查后被并发创建的目标不被替换，靠的是改名前的 exists() 前置检查必须保留——
      * POSIX rename 自身会替换既有目标。
      */
-    private fun moveOrCopyNoReplace(source: File, target: File): Boolean {
-        if (!target.exists() && source.renameTo(target)) return true
+    private fun moveOrCopyNoReplace(source: File, target: File, uploadTimestamp: Long?): Boolean {
+        if (!target.exists() && source.renameTo(target)) return applyUploadTimestamp(target, uploadTimestamp)
         // 目标已存在（含首检后并发创建）时不再复制/尝试替换它。
         if (target.exists()) return false
-        return copyFallback(source, target)
+        return copyFallback(source, target, uploadTimestamp)
     }
+
+    /** 只更新实际归档文件；失败向上传完成提示传播，拒绝通过链接触碰其他文件。 */
+    private fun applyUploadTimestamp(file: File, timestamp: Long?): Boolean =
+        runCatching {
+            timestamp == null || (!Files.isSymbolicLink(file.toPath()) && file.setLastModified(timestamp))
+        }.getOrDefault(false)
 
     /**
      * 发布文件时不指定 REPLACE_EXISTING；目标在 Files.move 检查时已存在会安全失败。

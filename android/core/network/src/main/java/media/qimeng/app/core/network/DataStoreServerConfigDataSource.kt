@@ -70,6 +70,12 @@ class DataStoreServerConfigDataSource @Inject constructor(
     override val rememberedNasUrl: Flow<String> =
         dataStore.data.map { it[KEY_REMEMBERED_NAS_URL].orEmpty() }.distinctUntilChanged()
 
+    override val rememberedNasUrls: Flow<List<String>> = dataStore.data.map { prefs ->
+        (listOfNotNull(prefs[KEY_REMEMBERED_NAS_URL]) +
+            prefs[KEY_NAS_HISTORY].orEmpty().split('\n'))
+            .filter(String::isNotEmpty).distinct().take(NAS_HISTORY_LIMIT)
+    }.distinctUntilChanged()
+
     override val rememberedLocalUrl: Flow<String> =
         dataStore.data.map { it[KEY_REMEMBERED_LOCAL_URL].orEmpty() }.distinctUntilChanged()
 
@@ -107,7 +113,13 @@ class DataStoreServerConfigDataSource @Inject constructor(
         if (ServerAddress.isLocalModePreset(url)) {
             dataStore.edit { it[KEY_REMEMBERED_LOCAL_URL] = url }
         } else {
-            dataStore.edit { it[KEY_REMEMBERED_NAS_URL] = url }
+            dataStore.edit { prefs ->
+                val history = (listOf(url) + listOfNotNull(prefs[KEY_REMEMBERED_NAS_URL]) +
+                    prefs[KEY_NAS_HISTORY].orEmpty().split('\n'))
+                    .filter(String::isNotEmpty).distinct().take(NAS_HISTORY_LIMIT)
+                prefs[KEY_REMEMBERED_NAS_URL] = url
+                prefs[KEY_NAS_HISTORY] = history.joinToString("\n")
+            }
         }
     }
 
@@ -122,6 +134,9 @@ class DataStoreServerConfigDataSource @Inject constructor(
     }
 
     private companion object {
+        const val NAS_HISTORY_LIMIT = 5
+        val KEY_NAS_HISTORY = stringPreferencesKey("remembered_nas_urls")
+
         /** 服务端地址键（ServerAddress.normalize 的产物，规范化 base URL）。 */
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
 

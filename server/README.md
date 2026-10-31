@@ -116,3 +116,17 @@ HTTP入口的应用流量计数由单个Server持有，原子累计实际读取/
 ## 规模与所有权审查
 
 Q04便携备份业务已下沉，Q08将Server的安全/鉴权请求管线移到middleware.go，保留唯一Server与显式装配顺序；原阶段输入/错误/响应与中间件顺序保持。各超线文件的保留/提取理由和云端验证边界见[任务书结构结论](../docs/OPTIMIZATION_TASKBOOK_20261025.md)。
+
+## 局域网发现
+
+原生PC/NAS服务监听`:端口`或`0.0.0.0:端口`时，独立`landiscovery`在UDP 18421回应同网段客户端。回包只含随机请求标记与当前HTTP端口；IP由收到回包的来源地址确定，不缓存启动时网卡列表，Wi-Fi/网线换址后重新查找即可。服务无需定时向全网广播；App发起有界查询，主机单播回应。发现未启动或停止会记录警告，手填HTTP登录仍可用。指定网卡、IPv6-only及回环内嵌监听不开放发现；多实例共享18421时仅能有一台回应，其余需手填。
+
+线格式是地址引导协议，不属于HTTP业务API：请求为ASCII `QIMENG_DISCOVER_V1:<32位小写十六进制随机nonce>`，尾补空格到96字节；回应为`QIMENG_SERVER_V1:<原nonce>:<HTTP端口>`，端口1–65535。Go、Android `LanDiscoveryProtocol`及[AI发现工具](../tools/discover_lan.py)必须同批核对。请求严格限长，回应小于请求，来源仅私网/链路本地/回环，进程最多20次回应/秒，无来源表增长；客户端最多32候选，每历史地址300ms（最多5个），广播3秒、每秒一次，100ms检查取消。候选未经认证，不证明原实例身份，不能据此自动迁移token或上传目标。
+
+选型四问：通行方案是mDNS/DNS-SD；Android有NSD，但现有Go/Windows产物没有mDNS发布依赖或守护进程，采用完整第三方DNS栈会增加本次运行时依赖面。本轮只用两端标准UDP接口实现固定小包地址引导，不自研DNS。若扩展IPv6/跨平台系统发现或已有获批mDNS依赖，重新评估；统一mDNS发布与客户端可交付后整体退役此协议及工具。平台接口依据：[Go UDPConn](https://pkg.go.dev/net#UDPConn)、[Android DatagramSocket](https://developer.android.com/reference/java/net/DatagramSocket)。部署/防火墙和容器边界见[部署说明](../deploy/README.md#局域网自动发现)。
+
+## 本地上传时间校正
+
+`QIMENG_UPLOAD_TIME_REPAIR_REQUEST` 显式指定本地 JSON 请求时，启动扫描/监听前执行小批维护；默认不启用，不改变 OpenAPI/schema。字段为 `from`/`to`（带时区 RFC3339，左闭右开、最多48小时）、`authorName`（作者关联展示名精确匹配，不区分大小写）、`expectedCount`（精确1–32项）、`apply`（缺省false预览）。不符数量或原件 size/mtime 变化即拒绝。请求路径旁 `.report.json` 先保存原件改前元数据与内容SHA-256，成功后移除请求，报告留本地，禁止入库。
+
+`apply=true` 以各资产既有 created_at 校正物理文件 mtime，启动扫描随后按正常流程更新资产元数据；不重建身份、不改收藏/作者/事件。可选 `QIMENG_UPLOAD_TIME_REPAIR_ARCHIVE` 指定归档根，仅在对应库一级目录最多4096项中，对相同大小且流式 SHA-256 相同的普通文件校时，拒绝子路径链接；归档根允许 Android 系统别名。报告含本机路径，属于私有运维材料。失败可按同一请求重入，已校正文件被识别；逐文件执行不承诺整批原子性或外部写入者下的原子 compare-update。

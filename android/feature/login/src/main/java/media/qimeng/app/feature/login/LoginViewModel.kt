@@ -4,6 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import java.io.IOException
+import media.qimeng.app.core.data.repository.LanServerDiscovery
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +37,11 @@ data class LoginUiState(
     val password: String = "",
     val isSubmitting: Boolean = false,
     val error: LoginError? = null,
+    val rememberedServers: List<String> = emptyList(),
+    val discoveredServers: List<String> = emptyList(),
+    val isDiscovering: Boolean = false,
+    val discoveryFinished: Boolean = false,
+    val discoveryFailed: Boolean = false,
 )
 
 /**
@@ -50,15 +61,20 @@ data class LoginUiState(
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val discovery: LanServerDiscovery,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
+    private var discoveryJob: Job? = null
+    private var addressEdited = false
+
     init {
         viewModelScope.launch {
             val current = authRepository.serverUrl.first()
             val rememberedNas = authRepository.rememberedNasUrl.first()
+            val rememberedServers = authRepository.rememberedNasUrls.first()
             val default = authRepository.defaultEndpoint.first()
             val currentIsNas = current.isNotEmpty() && !ServerAddress.isLocalModePreset(current)
             val selected = default
@@ -70,18 +86,61 @@ class LoginViewModel @Inject constructor(
             val nasAddress = if (currentIsNas) current else rememberedNas
             val localAddress = authRepository.rememberedLocalUrl.first().ifEmpty { ServerAddress.LOCAL_MODE_PRESET }
             _uiState.update {
-                it.copy(selected = selected, serverUrl = nasAddress, localUrl = localAddress)
+                it.copy(selected = selected, serverUrl = nasAddress, localUrl = localAddress,
+                    rememberedServers = rememberedServers)
             }
         }
     }
 
     /** 选项卡点选（选中即高亮；登录成功后仓库层把默认端同步为本端） */
     fun onEndpointSelected(endpoint: DefaultEndpoint) {
+        if (_uiState.value.isSubmitting) return
+        if (endpoint == DefaultEndpoint.LOCAL) stopDiscovery()
         _uiState.update { it.copy(selected = endpoint, error = null) }
     }
 
     fun onServerUrlChange(value: String) {
+        addressEdited = true
         _uiState.update { it.copy(serverUrl = value, error = null) }
+    }
+
+    fun selectDiscoveredServer(address: String) {
+        if (_uiState.value.isSubmitting || address !in (_uiState.value.discoveredServers + _uiState.value.rememberedServers)) return
+        addressEdited = true
+        _uiState.update { it.copy(serverUrl = address, error = null) }
+    }
+
+    /** 由页面权限门调用，单轮有界；不自动发送密码或切换已登录端。 */
+    fun discoverServers() {
+        if (_uiState.value.selected != DefaultEndpoint.NAS || _uiState.value.isSubmitting ||
+            discoveryJob?.isActive == true
+        ) return
+        _uiState.update {
+            it.copy(isDiscovering = true, discoveryFinished = false, discoveryFailed = false,
+                discoveredServers = emptyList())
+        }
+        discoveryJob = viewModelScope.launch {
+            try {
+                val servers = discovery.discover(_uiState.value.rememberedServers)
+                currentCoroutineContext().ensureActive()
+                _uiState.update {
+                    it.copy(discoveredServers = servers, isDiscovering = false, discoveryFinished = true,
+                        serverUrl = if (!addressEdited && servers.size == 1) servers.single() else it.serverUrl)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: IOException) {
+                _uiState.update { it.copy(isDiscovering = false, discoveryFinished = true, discoveryFailed = true) }
+            } catch (_: SecurityException) {
+                _uiState.update { it.copy(isDiscovering = false, discoveryFinished = true, discoveryFailed = true) }
+            }
+        }
+    }
+
+    fun stopDiscovery() {
+        discoveryJob?.cancel()
+        discoveryJob = null
+        _uiState.update { it.copy(isDiscovering = false) }
     }
 
     fun onPasswordChange(value: String) {
@@ -102,6 +161,7 @@ class LoginViewModel @Inject constructor(
             _uiState.update { it.copy(error = LoginError.InvalidAddress) }
             return
         }
+        stopDiscovery()
         _uiState.update { it.copy(isSubmitting = true, error = null) }
         viewModelScope.launch {
             val result = authRepository.login(address, current.password)

@@ -89,6 +89,19 @@ class DataStoreServerConfigDataSourceTest {
     }
 
     @Test
+    fun `NAS history keeps five distinct successful addresses latest first across local login and restart`() = runTest {
+        val store = newDataStore(tmpFolder.newFolder())
+        val first = DataStoreServerConfigDataSource(store, backgroundScope)
+        for (n in 1..7) first.rememberLoginAddress("http://192.0.2.$n:8420")
+        first.rememberLoginAddress("http://192.0.2.5:8420")
+        first.rememberLoginAddress(ServerAddress.LOCAL_MODE_PRESET)
+        first.updateServerUrl("http://192.0.2.99:8420") // 未确认的预置不得进入历史
+        val restarted = DataStoreServerConfigDataSource(store, backgroundScope)
+        assertEquals(listOf(5, 7, 6, 4, 3).map { "http://192.0.2.$it:8420" }, restarted.rememberedNasUrls.first())
+        assertEquals("http://192.0.2.5:8420", restarted.rememberedNasUrl.first())
+    }
+
+    @Test
     fun `token 写入后流发射且内存缓存同步`() = runTest {
         val dataSource = DataStoreServerConfigDataSource(
             dataStore = newDataStore(tmpFolder.newFolder()),

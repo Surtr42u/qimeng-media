@@ -122,6 +122,7 @@
 | `libraryrevision` | 库内容修订号单调计数（kv_settings 持久化唯一真相源，ADR-0026） | 语义扩展到资产集合之外的变更面 |
 | `uploadsess` | 断点续传上传会话：内存注册表、会话数/字节预算（含孤儿）+ DataDir/uploads-tmp 分片暂存与过期清扫（ADR-0028/0049） | HTTP/协议语义与入库编排（在 mediawrite） |
 | `localsync` | 本机同步通道：库名匹配/目录扫描分类/根重叠检查；PlanScan 只读扫描编排与存活集合（ADR-0030/0042） | 导入编排与数据库访问（无自有 IO 状态） |
+| `landiscovery` | 独立IPv4 UDP地址发现，main装配/关闭，不缓存网卡地址、不接触业务数据或认证；契约见server入口 | HTTP/SDK、store、凭据、业务数据 |
 | `config` | 配置加载（env + yaml） | 任何硬编码路径 |
 
 依赖方向：`httpapi → 各业务模块 → store`；业务模块之间通过 `events` 解耦；`recommend`/`stats`/`sourcematcher`/`authoring` 不依赖任何其他业务模块（只依赖领域类型定义包）。scanner 在扫描入库时调用 sourcematcher/authoring 做出处/角色/作者富化（§4/§6「匹配发生在服务端扫描入库时」）。

@@ -41,6 +41,8 @@ class AuthRepositoryImpl @Inject constructor(
 
     override val rememberedNasUrl: Flow<String> = serverConfig.rememberedNasUrl
 
+    override val rememberedNasUrls: Flow<List<String>> = serverConfig.rememberedNasUrls
+
     override val rememberedLocalUrl: Flow<String> = serverConfig.rememberedLocalUrl
 
     override val defaultEndpoint: Flow<DefaultEndpoint?> = serverConfig.defaultEndpoint

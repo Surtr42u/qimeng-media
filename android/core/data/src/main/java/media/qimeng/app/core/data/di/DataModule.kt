@@ -43,6 +43,9 @@ import javax.inject.Singleton
 interface DataModule {
 
     @Binds
+    fun bindLanServerDiscovery(impl: media.qimeng.app.core.data.repository.UdpLanServerDiscovery): media.qimeng.app.core.data.repository.LanServerDiscovery
+
+    @Binds
     @Singleton
     fun bindAuthRepository(impl: media.qimeng.app.core.data.repository.AuthRepositoryImpl): media.qimeng.app.core.data.repository.AuthRepository
 

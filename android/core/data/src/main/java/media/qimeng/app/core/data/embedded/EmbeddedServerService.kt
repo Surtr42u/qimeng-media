@@ -25,6 +25,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -58,6 +59,8 @@ import media.qimeng.app.core.network.ServerConfigDataSource
  */
 @AndroidEntryPoint
 class EmbeddedServerService : Service() {
+
+    @Inject lateinit var stagingRepository: media.qimeng.app.core.data.repository.StagingRepository
 
     companion object {
         const val ACTION_START = "media.qimeng.app.core.data.embedded.action.START"
@@ -221,8 +224,16 @@ class EmbeddedServerService : Service() {
         val devSharedSecret = EmbeddedServerConfig.generateDevSharedSecret()
         serverConfigDataSource.updateEmbeddedDevSecret(devSharedSecret)
 
+        // App专属外部目录仅接受本地运维投放；无请求时不增加日常维护行为。
+        val repairRequest = getExternalFilesDir(null)?.let { File(it, "upload-time-repair.json") }
+        val repairArchive = if (repairRequest?.isFile == true) stagingRepository.archivePath.first() else null
+
         runCatching {
             val processBuilder = ProcessBuilder(binary.absolutePath).apply {
+                if (repairRequest?.isFile == true) {
+                    environment()["QIMENG_UPLOAD_TIME_REPAIR_REQUEST"] = repairRequest.absolutePath
+                    repairArchive?.let { environment()["QIMENG_UPLOAD_TIME_REPAIR_ARCHIVE"] = it }
+                }
                 environment().putAll(
                     EmbeddedServerConfig.environment(
                         dataDir.absolutePath,
