@@ -127,6 +127,6 @@ Q04便携备份业务已下沉，Q08将Server的安全/鉴权请求管线移到m
 
 ## 本地上传时间校正
 
-`QIMENG_UPLOAD_TIME_REPAIR_REQUEST` 显式指定本地 JSON 请求时，启动扫描/监听前执行小批维护；默认不启用，不改变 OpenAPI/schema。字段为 `from`/`to`（带时区 RFC3339，左闭右开、最多48小时）、`authorName`（作者关联展示名精确匹配，不区分大小写）、`expectedCount`（精确1–32项）、`apply`（缺省false预览）。不符数量或原件 size/mtime 变化即拒绝。请求路径旁 `.report.json` 先保存改前元数据，成功后移除请求，报告留本地，禁止入库。
+`QIMENG_UPLOAD_TIME_REPAIR_REQUEST` 显式指定本地 JSON 请求时，启动扫描/监听前执行小批维护；默认不启用，不改变 OpenAPI/schema。字段为 `from`/`to`（带时区 RFC3339，左闭右开、最多48小时）、`authorName`（作者关联展示名精确匹配，不区分大小写）、`expectedCount`（精确1–32项）、`apply`（缺省false预览）。不符数量或原件 size/mtime 变化即拒绝。请求路径旁 `.report.json` 先保存原件改前元数据与内容SHA-256，成功后移除请求，报告留本地，禁止入库。
 
 `apply=true` 以各资产既有 created_at 校正物理文件 mtime，启动扫描随后按正常流程更新资产元数据；不重建身份、不改收藏/作者/事件。可选 `QIMENG_UPLOAD_TIME_REPAIR_ARCHIVE` 指定归档根，仅在对应库一级目录最多4096项中，对相同大小且流式 SHA-256 相同的普通文件校时，拒绝子路径链接；归档根允许 Android 系统别名。报告含本机路径，属于私有运维材料。失败可按同一请求重入，已校正文件被识别；逐文件执行不承诺整批原子性或外部写入者下的原子 compare-update。

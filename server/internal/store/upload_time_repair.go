@@ -10,6 +10,7 @@ import (
 type UploadTimeRepairRow struct {
 	ID, Root, Library, Rel, Mtime, AddedAt string
 	Size                                   int64
+	ContentSHA256                          string
 }
 
 func UploadTimeRepairRows(ctx context.Context, conn *sql.DB, from, to, authorName string) (result []UploadTimeRepairRow, err error) {

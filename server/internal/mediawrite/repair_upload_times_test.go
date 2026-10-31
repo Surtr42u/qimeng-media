@@ -34,7 +34,7 @@ func TestUploadTimeRepairScopedPreviewAndApply(t *testing.T) {
 	if _, err = conn.Exec(`INSERT INTO libraries(id,name,root_path,created_at,kind,enabled) VALUES('lib','images',?,'2026-01-01','normal',1)`, root); err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range []struct{ name, created string }{{"Liepraag-new.jpg", store.FormatTimestamp(added)}, {"Liepraag-old.jpg", "2026-10-29T00:00:00.000Z"}, {"other.jpg", store.FormatTimestamp(added)}} {
+	for _, item := range []struct{ name, created string }{{"ordinary-name.jpg", store.FormatTimestamp(added)}, {"Liepraag-old.jpg", "2026-10-29T00:00:00.000Z"}, {"other.jpg", store.FormatTimestamp(added)}} {
 		file := filepath.Join(root, item.name)
 		if err = os.WriteFile(file, []byte("synthetic"), 0o600); err != nil {
 			t.Fatal(err)
@@ -46,10 +46,10 @@ func TestUploadTimeRepairScopedPreviewAndApply(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = conn.Exec(`INSERT INTO authors(id,display_name,type,followed) VALUES('author','Liepraag','regular',0)`); err != nil {
+	if _, err = conn.Exec(`INSERT INTO authors(id,display_name,type,followed,created_at) VALUES('author','Liepraag','regular',0,'2026-01-01T00:00:00.000Z')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = conn.Exec(`INSERT INTO asset_authors(asset_id,author_id) VALUES('Liepraag-new.jpg','author'),('Liepraag-old.jpg','author')`); err != nil {
+	if _, err = conn.Exec(`INSERT INTO asset_authors(asset_id,author_id) VALUES('ordinary-name.jpg','author'),('Liepraag-old.jpg','author')`); err != nil {
 		t.Fatal(err)
 	}
 	archived := filepath.Join(archive, "images", "original-download-name.jpg")
@@ -88,20 +88,20 @@ func TestUploadTimeRepairScopedPreviewAndApply(t *testing.T) {
 	if err = RepairUploadTimes(context.Background(), conn, request, archive); err != nil {
 		t.Fatal(err)
 	}
-	assertTime(filepath.Join(root, "Liepraag-new.jpg"), old)
+	assertTime(filepath.Join(root, "ordinary-name.jpg"), old)
 	req.Apply = true
 	req.ExpectedCount = 2
 	write()
 	if err = RepairUploadTimes(context.Background(), conn, request, archive); err == nil {
 		t.Fatal("count mismatch must reject")
 	}
-	assertTime(filepath.Join(root, "Liepraag-new.jpg"), old)
+	assertTime(filepath.Join(root, "ordinary-name.jpg"), old)
 	req.ExpectedCount = 1
 	write()
 	if err = RepairUploadTimes(context.Background(), conn, request, archive); err != nil {
 		t.Fatal(err)
 	}
-	assertTime(filepath.Join(root, "Liepraag-new.jpg"), added)
+	assertTime(filepath.Join(root, "ordinary-name.jpg"), added)
 	assertTime(archived, added)
 	assertTime(different, old)
 	assertTime(filepath.Join(root, "Liepraag-old.jpg"), old)

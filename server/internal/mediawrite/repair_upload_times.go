@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,6 +59,21 @@ func RepairUploadTimes(ctx context.Context, conn *sql.DB, requestPath, archiveRo
 	rows, err := store.UploadTimeRepairRows(ctx, conn, store.FormatTimestamp(from), store.FormatTimestamp(to), req.AuthorName)
 	if err != nil {
 		return err
+	}
+	if len(rows) == req.ExpectedCount {
+		for i := range rows {
+			if err = checkRepairFile(rows[i]); err != nil {
+				return err
+			}
+			digest, hashErr := repairFileHash(filepath.Join(rows[i].Root, filepath.FromSlash(rows[i].Rel)))
+			if hashErr != nil {
+				return hashErr
+			}
+			if err = checkRepairFile(rows[i]); err != nil {
+				return err
+			}
+			rows[i].ContentSHA256 = hex.EncodeToString(digest[:])
+		}
 	}
 	report := struct {
 		Request UploadTimeRepairRequest
