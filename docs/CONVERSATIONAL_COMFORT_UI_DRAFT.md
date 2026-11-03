@@ -34,11 +34,11 @@
 ### 2.2 色彩与材质
 
 Android 应以现有 MaterialTheme / QimengBrandColors 为准，当前深色主题已有：
-- 页面背景：\`QimengBrandColors.BgDark\`（当前 #1A1A1A）。
-- 标准卡面：\`QimengBrandColors.SurfaceDark\`（当前 #242424）。
-- 柔和输入/内部信息块：\`QimengBrandColors.SurfaceSoftDark\`（当前 #2E2E2E）。
-- 主次文字：\`TextPrimaryDark\`、\`TextSecondaryDark\`。
-- 描边/分隔：\`DividerDark\` 或对应 MaterialTheme 语义颜色。
+- 页面背景：`QimengBrandColors.BgDark`（当前 #1A1A1A）。
+- 标准卡面：`QimengBrandColors.SurfaceDark`（当前 #242424）。
+- 柔和输入/内部信息块：`QimengBrandColors.SurfaceSoftDark`（当前 #2E2E2E）。
+- 主次文字：`TextPrimaryDark`、`TextSecondaryDark`。
+- 描边/分隔：`DividerDark` 或对应 MaterialTheme 语义颜色。
 
 采用**少量明度差 + 细描边**来形成层次，而不是大量玻璃模糊、厚投影或高饱和卡片。默认状态标签维持低对比中性色；只有真正重要、少数的更新或失败状态允许清晰强调（例如少量蓝色「NEW」），**不要每行都上彩色标记**。
 
@@ -95,7 +95,7 @@ Web 保留自己的 [Aurora Glass](../web/README.md#设计语言adr-0031绮梦�
 
 信息结构草案（非真实界面、非实现要求）：
 
-\`\`\`text
+```text
 [ ← ]  作者名称
 
 [ 圆形头像 ] 作者名称
@@ -110,7 +110,7 @@ Web 保留自己的 [Aurora Glass](../web/README.md#设计语言adr-0031绮梦�
 作品：继续当前作品/角色/类型筛选和日期分组网格
 动态：公开新作条目、预览、发布时间、原始链接、待收藏
 资料：作者别名、主页账号、头像出处、手动搜索来源
-\`\`\`
+```
 
 **不应在首次尝试时贸然增设三个 Tab。** 可以先仅把头像、平台链接和一小段简介加在当前标题/计数之间；后续如动态内容足够丰富，再与用户讨论独立 Tab、折叠段或独立页面哪个更舒服。新内容并非已经写入媒体库；不能仅以标题相同就自动标记「已收藏」。
 
@@ -127,7 +127,7 @@ Web 保留自己的 [Aurora Glass](../web/README.md#设计语言adr-0031绮梦�
 
 ## 5. 数据语义边界（设计时必须知道，但此文不改领域规则）
 
-本仓的 [作者领域规则](domain/authors.md) 明确：「来源」主要是**获取渠道/搜索来源词**，不是作品原始出处或已核实的作者账号。未来如果做作者头像和在线档案，必须**单独设计作者平台身份与外部来源记录**，不能直接把现有 \`sources\` 词数组当作 X/Pixiv 用户资料，不能由名称相似就自动合并作者。
+本仓的 [作者领域规则](domain/authors.md) 明确：「来源」主要是**获取渠道/搜索来源词**，不是作品原始出处或已核实的作者账号。未来如果做作者头像和在线档案，必须**单独设计作者平台身份与外部来源记录**，不能直接把现有 `sources` 词数组当作 X/Pixiv 用户资料，不能由名称相似就自动合并作者。
 
 新字段/能力可能包括（**仅概念草案，非现有 API**）：头像来源、作者主页、账号别名、资料最后核验时间、最近可见公开动态、已读标记。应区分人工录入、公开来源提取、AI 推断。自动更新不得覆盖人工校正的信息。
 
@@ -136,14 +136,14 @@ Web 保留自己的 [Aurora Glass](../web/README.md#设计语言adr-0031绮梦�
 ## 6. 以后在 Compose 中如何落地（仅实施指南，不改任何代码）
 
 当前源代码参照：
-- 作者列表：\`android/feature/author/src/main/java/media/qimeng/app/feature/author/AuthorScreen.kt\`
-- 作者集合：\`android/feature/author/src/main/java/media/qimeng/app/feature/author/AuthorCollectionScreen.kt\`
-- 列表状态：\`AuthorViewModel.kt\`；集合状态：\`AuthorCollectionViewModel.kt\`
-- 设计基础：\`android/core/ui/src/main/java/media/qimeng/app/core/ui/theme/{Color,Dimens,Theme}.kt\`
+- 作者列表：`android/feature/author/src/main/java/media/qimeng/app/feature/author/AuthorScreen.kt`
+- 作者集合：`android/feature/author/src/main/java/media/qimeng/app/feature/author/AuthorCollectionScreen.kt`
+- 列表状态：`AuthorViewModel.kt`；集合状态：`AuthorCollectionViewModel.kt`
+- 设计基础：`android/core/ui/src/main/java/media/qimeng/app/core/ui/theme/{Color,Dimens,Theme}.kt`
 
 实现建议：
-1. **第一轮只改展示**：在隔离预览/示例数据中绘制 \`CreatorOverviewCard\`、\`CreatorActivityRow\` 等候选无状态 Composable；名字仅建议，不意味着文件已存在。不要直接修改已安装版本。
-2. **从已有 token 取材**：优先 \`MaterialTheme.colorScheme\`、\`QimengDimens\` 和当前卡片组件，避免新开平行主题。
+1. **第一轮只改展示**：在隔离预览/示例数据中绘制 `CreatorOverviewCard`、`CreatorActivityRow` 等候选无状态 Composable；名字仅建议，不意味着文件已存在。不要直接修改已安装版本。
+2. **从已有 token 取材**：优先 `MaterialTheme.colorScheme`、`QimengDimens` 和当前卡片组件，避免新开平行主题。
 3. **状态归属清楚**：数据读写与网络调用在 ViewModel/Repository；UI 只接不可变状态和动作回调。区分 loading、无资料、同步失败、近期已更新、未授权外部来源。
 4. **保持原路由和网格**：优先在作者集合页原有内容上方加可折叠概览，原筛选和网格不要因卡片出现而丢失滚动、双指缩放和返回行为。
 5. **单屏可读**：中小手机上优先两行排布，平台文字过长时换行，不让新增卡片挤掉文件内容。
