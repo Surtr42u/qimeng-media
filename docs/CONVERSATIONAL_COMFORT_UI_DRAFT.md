@@ -42,7 +42,7 @@ Android 应以现有 MaterialTheme / QimengBrandColors 为准，当前深色主�
 
 采用**少量明度差 + 细描边**来形成层次，而不是大量玻璃模糊、厚投影或高饱和卡片。默认状态标签维持低对比中性色；只有真正重要、少数的更新或失败状态允许清晰强调（例如少量蓝色「NEW」），**不要每行都上彩色标记**。
 
-Web 保留自己的 [Aurora Glass](../web/README.md#设计语言adr-0031绮梦流光--aurora-glass2026-10-02-起) token 和视觉契约：**迁移的是层级、卡片布局和阅读节奏，不是把 Web 玻璃强套在 Android，也不是把 Android 灰色强套 Web**。
+Web 保留自己的 [Aurora Glass](../web/README.md) token 和视觉契约：**迁移的是层级、卡片布局和阅读节奏，不是把 Web 玻璃强套在 Android，也不是把 Android 灰色强套 Web**。
 
 ### 2.3 形状与组件
 
