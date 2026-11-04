@@ -16,7 +16,7 @@ import {
 } from '@/hooks/use-authors'
 import { authorDisplayName } from '@/lib/format'
 import { batchFailureReason } from '@/lib/batch'
-import { collectionPath, COLLECTION_AUTHOR } from '@/lib/route-keys'
+import { authorCollectionPath } from '@/lib/route-keys'
 
 type AuthorZone = '全部' | '常规' | 'cos'
 type AuthorSort = 'default' | 'browse' | 'works'
@@ -184,7 +184,7 @@ export default function AuthorsPage() {
           <ul>
             {rows.map((a) => (
               <li key={a.id}>
-                <button type="button" className="author-identity" onClick={() => a.displayName && navigate(collectionPath(COLLECTION_AUTHOR, a.displayName))}>
+                <button type="button" className="author-identity" onClick={() => a.id && a.displayName && navigate(authorCollectionPath(a.id, a.displayName))}>
                   <span className="author-avatar" aria-hidden="true">{Array.from(a.displayName ?? '?')[0]}</span>
                   <span className="author-info"><strong>{authorDisplayName(a)}</strong><small>{a.fileCount ?? 0} 个文件 · {a.type === 'cos' ? '目录管理' : '常规作者'}</small></span>
                 </button>

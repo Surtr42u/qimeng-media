@@ -784,6 +784,44 @@ paths:
         "200": { description: 已新建或复用（复用返回既有行）, content: { application/json: { schema: { $ref: "#/components/schemas/Author" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { description: 与 COS 作者行撞名, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/{authorId}/profile:
+    parameters:
+      - { name: authorId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: 读取作者公开档案（普通与COS；空档案revision为0）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CreatorProfile" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      summary: 保存作者档案及维护开关（revision冲突不写入；显式审阅候选后提交）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatorProfileWrite" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CreatorProfile" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: 档案已更新，请重新读取, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/{authorId}/profile/refresh:
+    parameters:
+      - { name: authorId, in: path, required: true, schema: { type: string } }
+    post:
+      summary: 从已确认主页获取公开资料候选与可选RSS动态，不覆盖人工字段
+      responses:
+        "200": { description: 完成检查（上游失败见lastError，保留原资料）, content: { application/json: { schema: { $ref: "#/components/schemas/CreatorProfile" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: 档案更新或刷新已在进行, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/{authorId}/profile/avatar:
+    parameters:
+      - { name: authorId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: 认证后代理已保存作者头像（仅安全公网HTTPS图片，无任意URL参数）
+      responses:
+        "200": { description: 安全头像图片, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: 头像来源暂不可用, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /api/v1/authors/{authorId}:
     put:
       summary: 修改作者显示名（改名；身份随之迁移，ADR-0024 修订 5）
@@ -1885,6 +1923,49 @@ components:
         name:      { type: string }
         fileCount: { type: integer }
 
+    CreatorProfileCandidate:
+      type: object
+      required: [nickname, biography, avatarUrl, homepageUrl, evidenceUrls]
+      properties:
+        nickname: { type: string, maxLength: 200 }
+        biography: { type: string, maxLength: 2000 }
+        avatarUrl: { type: string, maxLength: 2000 }
+        homepageUrl: { type: string, maxLength: 2000 }
+        evidenceUrls: { type: array, maxItems: 8, items: { type: string, maxLength: 2000 } }
+    CreatorProfileWrite:
+      type: object
+      required: [revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates]
+      properties:
+        revision: { type: integer, format: int64, minimum: 0 }
+        nickname: { type: string, maxLength: 200 }
+        biography: { type: string, maxLength: 2000 }
+        avatarUrl: { type: string, maxLength: 2000 }
+        homepageUrl: { type: string, maxLength: 2000 }
+        evidenceUrls: { type: array, maxItems: 8, items: { type: string, maxLength: 2000 } }
+        status: { type: string, enum: [empty, candidate, verified] }
+        autoRefresh: { type: boolean }
+        feedUrl: { type: string, maxLength: 2000 }
+        trackUpdates: { type: boolean }
+    CreatorUpdate:
+      type: object
+      required: [id, title, url, publishedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        url: { type: string }
+        publishedAt: { type: string }
+    CreatorProfile:
+      allOf:
+        - { $ref: "#/components/schemas/CreatorProfileWrite" }
+        - type: object
+          required: [authorId, lastCheckedAt, lastSuccessAt, lastError, candidate, updates]
+          properties:
+            authorId: { type: string }
+            lastCheckedAt: { type: string }
+            lastSuccessAt: { type: string }
+            lastError: { type: string }
+            candidate: { $ref: "#/components/schemas/CreatorProfileCandidate" }
+            updates: { type: array, maxItems: 30, items: { $ref: "#/components/schemas/CreatorUpdate" } }
     Author:
       type: object
       properties:
@@ -2305,6 +2386,7 @@ components:
       type: object
       required: [authorId, displayName]
       properties:
+        profileJson: { type: string, maxLength: 262144, description: 作者公开附属档案JSON；可选v2扩展，旧备份缺省无操作；导入不覆盖本端已有档案且关闭自动维护 }
         authorId:         { type: string, description: 常规作者原样；COS 作者带 cos_ 前缀原样保留 }
         displayName:      { type: string }
         createdAtMillis:  { type: integer, format: int64 }

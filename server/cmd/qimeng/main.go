@@ -30,6 +30,7 @@ import (
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/buildinfo"
 	"qimeng-media/server/internal/config"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
 	"qimeng-media/server/internal/landiscovery"
@@ -248,8 +249,10 @@ func main() {
 	})
 	syncService := syncchannel.New(syncchannel.Options{Config: cfg, Queries: queries, Writes: writeService,
 		TXT: txtService, Mirror: mirrorWriter, Logger: logger, Now: time.Now})
+	creatorProfiles := creatorprofile.New(conn, queries, time.Now, logger)
 	apiSrv, err := httpapi.New(httpapi.Deps{
-		Revision: revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
+		CreatorProfiles: creatorProfiles,
+		Revision:        revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
 		Conn:        conn,
 		Queries:     queries,
 		Bus:         bus,
@@ -310,6 +313,8 @@ func main() {
 
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	creatorDone := make(chan struct{})
+	safego.Go(logger, "作者公开资料维护", func() { defer close(creatorDone); creatorProfiles.Run(ctx) })
 	defer stop()
 	closeDiscovery, discoveryErr := landiscovery.Start(cfg.Listen, logger)
 	if discoveryErr != nil {
@@ -388,6 +393,7 @@ func main() {
 	// 工作池先收：等在途缩略图任务排空；再关总线让 SSE 订阅者收流结束，
 	// 最后关库连接——顺序反了会出现"关库后任务/总线还在投递"的竞态窗口。
 	apiSrv.CloseRecommendCache()
+	<-creatorDone
 	if err := apiSrv.WaitThumbnailWarmup(shutdownCtx); err != nil {
 		logger.Warn("等待缩略图及图片尺寸回填退出超时", "error", err)
 	}

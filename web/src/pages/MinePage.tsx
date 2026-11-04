@@ -18,7 +18,7 @@ import { LOCALE_ZH } from '@/lib/constants'
 import { authorDisplayName, formatBytes, formatDateTime, formatDuration } from '@/lib/format'
 import { batchFailureReason } from '@/lib/batch'
 import { statsReadMessage } from '@/lib/stats-contract'
-import { assetDetail, AUTHORS_PATH, COLLECTION_AUTHOR, DATA_PATH, HOME_PATH, MAINTENANCE_LIBRARIES_PATH, SETTINGS_PATH, collectionPath } from '@/lib/route-keys'
+import { assetDetail, AUTHORS_PATH, DATA_PATH, HOME_PATH, MAINTENANCE_LIBRARIES_PATH, SETTINGS_PATH, authorCollectionPath } from '@/lib/route-keys'
 import { applyThumbSize } from '@/lib/thumb-size'
 
 /** 历史卡渲染项：协议 HistoryItem，仅展示历史与时长信息 */
@@ -79,7 +79,7 @@ export default function MinePage() {
       {authorsQuery.isError && <QueryNotice message="关注作者读取失败" retained={authorsQuery.data != null} busy={authorsQuery.isFetching} onRetry={() => { void authorsQuery.refetch() }} />}
       {authorsQuery.isPending ? <LoadingHint /> : followedAuthors.length ? <div className="follow-list mine-follow-grid">{followedAuthors.map(author => {
         const name = authorDisplayName(author)
-        return <article className="follow-card" key={author.id}><Link className="mine-follow-content" to={collectionPath(COLLECTION_AUTHOR, name)}><span className="mine-author-avatar" aria-hidden="true">{name.slice(0, 1)}</span><div className="follow-info"><p className="follow-name">{name}</p><p className="follow-sub">{(author.fileCount ?? 0).toLocaleString(LOCALE_ZH)} 个文件</p></div></Link><button className="follow-btn" type="button" disabled={!author.id || toggleFollow.isPending || authorsQuery.isError} aria-label={`取消关注 ${name}`} onClick={() => { if (author.id) toggleFollow.mutate({ authorId: author.id, follow: false }, { onError: error => toast.error(`取消关注失败：${batchFailureReason(error)}`) }) }}>{toggleFollow.isPending && toggleFollow.variables?.authorId === author.id ? '处理中…' : '已关注'}</button></article>
+        return <article className="follow-card" key={author.id}><Link className="mine-follow-content" to={authorCollectionPath(author.id ?? '', name)}><span className="mine-author-avatar" aria-hidden="true">{name.slice(0, 1)}</span><div className="follow-info"><p className="follow-name">{name}</p><p className="follow-sub">{(author.fileCount ?? 0).toLocaleString(LOCALE_ZH)} 个文件</p></div></Link><button className="follow-btn" type="button" disabled={!author.id || toggleFollow.isPending || authorsQuery.isError} aria-label={`取消关注 ${name}`} onClick={() => { if (author.id) toggleFollow.mutate({ authorId: author.id, follow: false }, { onError: error => toast.error(`取消关注失败：${batchFailureReason(error)}`) }) }}>{toggleFollow.isPending && toggleFollow.variables?.authorId === author.id ? '处理中…' : '已关注'}</button></article>
       })}</div> : !authorsQuery.isError && <div className="workspace-empty"><Users aria-hidden="true" /><h4>暂无关注作者</h4><p>关注后，作者和作品入口会集中显示在这里。</p><Link to={AUTHORS_PATH}>去管理作者</Link></div>}
     </section>
     <section className="m-pane mine-pane" role="tabpanel" id="mine-panel-fav" aria-labelledby="mine-tab-fav" hidden={tab !== 'fav'} tabIndex={0}>

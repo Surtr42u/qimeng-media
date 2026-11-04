@@ -14,6 +14,7 @@ type Author struct {
 	DisplayName     string `json:"displayName"`
 
 	Origin          *string `json:"origin,omitempty"`
+	ProfileJson     *string `json:"profileJson,omitempty"`
 	UpdatedAtMillis *int64  `json:"updatedAtMillis,omitempty"`
 }
 

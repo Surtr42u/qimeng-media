@@ -51,8 +51,10 @@ fun AuthorCollectionScreen(
     onBack: () -> Unit,
     onOpenAsset: (assetId: String) -> Unit,
     viewModel: AuthorCollectionViewModel = hiltViewModel(),
+    profileViewModel: CreatorProfileViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val profileState by profileViewModel.state.collectAsStateWithLifecycle()
     // 网格列数：共用全部页档（grid_columns_all），初始值读档、手势结束持久化（见 VM）
     val columns by viewModel.gridColumns.collectAsStateWithLifecycle()
     // 双指缩放期间的瞬时列数优先展示（逐帧反馈在内存、手势结束才持久化一次——镜像 AllScreen 接线）
@@ -78,54 +80,71 @@ fun AuthorCollectionScreen(
     )
     val activePills = FourDimPills.pillsFor(pillModel, state.activeDim)
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        QimengTopBar(title = viewModel.authorName, onBack = onBack)
-
-        // 计数行（Web page-head 副行「作者 · N 个文件」；N=服务端列表首响 totalMatched，
-        // 拉取前缺省 0——Web `?? 0` 同口径）
-        Text(
-            text = "$COUNT_ROW_PREFIX · ${state.totalMatched ?: 0} 个文件",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
-        )
-
-        // 维度芯片行常驻文档流（收藏/历史页同款）；「角色 | 类型」间竖分隔线对齐全/收页
-        // （divider 落在子集内「类型」的下标——三芯片行在作品/角色之后、两芯片行在角色之后）
-        QimengChipRow(
-            pills = FourDimPills.dimChips(pillModel, dims).map { QimengPill(text = it.text, selected = it.selected) },
-            onPillClick = { index -> viewModel.onDimChipClicked(dims[index]) },
-            dividerBeforeIndex = dims.indexOf(AlbumDim.TYPE),
-            modifier = Modifier
-                // 计数行与芯片行原竖向 0 间距显挤（2026-09-14 用户反馈「作者文件数和胶囊
-                // 挤在一起」）：补 SpaceM=8dp——token 出处即「芯片行上距」（fragment_all_files
-                // .xml L72），语义正合，不另开档
-                .padding(top = QimengDimens.SpaceM)
-                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
-        )
-
-        // 值区块 in-flow（2026-09-15 批四页统一：:core:ui QimengValuePillBlock 单源；
-        // 整块显隐仍由 filter.expanded 的拍板②语义控制，钳制/展开钮规格随组件收编）
-        if (state.filter.expanded) {
-            QimengValuePillBlock(
-                pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
-                onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
-                // 切维度归位「收起两行」（Web setDim 重置 expanded 同口径）
-                resetKey = state.activeDim,
+    val collectionHeader: @Composable () -> Unit = {
+        Column {
+            CreatorProfileCard(
+                name = viewModel.authorName, state = profileState, fileCount = state.totalMatched,
+                onFollow = profileViewModel::toggleFollow, onEdit = profileViewModel::edit,
+                onRefresh = profileViewModel::refresh, onRetry = profileViewModel::reload,
+                onReview = profileViewModel::useCandidate,
             )
-        }
+            if (profileState.editing) CreatorProfileEditor(
+                state = profileState, onDraft = profileViewModel::changeDraft,
+                onSave = profileViewModel::save, onClose = profileViewModel::cancelEdit,
+            )
 
-        state.errorMessage?.let { message ->
+            // 计数行（Web page-head 副行「作者 · N 个文件」；N=服务端列表首响 totalMatched，
+            // 拉取前缺省 0——Web `?? 0` 同口径）
             Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
+                text = "$COUNT_ROW_PREFIX · ${state.totalMatched ?: 0} 个文件",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+            )
+
+            // 维度芯片行常驻文档流（收藏/历史页同款）；「角色 | 类型」间竖分隔线对齐全/收页
+            // （divider 落在子集内「类型」的下标——三芯片行在作品/角色之后、两芯片行在角色之后）
+            QimengChipRow(
+                pills = FourDimPills.dimChips(pillModel, dims).map { QimengPill(text = it.text, selected = it.selected) },
+                onPillClick = { index -> viewModel.onDimChipClicked(dims[index]) },
+                dividerBeforeIndex = dims.indexOf(AlbumDim.TYPE),
                 modifier = Modifier
-                    // 芯片行与错误文案原竖向 0 间距，同类拥挤问题一并规范到 ≥8dp（同上口径）
+                    // 计数行与芯片行原竖向 0 间距显挤（2026-09-14 用户反馈「作者文件数和胶囊
+                    // 挤在一起」）：补 SpaceM=8dp——token 出处即「芯片行上距」（fragment_all_files
+                    // .xml L72），语义正合，不另开档
                     .padding(top = QimengDimens.SpaceM)
                     .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
             )
+
+            // 值区块 in-flow（2026-09-15 批四页统一：:core:ui QimengValuePillBlock 单源；
+            // 整块显隐仍由 filter.expanded 的拍板②语义控制，钳制/展开钮规格随组件收编）
+            if (state.filter.expanded) {
+                QimengValuePillBlock(
+                    pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
+                    onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
+                    // 切维度归位「收起两行」（Web setDim 重置 expanded 同口径）
+                    resetKey = state.activeDim,
+                )
+            }
+
+            state.errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        // 芯片行与错误文案原竖向 0 间距，同类拥挤问题一并规范到 ≥8dp（同上口径）
+                        .padding(top = QimengDimens.SpaceM)
+                        .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+                )
+            }
+
+            if (state.items.isEmpty() && !state.isLoading) QimengEmptyState(text = EMPTY_COLLECTION)
         }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        QimengTopBar(title = viewModel.authorName, onBack = onBack)
 
         Box(modifier = Modifier.weight(1f)) {
             QimengPullToRefresh(
@@ -140,11 +159,6 @@ fun AuthorCollectionScreen(
                         onGestureEnd = viewModel::commitPinchColumns,
                     ),
             ) {
-                if (state.items.isEmpty()) {
-                    // 首载中不占位（作者管理页同口径）；无内容给空态文案
-                    if (!state.isLoading) QimengEmptyState(text = EMPTY_COLLECTION)
-                    return@QimengPullToRefresh
-                }
                 QimengMediaGrid(
                     // 分组 O(n) 计算包 remember（镜像 AllScreen 修复D-1）：按参与变量
                     // （items/nowMs/dateCounts）缓存，重组零重算、数据变化才重算——分组键=文件时间；
@@ -153,6 +167,7 @@ fun AuthorCollectionScreen(
                         state.items.groupByDateLabel(nowMs, state.dateCounts) { it.modifiedAtMs }
                     },
                     columns = displayColumns,
+                    leadingContent = collectionHeader,
                     animatedUrlResolver = animatedUrlResolver,
                     // 底部预留沿用旧版 fragment_all_files.xml L149 的 180dp 档：悬浮面板退役后
                     // 已无遮挡末行之忧，保留作列表底部呼吸区（与相册页 G5 后口径一致）

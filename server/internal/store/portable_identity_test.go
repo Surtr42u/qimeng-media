@@ -5,7 +5,7 @@ import "testing"
 // 从 0018 的真实历史无键事件升级，保留原文并建立稳定身份；新无键写入同样覆盖。
 func TestPortableEventIdentityMigrationPreservesHistory(t *testing.T) {
 	conn, _ := openTestDB(t)
-	if err := MigrateDown(conn, 1); err != nil {
+	if err := MigrateDown(conn, 3); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := conn.Exec(`INSERT INTO view_events(asset_id,kind,session_id,started_at,seconds) VALUES ('synthetic-asset','dwell','synthetic-session','2026-10-19T00:00:00.000Z',17)`); err != nil {

@@ -67,6 +67,11 @@ export function collectionPath(kind: string, name: string): string {
   return generatePath(COLLECTION_PATTERN, { kind, name })
 }
 
+/** 作者主页显式携身份，普通/COS 同名时不依赖显示名反查。 */
+export function authorCollectionPath(authorId: string, displayName: string): string {
+  return `${collectionPath(COLLECTION_AUTHOR, displayName)}?${new URLSearchParams({ authorId })}`
+}
+
 /**
  * 资产详情路由匹配模式（router.tsx 叠加组子路由段、assetDetail() 派生与
  * isAssetDetailPath 判定的单一来源——模板串全库仅此一处）。

@@ -231,6 +231,8 @@ fun QimengMediaGrid(
     endFooterText: String? = null,
     pauseThumbnailsWhileScrolling: Boolean = false,
     tightenLeadingHeader: Boolean = false,
+    /** 作者资料等内容作为同一网格的跨列首项，随作品滚动，不挤占作品视口。 */
+    leadingContent: (@Composable () -> Unit)? = null,
 ) {
     // 扁平化为 (header?, asset?) 序列：组头跨全列，卡片单列（含按 id 防御性去重，见函数 KDoc）
     val cells = remember(sections) { flattenGridCells(sections) }
@@ -238,10 +240,11 @@ fun QimengMediaGrid(
 
     // 距底哨兵：可见末项接近总尾即回调（LaunchedEffect 挂 listState 一次性收集快照流）。
     // reloadTick 为第三 key（问题A 修复）：条数不变的加载结束也能重触发哨兵，防钉底死锁
-    val shouldLoadMore by remember(totalCount) {
+    val leadingItemCount = if (leadingContent == null) 0 else 1
+    val shouldLoadMore by remember(totalCount, leadingItemCount) {
         derivedStateOf {
             val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            lastVisibleIndex >= totalCount - 1 - GRID_PRELOAD_DISTANCE
+            lastVisibleIndex - leadingItemCount >= totalCount - 1 - GRID_PRELOAD_DISTANCE
         }
     }
     LaunchedEffect(shouldLoadMore, totalCount, reloadTick) {
@@ -271,6 +274,9 @@ fun QimengMediaGrid(
             bottom = bottomContentPadding,
         ),
     ) {
+        if (leadingContent != null) {
+            item(key = "leading:content", span = { GridItemSpan(maxLineSpan) }) { leadingContent() }
+        }
         itemsIndexed(
             cells,
             key = { _, cell -> cell.asset?.id ?: "header:${cell.header}" },

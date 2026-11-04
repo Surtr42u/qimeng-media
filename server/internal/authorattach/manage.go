@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/authoring"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/store/db"
 )
 
@@ -53,6 +54,9 @@ func (s *Service) DeleteAuthor(ctx context.Context, qtx *db.Queries, now time.Ti
 	}
 	if err := qtx.DeleteAssetAuthorsByAuthorIds(ctx, []string{authorID}); err != nil {
 		return fmt.Errorf("authorattach: 删除作者关联: %w", err)
+	}
+	if err := creatorprofile.Delete(ctx, qtx, authorID, now); err != nil {
+		return err
 	}
 	rows, err := qtx.DeleteAuthor(ctx, authorID)
 	if err != nil {
@@ -139,6 +143,9 @@ func (s *Service) RenameAuthor(ctx context.Context, qtx *db.Queries, now time.Ti
 		AuthorID: newID, AuthorID_2: authorID,
 	}); err != nil {
 		return AuthorRef{}, fmt.Errorf("authorattach: 迁移作者关联: %w", err)
+	}
+	if err := creatorprofile.Move(ctx, qtx, authorID, newID, now); err != nil {
+		return AuthorRef{}, err
 	}
 	if _, err := qtx.DeleteAuthor(ctx, authorID); err != nil {
 		return AuthorRef{}, fmt.Errorf("authorattach: 删除旧身份行: %w", err)

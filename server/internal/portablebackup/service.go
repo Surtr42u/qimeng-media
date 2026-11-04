@@ -3,6 +3,7 @@ package portablebackup
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/authorimport"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/store/db"
 )
 
@@ -83,6 +85,23 @@ func (s *Service) Import(ctx context.Context, req *BackupImport) (ImportResult, 
 	}
 	if err := validatePortableBackup(req); err != nil {
 		return ImportResult{}, &invalidBackup{cause: err}
+	}
+	for _, author := range sliceOrEmpty(req.Data.Authors) {
+		if author.ProfileJson != nil {
+			var profile creatorprofile.Profile
+			if len(*author.ProfileJson) > 262144 {
+				return ImportResult{}, &invalidBackup{cause: errors.New("作者档案超限")}
+			}
+			if err := json.Unmarshal([]byte(*author.ProfileJson), &profile); err != nil {
+				return ImportResult{}, &invalidBackup{cause: err}
+			}
+			if profile.AuthorID != author.AuthorId {
+				return ImportResult{}, &invalidBackup{cause: errors.New("作者档案身份不匹配")}
+			}
+			if err := creatorprofile.ValidateProfile(profile); err != nil {
+				return ImportResult{}, &invalidBackup{cause: err}
+			}
+		}
 	}
 	imp := &backupImport{s: s, ctx: ctx}
 	imp.matchBackupFiles(req.Data.MediaFiles)

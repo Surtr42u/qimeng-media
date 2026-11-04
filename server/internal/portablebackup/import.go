@@ -15,6 +15,7 @@ import (
 
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/authorimport"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -173,6 +174,28 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 			if err != nil {
 				imp.fail("导入作者", err)
 				return
+			}
+			if a.ProfileJson != nil {
+				current, profileErr := creatorprofile.Load(imp.ctx, qx, a.AuthorId)
+				if profileErr != nil {
+					imp.fail("读取作者档案", profileErr)
+					return
+				}
+				if current.Revision == 0 {
+					var profile creatorprofile.Profile
+					if profileErr = json.Unmarshal([]byte(*a.ProfileJson), &profile); profileErr != nil {
+						imp.fail("解析作者档案", profileErr)
+						return
+					}
+					profile.AuthorID = a.AuthorId
+					profile.AutoRefresh = false
+					profile.TrackUpdates = false
+					profile.Revision = 1
+					if profileErr = creatorprofile.Persist(imp.ctx, qx, profile, imp.s.now()); profileErr != nil {
+						imp.fail("导入作者档案", profileErr)
+						return
+					}
+				}
 			}
 			imp.bump(&imp.res.AuthorsImported)
 		}

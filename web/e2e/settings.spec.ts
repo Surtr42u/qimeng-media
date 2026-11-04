@@ -13,6 +13,22 @@ async function openSettings(page: Page, onConfig: (route: Route) => Promise<void
   await page.goto('/app/settings')
 }
 
+test('设置操作在独立右栏，窄屏滚动到末尾仍不覆盖卡片', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await openSettings(page, route => route.fulfill({ json: initial }))
+  const actions = page.getByRole('complementary', { name: '设置操作' })
+  const content = page.locator('.settings-content')
+  const desktopActions = await actions.boundingBox()
+  const desktopContent = await content.boundingBox()
+  expect(desktopActions!.x).toBeGreaterThanOrEqual(desktopContent!.x + desktopContent!.width)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await actions.scrollIntoViewIfNeeded()
+  const mobileActions = await actions.boundingBox()
+  const mobileContent = await content.boundingBox()
+  expect(mobileActions!.y).toBeGreaterThanOrEqual(mobileContent!.y + mobileContent!.height)
+  await expect(actions.getByRole('button', { name: '保存设置', exact: true })).toBeVisible()
+})
+
 test('慢保存 A 完成后保留新草稿 B，连续保存发送 B', async ({ page }) => {
   let pending: Route | undefined
   const submissions: unknown[] = []
