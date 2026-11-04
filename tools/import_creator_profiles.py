@@ -81,7 +81,16 @@ def plan_records(report, reviewed_ids=(), enable_auto_refresh=False):
         if not links:
             skipped += 1
             continue
-        links.sort(key=lambda item: 0 if str(item.get("platform", "")).lower() in ("x", "twitter", "x/twitter") else 1)
+        # 维护优先指向本人官网/链接主页；X常要求登录，保留为可打开的身份链接。
+        def source_priority(item):
+            platform = str(item.get("platform", "")).lower()
+            if platform in ("website", "linktree", "carrd", "official website", "website/patreon"):
+                return 0
+            if platform in ("x", "twitter", "x/twitter", "twitter/x"):
+                return 2
+            return 1
+        links.sort(key=source_priority)
+        evidence = list(dict.fromkeys(evidence + [item["url"] for item in links]))[:8]
         body = {"revision": 0, "nickname": record.get("public_nickname") or "", "biography": record.get("public_bio") or "", "avatarUrl": record.get("avatar_source_url") or "", "homepageUrl": links[0]["url"], "evidenceUrls": evidence, "status": "verified" if author_id in reviewed else "candidate", "autoRefresh": enable_auto_refresh and author_id in reviewed, "feedUrl": "", "trackUpdates": False}
         if any(not isinstance(body[key], str) or len(body[key]) > limit for key, limit in TEXT_LIMITS.items()) or (body["avatarUrl"] and not public_url(body["avatarUrl"])):
             skipped += 1

@@ -47,6 +47,16 @@ class ImportProfileTest(unittest.TestCase):
         with self.assertRaisesRegex(importer.ImportFailure, "requires_review"):
             self.plan(enable=True)
 
+    def test_maintenance_prefers_creator_hub_and_retains_x_identity_link(self):
+        item = record()
+        item["candidate_platforms"] = [
+            {"platform": "X", "url": "https://x.com/synthetic"},
+            {"platform": "Linktree", "url": "https://linktr.ee/synthetic"},
+        ]
+        body = self.plan(item)[0][1]
+        self.assertEqual("https://linktr.ee/synthetic", body["homepageUrl"])
+        self.assertIn("https://x.com/synthetic", body["evidenceUrls"])
+
     def test_unknown_or_unsafe_sources_are_not_filled(self):
         for update in ({"status": "unresolved"}, {"searched": False}, {"evidence_urls": []}, {"candidate_platforms": []}, {"avatar_source_url": "https://127.0.0.1/avatar"}, {"evidence_urls": ["http://example.com"]}):
             item = record()

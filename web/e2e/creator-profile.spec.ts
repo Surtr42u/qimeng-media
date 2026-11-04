@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿，保存不改 TXT 来源', async ({ page }) => {
+test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿，保存不改 TXT 来源', async ({ page }, testInfo) => {
   const profile = {
     authorId: 'cos_one', revision: 3, nickname: '', biography: '原人工简介', avatarUrl: '',
     homepageUrl: 'https://example.org/creator', evidenceUrls: ['https://example.org/manual'], status: 'candidate',
@@ -33,6 +33,7 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   await page.goto('/app/collection/author/同名作者?authorId=cos_one')
   const card = page.getByRole('region', { name: '作者档案', exact: true })
   await expect(card.getByText('COS 作者', { exact: false })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('creator-profile-card.png'), fullPage: true })
   await card.getByText('资料与维护', { exact: true }).click()
   await card.getByRole('button', { name: '填入候选草稿，继续核对' }).click()
   expect(writes).toHaveLength(0)

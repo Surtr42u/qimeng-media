@@ -12,7 +12,7 @@
 
 autoRefresh默认关闭，开启需verified与明确主页；main每小时检查一次，每作者至少24小时检查间隔，串行遍历、全局最多2次外部读取。trackUpdates默认关闭，开启需verified及明确RSS/Atom feedUrl，返回最多30个去重公开条目；无订阅源的平台不能仅凭开关产生动态，不自动下载媒体。关闭追踪时清空已显示条目。手动刷新只访问已保存地址。外部请求边界见[安全专题](../SECURITY.md#作者公开资料出站访问)。
 
-头像通过认证`GET /authors/{authorId}/profile/avatar`读取保存地址，无任意URL参数；响应private缓存一小时，类型只接受PNG/JPEG/GIF/WebP，失败502或无头像404。客户端不得把源avatarUrl直接嵌入页面产生跨站请求。v2备份可选profileJson保存档案，导入只填本端空档案并关闭维护，见[备份专题](../domain/migration.md#作者公开档案)。
+头像通过认证`GET /authors/{authorId}/profile/avatar`读取保存地址，无任意URL参数；响应`Cache-Control: no-store`，避免修改头像后复用旧HTTP缓存，类型只接受PNG/JPEG/GIF/WebP，失败502或无头像404。客户端不得把源avatarUrl直接嵌入页面产生跨站请求。v2备份可选profileJson保存档案，导入只填本端空档案并关闭维护，见[备份专题](../domain/migration.md#作者公开档案)。
 
 ### 作者核心与TXT
 
