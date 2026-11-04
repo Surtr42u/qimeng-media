@@ -55,9 +55,6 @@ func (s *Service) DeleteAuthor(ctx context.Context, qtx *db.Queries, now time.Ti
 	if err := qtx.DeleteAssetAuthorsByAuthorIds(ctx, []string{authorID}); err != nil {
 		return fmt.Errorf("authorattach: 删除作者关联: %w", err)
 	}
-	if err := creatorprofile.Delete(ctx, qtx, authorID, now); err != nil {
-		return err
-	}
 	rows, err := qtx.DeleteAuthor(ctx, authorID)
 	if err != nil {
 		return fmt.Errorf("authorattach: 删除作者行: %w", err)

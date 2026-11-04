@@ -6,7 +6,7 @@
 
 ### 作者公开档案与维护
 
-`GET/PUT /authors/{authorId}/profile` 为普通/COS作者提供独立附属档案，不改变作者ID、显示名、TXT来源或作品关联。存在但未配置的档案返回revision=0和空字段。PUT显式提交当前revision，过期版本409且不覆盖新资料；状态区分empty/candidate/verified，verified需HTTPS主页与证据链接。研究结果须以candidate写入供审阅，同名不等于同人。
+`GET/PUT /authors/{authorId}/profile` 为普通/COS作者提供独立附属档案，不改变作者ID、显示名、TXT来源或作品关联。首次未配置档案返回revision=0；删除后同ID重建返回空字段及保留的更高版本，不能以revision是否0判断有无资料。PUT显式提交当前revision，过期版本409且不覆盖新资料；状态区分empty/candidate/verified，verified需HTTPS主页与非空有效证据链接。研究结果须以candidate写入供审阅，同名不等于同人。
 
 `POST /authors/{authorId}/profile/refresh` 从保存主页读取公开HTML元数据生成candidate，绝不自动覆盖人工昵称/简介/头像；不把og:image宣传图当作者头像。失败保留原资料、旧候选和最近成功时间，在lastError明示；刷新期间编辑导致revision变化时拒绝迟到结果。用户审阅候选并显式PUT才应用。需要登录/API凭据、跳转或无可用元数据时明确失败，不声称取得X/Pixiv完整资料。
 

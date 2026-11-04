@@ -6,6 +6,21 @@ import (
 	"qimeng-media/server/internal/creatorprofile"
 )
 
+// 协议 CreatorProfileWrite 全字段必填：指针区分缺失/null 与显式清空或关闭。
+// 领域 Write 不携带 HTTP presence 语义，完成校验后只映射一次。
+type creatorProfileWriteRequest struct {
+	Revision     *int64    `json:"revision"`
+	Nickname     *string   `json:"nickname"`
+	Biography    *string   `json:"biography"`
+	AvatarURL    *string   `json:"avatarUrl"`
+	HomepageURL  *string   `json:"homepageUrl"`
+	EvidenceURLs *[]string `json:"evidenceUrls"`
+	Status       *string   `json:"status"`
+	AutoRefresh  *bool     `json:"autoRefresh"`
+	FeedURL      *string   `json:"feedUrl"`
+	TrackUpdates *bool     `json:"trackUpdates"`
+}
+
 func (s *Server) creatorProfileErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, creatorprofile.ErrNotFound):
@@ -27,11 +42,21 @@ func (s *Server) GetApiV1AuthorsAuthorIdProfile(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, p)
 }
 func (s *Server) PutApiV1AuthorsAuthorIdProfile(w http.ResponseWriter, r *http.Request, authorId string) {
-	var body creatorprofile.Write
+	var body creatorProfileWriteRequest
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	p, err := s.creatorProfiles.Save(r.Context(), authorId, body)
+	if body.Revision == nil || body.Nickname == nil || body.Biography == nil ||
+		body.AvatarURL == nil || body.HomepageURL == nil || body.EvidenceURLs == nil ||
+		body.Status == nil || body.AutoRefresh == nil || body.FeedURL == nil || body.TrackUpdates == nil {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "作者档案须显式提供全部字段，且不能为 null")
+		return
+	}
+	p, err := s.creatorProfiles.Save(r.Context(), authorId, creatorprofile.Write{
+		Revision: *body.Revision, Nickname: *body.Nickname, Biography: *body.Biography,
+		AvatarURL: *body.AvatarURL, HomepageURL: *body.HomepageURL, EvidenceURLs: *body.EvidenceURLs,
+		Status: *body.Status, AutoRefresh: *body.AutoRefresh, FeedURL: *body.FeedURL, TrackUpdates: *body.TrackUpdates,
+	})
 	if err != nil {
 		s.creatorProfileErr(w, err)
 		return
@@ -47,6 +72,8 @@ func (s *Server) PostApiV1AuthorsAuthorIdProfileRefresh(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, p)
 }
 func (s *Server) GetApiV1AuthorsAuthorIdProfileAvatar(w http.ResponseWriter, r *http.Request, authorId string) {
+	// 固定代理 URL 对应可变来源；不让浏览器缓存绕过客户端的档案修订失效。
+	w.Header().Set("Cache-Control", "no-store")
 	data, kind, err := s.creatorProfiles.Avatar(r.Context(), authorId)
 	if err != nil {
 		if errors.Is(err, creatorprofile.ErrNotFound) {
@@ -57,7 +84,6 @@ func (s *Server) GetApiV1AuthorsAuthorIdProfileAvatar(w http.ResponseWriter, r *
 		return
 	}
 	w.Header().Set("Content-Type", kind)
-	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if _, err = w.Write(data); err != nil {
 		s.logger.Debug("写出作者头像失败", "err", err)

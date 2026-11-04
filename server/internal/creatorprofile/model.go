@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -17,6 +18,7 @@ import (
 )
 
 const KeyPrefix = "creator_profile:"
+const RevisionKeyPrefix = "creator_profile_revision:"
 
 var (
 	ErrNotFound = errors.New("作者不存在")
@@ -67,7 +69,8 @@ func Load(ctx context.Context, q *db.Queries, id string) (Profile, error) {
 	p := Empty(id)
 	value, err := q.GetSetting(ctx, KeyPrefix+id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return p, nil
+		p.Revision, err = revisionFloor(ctx, q, id)
+		return p, err
 	}
 	if err != nil {
 		return p, err
@@ -84,7 +87,32 @@ func Persist(ctx context.Context, q *db.Queries, p Profile, now time.Time) error
 	if err != nil {
 		return err
 	}
-	return q.UpsertSetting(ctx, db.UpsertSettingParams{Key: KeyPrefix + p.AuthorID, Value: string(value), UpdatedAt: store.FormatTimestamp(now)})
+	if err = q.UpsertSetting(ctx, db.UpsertSettingParams{Key: KeyPrefix + p.AuthorID, Value: string(value), UpdatedAt: store.FormatTimestamp(now)}); err != nil {
+		return err
+	}
+	return q.UpsertSetting(ctx, db.UpsertSettingParams{Key: RevisionKeyPrefix + p.AuthorID, Value: strconv.FormatInt(p.Revision, 10), UpdatedAt: store.FormatTimestamp(now)})
+}
+func revisionFloor(ctx context.Context, q *db.Queries, id string) (int64, error) {
+	value, err := q.GetSetting(ctx, RevisionKeyPrefix+id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	floor, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("读取作者档案版本墓碑: %w", err)
+	}
+	if floor < 0 {
+		return 0, ErrInvalid
+	}
+	return floor, nil
+}
+
+// IsEmpty 检查资料而非版本；删除/重建后的空档案仍保留单调版本墓碑。
+func IsEmpty(p Profile) bool {
+	return p.Status == "empty" && p.Nickname == "" && p.Biography == "" && p.AvatarURL == "" && p.HomepageURL == "" && len(p.EvidenceURLs) == 0 && !p.AutoRefresh && !p.TrackUpdates && p.FeedURL == "" && p.Candidate.Nickname == "" && p.Candidate.Biography == "" && p.Candidate.AvatarURL == "" && p.Candidate.HomepageURL == "" && len(p.Candidate.EvidenceURLs) == 0 && len(p.Updates) == 0
 }
 func normalize(p *Profile) {
 	if p.EvidenceURLs == nil {
@@ -98,24 +126,23 @@ func normalize(p *Profile) {
 	}
 }
 
-// Move/Delete 在作者编辑的同一事务内调用；删除用空档案墓碑，避免删除后同名重建复活。
+// Persist/Move 均在调用方事务内执行，档案与版本墓碑必须原子提交。
 func Move(ctx context.Context, q *db.Queries, oldID, newID string, now time.Time) error {
 	p, err := Load(ctx, q, oldID)
 	if err != nil {
 		return err
 	}
-	if p.Revision == 0 {
-		return nil
+	floor, err := revisionFloor(ctx, q, newID)
+	if err != nil {
+		return err
 	}
 	p.AuthorID = newID
-	p.Revision++
+	p.Revision = max(p.Revision, floor) + 1
 	if err = Persist(ctx, q, p, now); err != nil {
 		return err
 	}
-	return Delete(ctx, q, oldID, now)
-}
-func Delete(ctx context.Context, q *db.Queries, id string, now time.Time) error {
-	return Persist(ctx, q, Empty(id), now)
+	// 调用方随后删除旧作者；0021/0022在同一事务内清资料并推进旧ID版本。
+	return nil
 }
 func Validate(w Write) error {
 	if w.Revision < 0 || len(w.EvidenceURLs) > 8 {
@@ -152,6 +179,11 @@ func Validate(w Write) error {
 	}
 	if w.Status == "verified" && (w.HomepageURL == "" || len(w.EvidenceURLs) == 0) {
 		return fmt.Errorf("%w: 核实需主页和证据", ErrInvalid)
+	}
+	for _, evidence := range w.EvidenceURLs {
+		if evidence == "" {
+			return ErrInvalid
+		}
 	}
 	if strings.TrimSpace(w.Nickname) != w.Nickname {
 		return ErrInvalid

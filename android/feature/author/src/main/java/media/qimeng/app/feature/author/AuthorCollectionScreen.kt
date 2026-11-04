@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FourDimPillModel
@@ -55,6 +56,10 @@ fun AuthorCollectionScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val profileState by profileViewModel.state.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(profileViewModel) {
+        profileViewModel.reload()
+        onPauseOrDispose { }
+    }
     // 网格列数：共用全部页档（grid_columns_all），初始值读档、手势结束持久化（见 VM）
     val columns by viewModel.gridColumns.collectAsStateWithLifecycle()
     // 双指缩放期间的瞬时列数优先展示（逐帧反馈在内存、手势结束才持久化一次——镜像 AllScreen 接线）
@@ -149,7 +154,7 @@ fun AuthorCollectionScreen(
         Box(modifier = Modifier.weight(1f)) {
             QimengPullToRefresh(
                 isRefreshing = state.isRefreshing,
-                onRefresh = viewModel::refresh,
+                onRefresh = { viewModel.refresh(); profileViewModel.reload() },
                 modifier = Modifier
                     .fillMaxSize()
                     // 双指缩放调列数 2~5（GUIDE_UI §导航结构 L36 + §全部页 L149）：步进即时

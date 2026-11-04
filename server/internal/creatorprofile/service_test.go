@@ -108,8 +108,123 @@ func TestMoveAndDeletePreventProfileResurrection(t *testing.T) {
 		t.Fatal(err)
 	}
 	deleted, err := Load(t.Context(), q, "cos_synthetic")
-	if err != nil || deleted.Revision != 0 {
+	if err != nil || deleted.Revision != moved.Revision+1 || deleted.Nickname != "" {
 		t.Fatal("deleted profile survived", deleted, err)
+	}
+}
+func recreateAuthor(t *testing.T, q *db.Queries, id string) {
+	t.Helper()
+	if _, err := q.DeleteAuthor(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.UpsertAuthor(t.Context(), db.UpsertAuthorParams{ID: id, DisplayName: id, Type: "regular", CreatedAt: store.FormatTimestamp(time.Now()), Origin: "client"}); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestDeletedAuthorGenerationRejectsStaleInitialAndSavedPUT(t *testing.T) {
+	for _, previouslySaved := range []bool{false, true} {
+		s, q := testService(t)
+		old, err := s.Get(t.Context(), "synthetic")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if previouslySaved {
+			old.Nickname = "old"
+			old.Status = "candidate"
+			old, err = s.Save(t.Context(), old.AuthorID, old.Write)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		recreateAuthor(t, q, old.AuthorID)
+		current, err := s.Get(t.Context(), old.AuthorID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Revision <= old.Revision || !IsEmpty(current) {
+			t.Fatal("generation reused or old data resurrected", current)
+		}
+		if previouslySaved {
+			current.Nickname = "new"
+			current.Status = "candidate"
+			if _, err = s.Save(t.Context(), current.AuthorID, current.Write); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err = s.Save(t.Context(), old.AuthorID, old.Write); !errors.Is(err, ErrConflict) {
+			t.Fatal("late PUT accepted", err)
+		}
+	}
+}
+func TestInflightRefreshCannotCrossDeletedAuthorGeneration(t *testing.T) {
+	s, q := testService(t)
+	p := Empty("synthetic")
+	p.HomepageURL = "https://example.com"
+	p.Status = "candidate"
+	if _, err := s.Save(t.Context(), p.AuthorID, p.Write); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	s.readMetadata = func(ctx context.Context, _ string) (Candidate, error) {
+		close(entered)
+		select {
+		case <-release:
+			return Candidate{Nickname: "stale", EvidenceURLs: []string{}}, nil
+		case <-ctx.Done():
+			return Candidate{}, ctx.Err()
+		}
+	}
+	done := make(chan error, 1)
+	go func() { _, err := s.Refresh(t.Context(), p.AuthorID); done <- err }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not enter fetch")
+	}
+	recreateAuthor(t, q, p.AuthorID)
+	current, err := s.Get(t.Context(), p.AuthorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Nickname = "new generation"
+	current.Status = "candidate"
+	if _, err = s.Save(t.Context(), p.AuthorID, current.Write); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err = <-done; !errors.Is(err, ErrConflict) {
+		t.Fatal("late refresh accepted", err)
+	}
+	current, err = s.Get(t.Context(), p.AuthorID)
+	if err != nil || current.Nickname != "new generation" || current.Candidate.Nickname != "" {
+		t.Fatal(current, err)
+	}
+}
+func TestMoveUsesTargetHistoricRevisionFloor(t *testing.T) {
+	s, q := testService(t)
+	old := Empty("cos_synthetic")
+	old.Nickname = "previous target"
+	old.Status = "candidate"
+	for range 3 {
+		var err error
+		old, err = s.Save(t.Context(), old.AuthorID, old.Write)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := q.DeleteAuthor(t.Context(), old.AuthorID); err != nil {
+		t.Fatal(err)
+	}
+	floor, err := Load(t.Context(), q, old.AuthorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = Move(t.Context(), q, "synthetic", old.AuthorID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := Load(t.Context(), q, old.AuthorID)
+	if err != nil || moved.Revision <= floor.Revision {
+		t.Fatal(moved, err)
 	}
 }
 func TestPublicURLAndAddressBoundaries(t *testing.T) {

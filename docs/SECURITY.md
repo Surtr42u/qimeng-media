@@ -149,11 +149,15 @@ Android 持久上传任务在入队固化服务器 base URL；分片会话把手
 
 ## 作者公开资料出站访问
 
+一次性研究资料填充使用`tools/import_creator_profiles.py`：默认离线dry-run，仅显式apply经指定API写入；Bearer只取环境，不读凭据文件、禁代理/重定向。写前核对所有候选的ID、原名、普通/COS类型，已有档案/人工字段不覆盖，revision冲突单独计数。子代理自标verified不构成确认，默认写candidate；只有主代理复核的本地ID名单才可标verified，且另有显式开关才启用维护。研究报告/名单保留忽略目录，日志仅计数/固定错误类别；不得把真实作者清单、链接、token或上游响应正文写日志/仓库。
+
 主页、证据与头像只允许无userinfo/fragment的HTTPS URL及标准443端口，拒绝localhost、私有/回环/链路本地/共享地址、文档/基准网段与特殊IPv6转换范围。读取时禁环境代理与重定向，每次连接先解析并校验全部地址，再直接拨已验证IP（TLS仍校验原域名），防DNS重绑。无平台凭据时只读取可直接访问公开页，不绕登录、付费或访问限制。
 
 公开页/RSS每次最多1MiB、头像2MiB、15秒总超时；主页与头像共享最多2并发，维护串行且每作者至少24小时检查一次，停机取消并等待退出。HTML使用官方golang.org/x/net/html的HTML5 tokenizer提取meta候选，不执行脚本，不把og:image宣传图当头像；RSS/Atom最多30条且不解析外部实体。失败保留人工字段。认证头像代理仅读取已保存地址，嗅探确认PNG/JPEG/GIF/WebP并设nosniff，不转发cookie/用户令牌，不自动下载作品。研究清单与现场报告只放忽略的本地审计目录，不入库；外部研究仅发公开名称/主页，不发媒体或浏览记录。v2恢复不启用维护，须人工核实后另行开启。
 
 ## 依赖与供应链
+
+本次作者公开资料增加 HTTPS 出站后，云端安全门禁确认现有 Go 1.27.2 命中 [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) 的证书验证问题；工具链最低版本提高到官方修复版本 1.27.3，各云端构建继续读取 go.mod，不关闭或忽略扫描。仅补丁版本修复，不扩展为依赖批量升级。
 
 - 日常 PC 更新由 build-pc.yml 云端生成 Windows 服务端、Web 与逐文件发布清单；AI 核对来源提交的完整门禁、artifact 摘要和清单哈希后部署，不包含或上传用户配置与数据。日常启动链只运行已安装程序，不再本地编译；该出包通道不自动部署、不替代完整门禁，操作与兼容边界见 deploy/README 和 RESTORE。
 - PHP 风险适用性（2026-10-22）：[php2shell-checker](https://github.com/openai/php2shell-checker) 只依据 PHP 版本判断补丁状态，隐藏版本返回 UNKNOWN，不能用没有 PHP 响应头证明安全。本项目服务端为 Go，Web 为静态 React，Android 内嵌 Go 与 ffmpeg/ffprobe；源码、依赖及部署定义没有 PHP/PHP-FPM/FastCGI 运行链，媒体上传白名单不接受 PHP，故当前交付形态不适用该 PHP 风险。此结论不覆盖宿主上其他 PHP 应用、未来另加的 PHP 代理或其他类型漏洞；引入这些组件须重新核对。

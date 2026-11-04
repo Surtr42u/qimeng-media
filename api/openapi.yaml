@@ -788,7 +788,7 @@ paths:
     parameters:
       - { name: authorId, in: path, required: true, schema: { type: string } }
     get:
-      summary: 读取作者公开档案（普通与COS；空档案revision为0）
+      summary: 读取作者公开档案（普通与COS；删除重建后保留版本代际）
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CreatorProfile" } } } }
         "404": { $ref: "#/components/responses/NotFound" }

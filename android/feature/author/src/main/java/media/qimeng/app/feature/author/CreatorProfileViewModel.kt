@@ -48,7 +48,7 @@ class CreatorProfileViewModel @Inject constructor(
     init { reload() }
 
     fun reload() {
-        if (authorId.isBlank() || _state.value.editing || _state.value.busy) return
+        if (authorId.isBlank() || _state.value.editing || _state.value.busy || _state.value.followBusy) return
         runRequest { repository.profile(authorId) }
         authorRequest?.cancel()
         val current = ++authorGeneration
@@ -58,7 +58,7 @@ class CreatorProfileViewModel @Inject constructor(
                 if (current == authorGeneration) _state.update { it.copy(author = author) }
             }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { _state.update { it.copy(error = "作者状态读取失败，可重试") } }
+            catch (_: Exception) { if (current == authorGeneration) _state.update { it.copy(error = "作者状态读取失败，可重试") } }
         }
     }
 

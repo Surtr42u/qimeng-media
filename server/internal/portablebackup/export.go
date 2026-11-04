@@ -260,7 +260,7 @@ func (exp *backupExport) fillAuthors(data *BackupData, byID map[string]*exportAs
 			return fmt.Errorf("读取作者档案: %w", err)
 		}
 		var profilePtr *string
-		if profile.Revision > 0 {
+		if !creatorprofile.IsEmpty(profile) {
 			raw, marshalErr := json.Marshal(profile)
 			if marshalErr != nil {
 				return marshalErr

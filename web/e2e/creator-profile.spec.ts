@@ -38,10 +38,10 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   expect(writes).toHaveLength(0)
   await expect(card.getByLabel('自动检查公开资料', { exact: true })).toBeDisabled()
   await expect(card.getByLabel('检查公开新动态', { exact: true })).toBeDisabled()
-  await expect(card.getByLabel('简介', { exact: true })).toHaveValue('原人工简介')
+  await expect(card.getByRole('textbox', { name: '简介', exact: true })).toHaveValue('原人工简介')
   await card.getByRole('button', { name: '保存作者资料' }).click()
   await expect(card.getByText(/保存失败，草稿已保留/)).toBeVisible()
-  await expect(card.getByLabel('简介', { exact: true })).toHaveValue('原人工简介')
+  await expect(card.getByRole('textbox', { name: '简介', exact: true })).toHaveValue('原人工简介')
   expect(writes[0]).toMatchObject({ revision: 3, biography: '原人工简介', status: 'candidate', evidenceUrls: ['https://example.org/manual', 'https://example.org/about'] })
   fail = false
   await card.getByRole('button', { name: '保存作者资料' }).click()

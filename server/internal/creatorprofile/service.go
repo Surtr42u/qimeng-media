@@ -16,16 +16,17 @@ const refreshInterval = 24 * time.Hour
 const refreshConcurrency = 2
 
 type Service struct {
-	conn   *sql.DB
-	q      *db.Queries
-	now    func() time.Time
-	logger *slog.Logger
-	slots  chan struct{}
-	active sync.Map
+	conn         *sql.DB
+	q            *db.Queries
+	now          func() time.Time
+	logger       *slog.Logger
+	slots        chan struct{}
+	active       sync.Map
+	readMetadata func(context.Context, string) (Candidate, error)
 }
 
 func New(conn *sql.DB, q *db.Queries, now func() time.Time, logger *slog.Logger) *Service {
-	return &Service{conn: conn, q: q, now: now, logger: logger, slots: make(chan struct{}, refreshConcurrency)}
+	return &Service{conn: conn, q: q, now: now, logger: logger, slots: make(chan struct{}, refreshConcurrency), readMetadata: readMetadata}
 }
 func exists(ctx context.Context, q *db.Queries, id string) error {
 	rows, err := q.ListAuthors(ctx)
@@ -110,7 +111,7 @@ func (s *Service) refresh(ctx context.Context, id string, refreshMetadata bool) 
 	if refreshMetadata && p.HomepageURL == "" {
 		p.LastError = "请先填写已确认的作者主页"
 	} else if refreshMetadata {
-		candidate, metadataErr := readMetadata(checkCtx, p.HomepageURL)
+		candidate, metadataErr := s.readMetadata(checkCtx, p.HomepageURL)
 		if metadataErr != nil {
 			p.LastError = "公开主页暂不可读取，可能需要登录、权限或平台API"
 		} else {

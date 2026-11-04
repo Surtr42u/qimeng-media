@@ -181,7 +181,7 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 					imp.fail("读取作者档案", profileErr)
 					return
 				}
-				if current.Revision == 0 {
+				if creatorprofile.IsEmpty(current) {
 					var profile creatorprofile.Profile
 					if profileErr = json.Unmarshal([]byte(*a.ProfileJson), &profile); profileErr != nil {
 						imp.fail("解析作者档案", profileErr)
@@ -190,7 +190,7 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 					profile.AuthorID = a.AuthorId
 					profile.AutoRefresh = false
 					profile.TrackUpdates = false
-					profile.Revision = 1
+					profile.Revision = current.Revision + 1
 					if profileErr = creatorprofile.Persist(imp.ctx, qx, profile, imp.s.now()); profileErr != nil {
 						imp.fail("导入作者档案", profileErr)
 						return
