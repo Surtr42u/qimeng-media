@@ -1109,7 +1109,8 @@ button.follow-btn--idle:hover { filter: brightness(1.08); color: var(--qm-on-acc
 /* 保存与退出位于推荐偏好下方，使用文档流，不占独立侧栏或覆盖内容。 */
 .settings-content { min-width: 0; display: grid; gap: var(--qm-space-3); }
 .settings-preference-column { min-width: 0; display: grid; gap: var(--qm-space-3); }
-#page-settings .settings-preference-column > .settings-actions { position: static; justify-content: flex-end; flex-wrap: wrap; }
+/* 预留壳层右下角 50px 悬浮按钮与边距，滚动途中也不遮住保存/退出。 */
+#page-settings .settings-preference-column > .settings-actions { position: static; justify-content: flex-end; flex-wrap: wrap; padding-right: 72px; }
 #page-settings .settings-actions .save-tip { width: 100%; margin: 0; text-align: right; }
 button.save-btn {
   /* 2026-10-04 降调定稿（用户反馈「鲜艳突出，这种都降低」）：原实心主色 +

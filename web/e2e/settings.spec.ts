@@ -35,6 +35,15 @@ test('保存和退出跟随推荐偏好下方，桌面和窄屏均不另占侧�
   expect(mobileActions!.y).toBeGreaterThanOrEqual(mobileRecommendation!.y + mobileRecommendation!.height)
   await expect(actions.getByRole('button', { name: '保存设置', exact: true })).toBeVisible()
   await expect(actions.getByRole('button', { name: '退出登录', exact: true })).toBeVisible()
+  for (const name of ['保存设置', '退出登录']) {
+    const button = actions.getByRole('button', { name, exact: true })
+    await expect(button).toBeInViewport()
+    const box = await button.boundingBox()
+    for (const fab of await page.locator('.refresh-fab, .backtop-fab.shown').all()) {
+      const floating = await fab.boundingBox()
+      expect(box!.x + box!.width).toBeLessThanOrEqual(floating!.x)
+    }
+  }
   await page.screenshot({ path: testInfo.outputPath('settings-mobile-actions.png'), fullPage: true, animations: 'disabled' })
 })
 
