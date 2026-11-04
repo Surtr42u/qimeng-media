@@ -1106,17 +1106,11 @@ button.follow-btn--idle:hover { filter: brightness(1.08); color: var(--qm-on-acc
 .creator-updates li { margin-bottom: 12px; }
 .creator-updates li span { display: block; color: var(--qm-text-muted); font-size: 12px; }
 @media (max-width: 540px) { .creator-profile { padding: 16px; }.creator-profile-identity { gap: 10px; }.creator-profile-avatar { width: 48px; height: 48px; }.creator-profile-name h2 { font-size: 17px; } }
-/* 操作栏占独立列；不再以底部吸附覆盖设置卡片。 */
-.settings-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 24px; align-items: start; }
+/* 保存与退出位于推荐偏好下方，使用文档流，不占独立侧栏或覆盖内容。 */
 .settings-content { min-width: 0; display: grid; gap: var(--qm-space-3); }
-#page-settings .settings-workspace > .settings-actions { position: sticky; top: 20px; display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius-lg); background: var(--qm-surface); }
-#page-settings .settings-actions .save-tip { margin: 0; }
-#page-settings .settings-actions button:last-child { margin-top: 12px; border-top: 1px solid var(--qm-border); }
-@media (max-width: 900px) {
-  .settings-workspace { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  #page-settings .settings-workspace > .settings-actions { position: static; flex-direction: row; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-  #page-settings .settings-actions button:last-child { margin-top: 0; }
-}
+.settings-preference-column { min-width: 0; display: grid; gap: var(--qm-space-3); }
+#page-settings .settings-preference-column > .settings-actions { position: static; justify-content: flex-end; flex-wrap: wrap; }
+#page-settings .settings-actions .save-tip { width: 100%; margin: 0; text-align: right; }
 button.save-btn {
   /* 2026-10-04 降调定稿（用户反馈「鲜艳突出，这种都降低」）：原实心主色 +
      主色辉光改为「主色淡染玻璃 + 描边 + 主色文字」——安静但仍是唯一主操作钮 */

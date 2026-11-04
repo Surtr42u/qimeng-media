@@ -13,23 +13,29 @@ async function openSettings(page: Page, onConfig: (route: Route) => Promise<void
   await page.goto('/app/settings')
 }
 
-test('设置操作在独立右栏，窄屏滚动到末尾仍不覆盖卡片', async ({ page }, testInfo) => {
+test('保存和退出跟随推荐偏好下方，桌面和窄屏均不另占侧栏或遮挡', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 800 })
   await openSettings(page, route => route.fulfill({ json: initial }))
   await expect(page.getByRole('navigation', { name: '设置分类' })).toHaveCount(0)
-  const actions = page.getByRole('complementary', { name: '设置操作' })
-  const content = page.locator('.settings-content')
+  await expect(page.locator('.settings-workspace')).toHaveCount(0)
+  const actions = page.getByRole('group', { name: '设置操作', exact: true })
+  const recommendation = page.locator('.settings-preference-column > .settings-card')
+  await expect(recommendation.getByRole('heading', { name: '推荐偏好', exact: true })).toBeVisible()
+  await actions.scrollIntoViewIfNeeded()
   const desktopActions = await actions.boundingBox()
-  const desktopContent = await content.boundingBox()
-  expect(desktopActions!.x).toBeGreaterThanOrEqual(desktopContent!.x + desktopContent!.width)
-  await page.screenshot({ path: testInfo.outputPath('settings-desktop-actions.png'), fullPage: true })
+  const desktopRecommendation = await recommendation.boundingBox()
+  expect(desktopActions!.y).toBeGreaterThanOrEqual(desktopRecommendation!.y + desktopRecommendation!.height)
+  expect(desktopActions!.x).toBeGreaterThanOrEqual(desktopRecommendation!.x)
+  expect(desktopActions!.x + desktopActions!.width).toBeLessThanOrEqual(desktopRecommendation!.x + desktopRecommendation!.width + 1)
+  await page.screenshot({ path: testInfo.outputPath('settings-desktop-actions.png'), fullPage: true, animations: 'disabled' })
   await page.setViewportSize({ width: 390, height: 844 })
   await actions.scrollIntoViewIfNeeded()
   const mobileActions = await actions.boundingBox()
-  const mobileContent = await content.boundingBox()
-  expect(mobileActions!.y).toBeGreaterThanOrEqual(mobileContent!.y + mobileContent!.height)
+  const mobileRecommendation = await recommendation.boundingBox()
+  expect(mobileActions!.y).toBeGreaterThanOrEqual(mobileRecommendation!.y + mobileRecommendation!.height)
   await expect(actions.getByRole('button', { name: '保存设置', exact: true })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('settings-mobile-actions.png'), fullPage: true })
+  await expect(actions.getByRole('button', { name: '退出登录', exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('settings-mobile-actions.png'), fullPage: true, animations: 'disabled' })
 })
 
 test('慢保存 A 完成后保留新草稿 B，连续保存发送 B', async ({ page }) => {
