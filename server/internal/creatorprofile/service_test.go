@@ -147,3 +147,18 @@ func TestMaintenanceRequiresExplicitVerifiedSources(t *testing.T) {
 		t.Fatal("maintenance did not stop")
 	}
 }
+func TestHTMLMetadataHandlesBrowserSyntaxWithoutInventingAvatar(t *testing.T) {
+	data := []byte(`<html><head><script>if (a < b) { document.write("<meta name=description content=fake>"); }</script><meta property=og:title content="Creator &amp; Studio"><meta name=description content="Public biography"><meta property=og:image content="https://example.com/artwork.jpg"></head><body>Content</body></html>`)
+	p, err := parseMetadata(data, "https://example.com/profile")
+	if err != nil || p.Nickname != "Creator & Studio" || p.Biography != "Public biography" || p.AvatarURL != "" {
+		t.Fatal(p, err)
+	}
+}
+func TestRSSAtomLinksAreBoundedAndSafe(t *testing.T) {
+	for _, raw := range []string{`<rss><channel><item><guid>public-1</guid><title>Work</title><link>https://example.com/1</link></item><item><guid>bad</guid><link>javascript:alert(1)</link></item><item><guid>public-1</guid><link>https://example.com/duplicate</link></item></channel></rss>`, `<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>public-1</id><title>Work</title><link href="https://example.com/1" rel="alternate"/></entry></feed>`} {
+		updates, err := parseFeed([]byte(raw))
+		if err != nil || len(updates) != 1 || updates[0].URL != "https://example.com/1" {
+			t.Fatal(updates, err)
+		}
+	}
+}

@@ -27,6 +27,8 @@
 
 ## 开发与验证
 
+作者公开档案由`internal/creatorprofile`承接，HTTP只适配协议、main显式装配与取消收齐维护任务。复用kv_settings独立JSON键，0021仅增加作者删除后清理触发器，无既有索引变化。刷新只产生待审候选，RSS/Atom才可追踪动态；认证头像代理和请求预算见[安全专题](../docs/SECURITY.md#作者公开资料出站访问)，协议/备份见[作者API](../docs/api/authors.md#作者公开档案与维护)。HTML解析采用[官方HTML5 tokenizer](https://pkg.go.dev/golang.org/x/net@v0.59.0/html)，沿用依赖图版本v0.59.0，不升级crypto/sys；不以XML或自造正则解析网页。公开页不等于平台API，不承诺受限资料可读。
+
 仓库根 `make server-run`、`make server-test`、`make lint`，具体目标以 Makefile 为准；这些是命令用途，不是每轮全量运行清单。执行位置和验证范围见[协作规范](../AI_README_FIRST.md#验证与交付)：构建/自动测试走云端，局部变更验证受影响行为，广泛服务端影响才扩至 `go test ./...`；文件平台行为需对应 CI/目标环境。生成接口层不可手改；SDK 生成见根入口。
 
 事务正常结束的 ErrTxDone 与真实回滚失败区别处理；响应已开始后的写失败只留日志，不重复响应或重试业务。复制/数据库打开失败中的关闭错误与主错误保留在同一错误链，不能用注释豁免吞错。

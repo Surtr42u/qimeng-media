@@ -42,14 +42,21 @@ class CreatorProfileViewModel @Inject constructor(
     val state = _state.asStateFlow()
     private var request: Job? = null
     private var generation = 0L
+    private var authorGeneration = 0L
+    private var authorRequest: Job? = null
 
     init { reload() }
 
     fun reload() {
         if (authorId.isBlank() || _state.value.editing || _state.value.busy) return
         runRequest { repository.profile(authorId) }
-        viewModelScope.launch {
-            try { _state.update { it.copy(author = authors.authors().find { row -> row.id == authorId }) } }
+        authorRequest?.cancel()
+        val current = ++authorGeneration
+        authorRequest = viewModelScope.launch {
+            try {
+                val author = authors.authors().find { row -> row.id == authorId }
+                if (current == authorGeneration) _state.update { it.copy(author = author) }
+            }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { _state.update { it.copy(error = "作者状态读取失败，可重试") } }
         }
@@ -81,13 +88,16 @@ class CreatorProfileViewModel @Inject constructor(
     fun toggleFollow() {
         val author = _state.value.author ?: return
         if (_state.value.followBusy) return
+        authorRequest?.cancel()
+        val current = ++authorGeneration
         _state.update { it.copy(followBusy = true, error = null) }
         viewModelScope.launch {
             try {
                 authors.setFollowed(authorId, !author.followed)
-                _state.update { it.copy(followBusy = false, author = author.copy(followed = !author.followed)) }
+                if (current == authorGeneration) _state.update { it.copy(author = author.copy(followed = !author.followed)) }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { _state.update { it.copy(followBusy = false, error = "关注修改失败，请重试") } }
+            catch (_: Exception) { if (current == authorGeneration) _state.update { it.copy(error = "关注修改失败，请重试") } }
+            finally { if (current == authorGeneration) _state.update { it.copy(followBusy = false) } }
         }
     }
     private fun runRequest(block: suspend () -> CreatorProfile) {
@@ -110,6 +120,7 @@ class CreatorProfileViewModel @Inject constructor(
             catch (_: Exception) {
                 if (current == generation) _state.update { it.copy(busy = false, error = "资料操作失败。请检查连接与服务端版本；保存冲突时保留草稿，取消编辑后重新读取。") }
             }
+            finally { if (current == generation) _state.update { it.copy(busy = false) } }
         }
     }
 }

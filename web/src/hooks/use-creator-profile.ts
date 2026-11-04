@@ -45,11 +45,26 @@ export function useCreatorProfile(authorId: string) {
   const form = draft ?? (profile ? editable(profile) : null)
   const busy = save.isPending || refresh.isPending
   function change<K extends keyof CreatorProfileWrite>(field: K, value: CreatorProfileWrite[K]) {
-    if (form && !busy) setDraft({ ...form, [field]: value })
+    if (form && !busy) {
+      const next = { ...form, [field]: value }
+      if (next.status !== 'verified' || !next.homepageUrl.trim().startsWith('https://')) next.autoRefresh = false
+      if (next.status !== 'verified' || !next.feedUrl.trim().startsWith('https://')) next.trackUpdates = false
+      setDraft(next)
+    }
   }
   function applyCandidate() {
     if (!profile || busy) return
-    setDraft({ ...editable(profile), ...profile.candidate, status: 'verified' })
+    const candidate = profile.candidate
+    setDraft({
+      ...editable(profile),
+      nickname: candidate.nickname || profile.nickname,
+      biography: candidate.biography || profile.biography,
+      avatarUrl: candidate.avatarUrl || profile.avatarUrl,
+      homepageUrl: candidate.homepageUrl || profile.homepageUrl,
+      evidenceUrls: [...new Set([...profile.evidenceUrls, ...candidate.evidenceUrls])],
+      // 抓取只补全资料，不替用户证明身份；仍需编辑器中的显式核实。
+      status: profile.status === 'verified' ? 'verified' : 'candidate',
+    })
   }
   const candidate = profile?.candidate
   const hasCandidate = !!candidate && [candidate.nickname, candidate.biography, candidate.avatarUrl, candidate.homepageUrl, ...candidate.evidenceUrls].some(Boolean)

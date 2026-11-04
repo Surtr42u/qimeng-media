@@ -87,9 +87,15 @@ func Persist(ctx context.Context, q *db.Queries, p Profile, now time.Time) error
 	return q.UpsertSetting(ctx, db.UpsertSettingParams{Key: KeyPrefix + p.AuthorID, Value: string(value), UpdatedAt: store.FormatTimestamp(now)})
 }
 func normalize(p *Profile) {
-	if p.EvidenceURLs == nil { p.EvidenceURLs = []string{} }
-	if p.Candidate.EvidenceURLs == nil { p.Candidate.EvidenceURLs = []string{} }
-	if p.Updates == nil { p.Updates = []Update{} }
+	if p.EvidenceURLs == nil {
+		p.EvidenceURLs = []string{}
+	}
+	if p.Candidate.EvidenceURLs == nil {
+		p.Candidate.EvidenceURLs = []string{}
+	}
+	if p.Updates == nil {
+		p.Updates = []Update{}
+	}
 }
 
 // Move/Delete 在作者编辑的同一事务内调用；删除用空档案墓碑，避免删除后同名重建复活。
@@ -175,6 +181,13 @@ func ValidateProfile(p Profile) error {
 	}
 	if len(p.LastError) > 2000 || len(p.LastCheckedAt) > 100 || len(p.LastSuccessAt) > 100 {
 		return ErrInvalid
+	}
+	for _, stamp := range []string{p.LastCheckedAt, p.LastSuccessAt} {
+		if stamp != "" {
+			if _, err := time.Parse(time.RFC3339, stamp); err != nil {
+				return ErrInvalid
+			}
+		}
 	}
 	return nil
 }

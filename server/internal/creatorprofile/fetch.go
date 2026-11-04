@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 const fetchTimeout = 15 * time.Second
@@ -101,43 +103,45 @@ func fetch(ctx context.Context, raw string, limit int64) ([]byte, string, error)
 	return data, resp.Header.Get("Content-Type"), nil
 }
 func readMetadata(ctx context.Context, raw string) (Candidate, error) {
-	c := Candidate{HomepageURL: raw, EvidenceURLs: []string{raw}}
 	body, contentType, err := fetch(ctx, raw, maxDocumentBytes)
 	if err != nil {
-		return c, err
+		return Candidate{}, err
 	}
 	if !strings.Contains(strings.ToLower(contentType), "html") {
-		return c, errors.New("主页不是HTML")
+		return Candidate{}, errors.New("主页不是HTML")
 	}
-	decoder := xml.NewDecoder(bytes.NewReader(body))
-	decoder.Strict = false
-	decoder.AutoClose = xml.HTMLAutoClose
-	decoder.Entity = xml.HTMLEntity
+	return parseMetadata(body, raw)
+}
+func parseMetadata(body []byte, raw string) (Candidate, error) {
+	c := Candidate{HomepageURL: raw, EvidenceURLs: []string{raw}}
+	// 官方HTML5 tokenizer支持未加引号属性和script原始文本，不执行页面代码。
+	decoder := html.NewTokenizer(bytes.NewReader(body))
+	decoder.SetMaxBuf(maxDocumentBytes)
 	for {
-		token, e := decoder.Token()
-		if e == io.EOF {
+		kind := decoder.Next()
+		if kind == html.ErrorToken {
+			if decoder.Err() != io.EOF {
+				return c, decoder.Err()
+			}
 			break
 		}
-		if e != nil {
-			return c, e
-		}
-		start, ok := token.(xml.StartElement)
-		if !ok {
+		if kind != html.StartTagToken && kind != html.SelfClosingTagToken {
 			continue
 		}
-		if strings.EqualFold(start.Name.Local, "body") {
+		start := decoder.Token()
+		if start.Data == "body" {
 			break
 		}
-		if !strings.EqualFold(start.Name.Local, "meta") {
+		if start.Data != "meta" {
 			continue
 		}
 		var key, value string
 		for _, a := range start.Attr {
-			switch strings.ToLower(a.Name.Local) {
+			switch a.Key {
 			case "property", "name":
-				key = strings.ToLower(a.Value)
+				key = strings.ToLower(a.Val)
 			case "content":
-				value = strings.TrimSpace(a.Value)
+				value = strings.TrimSpace(a.Val)
 			}
 		}
 		switch key {
@@ -146,10 +150,6 @@ func readMetadata(ctx context.Context, raw string) (Candidate, error) {
 		case "og:description", "description":
 			if c.Biography == "" {
 				c.Biography = value
-			}
-		case "og:image":
-			if _, e := publicURL(value); e == nil {
-				c.AvatarURL = value
 			}
 		}
 	}
@@ -184,6 +184,9 @@ func readFeed(ctx context.Context, raw string) ([]Update, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseFeed(data)
+}
+func parseFeed(data []byte) ([]Update, error) {
 	var feed struct {
 		XMLName xml.Name
 		Entries []feedEntry `xml:"entry"`
@@ -191,7 +194,7 @@ func readFeed(ctx context.Context, raw string) ([]Update, error) {
 			Items []feedEntry `xml:"item"`
 		} `xml:"channel"`
 	}
-	if err = xml.Unmarshal(data, &feed); err != nil {
+	if err := xml.Unmarshal(data, &feed); err != nil {
 		return nil, err
 	}
 	var entries []feedEntry

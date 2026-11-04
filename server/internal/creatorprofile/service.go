@@ -71,6 +71,9 @@ func (s *Service) Save(ctx context.Context, id string, w Write) (Profile, error)
 		return p, ErrConflict
 	}
 	p.Write = w
+	if !w.TrackUpdates {
+		p.Updates = []Update{}
+	}
 	p.Revision++
 	p.Candidate = Candidate{EvidenceURLs: []string{}}
 	if p.EvidenceURLs == nil {
@@ -82,6 +85,9 @@ func (s *Service) Save(ctx context.Context, id string, w Write) (Profile, error)
 	return p, tx.Commit()
 }
 func (s *Service) Refresh(ctx context.Context, id string) (Profile, error) {
+	return s.refresh(ctx, id, true)
+}
+func (s *Service) refresh(ctx context.Context, id string, refreshMetadata bool) (Profile, error) {
 	if _, loaded := s.active.LoadOrStore(id, true); loaded {
 		return Profile{}, ErrConflict
 	}
@@ -101,9 +107,9 @@ func (s *Service) Refresh(ctx context.Context, id string) (Profile, error) {
 	defer cancel()
 	p.LastCheckedAt = s.now().UTC().Format(time.RFC3339)
 	p.LastError = ""
-	if p.HomepageURL == "" {
+	if refreshMetadata && p.HomepageURL == "" {
 		p.LastError = "请先填写已确认的作者主页"
-	} else {
+	} else if refreshMetadata {
 		candidate, metadataErr := readMetadata(checkCtx, p.HomepageURL)
 		if metadataErr != nil {
 			p.LastError = "公开主页暂不可读取，可能需要登录、权限或平台API"
@@ -179,11 +185,18 @@ func (s *Service) maintain(ctx context.Context) {
 		if (!p.AutoRefresh && !p.TrackUpdates) || p.Status != "verified" {
 			continue
 		}
-		last, _ := time.Parse(time.RFC3339, p.LastCheckedAt)
-		if !last.IsZero() && s.now().Sub(last) < refreshInterval {
-			continue
+		if p.LastCheckedAt != "" {
+			last, parseErr := time.Parse(time.RFC3339, p.LastCheckedAt)
+			if parseErr != nil {
+				s.logger.Warn("作者维护检查时间无效", "err", parseErr)
+				continue
+			}
+			age := s.now().Sub(last)
+			if age >= 0 && age < refreshInterval {
+				continue
+			}
 		}
-		if _, refreshErr := s.Refresh(ctx, row.ID); refreshErr != nil && !errors.Is(refreshErr, context.Canceled) && !errors.Is(refreshErr, ErrConflict) {
+		if _, refreshErr := s.refresh(ctx, row.ID, p.AutoRefresh); refreshErr != nil && !errors.Is(refreshErr, context.Canceled) && !errors.Is(refreshErr, ErrConflict) {
 			s.logger.Warn("作者公开资料维护失败", "err", refreshErr)
 		}
 	}

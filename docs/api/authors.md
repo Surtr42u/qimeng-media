@@ -4,6 +4,18 @@
 
 ## 作者
 
+### 作者公开档案与维护
+
+`GET/PUT /authors/{authorId}/profile` 为普通/COS作者提供独立附属档案，不改变作者ID、显示名、TXT来源或作品关联。存在但未配置的档案返回revision=0和空字段。PUT显式提交当前revision，过期版本409且不覆盖新资料；状态区分empty/candidate/verified，verified需HTTPS主页与证据链接。研究结果须以candidate写入供审阅，同名不等于同人。
+
+`POST /authors/{authorId}/profile/refresh` 从保存主页读取公开HTML元数据生成candidate，绝不自动覆盖人工昵称/简介/头像；不把og:image宣传图当作者头像。失败保留原资料、旧候选和最近成功时间，在lastError明示；刷新期间编辑导致revision变化时拒绝迟到结果。用户审阅候选并显式PUT才应用。需要登录/API凭据、跳转或无可用元数据时明确失败，不声称取得X/Pixiv完整资料。
+
+autoRefresh默认关闭，开启需verified与明确主页；main每小时检查一次，每作者至少24小时检查间隔，串行遍历、全局最多2次外部读取。trackUpdates默认关闭，开启需verified及明确RSS/Atom feedUrl，返回最多30个去重公开条目；无订阅源的平台不能仅凭开关产生动态，不自动下载媒体。关闭追踪时清空已显示条目。手动刷新只访问已保存地址。外部请求边界见[安全专题](../SECURITY.md#作者公开资料出站访问)。
+
+头像通过认证`GET /authors/{authorId}/profile/avatar`读取保存地址，无任意URL参数；响应private缓存一小时，类型只接受PNG/JPEG/GIF/WebP，失败502或无头像404。客户端不得把源avatarUrl直接嵌入页面产生跨站请求。v2备份可选profileJson保存档案，导入只填本端空档案并关闭维护，见[备份专题](../domain/migration.md#作者公开档案)。
+
+### 作者核心与TXT
+
 TXT 导入/保护/移除/统一重建事务在 authorimport，手动、备份与本机同步入口共用；HTTP 只校验参数、映射领域结果和冲突载荷，协议字段不变。
 
 端点：GET /authors、**POST /authors、PUT/DELETE /authors/{id}**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow

@@ -163,7 +163,7 @@ internal fun CreatorProfileEditor(
                 CreatorTextField("作者主页（HTTPS）", draft.homepageUrl, !state.busy) { value -> onDraft { it.copy(homepageUrl = value) } }
                 CreatorTextField("头像来源（HTTPS）", draft.avatarUrl, !state.busy) { value -> onDraft { it.copy(avatarUrl = value) } }
                 CreatorTextField("核验来源（每行一个链接）", draft.evidenceUrls.joinToString("\n"), !state.busy, singleLine = false) { value ->
-                    onDraft { it.copy(evidenceUrls = value.lines().map(String::trim).filter(String::isNotBlank)) }
+                    onDraft { it.copy(evidenceUrls = value.lines()) }
                 }
                 CreatorCheck("身份与证据已核实", draft.status == "verified", !state.busy) { checked -> onDraft { it.copy(status = if (checked) "verified" else "candidate", autoRefresh = checked && it.autoRefresh) } }
                 CreatorCheck("每天检查公开资料，更新先待审阅", draft.autoRefresh, !state.busy && draft.status == "verified" && draft.homepageUrl.isNotBlank()) { checked -> onDraft { it.copy(autoRefresh = checked) } }

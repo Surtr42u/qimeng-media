@@ -8,6 +8,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.model.CreatorProfile
 import media.qimeng.app.core.model.CreatorProfileCandidate
@@ -29,33 +30,43 @@ class SdkCreatorProfileRepository @Inject constructor(
     private val factory: BusinessApiFactory,
     @BackupClient private val client: OkHttpClient,
 ) : CreatorProfileRepository {
-    override suspend fun profile(authorId: String) = withContext(Dispatchers.IO) {
-        factory.create().apiV1AuthorsAuthorIdProfileGet(authorId).toDomain()
+    override suspend fun profile(authorId: String) = atCurrentServer { bound ->
+        bound.create().apiV1AuthorsAuthorIdProfileGet(authorId).toDomain()
     }
 
-    override suspend fun save(authorId: String, draft: CreatorProfileDraft) = withContext(Dispatchers.IO) {
-        factory.create().apiV1AuthorsAuthorIdProfilePut(
+    override suspend fun save(authorId: String, draft: CreatorProfileDraft) = atCurrentServer { bound ->
+        bound.create().apiV1AuthorsAuthorIdProfilePut(
             authorId,
             media.qimeng.sdk.models.CreatorProfileWrite(
                 revision = draft.revision, nickname = draft.nickname, biography = draft.biography,
-                avatarUrl = draft.avatarUrl, homepageUrl = draft.homepageUrl, evidenceUrls = draft.evidenceUrls,
+                avatarUrl = draft.avatarUrl, homepageUrl = draft.homepageUrl,
+                evidenceUrls = draft.evidenceUrls.map(String::trim).filter(String::isNotBlank).distinct(),
                 status = media.qimeng.sdk.models.CreatorProfileWrite.Status.valueOf(draft.status),
                 autoRefresh = draft.autoRefresh, feedUrl = draft.feedUrl, trackUpdates = draft.trackUpdates,
             ),
         ).toDomain()
     }
 
-    override suspend fun refresh(authorId: String) = withContext(Dispatchers.IO) {
-        factory.createWith(client).apiV1AuthorsAuthorIdProfileRefreshPost(authorId).toDomain()
+    override suspend fun refresh(authorId: String) = atCurrentServer { bound ->
+        bound.createWith(client).apiV1AuthorsAuthorIdProfileRefreshPost(authorId).toDomain()
     }
 
-    override suspend fun avatar(authorId: String): ByteArray = withContext(Dispatchers.IO) {
-        val file = factory.createWith(client).apiV1AuthorsAuthorIdProfileAvatarGet(authorId)
+    override suspend fun avatar(authorId: String): ByteArray = atCurrentServer { bound ->
+        val file = bound.createWith(client).apiV1AuthorsAuthorIdProfileAvatarGet(authorId)
         try {
             require(file.length() <= MAX_AVATAR_BYTES) { "作者头像超过大小限制" }
             file.readBytes()
         } finally {
             if (!file.delete()) Log.w("CreatorProfile", "头像临时文件清理失败")
+        }
+    }
+
+    private suspend fun <T> atCurrentServer(block: (BusinessApiFactory) -> T): T {
+        val target = factory.currentBaseUrl()
+        return withContext(Dispatchers.IO) {
+            val value = block(factory.forServer(target))
+            if (factory.currentBaseUrl() != target) throw CancellationException("服务连接已切换")
+            value
         }
     }
 
