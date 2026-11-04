@@ -5,20 +5,18 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import { TIP_STYLE } from '@/components/data/chart-shared'
 import type { useMaintenanceMonitor } from '@/hooks/use-maintenance-monitor'
 import { formatBytes } from '@/lib/format'
-import { MAINTENANCE_FILES_PATH, MAINTENANCE_UPLOAD_PATH } from '@/lib/route-keys'
+import { MAINTENANCE_FILES_PATH, MAINTENANCE_UPLOAD_PATH, MAINTENANCE_STORAGE_PATH, MAINTENANCE_LOGS_PATH } from '@/lib/route-keys'
 import { LOCALE_ZH } from '@/lib/constants'
 import { serviceUploadPath } from '@/lib/manage-origin'
 
 type Monitor = ReturnType<typeof useMaintenanceMonitor>
-/** 锚点只跳到仍常驻的完整操作区，不卸载同步查询或改变操作行为。 */
-export const MAINTENANCE_LOGS_ID = 'maintenance-logs'
 const GAUGE_CIRC = 2 * Math.PI * 44
 
 function CardHeading({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return <div className="monitor-card-head">{icon}<h3>{children}</h3></div>
 }
 
-function ResourceBar({ value, label, secondary = false }: { value: number | null; label: string; secondary?: boolean }) {
+export function ResourceBar({ value, label, secondary = false }: { value: number | null; label: string; secondary?: boolean }) {
   return <div className={`monitor-bar${secondary ? ' monitor-bar--secondary' : ''}`} role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value ?? undefined} aria-valuetext={value == null ? '暂无读数' : `${value.toFixed(1)}%`}>
     <i style={{ width: `${value ?? 0}%` }} />
   </div>
@@ -47,7 +45,7 @@ function TrafficCard({ traffic, points }: { traffic: Monitor['traffic'][number];
 export function MaintenanceOverview({ monitor, trashLabel, logsLabel }: {
   monitor: Monitor; trashLabel: string; logsLabel: string
 }) {
-  const { resources, data: status } = monitor
+  const { resources } = monitor
   return <>
     <div className="monitor-grid">
       <section className="chart-card monitor-server monitor-span-2">
@@ -81,17 +79,7 @@ export function MaintenanceOverview({ monitor, trashLabel, logsLabel }: {
         <div className="monitor-row"><span>监控目录容量合计</span><strong>{resources.diskPercent == null ? '—' : `${resources.diskPercent.toFixed(1)}% 已用`}</strong></div>
         <ResourceBar value={resources.diskPercent} label="存储使用率" />
         <p>{resources.diskCaption} · 约 {resources.diskFree} 可用</p>
-        <details className="monitor-disks">
-          <summary>查看存储明细 <span>{resources.disks.length} 项</span></summary>
-          <p className="monitor-muted">按监控目录合计，同卷目录可能重复计入，非物理磁盘去重容量。</p>
-          {resources.disks.map(disk => <div className="monitor-volume" key={disk.key}>
-            <div className="monitor-row"><strong>{disk.label}</strong><span>{disk.percent == null ? '—' : `${disk.percent.toFixed(1)}%`}</span></div>
-            <p className="monitor-mount">{disk.mount}</p>
-            <ResourceBar value={disk.percent} label={`${disk.label}使用率`} />
-            <p className="monitor-muted">{disk.caption}</p>
-          </div>)}
-          {!status && <p className="monitor-muted">等待读取存储状态</p>}
-        </details>
+        <Link className="monitor-storage-link" to={MAINTENANCE_STORAGE_PATH}>查看存储明细 <span>{resources.disks.length} 项</span><ChevronRight aria-hidden="true" /></Link>
       </section>
       <section className="chart-card monitor-span-2">
         <CardHeading icon={<FolderSearch aria-hidden="true" />}>常用维护</CardHeading>
@@ -104,7 +92,7 @@ export function MaintenanceOverview({ monitor, trashLabel, logsLabel }: {
         <CardHeading icon={<Activity aria-hidden="true" />}>入库与异常</CardHeading>
         <div className="monitor-shortcuts">
           <Link className="monitor-shortcut" to={serviceUploadPath(MAINTENANCE_UPLOAD_PATH)}><Upload aria-hidden="true" /><span><strong>上传文件</strong><small>指定作者与来源</small></span><ChevronRight aria-hidden="true" /></Link>
-          <a className="monitor-shortcut" href={`#${MAINTENANCE_LOGS_ID}`}><FileWarning aria-hidden="true" /><span><strong>客户端异常</strong><small>{logsLabel}</small></span><ChevronRight aria-hidden="true" /></a>
+          <Link className="monitor-shortcut" to={MAINTENANCE_LOGS_PATH}><FileWarning aria-hidden="true" /><span><strong>客户端异常</strong><small>{logsLabel}</small></span><ChevronRight aria-hidden="true" /></Link>
         </div>
       </section>
     </div>

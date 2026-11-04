@@ -64,11 +64,6 @@ export default function SettingsPage() {
   return (
     <div className="page" id="page-settings">
       <div className="page-head"><h1>设置</h1><p>调整浏览体验与媒体库行为</p></div>
-      <nav className="settings-quicklinks" aria-label="设置分类">
-        <a className="pill" href="#settings-preferences">浏览偏好</a>
-        <a className="pill" href="#settings-library">媒体库</a>
-        <Link className="pill" to="/app/authors">作者资料</Link>
-      </nav>
       <ManageUnsavedGuard dirty={dirty} description="设置仍有未保存的修改或正在保存。请等待保存成功后离开；放弃离开会丢弃未保存草稿。" />
       <div className="settings-workspace">
         <div className="settings-content">

@@ -22,6 +22,8 @@ const MinePage = lazy(() => import('@/pages/MinePage'))
 const DataPage = lazy(() => import('@/pages/DataPage'))
 const BrowsingReviewPage = lazy(() => import('@/pages/BrowsingReviewPage'))
 const MaintenancePage = lazy(() => import('@/pages/MaintenancePage'))
+const StorageDetailsPage = lazy(() => import('@/pages/StorageDetailsPage'))
+const ClientErrorsPage = lazy(() => import('@/pages/ClientErrorsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const SearchPage = lazy(() => import('@/pages/SearchPage'))
 const RanksPage = lazy(() => import('@/pages/RanksPage'))
@@ -76,6 +78,8 @@ export const router = createBrowserRouter([
               { path: 'data/review', element: <Suspense fallback={null}><BrowsingReviewPage /></Suspense> },
               { path: 'data', element: <Suspense fallback={null}><DataPage /></Suspense> },
               { path: 'maintenance', element: <Suspense fallback={null}><MaintenancePage /></Suspense> },
+              { path: 'maintenance/storage', element: <Suspense fallback={null}><StorageDetailsPage /></Suspense> },
+              { path: 'maintenance/client-errors', element: <Suspense fallback={null}><ClientErrorsPage /></Suspense> },
               { path: 'settings', element: <Suspense fallback={null}><SettingsPage /></Suspense> },
               { path: 'search', element: <Suspense fallback={null}><SearchPage /></Suspense> },
               { path: 'ranks/:rank', element: <Suspense fallback={null}><RanksPage /></Suspense> },

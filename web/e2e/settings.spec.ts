@@ -16,6 +16,7 @@ async function openSettings(page: Page, onConfig: (route: Route) => Promise<void
 test('设置操作在独立右栏，窄屏滚动到末尾仍不覆盖卡片', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 800 })
   await openSettings(page, route => route.fulfill({ json: initial }))
+  await expect(page.getByRole('navigation', { name: '设置分类' })).toHaveCount(0)
   const actions = page.getByRole('complementary', { name: '设置操作' })
   const content = page.locator('.settings-content')
   const desktopActions = await actions.boundingBox()

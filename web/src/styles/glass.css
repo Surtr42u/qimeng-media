@@ -843,10 +843,9 @@ button.seg,
 .monitor-bar--secondary i { background: var(--qm-chart-2); }
 .monitor-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; }
 .monitor-row strong { font-weight: 500; }
-.monitor-disks { border-top: 1px solid var(--qm-border); margin-top: 14px; padding-top: 6px; }
-.monitor-disks summary { display: list-item; color: var(--qm-text-soft); font-size: 12px; padding: 8px 0; cursor: pointer; }
-.monitor-disks summary span { margin-left: 8px; color: var(--qm-text-muted); }
-.monitor-disks > p, .monitor-volume p { font-size: 12px; }
+.monitor-storage-link { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--qm-border); margin-top: 14px; padding-top: 14px; color: var(--qm-text-soft); font-size: 12px; text-decoration: none; }
+.monitor-storage-link span { color: var(--qm-text-muted); }
+.monitor-storage-link svg { width: 14px; height: 14px; margin-left: auto; }
 .monitor-volume { margin-top: 16px; }
 .monitor-mount { overflow-wrap: anywhere; margin-top: 4px; color: var(--qm-text-muted); }
 .monitor-shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -3070,7 +3069,6 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .author-info small { color: var(--qm-text-muted); }
 .author-editor { max-height: 85dvh; overflow-y: auto; }
 .author-editor .settings-options, .author-editor .settings-field { margin-top: 16px; }
-.settings-quicklinks { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 #settings-library, #settings-preferences { scroll-margin-top: 24px; }
 @media (max-width: 600px) {
   .a-toolbar .hist-search { width: 100%; }

@@ -26,6 +26,8 @@ export const AUTHORS_PATH = '/app/authors'
 
 /** 维护页路由（Sidebar 底部图标组入口） */
 export const MAINTENANCE_PATH = '/app/maintenance'
+export const MAINTENANCE_STORAGE_PATH = '/app/maintenance/storage'
+export const MAINTENANCE_LOGS_PATH = '/app/maintenance/client-errors'
 
 /** 设置页路由（Sidebar 底部图标组入口） */
 export const SETTINGS_PATH = '/app/settings'

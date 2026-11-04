@@ -39,22 +39,27 @@ async function openMaintenance(page: Page, options: { unavailable?: boolean; nar
   return { triggers: () => triggers }
 }
 
-test('紧凑概览保留零流量、存储明细、日志和导航，删除重复图和同步入口', async ({ page }) => {
+test('概览进入独立存储明细与完整异常页，不展开撑高资源卡', async ({ page }, testInfo) => {
   await openMaintenance(page)
   await expect(page.getByRole('heading', { name: '服务与维护', exact: true })).toBeVisible()
   await expect(page.getByText(/开发模式未关/)).toBeVisible()
   await expect(page.getByRole('region', { name: '接收 / 下行', exact: true }).locator('.monitor-value')).toContainText('0 B', { timeout: 10000 })
-  await page.getByText('查看存储明细', { exact: false }).click()
+  await expect(page.locator('.monitor-storage details')).toHaveCount(0)
+  await page.getByRole('link', { name: /查看存储明细/ }).click()
+  await expect(page).toHaveURL(/\/app\/maintenance\/storage$/)
+  await expect(page.getByRole('heading', { name: '存储明细', exact: true })).toBeVisible()
   await expect(page.getByText('/synthetic/data', { exact: true })).toBeVisible()
   await expect(page.getByText('/synthetic/media', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('storage-details-page.png'), fullPage: true })
+  await page.getByRole('link', { name: '返回服务与维护', exact: true }).click()
   await expect(page.locator('.monitor-network-details')).toHaveCount(0)
   await expect(page.getByRole('link', { name: /本机同步/ })).toHaveCount(0)
   await page.getByRole('link', { name: /客户端异常/ }).click()
-  await expect(page.locator('.log-table tbody tr')).toHaveCount(5)
-  await page.getByRole('button', { name: '查看全部 7 条', exact: true }).click()
+  await expect(page).toHaveURL(/\/app\/maintenance\/client-errors$/)
   await expect(page.locator('.log-table tbody tr')).toHaveCount(7)
-  await page.getByRole('button', { name: '收起（只看最近 5 条）', exact: true }).click()
-  await expect(page.locator('.log-table tbody tr')).toHaveCount(5)
+  await expect(page.getByRole('button', { name: /查看全部|收起/ })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('client-errors-page.png'), fullPage: true })
+  await page.getByRole('link', { name: '返回服务与维护', exact: true }).click()
   await page.getByRole('link', { name: /文件管理/ }).click()
   await expect(page).toHaveURL(/\/app\/maintenance\/files$/)
   await page.goBack()
@@ -87,13 +92,14 @@ test('服务器目录自动导入迁入上传页高级入口，保留触发及�
 test('刷新日志失败仍可查上次记录，重试恢复原列表', async ({ page }) => {
   const options = { logsUnavailable: false }
   await openMaintenance(page, options)
-  await expect(page.locator('.log-table tbody tr')).toHaveCount(5)
+  await page.getByRole('link', { name: /客户端异常/ }).click()
+  await expect(page.locator('.log-table tbody tr')).toHaveCount(7)
   options.logsUnavailable = true
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByText(/以下保留上次成功记录/)).toBeVisible({ timeout: 10000 })
-  await expect(page.locator('.log-table tbody tr')).toHaveCount(5)
+  await expect(page.locator('.log-table tbody tr')).toHaveCount(7)
   options.logsUnavailable = false
   await page.getByRole('button', { name: '重试日志', exact: true }).click()
   await expect(page.getByText(/客户端异常记录读取失败/)).toBeHidden()
-  await expect(page.locator('.log-table tbody tr')).toHaveCount(5)
+  await expect(page.locator('.log-table tbody tr')).toHaveCount(7)
 })
