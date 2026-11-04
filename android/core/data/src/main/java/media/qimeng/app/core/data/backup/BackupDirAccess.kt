@@ -16,23 +16,23 @@ data class BackupFileStatus(
     val lastModifiedMillis: Long,
 )
 
-/**
- * 备份目录（SAF 树 URI）访问端口：固定名 [AutoBackupRunner.BACKUP_FILE_NAME] 的写/读/状态三件。
- * 为什么抽端口：备份页「导入导出」与「自动备份」共用同一 SAF 授权目录同一文件（任务S 2026-09-19
- * 两卡收敛：导出=直写该文件、导入=直读该文件、自动备份=定时直写），读写细节（find-or-create/
- * 覆盖写/元数据查询）单源收口在此；同时 JVM 单测以 fake 注入（真实 Context 不可得，
- * AutoBackupRunner 测试同款约束）。
- */
+/** 固定的两个备份槽；不接受任意文件名或路径。 */
+enum class BackupFileKind(val fileName: String) {
+    MANUAL(AutoBackupRunner.BACKUP_FILE_NAME),
+    AUTOMATIC(AutoBackupRunner.AUTO_BACKUP_FILE_NAME),
+}
+
+/** 同一授权目录内，手动/PC备份与自动输出独立，恢复必须显式选定。 */
 interface BackupDirAccess {
 
     /** 覆盖写固定名备份文件（不存在先在树根创建），返回实写字节数；失败返回 null */
-    suspend fun writeBytes(dirUri: String, json: String): Long?
+    suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind = BackupFileKind.MANUAL): Long?
 
     /** 读固定名备份文件全量字节；无文件/读失败返回 null */
-    suspend fun readBytes(dirUri: String): ByteArray?
+    suspend fun readBytes(dirUri: String, kind: BackupFileKind = BackupFileKind.MANUAL): ByteArray?
 
     /** 固名备份文件状态（大小/修改时间）；无文件/查询失败返回 null */
-    suspend fun fileStatus(dirUri: String): BackupFileStatus?
+    suspend fun fileStatus(dirUri: String, kind: BackupFileKind = BackupFileKind.MANUAL): BackupFileStatus?
 }
 
 /**
@@ -45,15 +45,15 @@ class SafBackupDirAccess @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : BackupDirAccess {
 
-    override suspend fun writeBytes(dirUri: String, json: String): Long? = withContext(Dispatchers.IO) {
+    override suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind): Long? = withContext(Dispatchers.IO) {
         runCatching {
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
             val treeDocId = DocumentsContract.getTreeDocumentId(tree)
             val treeDoc = DocumentsContract.buildDocumentUriUsingTree(tree, treeDocId)
             // 已存在则截断覆写；不存在先在树根创建（旧版「绮梦影库目录写 qimeng_backup.json」同语义）
-            val target = findDocumentUri(resolver, tree, treeDocId)
-                ?: DocumentsContract.createDocument(resolver, treeDoc, JSON_MIME, AutoBackupRunner.BACKUP_FILE_NAME)
+            val target = findDocumentUri(resolver, tree, treeDocId, kind)
+                ?: DocumentsContract.createDocument(resolver, treeDoc, JSON_MIME, kind.fileName)
                 ?: return@runCatching null
             resolver.openOutputStream(target, WRITE_MODE_TRUNCATE)?.use { out ->
                 out.write(json.toByteArray(Charsets.UTF_8))
@@ -62,17 +62,17 @@ class SafBackupDirAccess @Inject constructor(
         }.getOrNull()
     }
 
-    override suspend fun readBytes(dirUri: String): ByteArray? = withContext(Dispatchers.IO) {
+    override suspend fun readBytes(dirUri: String, kind: BackupFileKind): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
-            val target = findDocumentUri(resolver, tree, DocumentsContract.getTreeDocumentId(tree))
+            val target = findDocumentUri(resolver, tree, DocumentsContract.getTreeDocumentId(tree), kind)
                 ?: return@runCatching null
             resolver.openInputStream(target)?.use { stream -> stream.readBytes() }
         }.getOrNull()
     }
 
-    override suspend fun fileStatus(dirUri: String): BackupFileStatus? = withContext(Dispatchers.IO) {
+    override suspend fun fileStatus(dirUri: String, kind: BackupFileKind): BackupFileStatus? = withContext(Dispatchers.IO) {
         runCatching {
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
@@ -90,7 +90,7 @@ class SafBackupDirAccess @Inject constructor(
                 null, null, null,
             )?.use { cursor ->
                 while (cursor.moveToNext()) {
-                    if (cursor.getString(1) == AutoBackupRunner.BACKUP_FILE_NAME) {
+                    if (cursor.getString(1) == kind.fileName) {
                         return@runCatching BackupFileStatus(
                             sizeBytes = cursor.getLong(2),
                             lastModifiedMillis = cursor.getLong(3),
@@ -103,7 +103,7 @@ class SafBackupDirAccess @Inject constructor(
     }
 
     /** 树根下按显示名找固定名文件（部分 provider 不支持 selection 过滤，取回后内存比对） */
-    private fun findDocumentUri(resolver: ContentResolver, tree: Uri, treeDocId: String): Uri? {
+    private fun findDocumentUri(resolver: ContentResolver, tree: Uri, treeDocId: String, kind: BackupFileKind): Uri? {
         resolver.query(
             DocumentsContract.buildChildDocumentsUriUsingTree(tree, treeDocId),
             arrayOf(
@@ -113,7 +113,7 @@ class SafBackupDirAccess @Inject constructor(
             null, null, null,
         )?.use { cursor ->
             while (cursor.moveToNext()) {
-                if (cursor.getString(1) == AutoBackupRunner.BACKUP_FILE_NAME) {
+                if (cursor.getString(1) == kind.fileName) {
                     return DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0))
                 }
             }

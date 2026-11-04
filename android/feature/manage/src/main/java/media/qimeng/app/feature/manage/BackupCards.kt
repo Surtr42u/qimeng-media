@@ -36,7 +36,7 @@ private val IMPORT_EXPORT_SUBTITLE =
     "备份当前连接的服务端，读写所选备份目录的 ${AutoBackupRunner.BACKUP_FILE_NAME}；导出会覆盖该文件。"
 private const val IMPORT_EXPORT_EXPORT = "导出"
 private const val IMPORT_EXPORT_EXPORT_BUSY = "导出中…"
-private const val IMPORT_EXPORT_IMPORT = "导入"
+private const val IMPORT_EXPORT_IMPORT = "导入手动 / PC 备份"
 private const val IMPORT_EXPORT_IMPORT_BUSY = "导入中…"
 private const val FILE_STATUS_TEMPLATE = "%s · %s · %s"
 private const val FILE_STATUS_NO_DIR = "备份目录未设置"
@@ -47,7 +47,7 @@ private const val FILE_TIME_UNKNOWN = "—"
 // ---------- 自动备份卡文案（2026-09-16 用户反馈：开关 + SAF 目录 + 上次备份时间；
 // 任务S：「立即备份」按钮删除——与卡1「导出」重复） ----------
 private const val AUTO_TITLE = "备份目录与自动备份"
-private const val AUTO_SUBTITLE = "每日一次，打开应用时写入所选目录（备份当前连接的服务端）"
+private val AUTO_SUBTITLE = "每日一次，打开应用时备份当前连接的服务端，写入 ${AutoBackupRunner.AUTO_BACKUP_FILE_NAME}，不覆盖手动 / PC 备份。"
 private const val AUTO_DIR_LABEL = "目录"
 private const val AUTO_DIR_SET = "已选择目录"
 private const val AUTO_DIR_UNSET = "未选择"
@@ -112,6 +112,7 @@ internal fun ImportExportCard(
     importing: Boolean,
     onExport: () -> Unit,
     onImport: () -> Unit,
+    onImportAutomatic: () -> Unit,
 ) {
     val statusText = when {
         !dirSet -> FILE_STATUS_NO_DIR
@@ -140,8 +141,8 @@ internal fun ImportExportCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(BackupRowInnerSpacing),
+            Column(
+                verticalArrangement = Arrangement.spacedBy(BackupRowInnerSpacing),
             ) {
                 Button(onClick = onExport, enabled = dirSet && !exporting && !importing) {
                     Text(if (exporting) IMPORT_EXPORT_EXPORT_BUSY else IMPORT_EXPORT_EXPORT)
@@ -150,6 +151,14 @@ internal fun ImportExportCard(
                     Text(if (importing) IMPORT_EXPORT_IMPORT_BUSY else IMPORT_EXPORT_IMPORT)
                 }
             }
+            TextButton(onClick = onImportAutomatic, enabled = dirSet && !exporting && !importing) {
+                Text("恢复自动备份")
+            }
+            Text(
+                text = "恢复自动备份读取 ${AutoBackupRunner.AUTO_BACKUP_FILE_NAME}；旧版自动备份仍从手动 / PC 入口导入。不会自动选择更新的文件。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -158,7 +167,7 @@ internal fun ImportExportCard(
  * 自动备份卡（2026-09-16 用户反馈）：行1 开关 + 行2 目录（选择/已选择）+ 行3 上次备份
  * 时间。触发判定与写盘执行体在 core:data AutoBackupRunner（每日一次、打开应用时写入
  * 所选目录），本卡只做状态展示（铁律 7）；「立即备份」按钮已随任务S 收敛删除（与
- * 卡1「导出」同一写路径，重复入口）。
+ * 手动即时备份沿用卡1「导出」；自动输出使用独立文件）。
  */
 @Composable
 internal fun AutoBackupCard(

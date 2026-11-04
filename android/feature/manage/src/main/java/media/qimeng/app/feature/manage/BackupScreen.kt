@@ -27,6 +27,7 @@ import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.backup.AutoBackupRunner
+import media.qimeng.app.core.data.backup.BackupFileKind
 import media.qimeng.app.core.data.backup.BackupValidator
 import media.qimeng.app.core.ui.component.QimengPageIntro
 import media.qimeng.app.core.ui.component.QimengTopBar
@@ -147,7 +148,8 @@ fun BackupScreen(
                 exporting = state.exporting,
                 importing = state.importing,
                 onExport = viewModel::exportToBackupDir,
-                onImport = viewModel::importFromBackupDir,
+                onImport = { viewModel.importFromBackupDir(BackupFileKind.MANUAL) },
+                onImportAutomatic = { viewModel.importFromBackupDir(BackupFileKind.AUTOMATIC) },
             )
 
             // 浏览数据同步（独立功能不动，留页面原位——原主卡内第三行）
