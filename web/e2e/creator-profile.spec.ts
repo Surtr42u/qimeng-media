@@ -46,7 +46,7 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   await card.getByRole('button', { name: '填入候选草稿，继续核对' }).click()
   expect(writes).toHaveLength(0)
   await expect(card.getByLabel('自动检查公开资料', { exact: true })).toBeDisabled()
-  await expect(card.getByLabel('检查公开新动态', { exact: true })).toBeDisabled()
+  await expect(card.getByLabel('检查作品订阅更新', { exact: true })).toBeDisabled()
   await expect(card.getByRole('textbox', { name: '简介', exact: true })).toHaveValue('原人工简介')
   await card.getByRole('button', { name: '保存作者资料' }).click()
   await expect(card.getByText(/保存失败，草稿已保留/)).toBeVisible()
