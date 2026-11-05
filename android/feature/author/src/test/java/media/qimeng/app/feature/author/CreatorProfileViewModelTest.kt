@@ -49,12 +49,33 @@ class CreatorProfileViewModelTest {
         val repo = Profiles()
         val vm = vm(repo)
         advanceUntilIdle()
+        assertFalse(vm.state.value.editing)
+        assertEquals(null, vm.state.value.draft)
         vm.useCandidate()
+        assertEquals(CreatorProfileSection.REVIEW, vm.state.value.editingSection)
         assertEquals("候选简介", vm.state.value.draft?.biography)
         assertEquals("人工简介", vm.state.value.profile?.biography)
         assertEquals(0, repo.writes)
         vm.cancelEdit()
         assertFalse(vm.state.value.editing)
+    }
+
+    @Test fun `分组编辑保留其他资料并在取消后返回只读态`() = runTest {
+        val repo = Profiles()
+        val vm = vm(repo)
+        advanceUntilIdle()
+        vm.edit(CreatorProfileSection.X)
+        assertEquals(CreatorProfileSection.X, vm.state.value.editingSection)
+        assertEquals("人工简介", vm.state.value.draft?.biography)
+        vm.changeDraft { it.copy(xProfile = media.qimeng.app.core.model.CreatorXProfile("https://x.com/example", "X简介")) }
+        vm.edit(CreatorProfileSection.SOURCES)
+        assertEquals(CreatorProfileSection.X, vm.state.value.editingSection)
+        assertEquals("X简介", vm.state.value.draft?.xProfile?.biography)
+        vm.cancelEdit()
+        assertFalse(vm.state.value.editing)
+        assertEquals(null, vm.state.value.draft)
+        assertEquals(null, vm.state.value.profile?.xProfile)
+        assertEquals(0, repo.writes)
     }
 
     @Test fun `冲突失败保留草稿与提交版本`() = runTest {

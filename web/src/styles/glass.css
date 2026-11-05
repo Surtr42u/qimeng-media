@@ -3091,3 +3091,32 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .creator-profile-actions, .creator-content-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
 .creator-content-tabs { margin: 18px 0; }
 .creator-profile-actions > a { padding: 8px 14px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius-full); }
+
+/* 资料概览默认只读，编辑区只展示所选资料块。 */
+.creator-details-title { margin: 22px 0 14px; }
+.creator-readonly-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.creator-readonly-group { min-width: 0; padding: 18px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius-lg); background: var(--qm-surface-soft); }
+.creator-group-heading, .creator-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.creator-group-heading h3 { font-size: 14px; }
+.creator-bio-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.creator-group-label { color: var(--qm-text-muted); font-size: 12px; margin: 14px 0 5px; }
+.creator-records { margin-top: 14px; font-size: 12px; color: var(--qm-text-soft); }
+.creator-records summary { cursor: pointer; }
+.creator-editor { max-width: 760px; margin-inline: auto; }
+.creator-editor-heading p { font-size: 12px; color: var(--qm-text-muted); margin-top: 6px; }
+.creator-editor fieldset { border: 0; padding: 0; margin: 22px 0; min-width: 0; }
+.creator-editor .settings-field { margin-bottom: 18px; }
+.creator-editor textarea { min-height: 112px; width: 100%; padding: 12px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius-sm); background: var(--qm-surface-soft); color: var(--qm-text); font: inherit; line-height: 1.6; resize: vertical; }
+.creator-editor-footer { position: sticky; bottom: 0; padding: 16px 72px 16px 0; border-top: 1px solid var(--qm-border); background: var(--qm-surface-strong); display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.creator-editor-footer > p { flex-basis: 100%; color: var(--qm-danger); }
+.creator-editor-footer > span { font-size: 12px; color: var(--qm-text-muted); margin-right: auto; }
+.creator-editor-buttons { display: flex; align-items: center; gap: 10px; }
+@media (max-width: 680px) {
+  .creator-readonly-grid { grid-template-columns: minmax(0, 1fr); }
+  .creator-details { padding: 16px; }
+  .creator-readonly-group { padding: 14px; }
+  .creator-editor-heading { align-items: flex-start; flex-wrap: wrap; }
+  .creator-editor-footer { padding-right: 0; padding-bottom: 72px; }
+  .creator-editor-buttons { width: 100%; }
+  .creator-editor-buttons > .save-btn { flex: 1; }
+}
