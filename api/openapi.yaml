@@ -1939,6 +1939,7 @@ components:
       properties:
         url: { type: string, maxLength: 2000, description: HTTPS X或Twitter账号主页，可为空 }
         biography: { type: string, maxLength: 1000, description: 已核对账号的简介原文，可为空 }
+        biographyZh: { type: string, maxLength: 2000, description: 中文译文；省略且账号与原文相同时保留已有译文，显式空字符串清空。原文为空时译文须为空。 }
     CreatorProfileWrite:
       type: object
       required: [revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates]
