@@ -7,6 +7,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -19,6 +20,7 @@ import media.qimeng.app.core.network.di.BackupClient
 import okhttp3.OkHttpClient
 
 interface CreatorProfileRepository {
+    /** 当前服务与本进程资料写入代次组成的不透明缓存域。 */
     fun avatarScope(): String
     suspend fun profile(authorId: String): CreatorProfile
     suspend fun save(authorId: String, draft: CreatorProfileDraft): CreatorProfile
@@ -32,7 +34,9 @@ class SdkCreatorProfileRepository @Inject constructor(
     private val factory: BusinessApiFactory,
     @BackupClient private val client: OkHttpClient,
 ) : CreatorProfileRepository {
-    override fun avatarScope(): String = factory.currentBaseUrl()
+    private val avatarRevision = AtomicLong()
+
+    override fun avatarScope(): String = "${factory.currentBaseUrl()}|${avatarRevision.get()}"
 
     override suspend fun profile(authorId: String) = atCurrentServer { bound ->
         bound.create().apiV1AuthorsAuthorIdProfileGet(authorId).toDomain()
@@ -50,11 +54,11 @@ class SdkCreatorProfileRepository @Inject constructor(
                 xProfile = draft.xProfile?.let { media.qimeng.sdk.models.CreatorXProfile(it.url, it.biography, it.biographyZh) },
             ),
         ).toDomain()
-    }
+    }.also { avatarRevision.incrementAndGet() }
 
     override suspend fun refresh(authorId: String) = atCurrentServer { bound ->
         bound.createWith(client).apiV1AuthorsAuthorIdProfileRefreshPost(authorId).toDomain()
-    }
+    }.also { avatarRevision.incrementAndGet() }
 
     override suspend fun avatar(authorId: String): ByteArray = atCurrentServer { bound ->
         val file = bound.createWith(client).apiV1AuthorsAuthorIdProfileAvatarGet(authorId)

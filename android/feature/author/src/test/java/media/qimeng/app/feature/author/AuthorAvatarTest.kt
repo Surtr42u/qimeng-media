@@ -52,6 +52,7 @@ class AuthorAvatarTest {
         val vm = vm(repo)
         advanceUntilIdle()
         val key = vm.avatarKey("one")
+        assertNotEquals(key, vm(repo).avatarKey("one"))
         assertTrue(vm.cachedAvatar(key).loading)
         val first = vm.avatar("one")
         assertFalse(vm.cachedAvatar(key).loading)
