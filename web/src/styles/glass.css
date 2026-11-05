@@ -3136,8 +3136,18 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .creator-edit-fields .settings-field small { text-align: right; font-variant-numeric: tabular-nums; }
 .creator-edit-language { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
 .creator-edit-language > span { font-size: 12px; color: var(--qm-text-muted); }
-.creator-editor-footer { border-radius: var(--qm-radius-md); padding-left: 16px; }
+.creator-editor-footer { border-radius: var(--qm-radius); padding-left: 16px; }
 @media (max-width: 680px) {
   .creator-editor .creator-edit-fields { padding: 14px; }
   .creator-profile-actions { gap: 8px; }
 }
+
+/* Unified maintenance workspace uses existing glass surfaces and theme tokens. */
+.maintenance-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+.maintenance-tabs [aria-pressed="true"] { background: var(--qm-primary-soft); color: var(--qm-primary); border-color: var(--qm-primary); }
+.maintenance-folder-card .rank-head h3 { display: flex; align-items: center; gap: 10px; }
+.maintenance-folder-card .rank-head svg { width: 20px; height: 20px; }
+.maintenance-folder-layout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.maintenance-folder-layout > span { padding: 14px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius); background: var(--qm-surface-soft); }
+.maintenance-folder-layout small { display: block; color: var(--qm-text-muted); margin-top: 6px; }
+@media (max-width: 640px) { .maintenance-folder-layout { grid-template-columns: 1fr; } }

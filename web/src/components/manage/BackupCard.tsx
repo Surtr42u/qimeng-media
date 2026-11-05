@@ -6,23 +6,24 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useExportQimengBackup, useImportQimengBackup } from '@/hooks/use-backup'
 import { UploadDropIcon } from '@/components/manage/UploadDropIcon'
 import type { LegacyBackupImport } from '@/api/generated'
+import { authorizeMaintenanceFolder, readMaintenanceBackup } from '@/lib/maintenance-folder'
 
 /** 当前v2便携备份导入/导出。文件校验在lib，提交与失效在hook，页面仅选择/确认。 */
-export function BackupCard() {
-  const exportBackup = useExportQimengBackup()
+export function BackupCard({ folderMode = false, directoryLoading = false }: { folderMode?: boolean; directoryLoading?: boolean }) {
+  const exportBackup = useExportQimengBackup(folderMode)
   const importBackup = useImportQimengBackup()
   const inputRef = useRef<HTMLInputElement>(null)
   // 待确认的导入载荷：非 null 即打开确认弹窗（旧版语义：确认后才真正上传导入）
   const [pending, setPending] = useState<{ payload: LegacyBackupImport; summary: BackupSummary } | null>(null)
   const [reading, setReading] = useState(false)
   const readingLock = useRef(false)
-  const busy = reading || importBackup.isPending || exportBackup.isPending
+  const busy = directoryLoading || reading || importBackup.isPending || exportBackup.isPending
 
   const onExport = (): void => {
     if (busy) return
     exportBackup.mutate(undefined, {
       onSuccess: ({ sizeBytes }) =>
-        toast.success(`已导出 qimeng_backup.json（${(sizeBytes / 1024).toFixed(0)} KB）`),
+        toast.success(folderMode ? `已更新备份与作者资料（${(sizeBytes / 1024).toFixed(0)} KB）` : `已导出 qimeng_backup.json（${(sizeBytes / 1024).toFixed(0)} KB）`),
       onError: (err) => toast.error(`导出失败：${batchFailureReason(err)}`),
     })
   }
@@ -66,6 +67,17 @@ export function BackupCard() {
     })
   }
 
+  const readFolderBackup = async (automatic: boolean): Promise<void> => {
+    if (busy || readingLock.current || pending) return
+    readingLock.current = true
+    setReading(true)
+    try {
+      const selected = await authorizeMaintenanceFolder()
+      setPending(await parseBackupFile(await readMaintenanceBackup(selected, automatic)))
+    } catch (error) { toast.error(batchFailureReason(error)) }
+    finally { readingLock.current = false; setReading(false) }
+  }
+
   return (
     <div className="rank-card">
       <div className="rank-head">
@@ -74,10 +86,14 @@ export function BackupCard() {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button className="pill" type="button" disabled={busy} onClick={onExport}>
-          {exportBackup.isPending ? '导出中…' : '导出全量备份'}
+          {exportBackup.isPending ? '导出中…' : folderMode ? '更新全部归档' : '导出全量备份'}
         </button>
         <span className="rank-note">当前库全量（文件清单/作者/标签/统计/收藏点赞），可导入本项目其他实例；不含媒体原件</span>
       </div>
+      {folderMode && <div className="upload-queue-actions" style={{ marginTop: 12 }}>
+        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(false)}>导入目录手动备份</button>
+        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(true)}>导入目录自动备份</button>
+      </div>}
       <div
         className={`upload-drop${busy ? ' disabled' : ''}`}
         role="button"

@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { ArchiveRestore, BookOpen, Database, FolderOpen, FolderSearch, Tags, Upload, Users } from 'lucide-react'
+import { ArchiveRestore, BookOpen, Database, FolderOpen, Tags, Upload, Users } from 'lucide-react'
 import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
 import { MAINTENANCE_FILES_BROWSER_PATH, MAINTENANCE_FILES_VOCAB_EDIT_PATH, MAINTENANCE_FILES_VOCABULARY_PATH, MAINTENANCE_LIBRARIES_PATH, MAINTENANCE_UPLOAD_PATH } from '@/lib/route-keys'
 
@@ -16,8 +16,7 @@ const GROUPS = [
     { title: '词表维护', sub: '出处组、角色别名与停用词，不是获取渠道', to: MAINTENANCE_FILES_VOCAB_EDIT_PATH, Icon: BookOpen },
   ] },
   { title: '迁移与恢复', note: '低频操作单独放置，先核对范围再执行', entries: [
-    { title: '作者 TXT 导入', sub: '导入作者文件清单，并按片段重建关联', to: '/app/maintenance/files/authors-txt', Icon: FolderSearch },
-    { title: '备份导入导出', sub: '当前 v2 数据记录与关联；不包含媒体原件', to: '/app/maintenance/files/backup', Icon: ArchiveRestore },
+    { title: '资料备份与归档', sub: '一个目录管理作者TXT、备份与上传归档', to: '/app/maintenance/files/backup', Icon: ArchiveRestore },
     { title: '回收站', sub: '找回误删文件；彻底删除在此独立确认', to: '/app/maintenance/trash', Icon: ArchiveRestore },
   ] },
 ] as const

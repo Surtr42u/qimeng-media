@@ -71,6 +71,10 @@ fun BackupScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: BackupViewModel = hiltViewModel(),
+    embedded: Boolean = false,
+    onUnifiedExport: (() -> Unit)? = null,
+    onPickUnifiedRoot: (() -> Unit)? = null,
+    externalBusy: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -103,7 +107,7 @@ fun BackupScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        QimengTopBar(title = SCREEN_TITLE, onBack = onBack)
+        if (!embedded) QimengTopBar(title = SCREEN_TITLE, onBack = onBack)
 
         Column(
             modifier = Modifier
@@ -138,16 +142,16 @@ fun BackupScreen(
                 dirUri = state.autoBackupDirUri,
                 lastRunMillis = state.autoBackupLastRunMillis,
                 onToggle = viewModel::setAutoBackupEnabled,
-                onPickDir = { dirPickerLauncher.launch(pickerStartUri) },
+                onPickDir = { if (!externalBusy) { if (onPickUnifiedRoot != null) onPickUnifiedRoot() else dirPickerLauncher.launch(pickerStartUri) } },
             )
 
             // 卡1：导入导出（直读直写备份目录 qimeng_backup.json；确认弹窗见页尾）
             ImportExportCard(
                 dirSet = state.autoBackupDirUri != null,
                 fileStatus = state.backupFileStatus,
-                exporting = state.exporting,
+                exporting = state.exporting || externalBusy,
                 importing = state.importing,
-                onExport = viewModel::exportToBackupDir,
+                onExport = onUnifiedExport ?: viewModel::exportToBackupDir,
                 onImport = { viewModel.importFromBackupDir(BackupFileKind.MANUAL) },
                 onImportAutomatic = { viewModel.importFromBackupDir(BackupFileKind.AUTOMATIC) },
             )

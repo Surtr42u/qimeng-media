@@ -69,6 +69,12 @@ internal fun CreatorProfileDetails(
                             item.xProfile?.url?.takeIf(String::isNotBlank)?.let { CreatorExternalLink("前往 X ↗", it) }
                         }
                         CreatorProfileGroup(CreatorProfileSection.BASIC, !state.busy, onEdit) {
+                            Text(state.author?.txtOrder?.let { "作者清单第 $it 位" } ?: "未记录清单顺序", style = MaterialTheme.typography.bodyMedium)
+                            Text(state.author?.addedAtMillis?.let { "入库记录 ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it))}" } ?: "入库时间未记录",
+                                style = MaterialTheme.typography.bodySmall)
+                            Text("历史批量导入仅能确认记录入库时间，原始加入日期未记录。", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+
                             Text("公开昵称", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(item.nickname.ifBlank { "尚未填写" }, style = MaterialTheme.typography.bodyMedium)
                             Text("整理简介", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

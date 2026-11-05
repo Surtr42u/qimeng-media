@@ -66,12 +66,14 @@ func listAuthors(t *testing.T, e *testEnv) []genAuthor {
 
 // genAuthor 是 gen.Author 的测试侧宽松投影。
 type genAuthor struct {
-	Id          *string `json:"id"`
-	DisplayName *string `json:"displayName"`
-	Type        *string `json:"type"`
-	FileCount   *int    `json:"fileCount"`
-	Followed    *bool   `json:"followed"`
-	ViewCount   *int    `json:"viewCount"`
+	Id            *string `json:"id"`
+	DisplayName   *string `json:"displayName"`
+	Type          *string `json:"type"`
+	FileCount     *int    `json:"fileCount"`
+	Followed      *bool   `json:"followed"`
+	ViewCount     *int    `json:"viewCount"`
+	AddedAtMillis *int64  `json:"addedAtMillis"`
+	TXTOrder      *int    `json:"txtOrder"`
 }
 
 func findAuthor(t *testing.T, list []genAuthor, id string) genAuthor {
@@ -364,5 +366,29 @@ func TestAuthorsTxtRebuildEmpty(t *testing.T) {
 	env := newTestEnv(t)
 	if imported, matched, code := rebuildTxt(t, env); code != 200 || imported != 0 || matched != 0 {
 		t.Fatalf("无片段重放得到 (%d, %d, code %d), want (0, 0, 200)", imported, matched, code)
+	}
+}
+
+func TestAuthorsExposeTXTOrderAndStableRecordTime(t *testing.T) {
+	e := newTestEnv(t)
+	importTXT(t, e, "first.txt", "99  Zeta\n作品\na.jpg\n1  Alpha\n作品\nb.jpg")
+	before := listAuthors(t, e)
+	zeta := findAuthor(t, before, "zeta")
+	alpha := findAuthor(t, before, "alpha")
+	if zeta.TXTOrder == nil || *zeta.TXTOrder != 1 || alpha.TXTOrder == nil || *alpha.TXTOrder != 2 {
+		t.Fatalf("unexpected TXT order: %v %v", zeta.TXTOrder, alpha.TXTOrder)
+	}
+	if zeta.AddedAtMillis == nil || *zeta.AddedAtMillis <= 0 {
+		t.Fatal("missing record timestamp")
+	}
+	importTXT(t, e, "second.txt", "1  Zeta\n作品\nc.mp4\n2  Beta")
+	after := listAuthors(t, e)
+	updated := findAuthor(t, after, "zeta")
+	if updated.AddedAtMillis == nil || *updated.AddedAtMillis != *zeta.AddedAtMillis {
+		t.Fatal("reimport reset timestamp")
+	}
+	beta := findAuthor(t, after, "beta")
+	if beta.TXTOrder == nil || *beta.TXTOrder != 3 {
+		t.Fatal("duplicate changed first-occurrence order")
 	}
 }

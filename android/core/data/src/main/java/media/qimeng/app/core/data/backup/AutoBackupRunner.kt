@@ -24,6 +24,7 @@ class AutoBackupRunner @Inject constructor(
     private val backupRepository: BackupRepository,
     private val prefs: BackupAutoPrefsRepository,
     private val dirAccess: BackupDirAccess,
+    private val maintenance: MaintenanceBackupWriter,
 ) {
 
     /** 判定 + 执行；返回是否实际写入了备份（调用方仅记日志，不打扰用户） */
@@ -68,6 +69,7 @@ class AutoBackupRunner @Inject constructor(
      * [BackupDirAccess] 实现的 IO 池）。
      */
     private suspend fun writeToDir(dirUri: String, kind: BackupFileKind): Long? {
+        maintenance.writeIfManaged(dirUri, kind)?.let { return it }
         val json = backupRepository.exportJson()
         return dirAccess.writeBytes(dirUri, json, kind)
     }

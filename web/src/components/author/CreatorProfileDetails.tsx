@@ -49,6 +49,10 @@ export function CreatorProfileDetails({ author }: { author: Author & { id: strin
           {profile.xProfile?.url && <CreatorPublicLink url={profile.xProfile.url} label="前往 X" />}
         </ProfileGroup>
         <ProfileGroup title={CREATOR_SECTION_TITLES.basic} busy={busy} onEdit={() => setEditing('basic')}>
+          <p className="creator-group-label">加入记录</p>
+          <p>{author.txtOrder != null ? `作者清单第 ${author.txtOrder} 位` : '未记录清单顺序'}</p>
+          <p>{author.addedAtMillis != null ? `入库记录 ${new Date(author.addedAtMillis).toLocaleString()}` : '入库时间未记录'}</p>
+          <p className="rank-note">历史批量导入仅能确认记录入库时间，原始加入日期未记录。</p>
           <p className="creator-group-label">公开昵称</p>
           <p>{profile.nickname || '尚未填写'}</p>
           <p className="creator-group-label">整理简介</p>

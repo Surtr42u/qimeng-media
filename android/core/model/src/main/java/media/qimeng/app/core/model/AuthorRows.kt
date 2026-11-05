@@ -10,6 +10,8 @@ data class AuthorSummary(
     val fileCount: Int?,
     val followed: Boolean,
     val viewCount: Int?,
+    val addedAtMillis: Long? = null,
+    val txtOrder: Int? = null,
 )
 
 enum class AuthorType { REGULAR, COS }
@@ -19,6 +21,8 @@ enum class AuthorSortOption(val label: String) {
     DEFAULT("默认"),
     BROWSE("浏览数"),
     WORKS("文件数"),
+    ADDED_ASC("加入较早"),
+    ADDED_DESC("加入较晚"),
 }
 
 /** 作者行显示名：COS 作者追加「 ·COS」标识（对齐 Web authorDisplayName 单源翻译） */
@@ -55,9 +59,16 @@ fun List<AuthorSummary>.applyAuthorRows(
                 AuthorSortOption.DEFAULT -> compareBy { 0 }
                 AuthorSortOption.BROWSE -> compareByDescending { it.viewCount ?: 0 }
                 AuthorSortOption.WORKS -> compareByDescending { it.fileCount ?: 0 }
+                AuthorSortOption.ADDED_ASC -> authorAddedOrder
+                AuthorSortOption.ADDED_DESC -> authorAddedOrder.reversed()
             },
         )
 }
+
+private val authorAddedOrder: Comparator<AuthorSummary> =
+    compareBy<AuthorSummary> { it.txtOrder ?: Int.MAX_VALUE }
+        .thenBy { it.addedAtMillis ?: Long.MAX_VALUE }
+        .thenBy { it.id }
 
 /**
  * 常规作者种子：全量作者 → 空输入联想回退列表（GET /authors/suggest 协议规定空 q 必返空，

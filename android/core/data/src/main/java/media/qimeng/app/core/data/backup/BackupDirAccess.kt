@@ -4,6 +4,8 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.File
+import java.io.ByteArrayOutputStream
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -47,6 +49,11 @@ class SafBackupDirAccess @Inject constructor(
 
     override suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind): Long? = withContext(Dispatchers.IO) {
         runCatching {
+            if (Uri.parse(dirUri).scheme == "file") {
+                val folder = checkedSharedFolder(requireNotNull(Uri.parse(dirUri).path))
+                writeMaintenanceFile(folder, kind.fileName, json)
+                return@runCatching json.toByteArray(Charsets.UTF_8).size.toLong()
+            }
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
             val treeDocId = DocumentsContract.getTreeDocumentId(tree)
@@ -64,6 +71,24 @@ class SafBackupDirAccess @Inject constructor(
 
     override suspend fun readBytes(dirUri: String, kind: BackupFileKind): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
+            if (Uri.parse(dirUri).scheme == "file") {
+                val folder = checkedSharedFolder(requireNotNull(Uri.parse(dirUri).path))
+                val file = File(folder, kind.fileName)
+                require(file.canonicalFile.parentFile == folder)
+                if (!file.isFile) return@runCatching null
+                require(file.length() <= BackupValidator.BACKUP_MAX_BYTES.toLong()) { "备份超过64MiB上限" }
+                return@runCatching file.inputStream().use { stream ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = stream.read(buffer, 0, minOf(buffer.size, BackupValidator.BACKUP_MAX_BYTES + 1 - output.size()))
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        require(output.size() <= BackupValidator.BACKUP_MAX_BYTES) { "备份超过64MiB上限" }
+                    }
+                    output.toByteArray()
+                }
+            }
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
             val target = findDocumentUri(resolver, tree, DocumentsContract.getTreeDocumentId(tree), kind)
@@ -74,6 +99,12 @@ class SafBackupDirAccess @Inject constructor(
 
     override suspend fun fileStatus(dirUri: String, kind: BackupFileKind): BackupFileStatus? = withContext(Dispatchers.IO) {
         runCatching {
+            if (Uri.parse(dirUri).scheme == "file") {
+                val folder = checkedSharedFolder(requireNotNull(Uri.parse(dirUri).path))
+                val file = File(folder, kind.fileName)
+                require(file.canonicalFile.parentFile == folder)
+                return@runCatching if (file.isFile) BackupFileStatus(file.length(), file.lastModified()) else null
+            }
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
             resolver.query(

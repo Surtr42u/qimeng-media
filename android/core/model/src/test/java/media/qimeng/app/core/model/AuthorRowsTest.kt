@@ -94,4 +94,17 @@ class AuthorRowsTest {
         assertEquals(listOf("尼尔", "尼酱", "尼尔机械纪元"), suggestions.map { it.name })
         assertTrue(suggestions.first().name.length <= suggestions.last().name.length)
     }
+    @Test
+    fun `加入顺序优先清单且倒序反转完整顺序`() {
+        val rows = listOf(
+            author("manual", "Manual").copy(addedAtMillis = 20),
+            author("second", "Second").copy(txtOrder = 2, addedAtMillis = 1),
+            author("unknown", "Unknown"),
+            author("first", "First").copy(txtOrder = 1, addedAtMillis = 999),
+        )
+        val ascending = rows.applyAuthorRows(Zone.ALL, "", AuthorSortOption.ADDED_ASC)
+        assertEquals(listOf("first", "second", "manual", "unknown"), ascending.map { it.id })
+        assertEquals(ascending.reversed(), rows.applyAuthorRows(Zone.ALL, "", AuthorSortOption.ADDED_DESC))
+    }
+
 }

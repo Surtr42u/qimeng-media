@@ -95,11 +95,15 @@ class BackupViewModelTest {
         repository: BackupRepository,
         prefs: BackupAutoPrefsRepository,
         dirAccess: BackupDirAccess,
+        maintenance: media.qimeng.app.core.data.backup.MaintenanceBackupWriter = object : media.qimeng.app.core.data.backup.MaintenanceBackupWriter {
+            override suspend fun writeIfManaged(dirUri: String, kind: BackupFileKind): Long? = null
+        },
     ): AutoBackupRunner {
         val injected = mapOf(
             "backupRepository" to repository,
             "prefs" to prefs,
             "dirAccess" to dirAccess,
+            "maintenance" to maintenance,
         )
         val unsafeField = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe")
         unsafeField.isAccessible = true
@@ -526,6 +530,22 @@ class BackupViewModelTest {
         ),
     )
 
+    @Test
+    fun `managed manual export uses the joint writer without rewriting a legacy file`() = runTest {
+        val prefs = FakeBackupAutoPrefs()
+        prefs.setDirUri("file:///synthetic/备份")
+        val kinds = mutableListOf<BackupFileKind>()
+        val writer = object : media.qimeng.app.core.data.backup.MaintenanceBackupWriter {
+            override suspend fun writeIfManaged(dirUri: String, kind: BackupFileKind): Long {
+                kinds += kind
+                return 123L
+            }
+        }
+        val runner = newAutoBackupRunner(FakeBackupRepository(), prefs, FakeBackupDirAccess(), writer)
+        assertEquals(123L, runner.writeNow())
+        assertEquals(listOf(BackupFileKind.MANUAL), kinds)
+    }
+
 }
 
 /**
@@ -680,4 +700,6 @@ private class FakeBackupDirAccess : BackupDirAccess {
         if (kind == BackupFileKind.AUTOMATIC) automaticFile = bytes else file = bytes
         return bytes.size.toLong()
     }
+
+
 }

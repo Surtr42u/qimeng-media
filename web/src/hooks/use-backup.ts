@@ -18,6 +18,7 @@ import {
 } from '@/api/generated'
 import { getAuthHeaders, unwrapSdkResult } from '@/lib/api-client'
 import { downloadBlob } from '@/lib/download'
+import { authorizeMaintenanceFolder, writeMaintenanceSnapshot } from '@/lib/maintenance-folder'
 import {
   ASSETS_QUERY_KEY,
   AUTHORS_QUERY_KEY,
@@ -35,15 +36,19 @@ const EXPORT_BACKUP_PATH = '/api/v1/export/qimeng-backup'
 const BACKUP_FILE_NAME = 'qimeng_backup.json'
 
 /** 导出备份：GET 原始字节 → 触发浏览器下载；onSuccess 回传文件大小供提示 */
-export function useExportQimengBackup() {
+export async function fetchBackupBlob(): Promise<Blob> {
+  const resp = await fetch(EXPORT_BACKUP_PATH, { headers: getAuthHeaders() })
+  if (!resp.ok) throw new Error(`导出失败（HTTP ${resp.status}）`)
+  return resp.blob()
+}
+
+export function useExportQimengBackup(folderMode = false) {
   return useMutation({
     mutationFn: async (): Promise<{ sizeBytes: number }> => {
-      const resp = await fetch(EXPORT_BACKUP_PATH, { headers: getAuthHeaders() })
-      if (!resp.ok) {
-        throw new Error(`导出失败（HTTP ${resp.status}）`)
-      }
-      const blob = await resp.blob()
-      downloadBlob(blob, BACKUP_FILE_NAME)
+      const selected = folderMode ? await authorizeMaintenanceFolder() : null
+      const blob = await fetchBackupBlob()
+      if (selected) await writeMaintenanceSnapshot(selected, blob)
+      else downloadBlob(blob, BACKUP_FILE_NAME)
       return { sizeBytes: blob.size }
     },
   })

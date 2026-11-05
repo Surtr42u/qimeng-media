@@ -24,6 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -82,8 +85,11 @@ fun AuthorTxtImportScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: AuthorTxtImportViewModel = hiltViewModel(),
+    embedded: Boolean = false,
+    externalBusy: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showMirror by rememberSaveable { mutableStateOf(false) }
 
     // UI 只转交 URI；元数据、读取上限与 UTF-8 解码由数据层 reader 负责。
     val pickTxtLauncher = rememberLauncherForActivityResult(
@@ -93,7 +99,7 @@ fun AuthorTxtImportScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        QimengTopBar(title = SCREEN_TITLE, onBack = onBack)
+        if (!embedded) QimengTopBar(title = SCREEN_TITLE, onBack = onBack)
 
         Column(
             modifier = Modifier
@@ -117,7 +123,7 @@ fun AuthorTxtImportScreen(
             ImportDropZone(
                 title = DROP_TITLE,
                 hint = if (state.files.isEmpty()) DROP_HINT_EMPTY else DROP_HINT_MORE,
-                importing = state.importing,
+                importing = state.importing || externalBusy,
                 onPick = { pickTxtLauncher.launch(TXT_MIME_TYPES) },
             )
             RuleNotes()
@@ -125,7 +131,7 @@ fun AuthorTxtImportScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = viewModel::rebuild, enabled = state.canRebuild) {
+                TextButton(onClick = viewModel::rebuild, enabled = state.canRebuild && !externalBusy) {
                     Text(if (state.rebuilding) REBUILD_BUTTON_BUSY else REBUILD_BUTTON)
                 }
             }
@@ -136,16 +142,17 @@ fun AuthorTxtImportScreen(
                 else -> state.files.forEach { filename ->
                     ImportedFileRow(
                         displayName = if (filename.isEmpty()) ROW_ANONYMOUS else filename,
-                        removing = state.removing,
+                        removing = state.removing || externalBusy,
                         onRemove = { viewModel.remove(filename) },
                     )
                 }
             }
 
-            AuthorMirrorCard(
+            if (embedded) TextButton(onClick = { showMirror = !showMirror }) { Text(if (showMirror) "收起高级镜像设置" else "高级镜像设置") }
+            if (!embedded || showMirror) AuthorMirrorCard(
                 mirrorPath = state.mirrorPath,
                 mirrorFragment = state.mirrorFragmentFilename,
-                saving = state.mirrorSaving,
+                saving = state.mirrorSaving || externalBusy,
                 onPathChange = viewModel::onMirrorPathChange,
                 onFragmentChange = viewModel::onMirrorFragmentChange,
                 onSave = viewModel::saveMirror,

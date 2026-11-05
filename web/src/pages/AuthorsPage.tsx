@@ -16,11 +16,12 @@ import {
   useToggleFollow,
 } from '@/hooks/use-authors'
 import { authorDisplayName } from '@/lib/format'
+import { compareAuthorAddedOrder } from '@/lib/author-order'
 import { batchFailureReason } from '@/lib/batch'
 import { authorCollectionPath } from '@/lib/route-keys'
 
 type AuthorZone = '全部' | '常规' | 'cos'
-type AuthorSort = 'default' | 'browse' | 'works'
+type AuthorSort = 'default' | 'browse' | 'works' | 'added-asc' | 'added-desc'
 
 /** 体系胶囊：data-zone 值与作者 type 字段对应（cos 小写），展示文案 COS 大写 */
 const ZONES: { zone: AuthorZone; label: string }[] = [
@@ -33,6 +34,8 @@ const SORTS: { key: AuthorSort; label: string }[] = [
   { key: 'default', label: '默认' },
   { key: 'browse', label: '经常浏览' },
   { key: 'works', label: '文件数量' },
+  { key: 'added-asc', label: '加入较早' },
+  { key: 'added-desc', label: '加入较晚' },
 ]
 
 /** 体系胶囊 → 协议 Author.type（「全部」不筛） */
@@ -47,6 +50,8 @@ const A_SORTERS: Record<AuthorSort, (a: Author, b: Author) => number> = {
   default: () => 0,
   browse: (a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0),
   works: (a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0),
+  'added-asc': compareAuthorAddedOrder,
+  'added-desc': (a, b) => compareAuthorAddedOrder(b, a),
 }
 
 
