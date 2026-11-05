@@ -19,6 +19,7 @@ func TestXProfilePreservesRawTextAcrossLegacySaves(t *testing.T) {
 	id := *author.Id
 	p := creatorprofile.Empty(id)
 	p.Status = "verified"
+	p.HomepageURL = "https://example.org/creator"
 	p.Biography = "curated summary"
 	p.EvidenceURLs = []string{"https://x.com/synthetic_one"}
 	p.XProfile = &creatorprofile.XProfile{URL: "https://x.com/synthetic_one", Biography: "Original bio 🌸\nSecond line"}
@@ -84,6 +85,7 @@ func TestBackupFillsMissingXProfileWithoutOverwritingManualFields(t *testing.T) 
 	id := *author.Id
 	p := creatorprofile.Empty(id)
 	p.Status = "verified"
+	p.HomepageURL = "https://example.org/creator"
 	p.Biography = "keep local summary"
 	p.EvidenceURLs = []string{"https://twitter.com/synthetic_one"}
 	saved, err := env.s.creatorProfiles.Save(t.Context(), id, p.Write)

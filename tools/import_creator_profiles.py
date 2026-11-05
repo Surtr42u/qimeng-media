@@ -147,6 +147,7 @@ class API:
 
 def pristine(profile):
     return (isinstance(profile, dict) and type(profile.get("revision")) is int and profile["revision"] >= 0
+            and profile.get("xProfile") is None
             and profile.get("status") == "empty" and not profile.get("autoRefresh") and not profile.get("trackUpdates")
             and all(profile.get(key) == "" for key in ("nickname", "biography", "avatarUrl", "homepageUrl", "feedUrl"))
             and profile.get("evidenceUrls") == [] and profile.get("updates") == []

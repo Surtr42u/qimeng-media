@@ -86,7 +86,7 @@ class ImportProfileTest(unittest.TestCase):
         self.assertEqual(1, api.call.call_count)
 
     def test_existing_revision_or_manual_field_is_never_overwritten(self):
-        for update in ({"nickname": "Manual"}, {"avatarUrl": "https://example.com/avatar.png"}, {"status": "candidate"}, {"candidate": {"biography": "Pending review"}}):
+        for update in ({"xProfile": {"url": "https://x.com/synthetic", "biography": "Raw X text"}}, {"xProfile": {"url": "", "biography": ""}}, {"nickname": "Manual"}, {"avatarUrl": "https://example.com/avatar.png"}, {"status": "candidate"}, {"candidate": {"biography": "Pending review"}}):
             current = profile()
             current.update(update)
             api = fake_api(current)
