@@ -31,9 +31,6 @@ import media.qimeng.app.core.ui.component.QimengValuePillBlock
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
 import media.qimeng.app.core.ui.theme.QimengDimens
 
-/** 页头计数行前缀（Web CollectionPage page-head 副行「作者 · N 个文件」的 kindLabel 段） */
-private const val COUNT_ROW_PREFIX = "作者"
-
 /** 空态文案（Web CollectionPage「该${kindLabel}下暂无内容。」author 分支逐字） */
 private const val EMPTY_COLLECTION = "该作者下暂无内容。"
 
@@ -88,7 +85,7 @@ fun AuthorCollectionScreen(
     val collectionHeader: @Composable () -> Unit = {
         Column {
             CreatorProfileCard(
-                name = viewModel.authorName, state = profileState, fileCount = state.totalMatched,
+                name = viewModel.authorName, state = profileState,
                 onFollow = profileViewModel::toggleFollow, onEdit = profileViewModel::edit,
                 onRefresh = profileViewModel::refresh, onRetry = profileViewModel::reload,
                 onReview = profileViewModel::useCandidate,
@@ -98,10 +95,9 @@ fun AuthorCollectionScreen(
                 onSave = profileViewModel::save, onClose = profileViewModel::cancelEdit,
             )
 
-            // 计数行（Web page-head 副行「作者 · N 个文件」；N=服务端列表首响 totalMatched，
-            // 拉取前缺省 0——Web `?? 0` 同口径）
+            // 此处随筛选变化，不作为作者的总库存。
             Text(
-                text = "$COUNT_ROW_PREFIX · ${state.totalMatched ?: 0} 个文件",
+                text = "本地作品 · ${state.totalMatched?.let { "筛选结果 $it 个文件" } ?: if (state.errorMessage != null) "读取失败" else "正在读取"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
