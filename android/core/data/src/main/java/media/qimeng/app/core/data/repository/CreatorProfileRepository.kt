@@ -44,7 +44,7 @@ class SdkCreatorProfileRepository @Inject constructor(
                 evidenceUrls = draft.evidenceUrls.map(String::trim).filter(String::isNotBlank).distinct(),
                 status = media.qimeng.sdk.models.CreatorProfileWrite.Status.valueOf(draft.status),
                 autoRefresh = draft.autoRefresh, feedUrl = draft.feedUrl, trackUpdates = draft.trackUpdates,
-                xProfile = draft.xProfile?.let { media.qimeng.sdk.models.CreatorXProfile(it.url, it.biography) },
+                xProfile = draft.xProfile?.let { media.qimeng.sdk.models.CreatorXProfile(it.url, it.biography, it.biographyZh) },
             ),
         ).toDomain()
     }
@@ -80,7 +80,7 @@ private fun media.qimeng.sdk.models.CreatorProfile.toDomain() = CreatorProfile(
     autoRefresh, feedUrl, trackUpdates, lastCheckedAt, lastSuccessAt, lastError,
     CreatorProfileCandidate(candidate.nickname, candidate.biography, candidate.avatarUrl, candidate.homepageUrl, candidate.evidenceUrls),
     updates.map { CreatorUpdate(it.id, it.title, it.url, it.publishedAt) },
-    xProfile?.let { CreatorXProfile(it.url, it.biography) },
+    xProfile?.let { CreatorXProfile(it.url, it.biography, it.biographyZh) },
 )
 
 @Module

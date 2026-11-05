@@ -43,8 +43,9 @@ type Write struct {
 
 // XProfile保留账号简介原文，独立于人工整理简介及其他平台证据。
 type XProfile struct {
-	URL       string `json:"url"`
-	Biography string `json:"biography"`
+	URL         string  `json:"url"`
+	Biography   string  `json:"biography"`
+	BiographyZh *string `json:"biographyZh,omitempty"`
 }
 type Candidate struct {
 	Nickname     string   `json:"nickname"`

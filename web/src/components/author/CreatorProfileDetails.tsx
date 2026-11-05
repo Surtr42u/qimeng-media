@@ -28,7 +28,7 @@ export function CreatorProfileDetails({ author }: { author: Author & { id: strin
 
   return <section className="rank-card creator-profile creator-details" aria-label="作者档案">
     <ManageUnsavedGuard dirty={state.dirty || busy} description="作者资料仍有未保存的修改或正在保存。" />
-    {editing ? <CreatorProfileEditor state={state} section={editing} onClose={closeEditor} onSaved={() => setEditing(null)} /> : <>
+    {editing ? <CreatorProfileEditor state={state} section={editing} name={author.displayName ?? '作者'} avatar={avatar} onClose={closeEditor} onSaved={() => setEditing(null)} /> : <>
       <div className="creator-profile-identity">
         <div className="creator-profile-avatar">{avatar ? <img src={avatar} alt="" /> : Array.from(author.displayName ?? '?')[0]}</div>
         <div className="creator-profile-name">
@@ -45,6 +45,7 @@ export function CreatorProfileDetails({ author }: { author: Author & { id: strin
       {profile && <div className="creator-readonly-grid">
         <ProfileGroup title={CREATOR_SECTION_TITLES.x} busy={busy} onEdit={() => setEditing('x')}>
           <p className="creator-profile-bio">{profile.xProfile?.biography || '尚未收录X简介。'}</p>
+          {profile.xProfile?.biographyZh && <details className="creator-records"><summary>查看中文译文</summary><p className="creator-profile-bio" lang="zh-CN">{profile.xProfile.biographyZh}</p></details>}
           {profile.xProfile?.url && <CreatorPublicLink url={profile.xProfile.url} label="前往 X" />}
         </ProfileGroup>
         <ProfileGroup title={CREATOR_SECTION_TITLES.basic} busy={busy} onEdit={() => setEditing('basic')}>

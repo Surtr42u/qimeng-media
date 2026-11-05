@@ -8,7 +8,7 @@ import (
 )
 
 // 协议 CreatorProfileWrite 原有字段必填，xProfile可选：指针区分缺失/null 与显式清空或关闭。
-// 领域 Write 不携带 HTTP presence 语义，完成校验后只映射一次。
+// 翻译字段的缺省由领域保存逻辑按账号和原文判断是否保留。
 type creatorProfileWriteRequest struct {
 	Revision     *int64          `json:"revision"`
 	Nickname     *string         `json:"nickname"`
@@ -24,8 +24,9 @@ type creatorProfileWriteRequest struct {
 }
 
 type creatorXProfileWriteRequest struct {
-	URL       *string `json:"url"`
-	Biography *string `json:"biography"`
+	URL         *string         `json:"url"`
+	Biography   *string         `json:"biography"`
+	BiographyZh json.RawMessage `json:"biographyZh,omitempty"`
 }
 
 func (s *Server) creatorProfileErr(w http.ResponseWriter, err error) {
@@ -67,6 +68,12 @@ func (s *Server) PutApiV1AuthorsAuthorIdProfile(w http.ResponseWriter, r *http.R
 			return
 		}
 		xProfile = &creatorprofile.XProfile{URL: *source.URL, Biography: *source.Biography}
+		if len(source.BiographyZh) > 0 {
+			if err := json.Unmarshal(source.BiographyZh, &xProfile.BiographyZh); err != nil || xProfile.BiographyZh == nil {
+				writeErr(w, http.StatusBadRequest, codeInvalidParam, "中文译文须为字符串")
+				return
+			}
+		}
 	}
 	p, err := s.creatorProfiles.Save(r.Context(), authorId, creatorprofile.Write{
 		Revision: *body.Revision, Nickname: *body.Nickname, Biography: *body.Biography,

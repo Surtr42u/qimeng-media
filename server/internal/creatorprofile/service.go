@@ -77,6 +77,9 @@ func (s *Service) Save(ctx context.Context, id string, w Write) (Profile, error)
 	// 新字段省略时兼容现装旧客户端，不丢失已同步的X原文。
 	if w.XProfile == nil {
 		w.XProfile = p.XProfile
+	} else if w.XProfile.BiographyZh == nil && p.XProfile != nil &&
+		XHandle(w.XProfile.URL) == XHandle(p.XProfile.URL) && w.XProfile.Biography == p.XProfile.Biography {
+		w.XProfile.BiographyZh = p.XProfile.BiographyZh
 	}
 	p.Write = w
 	if !w.TrackUpdates {

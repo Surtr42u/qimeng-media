@@ -26,3 +26,33 @@ func TestMissingXProfileRequiresExistingVerifiedAccountLink(t *testing.T) {
 		t.Fatal("existing X text would be overwritten")
 	}
 }
+
+func TestTranslationFillProtectsOriginalAndManualClear(t *testing.T) {
+	zh := "中文"
+	current := creatorprofile.Empty("synthetic")
+	current.Status = "verified"
+	current.XProfile = &creatorprofile.XProfile{URL: "https://twitter.com/synthetic_one", Biography: "original"}
+	incoming := current
+	incoming.XProfile = &creatorprofile.XProfile{URL: "https://x.com/Synthetic_One", Biography: "original", BiographyZh: &zh}
+	if !canFillXTranslation(current, incoming) {
+		t.Fatal("same-source missing translation not fillable")
+	}
+	for _, change := range []func(*creatorprofile.Profile){
+		func(p *creatorprofile.Profile) { p.XProfile.URL = "https://x.com/other" },
+		func(p *creatorprofile.Profile) { p.XProfile.Biography = "changed" },
+		func(p *creatorprofile.Profile) { p.Status = "candidate" },
+	} {
+		copy := incoming
+		x := *incoming.XProfile
+		copy.XProfile = &x
+		change(&copy)
+		if canFillXTranslation(current, copy) {
+			t.Fatal("mismatched source accepted")
+		}
+	}
+	empty := ""
+	current.XProfile.BiographyZh = &empty
+	if canFillXTranslation(current, incoming) {
+		t.Fatal("manual empty translation overwritten")
+	}
+}

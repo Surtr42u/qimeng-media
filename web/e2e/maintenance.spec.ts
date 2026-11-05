@@ -51,7 +51,7 @@ test('概览进入独立存储明细与完整异常页，不展开撑高资源�
   await expect(page.getByText('/synthetic/data', { exact: true })).toBeVisible()
   await expect(page.getByText('/synthetic/media', { exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('storage-details-page.png'), fullPage: true, animations: 'disabled' })
-  await page.getByRole('link', { name: '返回服务与维护', exact: true }).click()
+  await page.locator('.manage-page-head').getByRole('link', { name: '服务与维护', exact: true }).click()
   await expect(page.locator('.monitor-network-details')).toHaveCount(0)
   await expect(page.getByRole('link', { name: /本机同步/ })).toHaveCount(0)
   await page.getByRole('link', { name: /客户端异常/ }).click()

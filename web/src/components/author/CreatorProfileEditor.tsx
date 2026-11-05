@@ -9,9 +9,10 @@ export const CREATOR_SECTION_TITLES = { x: 'X资料', basic: '基础资料', sou
 type ProfileState = ReturnType<typeof useCreatorProfile>
 
 /** 每次编辑一个资料块，完整草稿仍由既有hook持有。 */
-export function CreatorProfileEditor({ state, section, onClose, onSaved }: {
-  state: ProfileState; section: CreatorProfileSection; onClose: () => void; onSaved: () => void
+export function CreatorProfileEditor({ state, section, name, avatar, onClose, onSaved }: {
+  state: ProfileState; section: CreatorProfileSection; name: string; avatar?: string; onClose: () => void; onSaved: () => void
 }) {
+  const [editChinese, setEditChinese] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const { form, busy } = state
   if (!form) return null
@@ -41,23 +42,39 @@ export function CreatorProfileEditor({ state, section, onClose, onSaved }: {
   </>
   return <section className="creator-editor" aria-label={`编辑${CREATOR_SECTION_TITLES[section]}`}>
     <div className="creator-editor-heading">
-      <div><h3>{CREATOR_SECTION_TITLES[section]}</h3><p>修改后保存，返回资料概览。</p></div>
+      <div className="creator-editor-person">
+        <div className="creator-profile-avatar">{avatar ? <img src={avatar} alt="" /> : Array.from(name)[0]}</div>
+        <div><p>{name}</p><h3>编辑{CREATOR_SECTION_TITLES[section]}</h3></div>
+      </div>
       <button type="button" className="pill" onClick={close} disabled={busy}>返回概览</button>
     </div>
     <form onSubmit={event => { event.preventDefault(); state.save.mutate(form, { onSuccess: onSaved }) }}>
-      <fieldset disabled={busy}>
+      <fieldset className="creator-edit-fields" disabled={busy}>
+        <legend>{CREATOR_SECTION_TITLES[section]}</legend>
         {section === 'x' && <>
           <label className="settings-field">
             <span>X 账号主页</span>
             <input type="url" placeholder="https://x.com/账号名" value={form.xProfile?.url ?? ''}
-              onChange={e => state.change('xProfile', { url: e.target.value, biography: form.xProfile?.biography ?? '' })} />
+              onChange={e => state.change('xProfile', { ...form.xProfile, url: e.target.value, biography: form.xProfile?.biography ?? '' })} />
           </label>
+          <div className="creator-edit-language">
+            <div className="creator-language" role="group" aria-label="简介编辑语言">
+              <button type="button" aria-pressed={!editChinese} onClick={() => setEditChinese(false)}>原文</button>
+              <button type="button" aria-pressed={editChinese} onClick={() => setEditChinese(true)}>中文</button>
+            </div>
+            <span>分别保存原文与译文</span>
+          </div>
           <label className="settings-field">
-            <span>X 简介原文</span>
-            <textarea rows={5} maxLength={1000} value={form.xProfile?.biography ?? ''}
-              onChange={e => state.change('xProfile', { url: form.xProfile?.url ?? '', biography: e.target.value })} />
+            <span>{editChinese ? '中文译文' : 'X 简介原文'}</span>
+            <textarea rows={6} maxLength={editChinese ? 2000 : 1000}
+              placeholder={editChinese ? '填写或校对中文翻译…' : '粘贴作者的X简介原文…'}
+              value={(editChinese ? form.xProfile?.biographyZh : form.xProfile?.biography) ?? ''}
+              onChange={e => state.change('xProfile', editChinese
+                ? { url: form.xProfile?.url ?? '', biography: form.xProfile?.biography ?? '', biographyZh: e.target.value }
+                : { url: form.xProfile?.url ?? '', biography: e.target.value, biographyZh: '' })} />
+            <small>{Array.from((editChinese ? form.xProfile?.biographyZh : form.xProfile?.biography) ?? '').length} / {editChinese ? 2000 : 1000}</small>
           </label>
-          <p className="creator-profile-note">简介原文显示在作者主页。</p>
+          <p className="creator-profile-note">修改原文后需重新校对中文译文，旧译文会清空。语言切换保留当前草稿。</p>
         </>}
         {(section === 'basic' || section === 'review') && basicFields}
         {(section === 'sources' || section === 'review') && sourceFields}
@@ -95,10 +112,10 @@ export function CreatorProfileEditor({ state, section, onClose, onSaved }: {
       </fieldset>
       <div className="creator-editor-footer">
         {state.save.isError && <p role="alert">保存失败，草稿已保留：{batchFailureReason(state.save.error)}</p>}
-        <span>{busy ? '正在保存…' : state.dirty ? '有未保存的修改' : '修改后统一保存'}</span>
+        <span>{busy ? '正在保存…' : state.dirty ? '有未保存的修改' : '已与当前资料一致'}</span>
         <div className="creator-editor-buttons">
           <button type="button" className="pill" onClick={close} disabled={busy}>取消</button>
-          <button type="submit" className="save-btn" disabled={busy}>{state.save.isPending ? '保存中…' : '保存资料'}</button>
+          <button type="submit" className="save-btn" disabled={busy || !state.dirty}>{state.save.isPending ? '保存中…' : '保存资料'}</button>
         </div>
       </div>
     </form>

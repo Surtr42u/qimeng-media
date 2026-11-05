@@ -31,7 +31,7 @@ data class CreatorProfileCandidate(
     val hasContent: Boolean get() = listOf(nickname, biography, avatarUrl, homepageUrl).any(String::isNotBlank)
 }
 
-data class CreatorXProfile(val url: String, val biography: String)
+data class CreatorXProfile(val url: String, val biography: String, val biographyZh: String? = null)
 
 data class CreatorUpdate(val id: String, val title: String, val url: String, val publishedAt: String)
 

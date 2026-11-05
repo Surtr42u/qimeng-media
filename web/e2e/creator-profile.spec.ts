@@ -4,7 +4,7 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   const profile = {
     authorId: 'cos_one', revision: 3, nickname: '', biography: '原人工简介', avatarUrl: '',
     homepageUrl: 'https://example.org/creator', evidenceUrls: ['https://example.org/manual'], status: 'candidate',
-    xProfile: { url: 'https://x.com/synthetic_one', biography: 'X上的简介原文 🌸\n第二行' },
+    xProfile: { url: 'https://x.com/synthetic_one', biography: 'X上的简介原文 🌸\n第二行', biographyZh: '中文简介 🌸\n第二行' },
     autoRefresh: false, feedUrl: '', trackUpdates: false, lastCheckedAt: '', lastSuccessAt: '', lastError: '',
     candidate: { nickname: '公开昵称', biography: '', avatarUrl: '', homepageUrl: 'https://example.org/creator', evidenceUrls: ['https://example.org/about'] }, updates: [],
   }
@@ -35,7 +35,11 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   const card = page.getByRole('region', { name: '作者档案', exact: true })
   await expect(card.getByText('COS 作者', { exact: false })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('creator-profile-card.png'), fullPage: true })
+  await expect(card.getByLabel('X 简介中文')).toHaveText(profile.xProfile.biographyZh)
+  await card.getByRole('group', { name: '简介显示语言' }).getByRole('button', { name: '原文', exact: true }).click()
   await expect(card.getByLabel('X 简介原文')).toHaveText('X上的简介原文 🌸\n第二行')
+  await card.getByRole('group', { name: '简介显示语言' }).getByRole('button', { name: '中文', exact: true }).click()
+  await expect(card.getByLabel('X 简介中文')).toHaveText(profile.xProfile.biographyZh)
   await expect(card.getByRole('link', { name: '前往 X', exact: false })).toHaveAttribute('href', 'https://x.com/synthetic_one')
   await expect(card.getByText('原人工简介', { exact: true })).toHaveCount(0)
   await page.getByRole('group', { name: '作者内容分区' }).getByText('作者新作', { exact: true }).click()
@@ -58,6 +62,17 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   await page.screenshot({ path: testInfo.outputPath('creator-x-editor-mobile.png'), fullPage: true })
   await page.setViewportSize({ width: 1280, height: 720 })
   await expect(card.getByRole('textbox', { name: 'X 简介原文', exact: true })).toHaveValue(profile.xProfile.biography)
+  await expect(card.getByRole('button', { name: '保存资料', exact: true })).toBeDisabled()
+  const languages = card.getByRole('group', { name: '简介编辑语言' })
+  await languages.getByRole('button', { name: '中文', exact: true }).click()
+  await expect(card.getByRole('textbox', { name: '中文译文', exact: true })).toHaveValue(profile.xProfile.biographyZh)
+  await card.getByRole('textbox', { name: '中文译文', exact: true }).fill('草稿中的中文')
+  await languages.getByRole('button', { name: '原文', exact: true }).click()
+  await expect(card.getByRole('textbox', { name: 'X 简介原文', exact: true })).toHaveValue(profile.xProfile.biography)
+  await languages.getByRole('button', { name: '中文', exact: true }).click()
+  await expect(card.getByRole('textbox', { name: '中文译文', exact: true })).toHaveValue('草稿中的中文')
+  await languages.getByRole('button', { name: '原文', exact: true }).click()
+
   await card.getByRole('textbox', { name: 'X 简介原文', exact: true }).fill('未保存的X简介')
   await card.getByRole('button', { name: '取消', exact: true }).click()
   await expect(page.getByRole('alertdialog')).toBeVisible()
@@ -94,5 +109,5 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   await card.getByRole('button', { name: '保存资料', exact: true }).click()
   await expect(card.getByRole('textbox')).toHaveCount(0)
   expect(writes).toHaveLength(3)
-  expect(writes[2]).toMatchObject({ nickname: '公开昵称', biography: '原人工简介', homepageUrl: profile.homepageUrl, evidenceUrls: ['https://example.org/manual', 'https://example.org/about'], xProfile: { url: profile.xProfile.url, biography: '更新后的X简介' } })
+  expect(writes[2]).toMatchObject({ nickname: '公开昵称', biography: '原人工简介', homepageUrl: profile.homepageUrl, evidenceUrls: ['https://example.org/manual', 'https://example.org/about'], xProfile: { url: profile.xProfile.url, biography: '更新后的X简介', biographyZh: '' } })
 })

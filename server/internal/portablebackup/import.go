@@ -189,7 +189,8 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 				restore := creatorprofile.IsEmpty(current)
 				fillAvatar := a.AvatarData != nil && len(current.AvatarData) == 0 && current.AvatarURL == profile.AvatarURL
 				fillX := canFillXProfile(current, profile)
-				if !restore && !fillAvatar && !fillX {
+				fillTranslation := canFillXTranslation(current, profile)
+				if !restore && !fillAvatar && !fillX && !fillTranslation {
 					imp.bump(&imp.res.AuthorsImported)
 					continue
 				}
@@ -198,6 +199,10 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 					profile = current
 					if fillX {
 						profile.XProfile = xProfile
+					} else if fillTranslation {
+						translated := *current.XProfile
+						translated.BiographyZh = xProfile.BiographyZh
+						profile.XProfile = &translated
 					}
 				}
 				if a.AvatarData != nil && (restore || fillAvatar) {

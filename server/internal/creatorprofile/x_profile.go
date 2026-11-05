@@ -7,6 +7,7 @@ import (
 )
 
 const maxXBiographyRunes = 1000 // OpenAPI CreatorXProfile.biography同步预算。
+const maxXTranslationRunes = 2000
 const maxXHandleBytes = 15
 
 // XHandle只接受HTTPS账号主页，拒绝推文、搜索、查询参数及其他站点。
@@ -39,19 +40,31 @@ func validateXProfile(profile *XProfile) error {
 	if profile == nil {
 		return nil
 	}
+	translation := ""
+	if profile.BiographyZh != nil {
+		translation = *profile.BiographyZh
+	}
 	if profile.URL == "" {
-		if profile.Biography != "" {
+		if profile.Biography != "" || translation != "" {
 			return ErrInvalid
 		}
 		return nil
 	}
-	if XHandle(profile.URL) == "" || !utf8.ValidString(profile.Biography) || utf8.RuneCountInString(profile.Biography) > maxXBiographyRunes {
+	if XHandle(profile.URL) == "" || !validXBiography(profile.Biography, maxXBiographyRunes) ||
+		!validXBiography(translation, maxXTranslationRunes) || profile.Biography == "" && translation != "" {
 		return ErrInvalid
 	}
-	for _, c := range profile.Biography {
+	return nil
+}
+
+func validXBiography(text string, maxRunes int) bool {
+	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > maxRunes {
+		return false
+	}
+	for _, c := range text {
 		if unicode.IsControl(c) && c != '\n' && c != '\r' && c != '\t' {
-			return ErrInvalid
+			return false
 		}
 	}
-	return nil
+	return true
 }

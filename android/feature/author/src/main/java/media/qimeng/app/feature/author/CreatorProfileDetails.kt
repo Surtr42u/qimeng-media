@@ -40,6 +40,7 @@ internal fun CreatorProfileDetails(
     onRefresh: () -> Unit,
     onReview: () -> Unit,
 ) {
+    var showTranslation by rememberSaveable { mutableStateOf(false) }
     var showNotes by rememberSaveable { mutableStateOf(false) }
     var showChecks by rememberSaveable { mutableStateOf(false) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -61,6 +62,10 @@ internal fun CreatorProfileDetails(
                         }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         CreatorProfileGroup(CreatorProfileSection.X, !state.busy, onEdit) {
                             Text(item.xProfile?.biography?.ifBlank { null } ?: "尚未收录X简介。", style = MaterialTheme.typography.bodyMedium)
+                            item.xProfile?.biographyZh?.takeIf(String::isNotBlank)?.let { translated ->
+                                TextButton(onClick = { showTranslation = !showTranslation }) { Text(if (showTranslation) "收起中文译文" else "查看中文译文") }
+                                if (showTranslation) Text(translated, style = MaterialTheme.typography.bodyMedium)
+                            }
                             item.xProfile?.url?.takeIf(String::isNotBlank)?.let { CreatorExternalLink("前往 X ↗", it) }
                         }
                         CreatorProfileGroup(CreatorProfileSection.BASIC, !state.busy, onEdit) {

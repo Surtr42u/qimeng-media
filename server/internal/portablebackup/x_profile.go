@@ -18,3 +18,12 @@ func canFillXProfile(current, incoming creatorprofile.Profile) bool {
 	}
 	return false
 }
+
+// 译文只补同一账号、同一原文的缺省字段，人工空字符串也视为已编辑。
+func canFillXTranslation(current, incoming creatorprofile.Profile) bool {
+	local, source := current.XProfile, incoming.XProfile
+	return current.Status == "verified" && incoming.Status == "verified" && local != nil && source != nil &&
+		local.BiographyZh == nil && source.BiographyZh != nil && *source.BiographyZh != "" &&
+		creatorprofile.XHandle(local.URL) != "" && creatorprofile.XHandle(local.URL) == creatorprofile.XHandle(source.URL) &&
+		local.Biography == source.Biography
+}
