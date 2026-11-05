@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,9 +50,12 @@ data class AuthorSourcesEditor(
     val loaded: Boolean = false,
 )
 
+data class AuthorAvatarState(val bytes: ByteArray? = null, val loading: Boolean = false)
+
 data class AuthorUiState(
     val sourcesEditor: AuthorSourcesEditor? = null,
     val authors: List<AuthorSummary> = emptyList(),
+    val avatarGeneration: Long = 0,
     /** 作者管理胶囊：全部/常规/COS（客户端筛选——GET /authors 无参数全量数组） */
     val zone: Zone = Zone.ALL,
     val keyword: String = "",
@@ -86,16 +90,38 @@ class AuthorViewModel @Inject constructor(
     private val profiles: CreatorProfileRepository,
 ) : ViewModel() {
 
-    // 视口行共享有限读取槽，避免快速滚动同时堆积外部头像请求。
+    private val avatarSession = UUID.randomUUID().toString()
     private val avatarSlots = Semaphore(AVATAR_CONCURRENCY)
+    private val avatarCache = LinkedHashMap<String, AuthorAvatarState>(16, 0.75f, true)
+    private var avatarCacheBytes = 0
 
-    suspend fun avatar(authorId: String): ByteArray? = avatarSlots.withPermit {
-        try {
-            profiles.avatar(authorId)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            null // 缺头像或来源读取失败时，列表保留作者首字。
+    fun avatarKey(authorId: String): String = "$avatarSession|${profiles.avatarScope()}|${_uiState.value.avatarGeneration}|$authorId"
+
+    fun cachedAvatar(key: String): AuthorAvatarState = avatarCache[key] ?: AuthorAvatarState(loading = true)
+
+    suspend fun avatar(authorId: String): AuthorAvatarState {
+        val key = avatarKey(authorId)
+        avatarCache[key]?.let { return it }
+        return avatarSlots.withPermit {
+            avatarCache[key]?.let { return@withPermit it }
+            if (key != avatarKey(authorId)) throw CancellationException("头像来源已刷新")
+            val image = try {
+                profiles.avatar(authorId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null // 完成后无图片才显示首字；失败可通过列表刷新重试。
+            }
+            if (key != avatarKey(authorId)) throw CancellationException("头像来源已刷新")
+            val result = AuthorAvatarState(bytes = image)
+            avatarCacheBytes -= avatarCache.put(key, result)?.bytes?.size ?: 0
+            avatarCacheBytes += image?.size ?: 0
+            while (avatarCache.size > AVATAR_CACHE_ENTRIES || avatarCacheBytes > AVATAR_CACHE_BYTES) {
+                val oldest = avatarCache.entries.iterator()
+                avatarCacheBytes -= oldest.next().value.bytes?.size ?: 0
+                oldest.remove()
+            }
+            result
         }
     }
 
@@ -345,8 +371,11 @@ class AuthorViewModel @Inject constructor(
             runCatching {
                 authorRepository.authors()
             }.onSuccess { authors ->
+                avatarCache.clear()
+                avatarCacheBytes = 0
                 _uiState.value = _uiState.value.copy(
                     authors = authors,
+                    avatarGeneration = _uiState.value.avatarGeneration + 1,
                     isLoading = false,
                     isRefreshing = false,
                 )
@@ -362,6 +391,8 @@ class AuthorViewModel @Inject constructor(
 
     companion object {
         private const val AVATAR_CONCURRENCY = 2
+        private const val AVATAR_CACHE_ENTRIES = 256
+        private const val AVATAR_CACHE_BYTES = 16 * 1024 * 1024
         private const val LOAD_FAILED_MESSAGE = "作者列表加载失败，请下拉重试"
         private const val FOLLOW_FAILED_MESSAGE = "关注操作失败，请重试"
         private const val MANAGE_FAILED_PREFIX = "操作失败："

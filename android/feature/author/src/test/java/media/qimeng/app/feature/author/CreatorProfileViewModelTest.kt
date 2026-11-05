@@ -25,6 +25,7 @@ class CreatorProfileViewModelTest {
     @get:Rule val dispatcher = MainDispatcherRule()
 
     private class Profiles : CreatorProfileRepository {
+        override fun avatarScope() = "synthetic-profile"
         var saved = CreatorProfile("cos_example", 1, "原昵称", "人工简介", "", "https://example.com", emptyList(), "verified", false, "", false, "", "", "",
             CreatorProfileCandidate("候选昵称", "候选简介", "", "", listOf("https://example.com/about")), emptyList())
         var writes = 0

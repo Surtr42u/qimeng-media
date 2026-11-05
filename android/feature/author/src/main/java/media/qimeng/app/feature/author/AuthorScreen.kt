@@ -234,6 +234,8 @@ fun AuthorScreen(
                     AuthorRow(
                         author = author,
                         loadAvatar = viewModel::avatar,
+                        avatarKey = viewModel.avatarKey(author.id),
+                        initialAvatar = viewModel.cachedAvatar(viewModel.avatarKey(author.id)),
                         onToggleFollow = { viewModel.toggleFollow(author) },
                         onAuthorClick = onAuthorClick,
                         onSources = { viewModel.openSourcesEditor(author) },
@@ -327,7 +329,9 @@ private fun AuthorSortMenuButton(
 @Composable
 private fun AuthorRow(
     author: AuthorSummary,
-    loadAvatar: suspend (String) -> ByteArray?,
+    loadAvatar: suspend (String) -> AuthorAvatarState,
+    avatarKey: String,
+    initialAvatar: AuthorAvatarState,
     onToggleFollow: () -> Unit,
     onAuthorClick: (authorId: String, displayName: String) -> Unit,
     onSources: () -> Unit,
@@ -349,7 +353,7 @@ private fun AuthorRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AuthorListAvatar(author.id, author.displayName, loadAvatar)
+            AuthorListAvatar(author.id, author.displayName, avatarKey, initialAvatar, loadAvatar)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = author.displayName,

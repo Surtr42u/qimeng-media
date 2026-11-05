@@ -19,6 +19,7 @@ import media.qimeng.app.core.network.di.BackupClient
 import okhttp3.OkHttpClient
 
 interface CreatorProfileRepository {
+    fun avatarScope(): String
     suspend fun profile(authorId: String): CreatorProfile
     suspend fun save(authorId: String, draft: CreatorProfileDraft): CreatorProfile
     suspend fun refresh(authorId: String): CreatorProfile
@@ -31,6 +32,8 @@ class SdkCreatorProfileRepository @Inject constructor(
     private val factory: BusinessApiFactory,
     @BackupClient private val client: OkHttpClient,
 ) : CreatorProfileRepository {
+    override fun avatarScope(): String = factory.currentBaseUrl()
+
     override suspend fun profile(authorId: String) = atCurrentServer { bound ->
         bound.create().apiV1AuthorsAuthorIdProfileGet(authorId).toDomain()
     }
