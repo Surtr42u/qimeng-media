@@ -34,13 +34,13 @@ func authorFromListRow(row db.ListAuthorsRow) gen.Author {
 		createdAt = ptr(stamp.UnixMilli())
 	}
 	return gen.Author{
-		CreatedAtMillis: createdAt,
-		Id:              &row.ID,
-		DisplayName:     &row.DisplayName,
-		Type:            &t,
-		FileCount:       &fileCount,
-		Followed:        &followed,
-		ViewCount:       ptr(viewCount),
+		AddedAtMillis: createdAt,
+		Id:            &row.ID,
+		DisplayName:   &row.DisplayName,
+		Type:          &t,
+		FileCount:     &fileCount,
+		Followed:      &followed,
+		ViewCount:     ptr(viewCount),
 	}
 }
 

@@ -1984,7 +1984,7 @@ components:
         fileCount: { type: integer }
         followed:  { type: boolean }
         viewCount: { type: integer, description: 该作者全部作品累计浏览次数（kind='open' 事件计数） }
-        createdAtMillis: { type: integer, format: int64, description: 作者记录首次入库时刻；历史批量导入仅代表入库记录时间，无法推定原始加入日期 }
+        addedAtMillis: { type: integer, format: int64, description: 作者记录首次入库时刻；历史批量导入仅代表入库记录时间，无法推定原始加入日期 }
         txtOrder: { type: integer, minimum: 1, description: 全部已存TXT片段按存储顺序解析后的首次出现序号；重复作者只计一次，COS及未出现者缺省 }
 
     TimelineTag:
