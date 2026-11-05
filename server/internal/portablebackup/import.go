@@ -187,14 +187,20 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 					return
 				}
 				restore := creatorprofile.IsEmpty(current)
-				if !restore && (a.AvatarData == nil || len(current.AvatarData) > 0 || current.AvatarURL != profile.AvatarURL) {
+				fillAvatar := a.AvatarData != nil && len(current.AvatarData) == 0 && current.AvatarURL == profile.AvatarURL
+				fillX := canFillXProfile(current, profile)
+				if !restore && !fillAvatar && !fillX {
 					imp.bump(&imp.res.AuthorsImported)
 					continue
 				}
 				if !restore {
+					xProfile := profile.XProfile
 					profile = current
+					if fillX {
+						profile.XProfile = xProfile
+					}
 				}
-				if a.AvatarData != nil {
+				if a.AvatarData != nil && (restore || fillAvatar) {
 					profile.AvatarData, profileErr = creatorprofile.DecodeAvatar(*a.AvatarData)
 					if profileErr != nil {
 						imp.fail("解析离线头像", profileErr)

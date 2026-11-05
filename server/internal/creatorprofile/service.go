@@ -74,6 +74,10 @@ func (s *Service) Save(ctx context.Context, id string, w Write) (Profile, error)
 	if p.AvatarURL != w.AvatarURL {
 		p.AvatarData = nil
 	}
+	// 新字段省略时兼容现装旧客户端，不丢失已同步的X原文。
+	if w.XProfile == nil {
+		w.XProfile = p.XProfile
+	}
 	p.Write = w
 	if !w.TrackUpdates {
 		p.Updates = []Update{}

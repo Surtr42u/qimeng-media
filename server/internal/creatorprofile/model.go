@@ -28,16 +28,23 @@ var (
 
 // Write 对应 OpenAPI CreatorProfileWrite；revision 为每次持久化的乐观并发版本。
 type Write struct {
-	Revision     int64    `json:"revision"`
-	Nickname     string   `json:"nickname"`
-	Biography    string   `json:"biography"`
-	AvatarURL    string   `json:"avatarUrl"`
-	HomepageURL  string   `json:"homepageUrl"`
-	EvidenceURLs []string `json:"evidenceUrls"`
-	Status       string   `json:"status"`
-	AutoRefresh  bool     `json:"autoRefresh"`
-	FeedURL      string   `json:"feedUrl"`
-	TrackUpdates bool     `json:"trackUpdates"`
+	Revision     int64     `json:"revision"`
+	Nickname     string    `json:"nickname"`
+	Biography    string    `json:"biography"`
+	AvatarURL    string    `json:"avatarUrl"`
+	HomepageURL  string    `json:"homepageUrl"`
+	EvidenceURLs []string  `json:"evidenceUrls"`
+	Status       string    `json:"status"`
+	AutoRefresh  bool      `json:"autoRefresh"`
+	FeedURL      string    `json:"feedUrl"`
+	TrackUpdates bool      `json:"trackUpdates"`
+	XProfile     *XProfile `json:"xProfile,omitempty"`
+}
+
+// XProfile保留账号简介原文，独立于人工整理简介及其他平台证据。
+type XProfile struct {
+	URL       string `json:"url"`
+	Biography string `json:"biography"`
 }
 type Candidate struct {
 	Nickname     string   `json:"nickname"`
@@ -122,7 +129,7 @@ func revisionFloor(ctx context.Context, q *db.Queries, id string) (int64, error)
 
 // IsEmpty 检查资料而非版本；删除/重建后的空档案仍保留单调版本墓碑。
 func IsEmpty(p Profile) bool {
-	return p.Status == "empty" && p.Nickname == "" && p.Biography == "" && p.AvatarURL == "" && p.HomepageURL == "" && len(p.EvidenceURLs) == 0 && !p.AutoRefresh && !p.TrackUpdates && p.FeedURL == "" && p.Candidate.Nickname == "" && p.Candidate.Biography == "" && p.Candidate.AvatarURL == "" && p.Candidate.HomepageURL == "" && len(p.Candidate.EvidenceURLs) == 0 && len(p.Updates) == 0
+	return p.XProfile == nil && p.Status == "empty" && p.Nickname == "" && p.Biography == "" && p.AvatarURL == "" && p.HomepageURL == "" && len(p.EvidenceURLs) == 0 && !p.AutoRefresh && !p.TrackUpdates && p.FeedURL == "" && p.Candidate.Nickname == "" && p.Candidate.Biography == "" && p.Candidate.AvatarURL == "" && p.Candidate.HomepageURL == "" && len(p.Candidate.EvidenceURLs) == 0 && len(p.Updates) == 0
 }
 func normalize(p *Profile) {
 	if p.EvidenceURLs == nil {
@@ -155,6 +162,9 @@ func Move(ctx context.Context, q *db.Queries, oldID, newID string, now time.Time
 	return nil
 }
 func Validate(w Write) error {
+	if err := validateXProfile(w.XProfile); err != nil {
+		return err
+	}
 	if w.Revision < 0 || len(w.EvidenceURLs) > 8 {
 		return ErrInvalid
 	}

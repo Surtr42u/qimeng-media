@@ -1932,6 +1932,13 @@ components:
         avatarUrl: { type: string, maxLength: 2000 }
         homepageUrl: { type: string, maxLength: 2000 }
         evidenceUrls: { type: array, maxItems: 8, items: { type: string, maxLength: 2000 } }
+    CreatorXProfile:
+      type: object
+      description: 单独保留X简介原文与账号来源，不替换整理简介。空字符串可显式清空，旧客户端省略整个对象时保留原值。
+      required: [url, biography]
+      properties:
+        url: { type: string, maxLength: 2000, description: HTTPS X或Twitter账号主页，可为空 }
+        biography: { type: string, maxLength: 1000, description: 已核对账号的简介原文，可为空 }
     CreatorProfileWrite:
       type: object
       required: [revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates]
@@ -1946,6 +1953,7 @@ components:
         autoRefresh: { type: boolean }
         feedUrl: { type: string, maxLength: 2000 }
         trackUpdates: { type: boolean }
+        xProfile: { $ref: "#/components/schemas/CreatorXProfile" }
     CreatorUpdate:
       type: object
       required: [id, title, url, publishedAt]
