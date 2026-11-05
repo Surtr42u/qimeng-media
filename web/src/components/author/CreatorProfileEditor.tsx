@@ -66,7 +66,7 @@ export function CreatorProfileEditor({ state, section, name, avatar, onClose, on
           </div>
           <label className="settings-field">
             <span>{editChinese ? '中文译文' : 'X 简介原文'}</span>
-            <textarea rows={6} maxLength={editChinese ? 2000 : 1000}
+            <textarea rows={6} aria-label={editChinese ? '中文译文' : 'X 简介原文'} maxLength={editChinese ? 2000 : 1000}
               placeholder={editChinese ? '填写或校对中文翻译…' : '粘贴作者的X简介原文…'}
               value={(editChinese ? form.xProfile?.biographyZh : form.xProfile?.biography) ?? ''}
               onChange={e => state.change('xProfile', editChinese
