@@ -3116,7 +3116,7 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
   .creator-details { padding: 16px; }
   .creator-readonly-group { padding: 14px; }
   .creator-editor-heading { align-items: flex-start; flex-wrap: wrap; }
-  .creator-editor-footer { padding-right: 0; padding-bottom: 72px; }
-  .creator-editor-buttons { width: 100%; }
-  .creator-editor-buttons > .save-btn { flex: 1; }
+  .creator-editor-footer { padding-right: 64px; padding-bottom: 16px; }
+  .creator-editor-buttons { width: 100%; flex-direction: column; align-items: stretch; }
+  .creator-editor-buttons > .save-btn { padding-inline: 10px; }
 }

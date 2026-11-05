@@ -47,6 +47,16 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   await page.screenshot({ path: testInfo.outputPath('creator-readonly-overview.png'), fullPage: true })
   await card.getByRole('button', { name: '编辑X资料', exact: true }).click()
   await expect(card.getByRole('textbox')).toHaveCount(2)
+  await page.setViewportSize({ width: 390, height: 844 })
+  const saveBounds = await card.getByRole('button', { name: '保存资料', exact: true }).boundingBox()
+  const refreshBounds = await page.getByRole('button', { name: '刷新', exact: true }).boundingBox()
+  expect(saveBounds).not.toBeNull()
+  expect(refreshBounds).not.toBeNull()
+  const save = saveBounds!
+  const refresh = refreshBounds!
+  expect(save.x + save.width <= refresh.x || save.x >= refresh.x + refresh.width || save.y + save.height <= refresh.y || save.y >= refresh.y + refresh.height).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('creator-x-editor-mobile.png'), fullPage: true })
+  await page.setViewportSize({ width: 1280, height: 720 })
   await expect(card.getByRole('textbox', { name: 'X 简介原文', exact: true })).toHaveValue(profile.xProfile.biography)
   await card.getByRole('textbox', { name: 'X 简介原文', exact: true }).fill('未保存的X简介')
   await card.getByRole('button', { name: '取消', exact: true }).click()
