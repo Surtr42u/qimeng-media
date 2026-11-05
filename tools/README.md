@@ -25,6 +25,8 @@ python -X utf8 tools/audit_library.py --db <数据目录>/qimeng.db --backup <�
 
 ## 作者公开档案受控填充
 
+公开身份研究、平台来源、判定口径、头像核验与跨 AI 证据交接见[作者资料研究指南](AUTHOR_RESEARCH.md)。通用方法随仓库维护，真实作者名单、查询缓存和待复核交接包保留在忽略的本地 audit 目录。
+
 `import_creator_profiles.py`仅通过正式API填充研究报告中的公开档案，不读取媒体、数据库或凭据文件。输入是忽略目录中的JSON报告；默认离线dry-run，只输出候选/跳过数量，不输出作者名、链接或令牌：
 
 ```powershell

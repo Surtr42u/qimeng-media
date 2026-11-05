@@ -9,9 +9,10 @@ type AppPrefs struct {
 }
 
 type Author struct {
-	AuthorId        string `json:"authorId"`
-	CreatedAtMillis *int64 `json:"createdAtMillis,omitempty"`
-	DisplayName     string `json:"displayName"`
+	AuthorId        string  `json:"authorId"`
+	AvatarData      *string `json:"avatarData,omitempty"`
+	CreatedAtMillis *int64  `json:"createdAtMillis,omitempty"`
+	DisplayName     string  `json:"displayName"`
 
 	Origin          *string `json:"origin,omitempty"`
 	ProfileJson     *string `json:"profileJson,omitempty"`

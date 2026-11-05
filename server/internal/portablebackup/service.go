@@ -87,6 +87,9 @@ func (s *Service) Import(ctx context.Context, req *BackupImport) (ImportResult, 
 		return ImportResult{}, &invalidBackup{cause: err}
 	}
 	for _, author := range sliceOrEmpty(req.Data.Authors) {
+		if author.AvatarData != nil && author.ProfileJson == nil {
+			return ImportResult{}, &invalidBackup{cause: errors.New("离线头像缺少作者档案")}
+		}
 		if author.ProfileJson != nil {
 			var profile creatorprofile.Profile
 			if len(*author.ProfileJson) > 262144 {
@@ -100,6 +103,14 @@ func (s *Service) Import(ctx context.Context, req *BackupImport) (ImportResult, 
 			}
 			if err := creatorprofile.ValidateProfile(profile); err != nil {
 				return ImportResult{}, &invalidBackup{cause: err}
+			}
+			if author.AvatarData != nil {
+				if profile.AvatarURL == "" {
+					return ImportResult{}, &invalidBackup{cause: errors.New("离线头像缺少来源")}
+				}
+				if _, err := creatorprofile.DecodeAvatar(*author.AvatarData); err != nil {
+					return ImportResult{}, &invalidBackup{cause: err}
+				}
 			}
 		}
 	}

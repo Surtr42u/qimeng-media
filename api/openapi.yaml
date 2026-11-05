@@ -2386,6 +2386,7 @@ components:
       type: object
       required: [authorId, displayName]
       properties:
+        avatarData: { type: string, maxLength: 2796204, description: 可选离线头像的标准Base64；解码后最多2MiB且必须是PNG/JPEG/GIF/WebP，须同条profileJson绑定头像来源；已有资料只在来源一致且缺离线头像时补齐 }
         profileJson: { type: string, maxLength: 262144, description: 作者公开附属档案JSON；可选v2扩展，旧备份缺省无操作；导入不覆盖本端已有档案且关闭自动维护 }
         authorId:         { type: string, description: 常规作者原样；COS 作者带 cos_ 前缀原样保留 }
         displayName:      { type: string }

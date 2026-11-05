@@ -181,20 +181,35 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 					imp.fail("读取作者档案", profileErr)
 					return
 				}
-				if creatorprofile.IsEmpty(current) {
-					var profile creatorprofile.Profile
-					if profileErr = json.Unmarshal([]byte(*a.ProfileJson), &profile); profileErr != nil {
-						imp.fail("解析作者档案", profileErr)
+				var profile creatorprofile.Profile
+				if profileErr = json.Unmarshal([]byte(*a.ProfileJson), &profile); profileErr != nil {
+					imp.fail("解析作者档案", profileErr)
+					return
+				}
+				restore := creatorprofile.IsEmpty(current)
+				if !restore && (a.AvatarData == nil || len(current.AvatarData) > 0 || current.AvatarURL != profile.AvatarURL) {
+					imp.bump(&imp.res.AuthorsImported)
+					continue
+				}
+				if !restore {
+					profile = current
+				}
+				if a.AvatarData != nil {
+					profile.AvatarData, profileErr = creatorprofile.DecodeAvatar(*a.AvatarData)
+					if profileErr != nil {
+						imp.fail("解析离线头像", profileErr)
 						return
 					}
+				}
+				if restore {
 					profile.AuthorID = a.AuthorId
 					profile.AutoRefresh = false
 					profile.TrackUpdates = false
-					profile.Revision = current.Revision + 1
-					if profileErr = creatorprofile.Persist(imp.ctx, qx, profile, imp.s.now()); profileErr != nil {
-						imp.fail("导入作者档案", profileErr)
-						return
-					}
+				}
+				profile.Revision = current.Revision + 1
+				if profileErr = creatorprofile.Persist(imp.ctx, qx, profile, imp.s.now()); profileErr != nil {
+					imp.fail("导入作者档案", profileErr)
+					return
 				}
 			}
 			imp.bump(&imp.res.AuthorsImported)

@@ -71,6 +71,9 @@ func (s *Service) Save(ctx context.Context, id string, w Write) (Profile, error)
 	if p.Revision != w.Revision {
 		return p, ErrConflict
 	}
+	if p.AvatarURL != w.AvatarURL {
+		p.AvatarData = nil
+	}
 	p.Write = w
 	if !w.TrackUpdates {
 		p.Updates = []Update{}

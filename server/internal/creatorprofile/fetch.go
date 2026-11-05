@@ -264,15 +264,28 @@ func (s *Service) Avatar(ctx context.Context, id string) ([]byte, string, error)
 	if p.AvatarURL == "" {
 		return nil, "", ErrNotFound
 	}
+	if len(p.AvatarData) > 0 {
+		kind, imageErr := AvatarType(p.AvatarData)
+		return p.AvatarData, kind, imageErr
+	}
 	data, _, err := fetch(ctx, p.AvatarURL, maxAvatarBytes)
 	if err != nil {
 		return nil, "", err
 	}
+	kind, err := AvatarType(data)
+	return data, kind, err
+}
+
+// AvatarType同时用于公开读取和不可信备份的写前图片校验。
+func AvatarType(data []byte) (string, error) {
+	if len(data) == 0 || len(data) > maxAvatarBytes {
+		return "", ErrInvalid
+	}
 	kind := http.DetectContentType(data)
 	switch kind {
 	case "image/png", "image/jpeg", "image/gif", "image/webp":
-		return data, kind, nil
+		return kind, nil
 	default:
-		return nil, "", fmt.Errorf("不支持的头像类型")
+		return "", fmt.Errorf("不支持的头像类型")
 	}
 }

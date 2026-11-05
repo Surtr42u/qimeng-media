@@ -24,6 +24,7 @@ package portablebackup
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -260,6 +261,7 @@ func (exp *backupExport) fillAuthors(data *BackupData, byID map[string]*exportAs
 			return fmt.Errorf("读取作者档案: %w", err)
 		}
 		var profilePtr *string
+		var avatarPtr *string
 		if !creatorprofile.IsEmpty(profile) {
 			raw, marshalErr := json.Marshal(profile)
 			if marshalErr != nil {
@@ -267,12 +269,17 @@ func (exp *backupExport) fillAuthors(data *BackupData, byID map[string]*exportAs
 			}
 			value := string(raw)
 			profilePtr = &value
+			if len(profile.AvatarData) > 0 {
+				encoded := base64.StdEncoding.EncodeToString(profile.AvatarData)
+				avatarPtr = &encoded
+			}
 		}
 		createdAt, err := millisOf(r.CreatedAt)
 		if err != nil {
 			return fmt.Errorf("作者 %s created_at 解析: %w", r.ID, err)
 		}
 		authors = append(authors, Author{
+			AvatarData:      avatarPtr,
 			ProfileJson:     profilePtr,
 			AuthorId:        r.ID,
 			DisplayName:     r.DisplayName,

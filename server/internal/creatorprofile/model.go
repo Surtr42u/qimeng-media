@@ -54,12 +54,19 @@ type Update struct {
 }
 type Profile struct {
 	Write
+	AvatarData    []byte    `json:"-"`
 	AuthorID      string    `json:"authorId"`
 	LastCheckedAt string    `json:"lastCheckedAt"`
 	LastSuccessAt string    `json:"lastSuccessAt"`
 	LastError     string    `json:"lastError"`
 	Candidate     Candidate `json:"candidate"`
 	Updates       []Update  `json:"updates"`
+}
+
+// 图片保存在同一附属档案内，随身份迁移/删除；普通资料API不携带图片正文。
+type storedProfile struct {
+	Profile
+	AvatarData []byte `json:"avatarData,omitempty"`
 }
 
 func Empty(id string) Profile {
@@ -75,15 +82,18 @@ func Load(ctx context.Context, q *db.Queries, id string) (Profile, error) {
 	if err != nil {
 		return p, err
 	}
-	if err = json.Unmarshal([]byte(value), &p); err != nil {
+	stored := storedProfile{Profile: p}
+	if err = json.Unmarshal([]byte(value), &stored); err != nil {
 		return p, fmt.Errorf("读取作者附属档案: %w", err)
 	}
+	p = stored.Profile
+	p.AvatarData = stored.AvatarData
 	normalize(&p)
 	return p, nil
 }
 func Persist(ctx context.Context, q *db.Queries, p Profile, now time.Time) error {
 	normalize(&p)
-	value, err := json.Marshal(p)
+	value, err := json.Marshal(storedProfile{Profile: p, AvatarData: p.AvatarData})
 	if err != nil {
 		return err
 	}

@@ -14,6 +14,8 @@ autoRefresh默认关闭，开启需verified与明确主页；main每小时检查
 
 头像通过认证`GET /authors/{authorId}/profile/avatar`读取保存地址，无任意URL参数；响应`Cache-Control: no-store`，避免修改头像后复用旧HTTP缓存，类型只接受PNG/JPEG/GIF/WebP，失败502或无头像404。客户端不得把源avatarUrl直接嵌入页面产生跨站请求。v2备份可选profileJson保存档案，导入只填本端空档案并关闭维护，见[备份专题](../domain/migration.md#作者公开档案)。
 
+v2备份还可携带离线头像图片；认证头像接口优先读本地持久图片，缺图时才读取保存来源。普通档案JSON不含图片正文，改换或清空头像来源会清除旧图。已有档案可按来源一致条件补图，具体预算与保留语义见上述备份专题。
+
 ### 作者核心与TXT
 
 TXT 导入/保护/移除/统一重建事务在 authorimport，手动、备份与本机同步入口共用；HTTP 只校验参数、映射领域结果和冲突载荷，协议字段不变。
