@@ -54,7 +54,7 @@ e13f7d25da4386abdc82a5236f8e46d666c2b03e84a3880842392f53547b6eba  android/sdk/do
 c22ba412b8a72fa84d89c84589d8e84cd4c0374826b32be2adda719c31c69318  android/sdk/docs/HistoryItem.md
 ff2686bb5a7254067f26e7510ee4ead7f11ea04e5fed6ee6c5800873608ab3b8  android/sdk/docs/HistoryPage.md
 08ce5dc0d576c9f779c3a96dcf6260927ce98a7fea51f78532140113dd20b065  android/sdk/docs/LegacyAppPrefs.md
-be9c47500448aa0d240cf30760f889873579b97d627b7456424878c0fc3aa5ef  android/sdk/docs/LegacyAuthor.md
+539082cceb421b6d54dff9438bdcf4645b42ceb03a7095f9556e738b9eae37d6  android/sdk/docs/LegacyAuthor.md
 82303a7cc7771d6bb1a68d9c4d1ca90701339b07ee1d15d21dfe8e0f4d20ee0d  android/sdk/docs/LegacyAuthorMediaRef.md
 0a600ca1b532b3318b460068542cb6339796789fbc92f3e46a9755e2c901dc8a  android/sdk/docs/LegacyBackupData.md
 ed55647996ac81305a25ddc5953edfd0d927ee181bef9ffc2029eefd7cfac026  android/sdk/docs/LegacyBackupFile.md
@@ -194,7 +194,7 @@ d86ac239c60ed1bd4a46996eaf8ff18e4f4daf89a9b4ec506641966c4809976a  android/sdk/sr
 1aa567bbb07763886c36bfa08e0d8dbda187c01367aca1806006566a8755a72c  android/sdk/src/main/kotlin/media/qimeng/sdk/models/HistoryItem.kt
 c09c7bcb09bb177dbbc2b56469cd2f5338e7615666bb5412ed8da98e620e175a  android/sdk/src/main/kotlin/media/qimeng/sdk/models/HistoryPage.kt
 c9c9341bfb0080ae83bbf6952e5278e8fab9c3e81caef08a968428e3385497fd  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LegacyAppPrefs.kt
-b26acbbce80dac3a11bdc10ce2223aba84b135e382253e69ed0060d6a8bccabf  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LegacyAuthor.kt
+467996339708394fc21c8890daf3e512f9ca5c9b5f8cb39cc9af6a41b6af6b56  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LegacyAuthor.kt
 5a3caaf38946499bb52469fd671c69300455685f9e26d960c48799ff70c45986  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LegacyAuthorMediaRef.kt
 0a4f556d81e3d34c351f33a1f0b8729ce8c2d86c04ce00fe987707daac7b3ab7  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LegacyBackupData.kt
 504b2072fbef34b52d92ab61bd6a26c8f1e98bceb65017bf072a8436d6742519  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LegacyBackupFile.kt
@@ -258,7 +258,7 @@ d72caf8c201b50a292fef05a2751c2f4cdd493b80b89d9fcc63f80dcd8c4cc93  android/sdk/sr
 3267541c502ac93fc4acd7b7b20889807d3851ff4d1085a4dda783bef3777af9  android/sdk/src/main/kotlin/media/qimeng/sdk/models/UploadDoneEvent.kt
 39bab73102d66dd5a725589df8657636c49d244ca55a9dd1e2adb15d4a27f455  android/sdk/src/main/kotlin/media/qimeng/sdk/models/UploadSession.kt
 0141334124c6a34a98d54f0ab04c73f5c6b93d2dc73167e694f7a029d2d2776a  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ViewEventReport.kt
-a9d3b424a6cb5f9164ba2ecb84f30cbf4c2f464833aab11f68537dd0c58103ba  server/internal/httpapi/gen/types.gen.go
+96c9d84c6ac46bf518fb7fdebf8f34a63b8cd22b1a3672170fce167620ac2086  server/internal/httpapi/gen/types.gen.go
 b325822184abc7aed91c42bb1ea0697bb8ae178833c3fca97f6ec498398c1377  web/src/api/generated/client.gen.ts
 8a17b0bf1540258734a128f176f6cb915c849b97d8064a613dba5ef8390e58d9  web/src/api/generated/client/client.gen.ts
 949cc7333527c91928c32410c4a4a2dd2b90b99fe080eb8ce4505647852fbe1b  web/src/api/generated/client/index.ts
@@ -274,4 +274,4 @@ df993567abbe3e5b477d81517fb967cf63cf40b7866957d5dc6cc03238cb1426  web/src/api/ge
 1b637c521d8136dfdbf8dfc4fcc8bb73e0c554466e4d2ca9c9086d4c712983c4  web/src/api/generated/core/utils.gen.ts
 8bb6d5c422a344df1aae6c9254b58e2ece9d263b9cae80773e6300825c0b986c  web/src/api/generated/index.ts
 e0e79e286615157bfb013cfc41a114198dabed589001a2cdc314b0524ba1277f  web/src/api/generated/sdk.gen.ts
-c5d473cc708a94b80057bd021bbd77af1a39e2f0b987352006f54d17d8866c1c  web/src/api/generated/types.gen.ts
+9033962b99ea180503c6534c21167031f95513d4a57c4c4f8d93ef8e318c1116  web/src/api/generated/types.gen.ts
