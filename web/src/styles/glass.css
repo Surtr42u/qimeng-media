@@ -799,7 +799,7 @@ button.seg,
 }
 .a-list li:hover { border-color: var(--qm-border-strong); }
 .author-manage-actions { display: flex; gap: 8px; flex-shrink: 0; }
-.author-type { padding: 2px 6px; margin-right: 8px; border-radius: 6px; background: var(--qm-chip-bg); color: var(--qm-text-soft); font-size: 10px; font-weight: 600; }
+.author-type { padding: 2px 6px; border-radius: 6px; background: var(--qm-chip-bg); color: var(--qm-text-soft); font-size: 10px; font-weight: 600; }
 .author-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .a-sortrow { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0 var(--qm-space-4); }
 .a-list .follow-btn { margin-left: 4px; }
@@ -3071,7 +3071,8 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .author-avatar { position: relative; overflow: hidden; display: grid; place-items: center; flex: 0 0 48px; width: 48px; height: 48px; border-radius: 50%; background: var(--qm-hover); color: var(--qm-primary-strong); font-size: 18px; }
 .author-info { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .author-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.author-info small { color: var(--qm-text-soft); font-size: 12px; }
+.author-info small { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--qm-text-soft); font-size: 12px; }
+.author-info small > span { white-space: nowrap; }
 .author-editor { max-height: 85dvh; overflow-y: auto; }
 .author-editor .settings-options, .author-editor .settings-field { margin-top: 16px; }
 #settings-library, #settings-preferences { scroll-margin-top: 24px; }
@@ -3079,9 +3080,9 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
   .a-toolbar .hist-search { width: 100%; }
   .a-sortrow { gap: 6px; }
   .a-sortrow .sort-pill { padding-inline: 10px; font-size: 12px; }
-  .a-list li { gap: 8px; }
-  .a-list li { flex-wrap: wrap; }
-  .a-list .author-identity { flex-basis: calc(100% - 96px); min-width: 0; }
+  .a-list li { gap: 8px; flex-wrap: wrap; padding: 14px 12px; }
+  .a-list .author-identity { flex-basis: calc(100% - 76px); min-width: 0; gap: 10px; }
+  .a-list .author-avatar { width: 40px; height: 40px; flex-basis: 40px; }
   .author-manage-actions { flex-basis: 100%; padding-left: 60px; }
   #page-settings .settings-actions .save-tip { width: 100%; margin: 0; text-align: right; }
   .a-list .follow-btn { margin-left: 0; }

@@ -187,7 +187,7 @@ export default function AuthorsPage() {
               <li key={a.id}>
                 <button type="button" className="author-identity" onClick={() => a.id && a.displayName && navigate(authorCollectionPath(a.id, a.displayName))}>
                   <AuthorAvatar authorId={a.id ?? ''} name={a.displayName ?? ''} />
-                  <span className="author-info"><strong>{a.displayName}</strong><small>{a.type === 'cos' && <span className="author-type">COS</span>}{a.fileCount ?? 0} 个文件</small></span>
+                  <span className="author-info"><strong>{a.displayName}</strong><small>{a.type === 'cos' && <span className="author-type">COS</span>}<span>{a.fileCount ?? 0} 个文件</span></small></span>
                 </button>
                 <button type="button" className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`} disabled={toggleFollow.isPending}
                   onClick={() => a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed }, { onError: err => toast.error(manageFailureText(err)) })}>
