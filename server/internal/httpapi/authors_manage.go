@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/authoring"
@@ -28,13 +29,18 @@ func authorFromListRow(row db.ListAuthorsRow) gen.Author {
 	fileCount := int(row.FileCount)
 	viewCount := toInt(row.ViewCount) // toInt 抹平 sqlc interface{}
 	followed := row.Followed == 1
+	var createdAt *int64
+	if stamp, err := time.Parse(time.RFC3339Nano, row.CreatedAt); err == nil {
+		createdAt = ptr(stamp.UnixMilli())
+	}
 	return gen.Author{
-		Id:          &row.ID,
-		DisplayName: &row.DisplayName,
-		Type:        &t,
-		FileCount:   &fileCount,
-		Followed:    &followed,
-		ViewCount:   ptr(viewCount),
+		CreatedAtMillis: createdAt,
+		Id:              &row.ID,
+		DisplayName:     &row.DisplayName,
+		Type:            &t,
+		FileCount:       &fileCount,
+		Followed:        &followed,
+		ViewCount:       ptr(viewCount),
 	}
 }
 

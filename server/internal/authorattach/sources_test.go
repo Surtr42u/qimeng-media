@@ -101,3 +101,15 @@ func TestMostRecent(t *testing.T) {
 		t.Errorf("got=%+v ok=%v, want new.txt（零值=最旧）", got, ok)
 	}
 }
+
+func TestTXTOrderPreservesFirstAppearance(t *testing.T) {
+	got := TXTOrder([]Source{
+		{Content: "99  First  别名\n作品\n01 clip.mp4\n2  Second\n作品\na.png"},
+		{Content: "7  Second\n作品\nb.mp4\n3  Third"},
+		{Content: "Fourth\nFirst"},
+	})
+	want := map[string]int{"first": 1, "second": 2, "third": 3, "fourth": 4}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+}

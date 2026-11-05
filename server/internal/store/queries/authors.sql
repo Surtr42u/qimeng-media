@@ -25,7 +25,7 @@ WITH asset_views AS (
       AND ve.asset_id IN (SELECT asset_id FROM asset_authors)
     GROUP BY ve.asset_id
 )
-SELECT au.id, au.display_name, au.type, au.followed,
+SELECT au.id, au.display_name, au.type, au.followed, au.created_at,
        COUNT(aa.asset_id) AS file_count,
        COALESCE(SUM(av.opens), 0) AS view_count
 FROM authors au
