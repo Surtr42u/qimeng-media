@@ -29,7 +29,7 @@ test('管理列表只读取视口附近头像，COS标记与名称分开，滚�
   await expect(rows).toHaveCount(150)
   const firstImage = rows.first().locator('.author-avatar img')
   await expect(firstImage).toBeVisible()
-  await expect.poll(() => firstImage.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(1)
+  await expect.poll(() => firstImage.evaluate(image => Reflect.get(image, 'naturalWidth'))).toBe(1)
   expect(requests.length).toBeLessThan(25)
   await expect(rows.first().locator('strong')).toHaveText('合成作者 0')
   await expect(rows.first().locator('.author-type')).toHaveText('COS')
@@ -41,7 +41,7 @@ test('管理列表只读取视口附近头像，COS标记与名称分开，滚�
   await page.setViewportSize({ width: 390, height: 844 })
   await rows.first().scrollIntoViewIfNeeded()
   await expect(rows.first().getByRole('button', { name: '关注', exact: true })).toBeVisible()
-  const width = await page.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: innerWidth }))
+  const width = await page.evaluate('({ content: document.documentElement.scrollWidth, viewport: innerWidth })') as { content: number; viewport: number }
   expect(width.content).toBeLessThanOrEqual(width.viewport)
   await page.screenshot({ path: testInfo.outputPath('authors-mobile.png'), animations: 'disabled' })
 })
