@@ -1,25 +1,26 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"qimeng-media/server/internal/creatorprofile"
 )
 
-// 协议 CreatorProfileWrite 全字段必填：指针区分缺失/null 与显式清空或关闭。
+// 协议 CreatorProfileWrite 原有字段必填，xProfile可选：指针区分缺失/null 与显式清空或关闭。
 // 领域 Write 不携带 HTTP presence 语义，完成校验后只映射一次。
 type creatorProfileWriteRequest struct {
-	Revision     *int64                       `json:"revision"`
-	Nickname     *string                      `json:"nickname"`
-	Biography    *string                      `json:"biography"`
-	AvatarURL    *string                      `json:"avatarUrl"`
-	HomepageURL  *string                      `json:"homepageUrl"`
-	EvidenceURLs *[]string                    `json:"evidenceUrls"`
-	Status       *string                      `json:"status"`
-	AutoRefresh  *bool                        `json:"autoRefresh"`
-	FeedURL      *string                      `json:"feedUrl"`
-	TrackUpdates *bool                        `json:"trackUpdates"`
-	XProfile     *creatorXProfileWriteRequest `json:"xProfile,omitempty"`
+	Revision     *int64          `json:"revision"`
+	Nickname     *string         `json:"nickname"`
+	Biography    *string         `json:"biography"`
+	AvatarURL    *string         `json:"avatarUrl"`
+	HomepageURL  *string         `json:"homepageUrl"`
+	EvidenceURLs *[]string       `json:"evidenceUrls"`
+	Status       *string         `json:"status"`
+	AutoRefresh  *bool           `json:"autoRefresh"`
+	FeedURL      *string         `json:"feedUrl"`
+	TrackUpdates *bool           `json:"trackUpdates"`
+	XProfile     json.RawMessage `json:"xProfile,omitempty"`
 }
 
 type creatorXProfileWriteRequest struct {
@@ -59,12 +60,13 @@ func (s *Server) PutApiV1AuthorsAuthorIdProfile(w http.ResponseWriter, r *http.R
 		return
 	}
 	var xProfile *creatorprofile.XProfile
-	if body.XProfile != nil {
-		if body.XProfile.URL == nil || body.XProfile.Biography == nil {
+	if len(body.XProfile) > 0 {
+		var source *creatorXProfileWriteRequest
+		if err := json.Unmarshal(body.XProfile, &source); err != nil || source == nil || source.URL == nil || source.Biography == nil {
 			writeErr(w, http.StatusBadRequest, codeInvalidParam, "X资料须同时提供账号链接与简介原文")
 			return
 		}
-		xProfile = &creatorprofile.XProfile{URL: *body.XProfile.URL, Biography: *body.XProfile.Biography}
+		xProfile = &creatorprofile.XProfile{URL: *source.URL, Biography: *source.Biography}
 	}
 	p, err := s.creatorProfiles.Save(r.Context(), authorId, creatorprofile.Write{
 		Revision: *body.Revision, Nickname: *body.Nickname, Biography: *body.Biography,

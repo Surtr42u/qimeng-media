@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import media.qimeng.app.core.model.CreatorXProfile
 import media.qimeng.app.core.model.CreatorProfileDraft
 import media.qimeng.app.core.model.toDraft
 
@@ -51,6 +52,12 @@ internal fun CreatorProfileEditor(
                 CreatorTextField("公开昵称", draft.nickname, !state.busy) { value -> onDraft { it.copy(nickname = value) } }
                 CreatorTextField("简介", draft.biography, !state.busy, singleLine = false) { value -> onDraft { it.copy(biography = value) } }
                 CreatorTextField("作者主页（HTTPS）", draft.homepageUrl, !state.busy) { value -> onDraft { it.copy(homepageUrl = value) } }
+                CreatorTextField("X 账号主页（HTTPS）", draft.xProfile?.url.orEmpty(), !state.busy) { value ->
+                    onDraft { it.copy(xProfile = CreatorXProfile(value, it.xProfile?.biography.orEmpty())) }
+                }
+                CreatorTextField("X 简介原文", draft.xProfile?.biography.orEmpty(), !state.busy, singleLine = false) { value ->
+                    onDraft { it.copy(xProfile = CreatorXProfile(it.xProfile?.url.orEmpty(), value)) }
+                }
                 CreatorTextField("头像来源（HTTPS）", draft.avatarUrl, !state.busy) { value -> onDraft { it.copy(avatarUrl = value) } }
                 CreatorTextField("核验来源（每行一个链接）", draft.evidenceUrls.joinToString("\n"), !state.busy, singleLine = false) { value ->
                     onDraft { it.copy(evidenceUrls = value.lines()) }
@@ -61,10 +68,10 @@ internal fun CreatorProfileEditor(
                 CreatorCheck("每天检查公开资料，更新先待审阅", draft.autoRefresh, !state.busy && draft.status == "verified" && draft.homepageUrl.isNotBlank()) { checked -> onDraft { it.copy(autoRefresh = checked) } }
                 Text("只生成候选，核对并保存后才更新资料。", style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
-                Text("追踪公开动态", style = MaterialTheme.typography.titleMedium)
+                Text("作品发布订阅", style = MaterialTheme.typography.titleMedium)
                 CreatorTextField("公开 RSS / Atom 订阅地址（可选）", draft.feedUrl, !state.busy) { value -> onDraft { it.copy(feedUrl = value) } }
-                CreatorCheck("追踪此订阅的新作", draft.trackUpdates, !state.busy && draft.status == "verified" && draft.feedUrl.isNotBlank()) { checked -> onDraft { it.copy(trackUpdates = checked) } }
-                Text("未提供订阅源的平台不能自动追踪新作。检查失败保留已有资料；不自动下载作品。", style = MaterialTheme.typography.bodySmall)
+                CreatorCheck("检查此作品订阅的新发布", draft.trackUpdates, !state.busy && draft.status == "verified" && draft.feedUrl.isNotBlank()) { checked -> onDraft { it.copy(trackUpdates = checked) } }
+                Text("仅填写作品发布专用订阅，普通社交动态需要另行判断。未提供可用订阅源时通过发布入口查看。检查失败保留已有资料；不自动下载作品。", style = MaterialTheme.typography.bodySmall)
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },

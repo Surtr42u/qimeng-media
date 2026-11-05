@@ -13,8 +13,8 @@ import { AUTHORS_QUERY_KEY } from '@/lib/query-keys'
 const profileKey = (authorId: string) => [...AUTHORS_QUERY_KEY, 'profile', authorId] as const
 
 function editable(profile: CreatorProfile): CreatorProfileWrite {
-  const { revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates } = profile
-  return { revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates }
+  const { revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates, xProfile } = profile
+  return { revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates, xProfile }
 }
 
 /** 网络档案与 TXT 来源分离；草稿不会被背景回读覆盖，PUT 使用读取时的修订。 */

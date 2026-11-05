@@ -27,10 +27,10 @@ internal fun CreatorUpdatesCard(profile: CreatorProfile, busy: Boolean, onEdit: 
     var expanded by rememberSaveable(profile.authorId) { mutableStateOf(false) }
     CreatorSection {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("最近公开动态", style = MaterialTheme.typography.titleMedium)
+            Text("作品发布订阅", style = MaterialTheme.typography.titleMedium)
             if (profile.updates.isNotEmpty()) Text("${profile.updates.size} 条记录", style = MaterialTheme.typography.labelMedium)
         }
-        Text("查看作者公开发布的内容，点击前往原帖。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("来自已配置的作品发布订阅，点击标题查看发布原帖。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (profile.updates.isEmpty()) {
             Text(creatorUpdatesEmptyText(profile), style = MaterialTheme.typography.bodyMedium)
         } else {
@@ -95,3 +95,18 @@ internal fun creatorSourceLabel(url: String): String {
         else -> host.ifBlank { "公开资料" }
     }
 }
+
+internal fun creatorXUrl(profile: CreatorProfile?): String {
+    val links = profile?.xProfile?.let { listOf(it.url) }
+        ?: (listOfNotNull(profile?.homepageUrl) + profile?.evidenceUrls.orEmpty())
+    return links.firstOrNull { link ->
+        runCatching {
+            val uri = java.net.URI(link)
+            val host = uri.host?.lowercase()?.removePrefix("www.")
+            uri.scheme == "https" && (host == "x.com" || host == "twitter.com") &&
+                uri.rawQuery == null && uri.rawFragment == null && X_PROFILE_PATH.matches(uri.path.orEmpty())
+        }.getOrDefault(false)
+    }.orEmpty()
+}
+
+private val X_PROFILE_PATH = Regex("^/[A-Za-z0-9_]{1,15}/?$")

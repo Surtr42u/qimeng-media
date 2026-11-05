@@ -18,6 +18,7 @@ data class CreatorProfile(
     val lastError: String,
     val candidate: CreatorProfileCandidate,
     val updates: List<CreatorUpdate>,
+    val xProfile: CreatorXProfile? = null,
 )
 
 data class CreatorProfileCandidate(
@@ -29,6 +30,8 @@ data class CreatorProfileCandidate(
 ) {
     val hasContent: Boolean get() = listOf(nickname, biography, avatarUrl, homepageUrl).any(String::isNotBlank)
 }
+
+data class CreatorXProfile(val url: String, val biography: String)
 
 data class CreatorUpdate(val id: String, val title: String, val url: String, val publishedAt: String)
 
@@ -44,8 +47,9 @@ data class CreatorProfileDraft(
     val autoRefresh: Boolean,
     val feedUrl: String,
     val trackUpdates: Boolean,
+    val xProfile: CreatorXProfile? = null,
 )
 
 fun CreatorProfile.toDraft() = CreatorProfileDraft(
-    revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates,
+    revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates, xProfile,
 )

@@ -24,6 +24,11 @@ export const BROWSING_REVIEW_PATH = '/app/data/review'
 /** 作者管理入口；与按名字浏览作者作品的集合路由不同。 */
 export const AUTHORS_PATH = '/app/authors'
 
+export const AUTHOR_PROFILE_PATTERN = '/app/authors/:authorId/profile'
+export function authorProfilePath(authorId: string): string {
+  return generatePath(AUTHOR_PROFILE_PATTERN, { authorId })
+}
+
 /** 维护页路由（Sidebar 底部图标组入口） */
 export const MAINTENANCE_PATH = '/app/maintenance'
 export const MAINTENANCE_STORAGE_PATH = '/app/maintenance/storage'

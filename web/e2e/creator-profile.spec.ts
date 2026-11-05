@@ -4,6 +4,7 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   const profile = {
     authorId: 'cos_one', revision: 3, nickname: '', biography: '原人工简介', avatarUrl: '',
     homepageUrl: 'https://example.org/creator', evidenceUrls: ['https://example.org/manual'], status: 'candidate',
+    xProfile: { url: 'https://x.com/synthetic_one', biography: 'X上的简介原文 🌸\n第二行' },
     autoRefresh: false, feedUrl: '', trackUpdates: false, lastCheckedAt: '', lastSuccessAt: '', lastError: '',
     candidate: { nickname: '公开昵称', biography: '', avatarUrl: '', homepageUrl: 'https://example.org/creator', evidenceUrls: ['https://example.org/about'] }, updates: [],
   }
@@ -34,6 +35,13 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
   const card = page.getByRole('region', { name: '作者档案', exact: true })
   await expect(card.getByText('COS 作者', { exact: false })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('creator-profile-card.png'), fullPage: true })
+  await expect(card.getByLabel('X 简介原文')).toHaveText('X上的简介原文 🌸\n第二行')
+  await expect(card.getByRole('link', { name: '前往 X', exact: false })).toHaveAttribute('href', 'https://x.com/synthetic_one')
+  await expect(card.getByText('原人工简介', { exact: true })).toHaveCount(0)
+  await page.getByRole('group', { name: '作者内容分区' }).getByText('作者新作', { exact: true }).click()
+  await expect(page.getByRole('region', { name: '作者新作', exact: true })).toContainText('尚未接入可用的作品发布订阅')
+  await page.getByRole('group', { name: '作者内容分区' }).getByText('本地作品', { exact: true }).click()
+  await card.getByRole('link', { name: '详细资料', exact: true }).click()
   await card.getByText('资料与维护', { exact: true }).click()
   await card.getByRole('button', { name: '填入候选草稿，继续核对' }).click()
   expect(writes).toHaveLength(0)

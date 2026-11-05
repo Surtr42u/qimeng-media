@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.model.CreatorProfile
+import media.qimeng.app.core.model.CreatorXProfile
 import media.qimeng.app.core.model.CreatorProfileCandidate
 import media.qimeng.app.core.model.CreatorProfileDraft
 import media.qimeng.app.core.model.CreatorUpdate
@@ -43,6 +44,7 @@ class SdkCreatorProfileRepository @Inject constructor(
                 evidenceUrls = draft.evidenceUrls.map(String::trim).filter(String::isNotBlank).distinct(),
                 status = media.qimeng.sdk.models.CreatorProfileWrite.Status.valueOf(draft.status),
                 autoRefresh = draft.autoRefresh, feedUrl = draft.feedUrl, trackUpdates = draft.trackUpdates,
+                xProfile = draft.xProfile?.let { media.qimeng.sdk.models.CreatorXProfile(it.url, it.biography) },
             ),
         ).toDomain()
     }
@@ -78,6 +80,7 @@ private fun media.qimeng.sdk.models.CreatorProfile.toDomain() = CreatorProfile(
     autoRefresh, feedUrl, trackUpdates, lastCheckedAt, lastSuccessAt, lastError,
     CreatorProfileCandidate(candidate.nickname, candidate.biography, candidate.avatarUrl, candidate.homepageUrl, candidate.evidenceUrls),
     updates.map { CreatorUpdate(it.id, it.title, it.url, it.publishedAt) },
+    xProfile?.let { CreatorXProfile(it.url, it.biography) },
 )
 
 @Module

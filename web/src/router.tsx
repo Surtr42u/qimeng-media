@@ -5,7 +5,7 @@ import { AssetOverlayGroupLayout } from '@/components/layout/AssetOverlayGroupLa
 import { RootLayout } from '@/components/layout/RootLayout'
 import { AppShell } from '@/components/shell/AppShell'
 import { CollectionDeepLink } from '@/pages/CollectionDeepLink'
-import { HOME_PATH } from '@/lib/route-keys'
+import { HOME_PATH, AUTHOR_PROFILE_PATTERN } from '@/lib/route-keys'
 
 /**
  * 路由（2026-09-02：UI 原型移植重建；E1 首页↔详情改叠加组）。
@@ -28,6 +28,7 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const SearchPage = lazy(() => import('@/pages/SearchPage'))
 const RanksPage = lazy(() => import('@/pages/RanksPage'))
 const AuthorsPage = lazy(() => import('@/pages/AuthorsPage'))
+const CreatorProfilePage = lazy(() => import('@/pages/CreatorProfilePage'))
 const CollectionPage = lazy(() => import('@/pages/CollectionPage'))
 const AssetDetailPage = lazy(() => import('@/pages/AssetDetailPage'))
 const AssetEditPage = lazy(() => import('@/pages/AssetEditPage'))
@@ -91,6 +92,7 @@ export const router = createBrowserRouter([
               // 查询串深链归一（?author=/?tag= → 路径形态，见 CollectionDeepLink）：
               // 未注册裸 /app/collection 时这类外部深链整树无匹配 → 白屏（F1）
               { path: 'collection', element: <CollectionDeepLink /> },
+              { path: AUTHOR_PROFILE_PATTERN, element: <Suspense fallback={null}><CreatorProfilePage /></Suspense> },
               { path: 'collection/:kind/:name', element: <Suspense fallback={null}><CollectionPage /></Suspense> },
               // 数据管理 hub + 子页（2026-09-17 原单页「文件管理」拆分，扁平同层
               // 注册与 maintenance/* 既有风格一致；页面内容零改动只做信息架构拆分。

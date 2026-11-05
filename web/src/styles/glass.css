@@ -3087,3 +3087,7 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
   #page-settings .settings-actions .save-tip { width: 100%; margin: 0; text-align: right; }
   .a-list .follow-btn { margin-left: 0; }
 }
+
+.creator-profile-actions, .creator-content-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.creator-content-tabs { margin: 18px 0; }
+.creator-profile-actions > a { padding: 8px 14px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius-full); }

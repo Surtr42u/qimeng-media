@@ -49,7 +49,7 @@ func validateXProfile(profile *XProfile) error {
 		return ErrInvalid
 	}
 	for _, c := range profile.Biography {
-		if unicode.IsControl(c) && c != '\n' && c != '\t' {
+		if unicode.IsControl(c) && c != '\n' && c != '\r' && c != '\t' {
 			return ErrInvalid
 		}
 	}

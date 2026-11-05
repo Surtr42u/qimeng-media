@@ -18,6 +18,8 @@ export function creatorSourceLabel(value: string): string {
   }
 }
 
-export function creatorBiographyPreview(biography: string): string {
-  return biography.trim().split(/\n\s*\n/, 1)[0] ?? ''
+/** 优先已保存X账号，旧数据仅从已有主页/证据中展示X入口。 */
+export function creatorXUrl(profile?: { xProfile?: { url: string }; homepageUrl: string; evidenceUrls: string[] }): string {
+  const links = profile?.xProfile ? [profile.xProfile.url] : [profile?.homepageUrl, ...(profile?.evidenceUrls ?? [])]
+  return links.find(url => !!url && /^https:\/\/(?:www\.)?(?:x|twitter)\.com\/[A-Za-z0-9_]{1,15}\/?$/.test(url)) ?? ''
 }
