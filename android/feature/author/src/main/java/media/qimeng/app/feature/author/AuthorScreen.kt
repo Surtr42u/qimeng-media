@@ -3,8 +3,9 @@ package media.qimeng.app.feature.author
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.clickable
 import media.qimeng.app.core.model.AuthorType
@@ -15,6 +16,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.ui.theme.softDaylightBackground
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,6 +54,9 @@ import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.icon.MoreVertIcon
+import media.qimeng.app.core.ui.icon.EditPencilIcon
+import media.qimeng.app.core.ui.icon.DeleteIcon
+import media.qimeng.app.core.ui.icon.LabelTagIcon
 import media.qimeng.app.core.ui.icon.SearchIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -290,6 +297,10 @@ private fun AuthorSortMenuButton(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 6.dp,
         ) {
             AuthorSortOption.entries.forEach { sort ->
                 DropdownMenuItem(
@@ -325,18 +336,17 @@ private fun AuthorRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-        shadowElevation = 1.dp,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { onAuthorClick(author.id, author.displayName) }
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AuthorListAvatar(author.id, author.displayName, loadAvatar)
@@ -362,35 +372,56 @@ private fun AuthorRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            FilledTonalButton(onClick = onToggleFollow, contentPadding = PaddingValues(horizontal = 14.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = if (author.followed) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
+            OutlinedButton(
+                onClick = onToggleFollow,
+                modifier = Modifier.height(36.dp),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = if (author.followed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                 )) {
-                Text(if (author.followed) "已关注" else "关注", style = MaterialTheme.typography.labelLarge)
+                Text(if (author.followed) "已关注" else "关注", style = MaterialTheme.typography.labelMedium)
             }
             if (author.type != AuthorType.COS) Box {
-                IconButton(onClick = { menuOpen = true }) {
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = MoreVertIcon,
                         contentDescription = "${author.displayName}：$AUTHOR_MENU_DESC",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
                 DropdownMenu(
                     expanded = menuOpen,
                     onDismissRequest = { menuOpen = false },
+                    modifier = Modifier.width(168.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 6.dp,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 ) {
-                    DropdownMenuItem(text = { Text("来源 / 出处") }, onClick = { menuOpen = false; onSources() })
                     DropdownMenuItem(
-                        text = { Text(text = RENAME_MENU_LABEL) },
+                        modifier = Modifier.height(48.dp),
+                        text = { Text("来源 / 出处", style = MaterialTheme.typography.bodyMedium) },
+                        leadingIcon = { Icon(LabelTagIcon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        onClick = { menuOpen = false; onSources() },
+                    )
+                    DropdownMenuItem(
+                        modifier = Modifier.height(48.dp),
+                        text = { Text(text = RENAME_MENU_LABEL, style = MaterialTheme.typography.bodyMedium) },
+                        leadingIcon = { Icon(EditPencilIcon, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             menuOpen = false
                             onRename()
                         },
                     )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     DropdownMenuItem(
-                        text = { Text(text = DELETE_MENU_LABEL, color = MaterialTheme.colorScheme.error) },
+                        modifier = Modifier.height(48.dp),
+                        text = { Text(text = DELETE_MENU_LABEL, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) },
+                        leadingIcon = { Icon(DeleteIcon, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             menuOpen = false
                             onDelete()

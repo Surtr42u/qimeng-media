@@ -20,10 +20,10 @@ import coil3.compose.AsyncImage
 @Composable
 internal fun AuthorListAvatar(authorId: String, name: String, loadAvatar: suspend (String) -> ByteArray?) {
     val image by produceState<ByteArray?>(null, authorId) { value = loadAvatar(authorId) }
-    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(52.dp)) {
+    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(48.dp)) {
         if (image != null) {
             AsyncImage(model = image, contentDescription = "$name 的头像", contentScale = ContentScale.Crop,
-                modifier = Modifier.size(52.dp).clip(CircleShape))
+                modifier = Modifier.size(48.dp).clip(CircleShape))
         } else {
             val label = name.ifBlank { "作" }
             Box(contentAlignment = Alignment.Center) {
