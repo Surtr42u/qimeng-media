@@ -3,11 +3,12 @@ import { useCreatorAvatar, useCreatorProfile } from '@/hooks/use-creator-profile
 import { useToggleFollow } from '@/hooks/use-authors'
 import { batchFailureReason } from '@/lib/batch'
 import { ManageUnsavedGuard } from '@/components/manage/ManageUnsavedGuard'
+import { creatorBiographyPreview, creatorSourceLabel } from '@/lib/creator-presentation'
 
 function PublicLink({ url, label }: { url: string; label?: string }) {
   // 不让旧缓存或导入载荷把可执行 scheme 带入链接。
-  if (!url.startsWith('https://')) return <span>{label ?? url}</span>
-  return <a href={url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{label ?? url}</a>
+  if (!url.startsWith('https://')) return <span>{label ?? '公开资料'}</span>
+  return <a href={url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{label ?? creatorSourceLabel(url)} ↗</a>
 }
 
 /** 原作者作品页的概要与维护入口，普通/COS共享，作品筛选和网格仍由集合页持有。 */
@@ -23,15 +24,20 @@ export function CreatorProfileCard({ author }: { author: Author & { id: string }
       <button type="button" className="pill" disabled={follow.isPending} onClick={() => follow.mutate({ authorId: author.id, follow: !author.followed })}>{author.followed ? '已关注' : '关注'}</button>
     </div>
     {follow.isError && <p role="alert">关注操作失败：{batchFailureReason(follow.error)}</p>}
-    {profile?.biography && <p className="creator-profile-bio">{profile.biography}</p>}
-    {profile?.homepageUrl && <PublicLink url={profile.homepageUrl} label="创作者主页 ↗" />}
+    {profile?.biography && <p className="creator-profile-bio">{creatorBiographyPreview(profile.biography)}</p>}
+    {profile && (profile.biography || profile.homepageUrl || profile.evidenceUrls.length > 0) && <details className="creator-account-details">
+      <summary>账号与核验信息</summary>
+      <nav className="creator-platforms" aria-label="作者公开平台">{[...new Set([profile.homepageUrl, ...profile.evidenceUrls])].filter(Boolean).map(url => <PublicLink key={url} url={url} />)}</nav>
+      {profile.biography && <p className="creator-profile-bio">{profile.biography}</p>}
+    </details>}
     {state.isPending && <p role="status">正在读取作者资料…</p>}
     {state.isError && <div role="alert"><p>作者资料读取失败，请确认服务端已更新：{batchFailureReason(state.error)}</p><button type="button" className="pill" onClick={() => { void state.refetch() }}>重试资料</button></div>}
     {profile && form && <>
       <ManageUnsavedGuard dirty={state.dirty || busy} description="作者档案仍有未保存的修改或正在维护。" />
       <div className="creator-profile-status"><span>{profile.status === 'verified' ? '身份已确认' : profile.status === 'candidate' ? '资料待核实' : '资料待完善'}</span>{profile.lastSuccessAt && <span>最近成功：{profile.lastSuccessAt}</span>}</div>
-      {profile.lastError && <p role="alert">上次维护未完成：{profile.lastError}</p>}
+      {profile.lastError && <p className="creator-profile-note" role="status">上次在线检查未完成，详情见资料与维护。</p>}
       <details className="creator-maintenance"><summary>资料与维护</summary>
+        {profile.lastError && <p role="alert">上次维护未完成：{profile.lastError}</p>}
         <form onSubmit={event => { event.preventDefault(); state.save.mutate(form) }}>
           <fieldset disabled={busy}>
             <legend>公开作者档案</legend>

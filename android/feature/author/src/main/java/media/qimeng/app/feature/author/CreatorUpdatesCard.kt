@@ -77,3 +77,21 @@ internal fun CreatorExternalLink(label: String, url: String, showAddress: Boolea
     }
     if (failed) Text("无法打开此链接", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
 }
+
+/** 平台名称用于展示，链接归属采用已保存档案。 */
+internal fun creatorSourceLabel(url: String): String {
+    val host = runCatching { java.net.URI(url).host?.lowercase()?.removePrefix("www.") }.getOrNull().orEmpty()
+    return when {
+        host == "x.com" || host == "twitter.com" -> "X / Twitter"
+        host == "patreon.com" -> "Patreon"
+        host.endsWith(".fanbox.cc") || host == "fanbox.cc" -> "FANBOX"
+        host == "pixiv.net" -> "Pixiv"
+        host == "bsky.app" -> "Bluesky"
+        host == "iwara.tv" -> "Iwara"
+        host == "space.bilibili.com" || host == "bilibili.com" -> "哔哩哔哩"
+        host == "weibo.com" || host == "weibo.cn" -> "微博"
+        host == "fantia.jp" -> "Fantia"
+        host == "subscribestar.adult" || host == "subscribestar.com" -> "SubscribeStar"
+        else -> host.ifBlank { "公开资料" }
+    }
+}

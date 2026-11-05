@@ -6,6 +6,7 @@ import { authorDisplayName } from '@/lib/format'
 import { provenanceNote } from '@/lib/provenance'
 import { ASSETS_QUERY_KEY } from '@/lib/query-keys'
 import { authorCollectionPath } from '@/lib/route-keys'
+import { AuthorAvatar } from '@/components/author/AuthorAvatar'
 
 /**
  * 详情页作者卡（B站式右栏上部）：作者名 + 关注按钮，多作者逐行，无作者不渲染。
@@ -29,6 +30,9 @@ export function AuthorCard({ authors }: { authors: AssetDetailAuthor[] }) {
           const note = provenanceNote(a)
           return (
             <div className="author-row" key={a.id ?? a.displayName}>
+              <Link to={authorCollectionPath(a.id ?? '', a.displayName ?? '')} aria-label={`查看${authorDisplayName(a)}的作品`}>
+                <AuthorAvatar authorId={a.id ?? ''} name={a.displayName ?? ''} />
+              </Link>
               <div className="author-main">
                 <Link className="author-name" to={authorCollectionPath(a.id ?? '', a.displayName ?? '')}>
                   {authorDisplayName(a)}

@@ -1,5 +1,7 @@
 package media.qimeng.app.feature.author
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +31,7 @@ import coil3.compose.AsyncImage
 import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.theme.QimengDimens
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CreatorProfileCard(
     name: String,
@@ -40,7 +43,6 @@ internal fun CreatorProfileCard(
     onReview: () -> Unit,
 ) {
     var expanded by rememberSaveable(name) { mutableStateOf(false) }
-    var fullBio by rememberSaveable(name) { mutableStateOf(false) }
     val profile = state.profile
     Column(
         Modifier.fillMaxWidth().padding(
@@ -84,14 +86,14 @@ internal fun CreatorProfileCard(
                         Text(if (state.followBusy) "处理中…" else if (author.followed) "已关注" else "关注作者")
                     }
                 }
-                if (!profile?.homepageUrl.isNullOrBlank()) CreatorExternalLink("作者主页 ↗", profile!!.homepageUrl)
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起资料" else "资料详情") }
+                TextButton(onClick = onEdit, enabled = !state.busy) { Text("编辑资料") }
             }
             if (!profile?.biography.isNullOrBlank()) {
                 Text(
-                    profile!!.biography, maxLines = if (fullBio) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis,
+                    profile!!.biography.substringBefore("\n\n"), maxLines = 3, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                TextButton(onClick = { fullBio = !fullBio }) { Text(if (fullBio) "收起简介" else "展开简介") }
             }
             if (state.busy) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -104,21 +106,25 @@ internal fun CreatorProfileCard(
                 TextButton(onClick = onRetry, enabled = !state.busy) { Text("重新读取") }
             }
             profile?.let { item ->
-                HorizontalDivider()
-                CreatorStatusRow("自动维护资料", "头像、简介与主页变更先生成候选", if (item.autoRefresh) "已开启" else "未开启")
-                CreatorStatusRow("追踪公开动态", "从公开订阅发现内容，不下载", if (item.trackUpdates) "已开启" else "未开启")
-                CreatorStatusRow("人工确认", "身份冲突或资料变化由你核对", if (item.candidate.hasContent) "待审阅" else "保留")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = onEdit, enabled = !state.busy) { Text("资料与维护设置") }
-                    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起详情" else "核验详情") }
-                }
                 if (expanded) {
-                    CreatorStatusRow("头像", "通过影库代理读取", if (state.avatar != null) "可用" else if (state.avatarError) "暂不可用" else if (item.avatarUrl.isBlank()) "未设置" else "加载中")
-                    CreatorStatusRow("个人简介", "作者公开介绍", if (item.biography.isBlank()) "未填写" else "已填写")
-                    item.evidenceUrls.forEach { CreatorExternalLink("核验来源 ↗", it, showAddress = true) }
+                    HorizontalDivider()
+                    if (item.biography.isNotBlank()) {
+                        Text("账号与核验信息", style = MaterialTheme.typography.titleSmall)
+                        Text(item.biography, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        (listOf(item.homepageUrl) + item.evidenceUrls).filter(String::isNotBlank).distinct().forEach { url ->
+                            CreatorExternalLink(creatorSourceLabel(url) + " ↗", url)
+                        }
+                    }
+                    CreatorStatusRow("头像", "本地图片或影库代理", if (state.avatar != null) "可用" else if (state.avatarError) "暂不可用" else if (item.avatarUrl.isBlank()) "未设置" else "加载中")
+                    CreatorStatusRow("自动维护资料", "变更先生成待审候选", if (item.autoRefresh) "已开启" else "未开启")
+                    CreatorStatusRow("追踪公开动态", "需公开 RSS / Atom 订阅源", if (item.trackUpdates) "已开启" else "未开启")
                     if (item.lastSuccessAt.isNotBlank()) Text("最近维护成功：${item.lastSuccessAt}", style = MaterialTheme.typography.bodySmall)
+                    if (item.lastError.isNotBlank()) Text("上次在线检查未完成：${item.lastError}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                } else if (item.lastError.isNotBlank()) {
+                    TextButton(onClick = { expanded = true }) { Text("在线检查未完成，查看详情") }
                 }
-                if (item.lastError.isNotBlank()) Text("上次检查未完成：${item.lastError}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 if (item.candidate.hasContent) {
                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -130,7 +136,11 @@ internal fun CreatorProfileCard(
                 }
             }
         }
-        profile?.let { CreatorUpdatesCard(it, state.busy, onEdit, onRefresh) }
+        profile?.let {
+            if (it.feedUrl.isNotBlank() || it.trackUpdates || it.updates.isNotEmpty()) {
+                CreatorUpdatesCard(it, state.busy, onEdit, onRefresh)
+            }
+        }
     }
 }
 

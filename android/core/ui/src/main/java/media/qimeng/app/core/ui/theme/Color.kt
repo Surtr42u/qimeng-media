@@ -24,11 +24,11 @@ object QimengBrandColors {
 
     // ---------- 页面背景 / 表面（colors.xml「中性极简：微灰白背景 + 纯白卡片」组） ----------
 
-    /** 日间整页纯白：不叠加冷灰渐变；同步 app values/colors.xml 的 qm_bg。 */
-    val BgLight: Color = Color.White
+    /** 日间柔和灰底，与白色内容卡形成清楚层次。 */
+    val BgLight: Color = Color(0xFFF1F2F4)
 
     /** 深色页面底色 = values-night/colors.xml L4 qm_bg（夜：深灰而非纯黑） */
-    val BgDark: Color = Color(0xFF1A1A1A)
+    val BgDark: Color = Color(0xFF141414)
 
     /** 浅色卡片面 = values/colors.xml L5 qm_surface（纯白卡片/navigationBar 底色） */
     val SurfaceLight: Color = Color(0xFFFFFFFF)
@@ -37,7 +37,7 @@ object QimengBrandColors {
     val SurfaceDark: Color = Color(0xFF242424)
 
     /** 日间软表面：输入/辅助区使用的中性灰，与白色内容卡分开。 */
-    val SurfaceSoftLight: Color = Color(0xFFF4F4F4)
+    val SurfaceSoftLight: Color = Color(0xFFEAEBEF)
 
     /** 深色软表面 = values-night/colors.xml L6 qm_surface_soft */
     val SurfaceSoftDark: Color = Color(0xFF2E2E2E)

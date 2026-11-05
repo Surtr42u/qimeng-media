@@ -14,6 +14,9 @@ import media.qimeng.app.core.model.AuthorType
 import media.qimeng.app.core.data.repository.AuthorManageRejectedException
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
+import media.qimeng.app.core.data.repository.CreatorProfileRepository
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import media.qimeng.app.core.model.AuthorSortOption
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.Zone
@@ -80,7 +83,21 @@ data class AuthorUiState(
 class AuthorViewModel @Inject constructor(
     private val authorRepository: AuthorRepository,
     val origUrlResolver: AssetOrigUrlResolver,
+    private val profiles: CreatorProfileRepository,
 ) : ViewModel() {
+
+    // 视口行共享有限读取槽，避免快速滚动同时堆积外部头像请求。
+    private val avatarSlots = Semaphore(AVATAR_CONCURRENCY)
+
+    suspend fun avatar(authorId: String): ByteArray? = avatarSlots.withPermit {
+        try {
+            profiles.avatar(authorId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null // 缺头像或来源读取失败时，列表保留作者首字。
+        }
+    }
 
     private val _uiState = MutableStateFlow(AuthorUiState())
     val uiState: StateFlow<AuthorUiState> = _uiState.asStateFlow()
@@ -344,6 +361,7 @@ class AuthorViewModel @Inject constructor(
     }
 
     companion object {
+        private const val AVATAR_CONCURRENCY = 2
         private const val LOAD_FAILED_MESSAGE = "作者列表加载失败，请下拉重试"
         private const val FOLLOW_FAILED_MESSAGE = "关注操作失败，请重试"
         private const val MANAGE_FAILED_PREFIX = "操作失败："

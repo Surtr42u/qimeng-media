@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
 /**
- * 日间背景保持均匀纯白，避免冷灰渐变与有色投影使整页显脏。
+ * 日间使用均匀柔和灰底，与白色卡片分层；避免有色渐变与投影干扰内容。
  * 内容卡只保留低强度中性阴影；使用现有 Compose 原生 API，无新依赖。
  * 不改变尺寸、点击区与滚动语义；深色仍保持既有材质。
  */

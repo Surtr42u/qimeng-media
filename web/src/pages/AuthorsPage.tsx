@@ -6,6 +6,7 @@ import { SearchIcon } from '@/components/shell/icons'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
 import { AuthorEditDialog } from '@/components/manage/AuthorEditDialog'
+import { AuthorAvatar } from '@/components/author/AuthorAvatar'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import {
   useAuthors,
@@ -168,16 +169,16 @@ export default function AuthorsPage() {
             {s.label}
           </button>
         ))}
-        <button
+        {zone !== 'cos' && <button
           type="button"
           className="pill"
           style={{ marginLeft: 'auto' }}
           onClick={() => setPrompt({ mode: 'create' })}
         >
           新建作者
-        </button>
+        </button>}
       </div>
-      <div className="rank-card a-list">
+      <div className="a-list">
         {isError ? (<p className="a-empty" role="alert">作者列表读取失败 <button className="pill" onClick={() => void refetch()}>重试</button></p>) : isLoading ? (
           <LoadingHint className="a-empty" />
         ) : rows.length ? (
@@ -185,17 +186,17 @@ export default function AuthorsPage() {
             {rows.map((a) => (
               <li key={a.id}>
                 <button type="button" className="author-identity" onClick={() => a.id && a.displayName && navigate(authorCollectionPath(a.id, a.displayName))}>
-                  <span className="author-avatar" aria-hidden="true">{Array.from(a.displayName ?? '?')[0]}</span>
-                  <span className="author-info"><strong>{authorDisplayName(a)}</strong><small>{a.fileCount ?? 0} 个文件 · {a.type === 'cos' ? '目录管理' : '常规作者'}</small></span>
+                  <AuthorAvatar authorId={a.id ?? ''} name={a.displayName ?? ''} />
+                  <span className="author-info"><strong>{a.displayName}</strong><small>{a.type === 'cos' && <span className="author-type">COS</span>}{a.fileCount ?? 0} 个文件</small></span>
                 </button>
                 <button type="button" className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`} disabled={toggleFollow.isPending}
                   onClick={() => a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed }, { onError: err => toast.error(manageFailureText(err)) })}>
                   {a.followed ? '已关注' : '关注'}
                 </button>
-                {a.type !== 'cos' && <>
+                {a.type !== 'cos' && <div className="author-manage-actions">
                   <button type="button" className="pill" onClick={() => setPrompt({ mode: 'rename', author: a })}>编辑资料</button>
                   <button type="button" className="pill" onClick={() => setDeleteTarget(a)}>删除</button>
-                </>}
+                </div>}
               </li>
             ))}
           </ul>

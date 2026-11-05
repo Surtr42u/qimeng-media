@@ -32,7 +32,11 @@ export function useCreatorProfile(authorId: string) {
       await qc.cancelQueries({ queryKey: key })
       return unwrapSdkResult(putApiV1AuthorsByAuthorIdProfile({ path: { authorId }, body: { ...body, evidenceUrls: body.evidenceUrls.map(url => url.trim()).filter(Boolean) } }))
     },
-    onSuccess: (data) => { qc.setQueryData(key, data); setDraft(null) },
+    onSuccess: (data) => {
+      qc.setQueryData(key, data)
+      void qc.invalidateQueries({ queryKey: [...key, 'avatar', 'current'], exact: true })
+      setDraft(null)
+    },
   })
   const refresh = useMutation({
     mutationFn: async () => {
@@ -72,12 +76,14 @@ export function useCreatorProfile(authorId: string) {
 }
 
 /** 头像只通过认证后的同源接口读取，不把 token 放进 URL 或发给第三方。 */
-export function useCreatorAvatar(authorId: string, source: string, revision: number) {
+export function useCreatorAvatar(authorId: string, source?: string, revision?: number) {
   const query = useQuery({
-    queryKey: [...profileKey(authorId), 'avatar', revision],
-    enabled: !!source,
+    queryKey: [...profileKey(authorId), 'avatar', revision ?? 'current'],
+    enabled: !!authorId && source !== '',
     queryFn: ({ signal }) => unwrapSdkResult(getApiV1AuthorsByAuthorIdProfileAvatar({ path: { authorId }, signal, parseAs: 'blob' })),
     retry: false,
+    staleTime: 60_000,
+    gcTime: 0,
   })
   const url = useMemo(() => query.data instanceof Blob ? URL.createObjectURL(query.data) : undefined, [query.data])
   useEffect(() => () => { if (url) URL.revokeObjectURL(url) }, [url])
