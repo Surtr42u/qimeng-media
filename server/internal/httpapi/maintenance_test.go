@@ -183,6 +183,12 @@ func TestMaintenanceListAndGetHTTP(t *testing.T) {
 		t.Fatalf("状态过滤异常: %+v", filtered.Items)
 	}
 
+	// 两笔任务共用同一 fake 时钟，排序由随机 UUID 的 id DESC 决定；
+	// 不假设 first/second 的插入顺序，按 id 词序推导期望顺序。
+	newer, older := first, second
+	if older.Id.String() > newer.Id.String() {
+		newer, older = older, newer
+	}
 	limitOne := 1
 	pageRec := httptest.NewRecorder()
 	s.GetApiV1MaintenanceJobs(pageRec, httptest.NewRequest(http.MethodGet, "/", nil), gen.GetApiV1MaintenanceJobsParams{Limit: &limitOne})
@@ -192,6 +198,9 @@ func TestMaintenanceListAndGetHTTP(t *testing.T) {
 	var page gen.MaintenanceJobList
 	if err := json.Unmarshal(pageRec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("解析分页失败: %v", err)
+	}
+	if len(page.Items) == 1 && page.Items[0].Id != newer.Id {
+		t.Fatalf("分页首页 id = %s，期望 %s", page.Items[0].Id, newer.Id)
 	}
 	if len(page.Items) != 1 || page.NextCursor == nil || *page.NextCursor == "" {
 		t.Fatalf("分页首页异常: %+v", page)
@@ -205,7 +214,7 @@ func TestMaintenanceListAndGetHTTP(t *testing.T) {
 	if err := json.Unmarshal(nextRec.Body.Bytes(), &secondPage); err != nil {
 		t.Fatalf("解析第二页失败: %v", err)
 	}
-	if len(secondPage.Items) != 1 || secondPage.Items[0].Id != first.Id {
+	if len(secondPage.Items) != 1 || secondPage.Items[0].Id != older.Id {
 		t.Fatalf("第二页异常: %+v", secondPage.Items)
 	}
 

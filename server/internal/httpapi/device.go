@@ -13,6 +13,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -138,6 +139,10 @@ func (s *Server) GetApiV1DeviceApplyTasks(w http.ResponseWriter, r *http.Request
 		opts.Status = deviceapply.Status(*params.Status)
 	}
 	if params.Limit != nil {
+		if *params.Limit < 1 {
+			s.writeDeviceApplyError(w, "列出设备结果包", fmt.Errorf("%w: limit 须在 1–%d", deviceapply.ErrInvalidInput, deviceapply.MaxListLimit))
+			return
+		}
 		opts.Limit = *params.Limit
 	}
 	if params.Cursor != nil {
