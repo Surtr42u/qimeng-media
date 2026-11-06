@@ -101,6 +101,21 @@
 | 503 | `RESEARCH_SIDECAR_UNAVAILABLE` | sidecar 不可达 |
 | 504 | `RESEARCH_SIDECAR_TIMEOUT` | 网关等待 sidecar 超过 120s（含进程内排队；sidecar 自报超时为 200 `status=timeout`） |
 
+## 命令行工具
+
+外部 AI 维护 CLI 已封装这三个端点（只读，无写入命令），无需再手写 HTTP；完整用法见 [工具 README](../../tools/ai_maintenance/README.md)。
+
+```powershell
+python -X utf8 tools/ai_maintenance/cli.py research context
+python -X utf8 tools/ai_maintenance/cli.py research provider --provider fxtwitter --operation author --target "@synthetic" --limit 5
+python -X utf8 tools/ai_maintenance/cli.py research lens --file "<本地图片>.png"
+```
+
+- 全部使用 `QIMENG_API_BASE`/`QIMENG_API_TOKEN`；缺配置退出码 2，不回显 token。默认输出人读摘要，全局 `--json` 输出与本节端点一致的原始 JSON。
+- `research provider` 不校验 provider 矩阵：矩阵外或非法参数按服务端 400 `INVALID_PARAM` 报错，不自动换 provider。
+- `research lens` 本地只按扩展名（`.jpg/.jpeg/.png/.webp`）与 20MiB 预检，真实类型仍由服务端按魔数嗅探；摘要只打印 `status`/`frameSha256`/`topTitles`/`links` 数量，不打印图片内容。
+- 研究**默认关闭**：需服务端 `research.enabled=true`；Lens 还需**另行部署**本机 loopback sidecar（服务端不启动、不托管）。未启用时 provider 查询返回 503 `RESEARCH_DISABLED`，Lens 返回 503 `RESEARCH_SIDECAR_DISABLED`。
+
 ## sidecar 契约（本机进程）
 
 sidecar 实现与部署细节见 [tools/research_sidecar/README.md](../../tools/research_sidecar/README.md)（PC/NAS 专用，Node + headless Edge，单实例串行）。

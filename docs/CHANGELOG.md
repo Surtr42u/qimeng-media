@@ -11,6 +11,14 @@
 - 署名补全（2026-10-23，用户明确确认）：2026-10-22 第五百七十五至第五百八十四笔原标未知，补为 GPT-6.1 Sol；各笔执行分工和历史验证边界不变。
 - 署名更正（2026-10-20，用户明确确认）：2026-10-19～20 的第五百三十八至第五百四十五笔原误署 GPT-6 或仅署 Codex，统一更正为 GPT-6.1 Sol；保留各条主代理/执行子代理及复核分工。
 
+## feat(tools): 研究核验 CLI 命令（context/provider/lens）（2026-11-07 第六百九十四笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- `tools/ai_maintenance/cli.py` 新增只读 `research` 命令组：`research context`（GET /api/v1/research/context，打印 enabled、sidecar configured/available/pending、provider 矩阵与限额）、`research provider --provider <name> --operation <author|post|work|artist|tags|url|workshop|search> --target <值> [--limit N]`（POST /api/v1/research/providers/{provider}/query；CLI 不硬编码矩阵，矩阵外/非法参数由服务端 400 透传）、`research lens --file <本地图片>`（POST /api/v1/research/lens 的 multipart 字段 file；扩展名与 20MiB 本地预检、150 秒超时、摘要只打印 status/frameSha256/topTitles/links 数量，不打印图片内容）。所有命令支持全局 `--json`；缺配置退出码 2 且不回显 token，图片字节不进入任何输出。
+- 规则包与文档同步：`rules.json` 三条 research capabilities 的 `cli` 指向实际命令、研究指南补 CLI 用法并删除「本切片未提供研究 CLI」，规则版本 `2026-11-06.3`；`rulepack.py` 去掉与指南重复的研究节并把 research 命令加入只读命令清单；`tools/ai_maintenance/README.md` 增研究示例与 `RESEARCH_DISABLED`/`RESEARCH_SIDECAR_*`/`RATE_LIMITED`/`INVALID_PARAM` 语义；`docs/api/research.md` 增「命令行工具」小节，注明研究默认关闭、sidecar 需另行部署。
+- 验证边界：`tools/test_ai_maintenance.py` 由 23 项增至 31 项并全部通过，仅用临时目录与 `127.0.0.1` 随机端口 stub（研究成功摘要与 --json、POST 路径/Bearer/JSON 体、multipart 字段与文件名、服务端 400/503 透传、缺配置、token 脱敏、本地文件预检）；未访问真实平台、未安装 sidecar、未触碰 8420 真库，也未改 OpenAPI/Go。`python -X utf8 tools/check_docs.py` 0 错误、`python -X utf8 tools/check_privacy.py --mode worktree` passed。第六百六十四笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
+
 ## feat(research): 媒体研究流水线 API 集成（provider 网关 + Lens sidecar）（2026-11-06 第六百九十三笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
@@ -265,9 +273,3 @@
 - 按用户要求清理8组已合并分支和3条已完成用途的代码生成分支，本地删除10条、远端删除11条，复核仅保留master与当前PR #24分支。删除前保存并验证Git恢复包，远端使用预期提交保护；工作区与无关未提交文档改动保留。
 - 原手机重连并核对同一目标后，同签名保留数据覆盖安装0.2.1/code10→11，来源5cf2658b；签名、非Debug/仅arm64、内嵌提交、FFmpeg三件套及候选/回拉已装APK字节一致，首次安装记录保留。未卸载/清数据或主动启动新版，冷启动及内嵌健康未验；电脑仍是同源新包并保持关闭。
 - 同步Android入口与交接，区分连接中断时的准备状态和重连后的实际安装；原第664笔阶段记录保留。只做Git引用维护与已授权安装，不改运行源码/协议/schema，不手动重跑业务套件。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## docs(app): 合并Android主线并安装电脑新包（2026-10-28 第六百六十四笔）
-
-- 按用户要求将PR #19合入master（71b186f2），同来源7c135d5c完整CI/安全/文档通过；PR #24同步主线仅有文档变化，生产代码及双端产物来源仍为已通过全部门禁的5cf2658b/code11。
-- 电脑已保留数据覆盖更新0.2.1/schema20：版本/清单/摘要、105份实际Web资源字节、healthz/readyz和只读数据库检查通过，配置/密钥保持，旧程序/Web保留；按安装前状态正常关闭后端，不打开前台。
-- 手机Release包同签名、code11、仅arm64/非Debug、内嵌提交和三件套摘要已核对；设备连接在安装前断开，尚未执行安装，当前仍为现场确认的e508a6fe/code10。已请求重连，未卸载/清数据；新包与旧APK已准备，待连接后继续保留数据覆盖并核对安装字节。交接明确区分已安装和待安装，不沿用旧证据。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。

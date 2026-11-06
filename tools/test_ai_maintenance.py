@@ -22,16 +22,36 @@ ROOT = Path(__file__).resolve().parents[1]
 OPENAPI = ROOT / "api" / "openapi.yaml"
 RULES = ROOT / "tools" / "ai_maintenance" / "rules.json"
 SYNTHETIC_TOKEN = "-".join(("synthetic", "test", "credential"))
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"synthetic-image-marker"
 
 
 class StubHandler(BaseHTTPRequestHandler):
     routes = {}
     seen = []
+    posts = []
     asset_page_responses = None
 
     def do_GET(self):
+        self._handle("GET")
+
+    def do_POST(self):
+        self._handle("POST")
+
+    def _handle(self, method):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        body = self.rfile.read(length) if length > 0 else b""
         parsed = parse.urlsplit(self.path)
         type(self).seen.append((self.path, self.headers.get("Authorization")))
+        type(self).posts.append({
+            "method": method,
+            "path": self.path,
+            "authorization": self.headers.get("Authorization"),
+            "content_type": self.headers.get("Content-Type"),
+            "body": body,
+        })
         if parsed.path == "/api/v1/assets" and type(self).asset_page_responses is not None:
             cursor = parse.parse_qs(parsed.query).get("cursor", [None])[0]
             status, payload, content_type = type(self).asset_page_responses.get(
@@ -112,16 +132,17 @@ class RulepackTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             pack = rulepack.build_rulepack(openapi_path=self.snapshot(directory))
         read = pack["capabilities"]["read"]
-        for name, path in (
-            ("research.context", "/api/v1/research/context"),
-            ("research.provider.query", "/api/v1/research/providers/{provider}/query"),
-            ("research.lens", "/api/v1/research/lens"),
+        for name, path, command in (
+            ("research.context", "/api/v1/research/context", "research context"),
+            ("research.provider.query", "/api/v1/research/providers/{provider}/query", "research provider"),
+            ("research.lens", "/api/v1/research/lens", "research lens"),
         ):
             entry = read[name]
             self.assertEqual("supported", entry["status"])
             self.assertIn(path, entry["endpoint"])
             self.assertTrue(entry["endpointPresent"])
             self.assertTrue(entry["requiresResearchEnabled"])
+            self.assertEqual(command, entry["cli"])
         research = [w for w in pack["workflows"] if w["id"] == "research-author-verify"]
         self.assertEqual(1, len(research))
         self.assertTrue(research[0]["status"].startswith("api-supported"))
@@ -188,6 +209,10 @@ class RulepackTest(unittest.TestCase):
         self.assertIn(pack["openapiSha256"], text)
         self.assertIn("写入能力（本切片一律 planned）", text)
         self.assertIn("context", text)
+        self.assertIn("research provider", text)
+        self.assertIn("research lens", text)
+        self.assertNotIn("本切片未提供研究 CLI", text)
+        self.assertEqual(1, text.count("## 研究/核验（默认关闭）"))
 
 
 class CliContextTest(unittest.TestCase):
@@ -246,6 +271,19 @@ class CliContextTest(unittest.TestCase):
             payload = json.loads(stderr)
             self.assertEqual("configuration_error", payload["error"])
 
+    def test_research_commands_need_config_without_echoing_token(self):
+        for argv in (
+            ["research", "context"],
+            ["research", "provider", "--provider", "fxtwitter", "--operation", "author", "--target", "@synthetic"],
+        ):
+            status, stdout, stderr = self.run_cli(argv, env={"QIMENG_API_TOKEN": SYNTHETIC_TOKEN})
+            self.assertEqual(2, status)
+            self.assertEqual("", stdout)
+            payload = json.loads(stderr)
+            self.assertEqual("configuration_error", payload["error"])
+            self.assertIn("QIMENG_API_BASE", payload["message"])
+            self.assertNotIn(SYNTHETIC_TOKEN, stdout + stderr)
+
 
 class CliHTTPTest(unittest.TestCase):
     @classmethod
@@ -271,8 +309,59 @@ class CliHTTPTest(unittest.TestCase):
             "/api/v1/authors": (200, [{"id": f"a{index}", "displayName": f"合成作者{index}"} for index in range(1, 6)], "application/json"),
             "/api/v1/authors/synthetic%20id/profile": (200, {"authorId": "synthetic id", "revision": 0}, "application/json"),
             "/api/v1/authors/synthetic%20id/sources": (200, {"sources": []}, "application/json"),
+            "/api/v1/research/context": (
+                200,
+                {
+                    "enabled": False,
+                    "sidecar": {"configured": False, "available": False},
+                    "providers": [
+                        {
+                            "name": "fxtwitter",
+                            "operations": ["author", "post"],
+                            "enabled": True,
+                            "limits": {"perMinute": 20, "perDay": 0},
+                        },
+                        {
+                            "name": "bing",
+                            "operations": ["search"],
+                            "enabled": True,
+                            "limits": {"perMinute": 20, "perDay": 0},
+                        },
+                    ],
+                    "limits": {"lensPerHour": 20, "lensPerDay": 100},
+                    "fetchedAt": "2026-11-07T00:00:00Z",
+                },
+                "application/json",
+            ),
+            "/api/v1/research/providers/fxtwitter/query": (
+                200,
+                {
+                    "provider": "fxtwitter",
+                    "operation": "author",
+                    "target": "@synthetic",
+                    "status": "ok",
+                    "fetchedAt": "2026-11-07T00:00:00Z",
+                    "latencyMs": 42,
+                    "items": [{"title": "合成作者主页", "url": "https://example.invalid/synthetic"}],
+                },
+                "application/json",
+            ),
+            "/api/v1/research/lens": (
+                200,
+                {
+                    "status": "ok",
+                    "frameSha256": "a" * 64,
+                    "topDomains": [],
+                    "topTitles": [{"title": "合成标题", "domain": "example.invalid"}],
+                    "cites": [],
+                    "links": [],
+                    "elapsedMs": 17000,
+                },
+                "application/json",
+            ),
         }
         StubHandler.seen = []
+        StubHandler.posts = []
         StubHandler.asset_page_responses = None
 
     def run_cli(self, argv, env=None):
@@ -425,6 +514,193 @@ class CliHTTPTest(unittest.TestCase):
             status, stdout, stderr = self.run_cli(["assets", "--limit", value])
             self.assertEqual(2, status)
             self.assertEqual("usage_error", json.loads(stderr)["error"])
+
+
+    def test_research_context_summary_reports_gate_matrix_and_limits(self):
+        status, stdout, stderr = self.run_cli(["research", "context"])
+        self.assertEqual(0, status)
+        self.assertEqual("", stderr)
+        self.assertEqual("/api/v1/research/context", StubHandler.seen[-1][0])
+        self.assertEqual("Bearer " + SYNTHETIC_TOKEN, StubHandler.seen[-1][1])
+        self.assertIn("研究：未启用", stdout)
+        self.assertIn("sidecar：未配置，不可用", stdout)
+        self.assertIn("RESEARCH_SIDECAR_DISABLED", stdout)
+        self.assertIn("- fxtwitter：author、post；每分钟 20 次", stdout)
+        self.assertIn("Lens 限额：每小时 20 次，每日 100 次", stdout)
+        self.assertNotIn(SYNTHETIC_TOKEN, stdout + stderr)
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(stdout)
+
+        status, stdout, stderr = self.run_cli(["--json", "research", "context"])
+        self.assertEqual(0, status)
+        self.assertEqual("", stderr)
+        payload = json.loads(stdout)
+        self.assertFalse(payload["enabled"])
+        self.assertEqual(["author", "post"], payload["providers"][0]["operations"])
+
+        StubHandler.routes["/api/v1/research/context"] = (
+            200,
+            {
+                "enabled": True,
+                "sidecar": {"configured": True, "available": True, "pending": 1},
+                "providers": [],
+                "limits": {"lensPerHour": 20, "lensPerDay": 100},
+            },
+            "application/json",
+        )
+        status, stdout, stderr = self.run_cli(["research", "context", "--json"])
+        self.assertEqual(0, status)
+        self.assertTrue(json.loads(stdout)["enabled"])
+
+        status, stdout, stderr = self.run_cli(["research", "context"])
+        self.assertEqual(0, status)
+        self.assertIn("研究：已启用", stdout)
+        self.assertIn("sidecar：已配置，可用，在途 1", stdout)
+
+    def test_research_provider_posts_json_body_and_summarizes(self):
+        status, stdout, stderr = self.run_cli([
+            "research", "provider", "--provider", "fxtwitter", "--operation", "author",
+            "--target", "@synthetic", "--limit", "3",
+        ])
+        self.assertEqual(0, status)
+        self.assertEqual("", stderr)
+        post = StubHandler.posts[-1]
+        self.assertEqual("POST", post["method"])
+        self.assertEqual("/api/v1/research/providers/fxtwitter/query", post["path"])
+        self.assertEqual("Bearer " + SYNTHETIC_TOKEN, post["authorization"])
+        self.assertEqual("application/json", post["content_type"])
+        self.assertEqual(
+            {"operation": "author", "target": "@synthetic", "options": {"limit": 3}},
+            json.loads(post["body"]),
+        )
+        self.assertIn("status：ok", stdout)
+        self.assertIn("items：1 条", stdout)
+        self.assertIn("耗时：42 ms", stdout)
+        self.assertIn("合成作者主页", stdout)
+        self.assertNotIn(SYNTHETIC_TOKEN, stdout + stderr)
+
+        status, stdout, stderr = self.run_cli([
+            "research", "provider", "--provider", "fxtwitter", "--operation", "author", "--target", "@synthetic",
+        ])
+        self.assertEqual(0, status)
+        self.assertNotIn("options", json.loads(StubHandler.posts[-1]["body"]))
+
+        status, stdout, stderr = self.run_cli([
+            "research", "provider", "--provider", "fxtwitter", "--operation", "author",
+            "--target", "@synthetic", "--json",
+        ])
+        self.assertEqual(0, status)
+        self.assertEqual("fxtwitter", json.loads(stdout)["provider"])
+
+    def test_research_provider_server_errors_pass_through(self):
+        StubHandler.routes["/api/v1/research/providers/unknown/query"] = (
+            400, {"code": "INVALID_PARAM", "message": "未知 provider"}, "application/json",
+        )
+        status, stdout, stderr = self.run_cli([
+            "research", "provider", "--provider", "unknown", "--operation", "author", "--target", "x",
+        ])
+        self.assertEqual(1, status)
+        self.assertEqual("", stdout)
+        payload = json.loads(stderr)
+        self.assertEqual(400, payload["status"])
+        self.assertEqual("http_error", payload["error"])
+        self.assertEqual("INVALID_PARAM", payload["body"]["code"])
+        self.assertIn(str(self.server.server_port), payload["target"])
+
+        StubHandler.routes["/api/v1/research/providers/bing/query"] = (
+            503, {"code": "RESEARCH_DISABLED", "message": "研究流水线未启用"}, "application/json",
+        )
+        status, stdout, stderr = self.run_cli([
+            "research", "provider", "--provider", "bing", "--operation", "search", "--target", "合成关键词",
+        ])
+        self.assertEqual(1, status)
+        payload = json.loads(stderr)
+        self.assertEqual(503, payload["status"])
+        self.assertEqual("RESEARCH_DISABLED", payload["body"]["code"])
+
+    def test_research_lens_posts_multipart_and_summarizes_counts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "synthetic.png"
+            image.write_bytes(PNG_BYTES)
+            status, stdout, stderr = self.run_cli(["research", "lens", "--file", str(image)])
+            self.assertEqual(0, status)
+            self.assertEqual("", stderr)
+            post = StubHandler.posts[-1]
+            self.assertEqual("POST", post["method"])
+            self.assertEqual("/api/v1/research/lens", post["path"])
+            self.assertEqual("Bearer " + SYNTHETIC_TOKEN, post["authorization"])
+            self.assertTrue(post["content_type"].startswith("multipart/form-data; boundary="))
+            self.assertIn(b'name="file"', post["body"])
+            self.assertIn(b'filename="synthetic.png"', post["body"])
+            self.assertIn(PNG_BYTES, post["body"])
+            self.assertIn("status：ok", stdout)
+            self.assertIn("frameSha256：" + "a" * 64, stdout)
+            self.assertIn("topTitles：1 条", stdout)
+            self.assertIn("links：0 条", stdout)
+            self.assertIn("耗时：17000 ms", stdout)
+            self.assertNotIn("synthetic-image-marker", stdout)
+            self.assertNotIn(SYNTHETIC_TOKEN, stdout + stderr)
+
+            status, stdout, stderr = self.run_cli(["research", "lens", "--file", str(image), "--json"])
+            self.assertEqual(0, status)
+            payload = json.loads(stdout)
+            self.assertEqual("ok", payload["status"])
+            self.assertEqual(1, len(payload["topTitles"]))
+
+    def test_research_lens_errors_are_classified_and_redacted(self):
+        StubHandler.routes["/api/v1/research/lens"] = (
+            502,
+            {"code": "RESEARCH_SIDECAR_ERROR", "message": "sidecar echoed " + SYNTHETIC_TOKEN},
+            "application/json",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "synthetic.jpg"
+            image.write_bytes(PNG_BYTES)
+            status, stdout, stderr = self.run_cli(["research", "lens", "--file", str(image)])
+        self.assertEqual(1, status)
+        self.assertEqual("", stdout)
+        payload = json.loads(stderr)
+        self.assertEqual(502, payload["status"])
+        self.assertEqual("RESEARCH_SIDECAR_ERROR", payload["body"]["code"])
+        self.assertNotIn(SYNTHETIC_TOKEN, stderr)
+        self.assertIn("<redacted>", stderr)
+        self.assertNotIn("synthetic-image-marker", stderr)
+
+    def test_research_lens_local_precheck_rejects_before_request(self):
+        before = len(StubHandler.posts)
+        with tempfile.TemporaryDirectory() as directory:
+            wrong = Path(directory) / "synthetic.gif"
+            wrong.write_bytes(PNG_BYTES)
+            empty = Path(directory) / "empty.png"
+            empty.write_bytes(b"")
+            oversized = Path(directory) / "oversized.webp"
+            with open(oversized, "wb") as handle:
+                handle.truncate(cli.MAX_LENS_BYTES + 1)
+            missing = Path(directory) / "missing.jpg"
+            for path, hint in (
+                (str(wrong), "JPEG/PNG/WebP"),
+                (str(empty), "空文件"),
+                (str(oversized), "20MiB"),
+                (str(missing), "无法读取"),
+            ):
+                status, stdout, stderr = self.run_cli(["research", "lens", "--file", path])
+                self.assertEqual(2, status)
+                self.assertEqual("", stdout)
+                payload = json.loads(stderr)
+                self.assertEqual("usage_error", payload["error"])
+                self.assertIn(hint, payload["message"])
+                self.assertNotIn(SYNTHETIC_TOKEN, stdout + stderr)
+        self.assertEqual(before, len(StubHandler.posts))
+
+    def test_research_provider_rejects_non_ascii_provider_name(self):
+        before = len(StubHandler.posts)
+        status, stdout, stderr = self.run_cli([
+            "research", "provider", "--provider", "合成 provider", "--operation", "author", "--target", "x",
+        ])
+        self.assertEqual(2, status)
+        self.assertEqual("", stdout)
+        self.assertEqual("usage_error", json.loads(stderr)["error"])
+        self.assertEqual(before, len(StubHandler.posts))
 
 
 if __name__ == "__main__":

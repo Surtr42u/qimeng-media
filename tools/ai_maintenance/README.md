@@ -1,6 +1,6 @@
 # AI 维护规则包与只读查询 CLI（P1）
 
-> 本目录是外部 AI 维护的 P1 切片：规则包 + 只读查询 CLI。**没有任何写入命令**；作者档案保存、删除/改名/改挂/合并、v2 导入、手机结果包与 MCP 适配器均标记为 planned。
+> 本目录是外部 AI 维护的 P1 切片：规则包 + 只读查询与研究核验 CLI。**没有任何写入命令**；作者档案保存、删除/改名/改挂/合并、v2 导入、手机结果包与 MCP 适配器均标记为 planned。
 >
 > 协议以 [api/openapi.yaml](../../api/openapi.yaml) 为准；领域规则以 [任务书](../../docs/AI_MAINTENANCE_TASKBOOK.md) 第 4–6 节和 [ADR-0052](../../docs/adr/0052-外部AI维护需求修订.md) 为准；作者字段用法见 [docs/api/authors.md](../../docs/api/authors.md)。
 
@@ -105,14 +105,38 @@ python -X utf8 tools/ai_maintenance/cli.py author-sources "<authorId>"
 
 两者都只是 `GET`：档案返回 revision/字段/候选，来源返回来源词列表；不包含 PUT。
 
+### research context / provider / lens
+
+研究核验同样只读，全部走同一组环境变量；研究默认关闭（`research.enabled=false`），Lens 依赖**另行部署**的本机 loopback sidecar。研究命令默认输出人读摘要，加全局 `--json`（放在子命令前后都可）输出原始 JSON。
+
+```powershell
+python -X utf8 tools/ai_maintenance/cli.py research context
+python -X utf8 tools/ai_maintenance/cli.py research provider --provider fxtwitter --operation author --target "@synthetic" --limit 5
+python -X utf8 tools/ai_maintenance/cli.py research provider --provider bing --operation search --target "合成关键词" --json
+python -X utf8 tools/ai_maintenance/cli.py research lens --file "<本地图片>.png"
+```
+
+- `research context`：`GET /api/v1/research/context`，打印 `enabled`、sidecar 的 configured/available/pending、provider 矩阵（operation 与限额）和 Lens 限额；研究关闭时仍可读。
+- `research provider`：`POST /api/v1/research/providers/{provider}/query`，请求体为 `{operation,target,options.limit}`。CLI **不硬编码矩阵**：未知 provider、矩阵外组合或非法参数由服务端返回 400 `INVALID_PARAM`（退出码 1），也不自动换 provider；200 响应打印 `status`、`items` 数量与 `error`。
+- `research lens`：`POST /api/v1/research/lens` 的 `multipart/form-data`（字段 `file`）。本地只预检扩展名（`.jpg/.jpeg/.png/.webp`）与 20MiB 上限，随后原样转发字节；真实类型由服务端按魔数嗅探。摘要只打印 `status`、`frameSha256`、`topTitles` 与 `links` 数量，**不打印图片内容**；`links` 为空是常态，不代表识别失败。单帧 17–40s，Lens 请求的 CLI 超时为 150 秒（其他命令仍 20 秒）。
+
+常见研究错误码（统一按 HTTP 非 2xx 处理：stderr `{status,error:"http_error",body}`，退出码 1）：
+
+- 503 `RESEARCH_DISABLED`：研究未启用；先设服务端 `research.enabled=true`。
+- 503 `RESEARCH_SIDECAR_DISABLED` / 503 `RESEARCH_SIDECAR_UNAVAILABLE` / 504 `RESEARCH_SIDECAR_TIMEOUT` / 502 `RESEARCH_SIDECAR_ERROR`：sidecar 未配置/不可达/超时/响应异常；部署并检查 sidecar，不要靠重试修复。
+- 429 `RATE_LIMITED`：Lens 预算耗尽或 sidecar 忙；等下一个窗口，不要并发重试。
+- 413 `TOO_LARGE` / 400 `INVALID_PARAM`：本地预检通常已先拦截；绕过或参数非法时按 message 修正。
+
+研究结果不入库，证据只落盘在服务端 `research-evidence` 目录；`status=ok` 或 Lens 的 `topTitles` 都不能直接写成作者 `verified`。
+
 ### 输出与退出码
 
-- 成功：上游 JSON（或 `null`）输出到 stdout；退出码 0。
+- 成功：上游 JSON（或 `null`）输出到 stdout；research 命令默认输出人读摘要，`--json` 输出原始 JSON；退出码 0。
 - HTTP 非 2xx：stderr 输出 `{status,error:"http_error",body,target}`；退出码 1。
 - 超时/网络错误：stderr 输出 `{error:"timeout"|"network_error",target}`；退出码 1。
 - 响应非 JSON/过大：stderr 输出固定错误类别；退出码 1。
 - 配置缺失/非法、参数约束、规则包生成失败：退出码 2。
-- `target` 只显示 host:port；任何输出都不含 token。CLI 禁用环境代理与重定向，单请求超时 20 秒、响应上限 2 MiB。
+- `target` 只显示 host:port；任何输出都不含 token。CLI 禁用环境代理与重定向，单请求超时 20 秒（Lens 150 秒）、响应上限 2 MiB。
 
 ## 规则包与指纹
 
@@ -128,7 +152,7 @@ python -X utf8 tools/ai_maintenance/cli.py author-sources "<authorId>"
 - 当前 OpenAPI 若已包含 `POST /api/v1/authors/merge`（本批次并发加入），规则包会把 `authorActions.merge.apiStatus` 标为 `available`，但 `authorActions.merge.status` 和 `capabilities.write.author.merge.status` 仍为 `planned`：本 CLI 不执行合并。若目标 checkout 尚未包含该端点，会自动回到 `planned`。
 - OpenAPI 或规则源变化后，重新运行 `context`；不要手工编辑 `api/openapi.yaml` 或生成物。
 
-运行 `context` 会输出实际 `rulesVersion`、`openapiSha256` 与路径数；不要把某一时点的哈希写死到部署脚本或任务记录，执行前重新读取。当前本切片规则版本为 `2026-11-06.1`。
+运行 `context` 会输出实际 `rulesVersion`、`openapiSha256` 与路径数；不要把某一时点的哈希写死到部署脚本或任务记录，执行前重新读取。当前本切片规则版本为 `2026-11-06.3`。
 
 ## AI 客户端接入模板
 
@@ -153,6 +177,9 @@ python -X utf8 tools/ai_maintenance/cli.py author-sources "<authorId>"
 | `author.query` | 支持 | `... authors [--page ... --size ...]` |
 | `author.profile.read` | 支持 | `... author-profile --author-id <authorId>` |
 | `author.sources.read` | 支持 | `... author-sources <authorId>` |
+| `research.context` | 支持 | `... research context [--json]` |
+| `research.provider.query` | 支持（服务端开关） | `... research provider --provider <name> --operation <op> --target <值>` |
+| `research.lens` | 支持（需本机 sidecar） | `... research lens --file <本地图片>` |
 | `author.cleanup.prepare` | planned | 暂无；不要用本地脚本猜测影响数量 |
 | `author.profile.update` | planned | 暂无写入命令 |
 | `author.cleanup.apply` | planned | 暂无写入命令 |
@@ -183,6 +210,7 @@ python -X utf8 tools/ai_maintenance/cli.py author-sources "<authorId>"
 
 - 任何写入：作者档案 PUT、删除、改名、改挂、合并、TXT 导入/重建、标签写入。
 - 作者清理 `prepare/apply`、备份导出/导入、手机结果包与后台 worker、两代分代目录。
+- 研究结论写回、证据目录管理、sidecar 安装/托管；Lens 必须另行部署本机 sidecar，研究开关由服务端配置决定。
 - 标签查询命令（标签只读且本轮不提供 CLI）、MCP server、Web 任务中心、持久任务队列。
 - 不写入标签；标签保持现行明文存储、FTS5、唯一约束与关联语义。
 
@@ -194,7 +222,7 @@ python -X utf8 tools/check_docs.py
 python -X utf8 tools/check_privacy.py --mode worktree
 ```
 
-测试只使用临时目录和 `127.0.0.1` 随机端口的 `http.server` stub，合成作者/URL/token；不请求真实 8420、不访问外网、不读写真实库。规则包测试覆盖必需键、指纹正确性、同字节稳定性、OpenAPI 变化导致指纹变化、未知端点降级；CLI 测试覆盖 context、缺配置退出码 2、health/libraries 的 URL 与 Authorization、assets 参数与 --page 跟随 cursor（不发送 page）、authors 本地分页、HTTP 错误 body、超时/网络分类、重定向拒绝与未知参数拒绝。
+测试只使用临时目录和 `127.0.0.1` 随机端口的 `http.server` stub，合成作者/URL/token/图片；不请求真实 8420、不访问外网、不读写真实库。规则包测试覆盖必需键、指纹正确性、同字节稳定性、OpenAPI 变化导致指纹变化、未知端点降级与研究 cli 映射；CLI 测试覆盖 context、缺配置退出码 2、health/libraries 的 URL 与 Authorization、assets 参数与 --page 跟随 cursor（不发送 page）、authors 本地分页、HTTP 错误 body、超时/网络分类、重定向拒绝与未知参数拒绝；研究命令另测 context/provider/lens 的成功摘要与 --json、POST 路径与 Bearer、JSON 请求体、服务端 400/503 透传、token 脱敏、multipart 字段/文件名与本地文件预检（扩展名、空文件、20MiB 上限、缺失文件）。
 
 ## 与权威文档的关系
 

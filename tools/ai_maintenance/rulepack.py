@@ -297,13 +297,6 @@ def render_markdown(pack: dict) -> str:
         lines.append("")
 
     lines.extend([
-        "## 研究/核验（默认关闭）",
-        "",
-        "- `GET /api/v1/research/context`：启停、sidecar 状态、provider 矩阵与限额；关闭时仍可读。",
-        "- `POST /api/v1/research/providers/{provider}/query`：fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵；矩阵外 400，上游失败以 status 表达且仍 200。",
-        "- `POST /api/v1/research/lens`：multipart file，需要本机 loopback sidecar；links 可为空，不得当作识别证据。",
-        "- 本切片未提供研究 CLI；研究端点直接走正式 API，启用需要服务端 `research.enabled=true` 与 sidecar 部署。",
-        "",
         "## 只读命令",
         "",
         "- `python -X utf8 tools/ai_maintenance/cli.py context [--markdown] [--out <path>]`",
@@ -313,8 +306,11 @@ def render_markdown(pack: dict) -> str:
         "- `python -X utf8 tools/ai_maintenance/cli.py authors [--page N] [--size N]`",
         "- `python -X utf8 tools/ai_maintenance/cli.py author-profile --author-id <authorId>`",
         "- `python -X utf8 tools/ai_maintenance/cli.py author-sources --author-id <authorId>`",
+        "- `python -X utf8 tools/ai_maintenance/cli.py research context [--json]`",
+        "- `python -X utf8 tools/ai_maintenance/cli.py research provider --provider <name> --operation <op> --target <值> [--limit N] [--json]`",
+        "- `python -X utf8 tools/ai_maintenance/cli.py research lens --file <本地图片> [--json]`",
         "",
-        "网络命令需要 `QIMENG_API_BASE` 与 `QIMENG_API_TOKEN`；缺少配置时退出码为 2。",
+        "网络命令需要 `QIMENG_API_BASE` 与 `QIMENG_API_TOKEN`；缺少配置时退出码为 2。research 命令默认输出人读摘要，`--json` 输出原始 JSON。",
         "",
     ])
 
