@@ -30,11 +30,13 @@ import (
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/buildinfo"
 	"qimeng-media/server/internal/config"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
 	"qimeng-media/server/internal/landiscovery"
 	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/mediawrite"
+	"qimeng-media/server/internal/research"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
@@ -102,6 +104,10 @@ func main() {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		bootLogger.Error("加载配置失败", "error", err, "configPath", *configPath)
+		os.Exit(1)
+	}
+	if err := configureLocalTimeZone(cfg.TimeZone); err != nil {
+		bootLogger.Error("配置本地时区失败", "error", err)
 		os.Exit(1)
 	}
 
@@ -248,8 +254,28 @@ func main() {
 	})
 	syncService := syncchannel.New(syncchannel.Options{Config: cfg, Queries: queries, Writes: writeService,
 		TXT: txtService, Mirror: mirrorWriter, Logger: logger, Now: time.Now})
+	creatorProfiles := creatorprofile.New(conn, queries, time.Now, logger)
+	// 媒体研究流水线（ADR-0053）：服务端 provider 网关 + 本机 Lens sidecar。
+	// 默认关闭（嵌入式/Android 同样默认关闭，不新增监听面）；启用时 provider
+	// 出口只走内建安全 HTTP 客户端，Lens 只转发给 loopback sidecar。端点/凭据
+	// 不合法在构造期报错——与配置校验同口径，拒绝带病启动。
+	researchService, err := research.New(research.Options{
+		Config: cfg.Research, DataDir: cfg.DataDir, Logger: logger, Now: time.Now,
+	})
+	if err != nil {
+		logger.Error("组装研究流水线失败", "error", err)
+		os.Exit(1)
+	}
+	if cfg.Research.Enabled {
+		logger.Info("媒体研究流水线已启用",
+			"sidecar", cfg.Research.SidecarEndpoint != "",
+			"lensPerHour", cfg.Research.LensPerHour,
+			"lensPerDay", cfg.Research.LensPerDay,
+			"providerPerMinute", cfg.Research.ProviderPerMinute)
+	}
 	apiSrv, err := httpapi.New(httpapi.Deps{
-		Revision: revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
+		CreatorProfiles: creatorProfiles,
+		Revision:        revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
 		Conn:        conn,
 		Queries:     queries,
 		Bus:         bus,
@@ -269,6 +295,7 @@ func main() {
 		Attach:     attachService,
 		Mirror:     mirrorWriter,
 		AuthorEdit: authorEditService,
+		Research:   researchService,
 	})
 	if err != nil {
 		logger.Error("组装 HTTP 服务失败", "error", err)
@@ -310,6 +337,8 @@ func main() {
 
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	creatorDone := make(chan struct{})
+	safego.Go(logger, "作者公开资料维护", func() { defer close(creatorDone); creatorProfiles.Run(ctx) })
 	defer stop()
 	closeDiscovery, discoveryErr := landiscovery.Start(cfg.Listen, logger)
 	if discoveryErr != nil {
@@ -388,6 +417,7 @@ func main() {
 	// 工作池先收：等在途缩略图任务排空；再关总线让 SSE 订阅者收流结束，
 	// 最后关库连接——顺序反了会出现"关库后任务/总线还在投递"的竞态窗口。
 	apiSrv.CloseRecommendCache()
+	<-creatorDone
 	if err := apiSrv.WaitThumbnailWarmup(shutdownCtx); err != nil {
 		logger.Warn("等待缩略图及图片尺寸回填退出超时", "error", err)
 	}

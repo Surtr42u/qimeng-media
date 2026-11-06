@@ -15,11 +15,13 @@ import (
 	"qimeng-media/server/internal/authorimport"
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/portablebackup"
+	"qimeng-media/server/internal/research"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
@@ -171,11 +173,15 @@ type Deps struct {
 	// 内部用同源 Conn/Queries/Attach/Mirror/Now/Logger 构造缺省实例——
 	// 服务只依赖注入的原语，缺省即生产实现，不创建第二套权威状态；
 	// 生产 main 显式装配是规范形态。
-	AuthorEdit *authoredit.Service
+	AuthorEdit      *authoredit.Service
+	CreatorProfiles *creatorprofile.Service
 	// Revision 库内容修订号服务（GET /api/v1/library/revision 与 bump 链
 	// 的唯一读写通道，libraryrevision 包）；nil 时 New 内部用 deps.Queries
 	// 构造缺省实例并引导基线——Service 只依赖 store，缺省即生产实现。
 	Revision *libraryrevision.Service
+	// Research 媒体研究流水线服务（internal/research，ADR-0053）；nil 时
+	// New 内部按 deps.Cfg.Research 构造缺省实例（生产 main 显式装配）。
+	Research *research.Service
 }
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
@@ -217,9 +223,13 @@ type Server struct {
 	mirror *authorattach.MirrorWriter
 	// authorEdit 作者编辑用例服务（Deps.AuthorEdit 的落位）：作者管理/
 	// 来源区/资产作者替换/词表预填的事务宿主（Q1 事务下沉）。
-	authorEdit *authoredit.Service
+	authorEdit      *authoredit.Service
+	creatorProfiles *creatorprofile.Service
 	// rev 库内容修订号服务（Deps.Revision 的落位；handler 与 bump 链共用）。
 	rev *libraryrevision.Service
+	// research 媒体研究流水线服务（Deps.Research 的落位；默认关闭时仍存在，
+	// 由 research.Service 自己回报 enabled=false）。
+	research *research.Service
 	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
 	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
 	uploads *uploadsess.Manager
@@ -314,6 +324,10 @@ func New(deps Deps) (*Server, error) {
 		startedAt:      now(),
 	}
 	s.writes = deps.Writes
+	s.creatorProfiles = deps.CreatorProfiles
+	if s.creatorProfiles == nil {
+		s.creatorProfiles = creatorprofile.New(deps.Conn, deps.Queries, now, logger)
+	}
 	s.thumbWarmup = thumbnailwarmup.New(s.q, s.thumbs, logger, s.startedAt.Add(s.cfg.Thumbnail.WarmupDelay), s.bus)
 	if s.writes == nil {
 		s.writes = mediawrite.New(mediawrite.Options{Conn: deps.Conn, Queries: deps.Queries,
@@ -327,11 +341,29 @@ func New(deps Deps) (*Server, error) {
 				return err
 			}})
 	}
+	// 研究流水线缺省兜底：只依赖配置与日志，缺省即生产形态；sidecar 端点
+	// 不合法会在构造期报错，宁可拒绝启动也不带病运行。
+	s.research = deps.Research
+	if s.research == nil {
+		researchSvc, researchErr := research.New(research.Options{
+			Config: deps.Cfg.Research, DataDir: deps.Cfg.DataDir, Logger: logger, Now: now,
+		})
+		if researchErr != nil {
+			return nil, researchErr
+		}
+		s.research = researchSvc
+	}
 	s.txt = deps.TXT
 	if s.txt == nil {
 		s.txt = authorimport.New(deps.Conn, deps.Queries, now, logger)
 	}
 	s.portable = portablebackup.New(portablebackup.Options{Conn: s.conn, Queries: s.q, TXT: s.txt, Mirror: s.mirror, Now: s.now, Logger: s.logger, Changed: s.notifyPortableImport})
+	if s.creatorProfiles.AfterSave == nil {
+		s.creatorProfiles.AfterSave = func(ctx context.Context) {
+			s.mirror.Refresh(ctx, s.q)
+			s.publishLibraryChanged()
+		}
+	}
 
 	s.sync = deps.Sync
 	if s.sync == nil {

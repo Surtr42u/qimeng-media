@@ -61,6 +61,13 @@ const (
 	codeRateLimited        = "RATE_LIMITED"
 	codeBackupInProgress   = "BACKUP_IN_PROGRESS"
 	codeBackupUnavailable  = "BACKUP_UNAVAILABLE"
+	// 研究流水线（ADR-0053）：RESEARCH_DISABLED=整体关闭；sidecar 三类分别
+	// 对应未配置/不可达（503）、超时（504）、异常响应（502）。
+	codeResearchDisabled           = "RESEARCH_DISABLED"
+	codeResearchSidecarDisabled    = "RESEARCH_SIDECAR_DISABLED"
+	codeResearchSidecarUnavailable = "RESEARCH_SIDECAR_UNAVAILABLE"
+	codeResearchSidecarTimeout     = "RESEARCH_SIDECAR_TIMEOUT"
+	codeResearchSidecarError       = "RESEARCH_SIDECAR_ERROR"
 )
 
 // contentTypeJSON 全部 JSON 响应的 Content-Type 唯一取值（charset 显式

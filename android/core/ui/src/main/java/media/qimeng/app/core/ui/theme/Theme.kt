@@ -23,12 +23,12 @@ import androidx.compose.ui.graphics.luminance
  */
 private val LightColorScheme = lightColorScheme(
     primary = QimengBrandColors.PrimaryLight,
-    onPrimary = QimengBrandColors.BgLight,
+    onPrimary = QimengBrandColors.SurfaceLight,
     primaryContainer = QimengBrandColors.PrimaryContainerLight,
     onPrimaryContainer = QimengBrandColors.TextPrimaryLight,
     inversePrimary = QimengBrandColors.PrimaryDark,
     secondary = QimengBrandColors.AccentLight,
-    onSecondary = QimengBrandColors.BgLight,
+    onSecondary = QimengBrandColors.SurfaceLight,
     secondaryContainer = QimengBrandColors.ChipBgLight,
     onSecondaryContainer = QimengBrandColors.TextSecondaryLight,
     tertiary = QimengBrandColors.AccentLight,
@@ -45,7 +45,7 @@ private val LightColorScheme = lightColorScheme(
     // tonalElevation 视觉无效，保住旧版纯白卡片观感（无旧版 token，近似值）
     surfaceTint = QimengBrandColors.SurfaceLight,
     surfaceBright = QimengBrandColors.SurfaceLight,
-    // 日间整页与卡片纯白；辅助容器只用中性灰，不引入蓝紫底色。
+    // 日间灰底与白卡分层，辅助容器继续使用低饱和中性灰。
     surfaceDim = QimengBrandColors.DividerLight,
     surfaceContainerLowest = QimengBrandColors.SurfaceLight,
     // 内容卡保持纯白，轻微中性阴影仅用于区分卡片边界。

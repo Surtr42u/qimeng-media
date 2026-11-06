@@ -1,0 +1,565 @@
+{
+  "schemaVersion": 1,
+  "rulesVersion": "2026-11-06.3",
+  "source": {
+    "openapi": "api/openapi.yaml",
+    "taskbook": "docs/AI_MAINTENANCE_TASKBOOK.md",
+    "adr": "docs/adr/0052-外部AI维护需求修订.md",
+    "note": "仅用于溯源与排障；规则包运行时自包含，不依赖仓库文档。"
+  },
+  "guide": {
+    "title": "绮梦影库 AI 维护规则包（P1 只读）",
+    "summary": "面向外部 AI 的机器可读规则与中文指南。本切片只有规则上下文和只读查询；作者档案、作者清理、备份导入与跨端应用等写入能力一律标记 planned，不得声称已实现。",
+    "sections": [
+      {
+        "heading": "先看边界",
+        "points": [
+          "P1 只提供规则上下文与只读查询；本规则包不包含任何可执行写入命令。",
+          "AI 不生成或修改标签，不直连数据库；业务写入只能走正式 API 和领域服务。",
+          "规则包指纹是 api/openapi.yaml 原始字节的 SHA-256；执行前发现指纹变化时，重新获取 context 并复核计划。",
+          "8420 真库禁止测试写入；验证只用隔离实例、临时目录和合成数据。"
+        ]
+      },
+      {
+        "heading": "只读查询",
+        "points": [
+          "context 纯本地，不联网，也不要求 token；health/libraries/assets/authors/author-profile/author-sources 与 research 命令需要 QIMENG_API_BASE 与 QIMENG_API_TOKEN。",
+          "assets 端点使用 cursor + limit；CLI 的 --page 只是按 nextCursor 顺序取页、不会发送 page 参数。authors 端点返回全量数组，--page/--size 只是客户端切片。",
+          "网络命令成功时把上游 JSON 输出到 stdout；research 命令默认输出人读摘要，加全局 --json 输出原始 JSON。HTTP 非 2xx 输出 {status,error,body} 到 stderr 并以非零码退出。",
+          "错误输出只显示目标 host:port，不打印 token；Lens 只在本地读取图片并转发，摘要不打印图片内容。"
+        ]
+      },
+      {
+        "heading": "作者档案写入要点（planned）",
+        "points": [
+          "先 GET /api/v1/authors/{authorId}/profile 取得 revision，再准备完整 CreatorProfileWrite；409 表示版本已变化，必须重读并核对人工修改，禁止盲目重试覆盖。",
+          "biography 最多 2000 字符；xProfile.biography 最多 1000；xProfile.biographyZh 最多 2000；长度按 Unicode 码点计算。",
+          "evidenceUrls 最多 8 条，每条最多 2000 字符；单条不能为空；所有 URL 必须是 HTTPS 公网地址。",
+          "status=verified 必须同时有非空 homepageUrl 和至少 1 条 evidenceUrls；研究结果先写 candidate，弱线索不能单独支撑 verified。",
+          "autoRefresh 默认关闭，开启需 verified 且 homepageUrl 非空；trackUpdates 默认关闭，开启需 verified 且 feedUrl 非空。"
+        ]
+      },
+      {
+        "heading": "作者清理（planned）",
+        "points": [
+          "删除作者是三清：移除全部 TXT 片段块、asset_authors 关联和作者行；媒体与资产保留。执行前必须先出影响数量。",
+          "改名会原地重写 TXT 别名并迁移身份、关注标记、关联与上传条目；新身份撞其他作者返回 409，本端点不做合并。",
+          "改挂使用 PUT /api/v1/assets/{assetId}/authors；authorIds 与 newAuthorNames 取并集；移除关联会删除作品行；仅 authorAttach=true 的库可用。",
+          "重复作者合并使用专用端点 POST /api/v1/authors/merge：原子、不可撤销，执行前仍须出计划与影响数量，禁止客户端用多次删除/改挂模拟事务性合并。",
+          "搁置作者的判定阈值不预设；先列候选、证据和影响数量，由用户确认后再执行。"
+        ]
+      },
+      {
+        "heading": "研究/核验（默认关闭）",
+        "points": [
+          "三个研究端点：GET /api/v1/research/context、POST /api/v1/research/providers/{provider}/query、POST /api/v1/research/lens；全部走 Bearer，默认 research.enabled=false 时 context 仍可读、查询 503 RESEARCH_DISABLED。",
+          "研究命令：python -X utf8 tools/ai_maintenance/cli.py research context；research provider --provider <name> --operation <author|post|work|artist|tags|url|workshop|search> --target <值> [--limit N]；research lens --file <本地图片>。默认人读摘要，加全局 --json 输出原始 JSON。",
+          "provider v1 固定矩阵：fxtwitter(author,post)、pixiv(author,work)、yandere(artist,tags)、e621(post,tags)、wayback(url)、steam(workshop)、bing(search)；矩阵外组合由服务端 400 INVALID_PARAM，CLI 不自行拦截矩阵、也不自动换 provider。",
+          "证据等级只看平台接口字段：bing/wayback 只是线索；单个 provider 失败以 status=provider_unavailable 表达且仍 200，可按需改走其他 provider 或人工核对，不要重复重试打爆预算。",
+          "Lens 走 PC 本地 loopback sidecar（单实例串行、单帧 17–18s，实测 25–40s）：links[] 经常为空，不得当作识别证据；status=ok 不等于认出作者。CLI 本地只按扩展名（.jpg/.jpeg/.png/.webp）与 20MiB 上限预检，真实类型由服务端按魔数嗅探。",
+          "超限语义：provider 查询返回 status=rate_limited（200）；Lens 返回 429 RATE_LIMITED；sidecar 未配置/不可达/超时/异常分别 503 RESEARCH_SIDECAR_DISABLED、503 RESEARCH_SIDECAR_UNAVAILABLE、504 RESEARCH_SIDECAR_TIMEOUT、502 RESEARCH_SIDECAR_ERROR。",
+          "研究结果不入库，证据只落盘到 server 的 research-evidence 目录；不要把研究结论直接写成作者 verified，先按作者档案候选口径人工审核。"
+        ]
+      },
+      {
+        "heading": "备份与跨端（planned）",
+        "points": [
+          "导入前必须先导出当前实例的完整 v2 备份与摘要；导出保存失败即中止导入。",
+          "作者主表 TXT 只含作者身份、作品行与来源区，不含头像、简介和译文；完整资料必须走 v2 导入。",
+          "v2 分段合并保持现有语义：事件身份幂等合并、收藏/关注并集、作者档案保留本端并补缺、TXT 按 keep 重建、appPrefs 覆盖。",
+          "手机无前台应用时，只能由 PC 生成结果包；手机在充电与 Wi-Fi 约束下后台拉取，先导出两代备份，再校验版本/指纹/摘要，分段应用并回读。手机不开放入站端口。",
+          "错误指纹、版本不符、摘要错配或结构非法必须在任何写入前拒绝；后段失败保留已提交段，不得宣称整份成功。"
+        ]
+      },
+      {
+        "heading": "错误与凭据",
+        "points": [
+          "401 检查 QIMENG_API_TOKEN 是否设置或失效，不回显 token；404 重新查询对象；409 重读并按冲突类型处理。",
+          "409 profile revision：重新 GET，核对本次字段与人工修改后重提；409 改名冲突：不要自动合并，先出计划；409 TXT_CONFLICT：必须显式选择 keep 或 remove。",
+          "token 只从 QIMENG_API_TOKEN 环境变量读取，不打印、不写日志、不写入输出、规则包、任务记录或结果包。",
+          "本机可信执行端对 qimeng-data 只读；业务数据写入只经正式 API；不向外部模型导出密钥或令牌。"
+        ]
+      }
+    ]
+  },
+  "capabilities": {
+    "read": {
+      "project.context": {
+        "status": "supported",
+        "cli": "context",
+        "network": false,
+        "description": "返回本规则包；包含 OpenAPI 路径、字段规则、工作流、错误码与 openapiSha256。"
+      },
+      "health.check": {
+        "status": "supported",
+        "cli": "health",
+        "endpoint": "GET /api/v1/healthz",
+        "alternativeEndpoint": "GET /api/v1/readyz",
+        "description": "存活/就绪探针；默认 healthz，--ready 使用 readyz。"
+      },
+      "library.query": {
+        "status": "supported",
+        "cli": "libraries",
+        "endpoint": "GET /api/v1/libraries"
+      },
+      "asset.query": {
+        "status": "supported",
+        "cli": "assets",
+        "endpoint": "GET /api/v1/assets",
+        "querySubset": ["limit", "cursor", "q", "libraryId", "mediaType", "sort", "order"],
+        "cliOnlyOptions": {
+          "page": "按 nextCursor 顺序取第 N 页（最多 50），不向服务端发送 page 参数；与 --cursor 互斥。"
+        }
+      },
+      "author.query": {
+        "status": "supported",
+        "cli": "authors",
+        "endpoint": "GET /api/v1/authors",
+        "pagination": "端点返回全量数组；--page/--size 为客户端切片。"
+      },
+      "author.profile.read": {
+        "status": "supported",
+        "cli": "author-profile",
+        "endpoint": "GET /api/v1/authors/{authorId}/profile"
+      },
+      "author.sources.read": {
+        "status": "supported",
+        "cli": "author-sources",
+        "endpoint": "GET /api/v1/authors/{authorId}/sources"
+      },
+      "research.context": {
+        "status": "supported",
+        "cli": "research context",
+        "endpoint": "GET /api/v1/research/context",
+        "requiresResearchEnabled": true,
+        "description": "研究能力上下文：启停、sidecar 状态、provider 矩阵与限额；研究关闭时仍可读（enabled=false）。CLI 打印启停/sidecar/provider 矩阵/限额，--json 输出原始 JSON。"
+      },
+      "research.provider.query": {
+        "status": "supported",
+        "cli": "research provider",
+        "endpoint": "POST /api/v1/research/providers/{provider}/query",
+        "requiresResearchEnabled": true,
+        "description": "按 provider+operation 查询作者/作品/标签/存档/工坊/搜索；矩阵外组合由服务端 400，上游失败以 status 表达且仍 200。CLI 参数 --provider/--operation/--target/--limit。"
+      },
+      "research.lens": {
+        "status": "supported",
+        "cli": "research lens",
+        "endpoint": "POST /api/v1/research/lens",
+        "requiresResearchEnabled": true,
+        "description": "Lens 视觉反查代理：multipart file（JPEG/PNG/WebP ≤20MiB），需要本机 loopback sidecar；links 可为空，不得当作证据。CLI 用 --file 本地预检扩展名/上限，摘要只打印 status/frameSha256/计数。"
+      },
+      "backup.export": {
+        "status": "planned",
+        "endpoint": "GET /api/v1/export/qimeng-backup",
+        "description": "本切片未暴露导出命令；跨端应用前仍必须先导出。"
+      },
+      "author.cleanup.prepare": {
+        "status": "planned",
+        "description": "目标契约中的只读清点；本切片未提供候选/影响数量命令。"
+      }
+    },
+    "write": {
+      "author.profile.update": {
+        "status": "planned",
+        "endpoint": "PUT /api/v1/authors/{authorId}/profile",
+        "description": "完整 CreatorProfileWrite + revision；本切片只读，不执行。"
+      },
+      "author.delete": {
+        "status": "planned",
+        "endpoint": "DELETE /api/v1/authors/{authorId}",
+        "description": "删除作者三清；先出影响数量，执行后回读。"
+      },
+      "author.rename": {
+        "status": "planned",
+        "endpoint": "PUT /api/v1/authors/{authorId}",
+        "description": "改名并迁移身份；409 不自动合并。"
+      },
+      "asset.authors.replace": {
+        "status": "planned",
+        "endpoint": "PUT /api/v1/assets/{assetId}/authors",
+        "description": "整体替换资产作者关联；可带 newAuthorNames 按名新建。"
+      },
+      "author.merge": {
+        "status": "planned",
+        "endpoint": "POST /api/v1/authors/merge",
+        "description": "专用原子合并端点已出现；本切片仍只读，不实现写入。"
+      },
+      "author.cleanup.apply": {
+        "status": "planned",
+        "endpoint": null,
+        "description": "按已确认计划执行删除、改名、改挂与合并，绑定计划指纹/幂等键并逐项回读。"
+      },
+      "backup.import": {
+        "status": "planned",
+        "endpoint": "POST /api/v1/import/qimeng-backup",
+        "description": "v2 分段导入；导入前先导出，失败保留已提交段。"
+      },
+      "device.apply.prepare": {
+        "status": "planned",
+        "endpoint": null,
+        "description": "PC 生成手机结果包与摘要；协议未实现。"
+      },
+      "device.apply.submit": {
+        "status": "planned",
+        "endpoint": null,
+        "description": "手机后台 worker 回传应用结果；协议未实现。"
+      },
+      "device.apply.status": {
+        "status": "planned",
+        "endpoint": null,
+        "description": "查询登记/领取/导出/应用/回读/失败阶段；协议未实现。"
+      }
+    }
+  },
+  "fields": {
+    "authorProfile": {
+      "endpoint": "GET/PUT /api/v1/authors/{authorId}/profile",
+      "requiredForPut": ["revision", "nickname", "biography", "avatarUrl", "homepageUrl", "evidenceUrls", "status", "autoRefresh", "feedUrl", "trackUpdates"],
+      "notes": [
+        "PUT 是完整字段提交：先 GET 当前资料，按本次明确修改合并，其余分组保持原值。",
+        "长度单位是 Unicode 码点（rune），不是 UTF-8 字节。",
+        "除换行和制表符外的控制字符会导致 400 INVALID_PARAM。",
+        "xProfile 整个对象可以省略；旧客户端省略时服务端保留原值。"
+      ],
+      "revision": {
+        "type": "integer",
+        "format": "int64",
+        "minimum": 0,
+        "rules": "GET 后使用当前 revision 提交；409 表示资料已变化，必须重读并重新核对本次字段与人工修改，禁止盲目重试覆盖。"
+      },
+      "nickname": {
+        "type": "string",
+        "maxLength": 200,
+        "rules": "首尾不能有空白；控制字符（换行/制表除外）拒绝。"
+      },
+      "biography": {
+        "type": "string",
+        "maxLength": 2000,
+        "rules": "整理后的简介，与 X 原文分开保存；省略或空字符串的含义按协议处理。"
+      },
+      "biographyZh": {
+        "path": "xProfile.biographyZh",
+        "type": "string",
+        "maxLength": 2000,
+        "rules": "顶层没有 biographyZh；中文译文必须放在 xProfile 内。省略且账号与原文相同时保留已有译文，显式空字符串清空。"
+      },
+      "xProfile": {
+        "type": "object",
+        "required": ["url", "biography"],
+        "notes": "url 为空时 biography 与 biographyZh 必须为空；非空 url 必须是可识别的 X/Twitter 账号主页。",
+        "url": {
+          "type": "string",
+          "maxLength": 2000,
+          "rules": "HTTPS X/Twitter 账号主页，可为空；搜索、设置等非账号路径拒绝。"
+        },
+        "biography": {
+          "type": "string",
+          "maxLength": 1000,
+          "rules": "已核对账号的简介原文，可为空。"
+        },
+        "biographyZh": {
+          "type": "string",
+          "maxLength": 2000,
+          "rules": "中文译文；绑定同一账号及原文；原文为空时译文必须为空。"
+        }
+      },
+      "evidenceUrls": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "rules": [
+          "每条必须是非空 HTTPS 公网 URL，单条最多 2000 字符；空字符串 400。",
+          "账号主页、原帖、作品下载页分别标明用途；宣传图或转载标签不能单独作为核实证据。",
+          "verified 至少需要 1 条证据；最多 8 条。"
+        ]
+      },
+      "status": {
+        "type": "string",
+        "enum": ["empty", "candidate", "verified"],
+        "rules": {
+          "empty": "无公开档案或已清空。",
+          "candidate": "研究结果默认写入，供人工审阅；不能开启 autoRefresh 或 trackUpdates。",
+          "verified": "必须同时有非空 homepageUrl 和至少 1 条 evidenceUrls；昵称、水印、转载标签等弱线索不能单独支撑。"
+        }
+      },
+      "homepageUrl": {
+        "type": "string",
+        "maxLength": 2000,
+        "rules": "作者主页，HTTPS 公网 URL；verified 时必填；autoRefresh 开启时必填。"
+      },
+      "avatarUrl": {
+        "type": "string",
+        "maxLength": 2000,
+        "rules": "HTTPS 公网 URL；离线 avatarData 只在 v2 备份作者段，不在 profile PUT。"
+      },
+      "autoRefresh": {
+        "type": "boolean",
+        "default": false,
+        "rules": "默认关闭；开启必须 status=verified 且 homepageUrl 非空。"
+      },
+      "feedUrl": {
+        "type": "string",
+        "maxLength": 2000,
+        "rules": "RSS/Atom 地址；trackUpdates 开启时必须非空且 status=verified。"
+      },
+      "trackUpdates": {
+        "type": "boolean",
+        "default": false,
+        "rules": "默认关闭；开启必须 status=verified 且 feedUrl 非空。"
+      }
+    }
+  },
+  "authorActions": {
+    "delete": {
+      "status": "planned",
+      "apiStatus": "available",
+      "endpoint": "DELETE /api/v1/authors/{authorId}",
+      "summary": "删除作者三清：全部 TXT 片段块、asset_authors 关联、作者行；媒体与资产保留。",
+      "preconditions": [
+        "仅常规作者；COS 作者返回 400 INVALID_PARAM。",
+        "作者不存在返回 404，不静默成功。",
+        "执行前必须先输出影响数量（块、作品行、关联、上传条目）。"
+      ],
+      "effects": [
+        "该作者在全部片段中的块整块移除，直排空行一并清理。",
+        "asset_authors 全部关联删除，媒体文件与资产本体保留。",
+        "imported_txt_upload_entries 中该作者条目同步清除。",
+        "作者行删除，关注标记随行消亡。"
+      ],
+      "readback": ["确认作者不存在", "确认关联数为 0", "确认媒体文件仍在", "确认其他作者块未被误改"]
+    },
+    "rename": {
+      "status": "planned",
+      "apiStatus": "available",
+      "endpoint": "PUT /api/v1/authors/{authorId}",
+      "summary": "改名并迁移身份；TXT 别名原地重写，关注标记、关联与上传条目随迁。",
+      "rules": [
+        "仅常规作者；COS 返回 400。",
+        "同身份幂等 200，零写入；新身份命中其他既有作者（含 COS）返回 409，本端点不做合并。",
+        "回读 id 必须等于迁移后的身份，保证块回读 id 与目标作者行一致。",
+        "新显示名最多 200 字符；非法名 400；首别名决定 GenerateAuthorID。"
+      ],
+      "readback": ["GET /api/v1/authors 核对 id 与 displayName", "GET author sources 核对块仍归属新身份", "核对关注标记与资产关联数"]
+    },
+    "reattach": {
+      "status": "planned",
+      "apiStatus": "available",
+      "endpoint": "PUT /api/v1/assets/{assetId}/authors",
+      "summary": "整体替换资产作者关联；authorIds 与 newAuthorNames 取并集，移除即删除作品行，已关联作者幂等补行。",
+      "rules": [
+        "authorIds 必填；空数组表示解除全部常规作者关联。",
+        "newAuthorNames 最多 20 项；按规范身份复用已有常规作者，未命中才新建。",
+        "仅 capabilities.authorAttach=true 的库接受，否则 400。",
+        "COS 作者不参与该端点。",
+        "仅解除业务关联，媒体文件保留；永久删除媒体走独立管理操作。"
+      ],
+      "readback": ["GET /api/v1/assets/{assetId} 核对 authors", "核对作者块作品行已增/删", "核对资产本体与文件未变"]
+    },
+    "merge": {
+      "status": "planned",
+      "apiStatus": "available",
+      "endpoint": "POST /api/v1/authors/merge",
+      "summary": "专用端点 POST /api/v1/authors/merge 原子合并重复作者：源身份删除并并入目标身份；不可撤销。本切片仍只读，不执行写入。",
+      "requestFields": {
+        "required": ["sourceAuthorId", "targetAuthorId"],
+        "rules": "两个 ID 必须不同且都是存在的常规作者；COS 作者 400 INVALID_PARAM；任一不存在 404；相同 ID 400。"
+      },
+      "resultFields": ["sourceAuthorId", "targetAuthorId", "assetsMoved", "associationsDeduped", "worksMerged", "sourcesMerged", "aliasesMerged", "followsMerged", "profileMoved", "sourceProfileDiscarded", "uploadEntriesMoved", "deletedSource"],
+      "planFields": [
+        "保留身份（targetAuthorId/displayName）",
+        "删除身份（sourceAuthorId/displayName）",
+        "两边作品行与资产关联清单",
+        "关注标记取舍",
+        "作者档案取舍（目标已有非空档案则保留；目标无档案而源有则迁移；两端都有则源档案丢弃并置 sourceProfileDiscarded=true）",
+        "影响数量与计划指纹"
+      ],
+      "execution": [
+        "OpenAPI 已有专用原子合并端点：只提交 sourceAuthorId/targetAuthorId；计划指纹与幂等键由上游任务记录保存（端点本身不接受额外字段），执行后逐项回读。",
+        "合并不可撤销、无撤销端点、不保留源身份快照；执行前必须由 author.cleanup.prepare 出候选与影响数量，并经用户或任务授权确认。",
+        "同一事务任一步失败整体回滚、零副作用；重复调用（源已删）返回 404。",
+        "不得把多次 DELETE/PUT 拼成客户端事务冒充合并。"
+      ],
+      "readback": ["保留身份存在且资料/关注标记符合计划", "删除身份不再存在", "无孤立 asset_authors 关联", "作品行无重复/丢失", "档案取舍与回读一致"]
+    }
+  },
+  "tags": {
+    "access": "read-only",
+    "write": "not_supported",
+    "storage": "现行标签保持明文存储、FTS5、唯一约束、搜索/筛选/排序与关联语义。",
+    "rules": [
+      "AI 不生成、不写入、不修改标签、标签组或标签关联。",
+      "规则包和工具不提供标签写操作，也不做标签隐私增强或密钥迁移。",
+      "需要标签时由用户在界面维护；任务只报告现状与冲突。"
+    ]
+  },
+  "backup": {
+    "format": "v2",
+    "endpoints": {
+      "export": "GET /api/v1/export/qimeng-backup",
+      "import": "POST /api/v1/import/qimeng-backup"
+    },
+    "exportBeforeImport": true,
+    "mainTableTxt": {
+      "contains": ["作者身份", "作品行", "来源区"],
+      "doesNotContain": ["头像", "简介", "译文"],
+      "rule": "手机仅靠主表 TXT 无法完成完整资料对齐；完整资料必须走 v2 导入。"
+    },
+    "segments": [
+      "事件身份幂等合并，不重复计数。",
+      "收藏/关注并集。",
+      "作者档案保留本端并补缺，不覆盖人工资料。",
+      "TXT 按 keep 口径重建。",
+      "appPrefs 覆盖。",
+      "标签改动时间裁决沿用现有语义。"
+    ],
+    "rules": [
+      "导入前必须先导出当前实例完整 v2 备份与摘要；导出保存失败即中止导入。",
+      "导入按段提交；后段失败保留已提交段并明确报告。",
+      "错误指纹、版本不符、摘要错配、结构非法在任何写入前拒绝。",
+      "不得宣称整份成功，也不得用再次合并充当撤销。",
+      "当前装机仍是三代同目录；两代分代目录属于 planned，不得写成已实施。"
+    ],
+    "plannedLayout": {
+      "status": "planned",
+      "description": "资料维护/当前/{作者资料,备份} 与 资料维护/上次/{作者资料,备份}；每代独立目录与摘要，当前/上次不共用路径。"
+    }
+  },
+  "errors": {
+    "transport": {
+      "timeout": "请求超时：目标可能忙或网络不可达；稍后重试并核对，不要重复提交写操作。",
+      "network_error": "连接失败：检查 QIMENG_API_BASE 的 host:port、隧道或防火墙；不要回显 token。",
+      "http_error": "HTTP 非 2xx：读取 {status,error,body}，按 body.code 处理。",
+      "invalid_json_response": "上游返回非 JSON：不要当成成功；保留状态码并排查目标服务。",
+      "response_too_large": "响应超过 CLI 上限：缩小查询范围或改用分页。"
+    },
+    "codes": [
+      {"code": "INVALID_PARAM", "http": 400, "meaning": "参数或字段校验失败", "action": "按 message 修正载荷；不要盲目重试。"},
+      {"code": "UNAUTHORIZED", "http": 401, "meaning": "未认证或 token 失效", "action": "检查 QIMENG_API_TOKEN 是否设置/有效；不回显 token。"},
+      {"code": "NOT_FOUND", "http": 404, "meaning": "作者、资产或资源不存在", "action": "重新查询对象；不要静默重建或覆盖。"},
+      {"code": "CONFLICT", "http": 409, "meaning": "通用冲突（revision、身份、库根等）", "action": "重读当前状态，按冲突类型处理；不要盲目覆盖。"},
+      {"code": "TXT_CONFLICT", "http": 409, "meaning": "同文件名重导入会丢弃上传写入条目", "action": "先列 authors 缺失项，显式选择 conflictResolution=keep 或 remove。"},
+      {"code": "PATH_ESCAPE", "http": [400, 403], "meaning": "路径越出库根或非法路径", "action": "停止；修正为库内相对路径。"},
+      {"code": "TOO_LARGE", "http": 413, "meaning": "请求或文件超过声明上限", "action": "缩小载荷或改用受支持的分段/上限内输入。"},
+      {"code": "INVALID_TYPE", "http": 400, "meaning": "媒体类型或字段类型不支持", "action": "核对协议枚举与文件真实类型。"},
+      {"code": "UPLOAD_ID_CONFLICT", "http": 409, "meaning": "上传任务 ID 已用于不同目标/名称/大小/源时间/通道", "action": "保留完成事实并查询；不要自动重传覆盖。"},
+      {"code": "UPLOAD_TOO_LARGE", "http": [400, 413], "meaning": "累计尺寸或单次分片超限", "action": "核对声明大小与分片预算。"},
+      {"code": "UPLOAD_ASSET_GONE", "http": 410, "meaning": "任务已完成但资产已删除", "action": "停止自动重传；由用户决定。"},
+      {"code": "UPLOAD_CAPACITY", "http": 429, "meaning": "在途会话或暂存预算达到上限", "action": "等待并降低并发。"},
+      {"code": "STORAGE_UNAVAILABLE", "http": [503, 507], "meaning": "目录不可访问或剩余空间不足（探针/上传路径）", "action": "停止写入；检查存储后重试。"},
+      {"code": "RATE_LIMITED", "http": 429, "meaning": "auth 端点进程内限速", "action": "退避后重试。"}
+    ],
+    "conflicts": [
+      {"http": 409, "type": "profile-revision", "handling": "重新 GET profile，核对本次字段与人工修改，使用新 revision 重提；不要盲目重试。"},
+      {"http": 409, "type": "rename-identity", "handling": "新身份命中其他作者；本端点不合并。先出合并/保留计划，走专用合并端点或由用户确认。"},
+      {"http": 409, "type": "txt-conflict", "handling": "读取 TxtImportConflict.authors；显式 keep 或 remove，不要静默丢弃。"},
+      {"http": 409, "type": "library-root", "handling": "该根路径已注册；复用既有库或换路径，不要重复创建。"}
+    ]
+  },
+  "workflows": [
+    {
+      "id": "author-profile-fill",
+      "title": "补一个作者档案：先读现状，再准备完整载荷，保存后回读（写入 planned）",
+      "status": "read-steps-supported; write-steps-planned",
+      "steps": [
+        {"step": 1, "action": "获取规则上下文", "command": "python -X utf8 tools/ai_maintenance/cli.py context", "status": "supported"},
+        {"step": 2, "action": "按名称或 ID 查作者，确认复用既有 authorId", "command": "python -X utf8 tools/ai_maintenance/cli.py authors --page 1 --size 100", "status": "supported"},
+        {"step": 3, "action": "读取当前档案与 revision，记录人工已填字段", "command": "python -X utf8 tools/ai_maintenance/cli.py author-profile --author-id <authorId>", "status": "supported"},
+        {"step": 4, "action": "准备完整 CreatorProfileWrite：保留未修改分组，只合并本次明确修改；研究结果先 candidate", "status": "planned"},
+        {"step": 5, "action": "PUT /api/v1/authors/{authorId}/profile，携带当前 revision", "status": "planned"},
+        {"step": 6, "action": "回读 profile，核对 revision 增加、字段值与人工字段未被覆盖", "command": "python -X utf8 tools/ai_maintenance/cli.py author-profile --author-id <authorId>", "status": "supported"}
+      ],
+      "notes": [
+        "409 时重读并重新核对，不要盲目重试。",
+        "verified 必须有 HTTPS 主页和至少 1 条有效证据；昵称/水印/转载弱线索不能单独支撑。",
+        "biography 2000、xProfile.biography 1000、xProfile.biographyZh 2000；evidenceUrls 最多 8 条。"
+      ]
+    },
+    {
+      "id": "author-cleanup-plan",
+      "title": "搁置作者清理：候选、影响数量、计划确认、执行与回读（执行 planned）",
+      "status": "prepare-planned; apply-planned; read-queries-supported",
+      "steps": [
+        {"step": 1, "action": "获取规则上下文", "command": "python -X utf8 tools/ai_maintenance/cli.py context", "status": "supported"},
+        {"step": 2, "action": "查作者列表与每个候选的档案/来源/文件数", "command": "python -X utf8 tools/ai_maintenance/cli.py authors --page 1 --size 200", "status": "supported"},
+        {"step": 3, "action": "输出候选、证据、影响数量（TXT 块、作品行、关联、档案、关注）与建议动作；不预设搁置阈值", "status": "planned"},
+        {"step": 4, "action": "用户确认计划并绑定计划指纹/幂等键", "status": "planned"},
+        {"step": 5, "action": "执行删除三清/改名迁移/改挂/合并；合并只用专用端点，禁止客户端拼事务", "status": "planned"},
+        {"step": 6, "action": "逐项回读：作者、关联、作品行、档案、关注标记与媒体文件", "status": "supported"}
+      ],
+      "notes": [
+        "零关联、无有效档案、长期未维护只是候选证据，不是自动删除阈值。",
+        "删除只解除业务关联，媒体文件保留；永久删除媒体走独立管理操作。",
+        "改名前先查重名；409 不自动合并。"
+      ]
+    },
+    {
+      "id": "research-author-verify",
+      "title": "作者/作品核验：先用 context 确认启停与预算，再按 provider 矩阵取平台字段，最后才考虑 Lens 反查",
+      "status": "api-supported; lens-requires-local-sidecar",
+      "steps": [
+        {"step": 1, "action": "读研究上下文，确认 enabled、provider 矩阵与 Lens 预算；关闭时不要调用查询/Lens", "command": "python -X utf8 tools/ai_maintenance/cli.py research context", "status": "supported"},
+        {"step": 2, "action": "按已知账号/作品 ID 走平台 provider（fxtwitter/pixiv/yandere/e621/steam）取平台字段作为证据", "command": "python -X utf8 tools/ai_maintenance/cli.py research provider --provider <provider> --operation <operation> --target <target>", "status": "supported"},
+        {"step": 3, "action": "目标未知时用 bing/wayback 取线索（只作指向，不单独支撑 verified）", "command": "python -X utf8 tools/ai_maintenance/cli.py research provider --provider bing --operation search --target <搜索词>", "status": "supported"},
+        {"step": 4, "action": "仅在已部署本机 sidecar 时用 Lens 反查图片；接受 links 为空与单帧 17–40s 的排队成本", "command": "python -X utf8 tools/ai_maintenance/cli.py research lens --file <本地图片>", "status": "requires-local-sidecar"},
+        {"step": 5, "action": "把核验结果按作者档案候选口径保存（先 candidate），人工审核后再 verified；不要直接把研究结论写库", "status": "planned"}
+      ],
+      "notes": [
+        "provider 查询返回 200 时读 status：ok/not_found/blocked/rate_limited/provider_unavailable；只有 ok 的平台字段可作为证据。",
+        "一次失败不要连环重试：每分钟预算默认 20 次，超限后等下一分钟或换 provider。",
+        "Lens 的 topTitles/topDomains/cites 是正文启发式，links 是 best-effort，均不能单独证明作者身份。",
+        "研究 CLI 只读：缺省人读摘要，加全局 --json 输出原始 JSON；Lens 本地只预检扩展名与 20MiB，结果不入库。"
+      ]
+    },
+    {
+      "id": "device-apply-pc-only",
+      "title": "手机无前台应用：只能由 PC 生成结果包，手机后台拉取并应用（全部 planned）",
+      "status": "planned",
+      "steps": [
+        {"step": 1, "action": "PC 生成结果包：协议/规则版本指纹、目标实例、段清单、主表 TXT、完整 v2 备份摘要与期望回读指标", "status": "planned"},
+        {"step": 2, "action": "手机 worker 在充电 + Wi-Fi 约束满足后主动拉取；不要求打开 App 前台，不接 USB", "status": "planned"},
+        {"step": 3, "action": "自动先导出当前实例两代备份与摘要；保存失败立即中止，不应用任何段", "status": "planned"},
+        {"step": 4, "action": "校验版本、指纹、段摘要与目标实例；不匹配进入 waiting_authorization 或失败项", "status": "planned"},
+        {"step": 5, "action": "分段应用：主表 TXT 只含作者/作品/来源，按 keep 重建；头像/简介/译文必须走 v2 导入", "status": "planned"},
+        {"step": 6, "action": "回读作者数、关联数、标签数、事件数与文件摘要；失败保留可恢复状态与已应用段", "status": "planned"},
+        {"step": 7, "action": "查询 device.apply.status；waiting_authorization 与 waiting_device 可恢复，重试按幂等键判定", "status": "planned"}
+      ],
+      "notes": [
+        "PC 不连接手机，手机不开放入站端口，不新增监听面。",
+        "本轮 P1 只交付规则包与只读 CLI；结果包、后台 worker、两代目录和 v2 分段应用均未实现。",
+        "不得把当前三代同目录写成两代已实施。"
+      ]
+    }
+  ],
+  "permissions": {
+    "api": {
+      "scheme": "Bearer",
+      "requiredRole": "admin",
+      "baseEnv": "QIMENG_API_BASE",
+      "tokenEnv": "QIMENG_API_TOKEN",
+      "baseRules": [
+        "只接受 http(s) origin，不带 userinfo、query、fragment 或子路径。",
+        "http 仅允许回环或私有地址；远程访问使用 https 或既有隧道策略。",
+        "错误信息只显示 host:port，不显示 token 或含凭据的 URL。"
+      ],
+      "tokenRules": [
+        "只从 QIMENG_API_TOKEN 环境变量读取。",
+        "不打印、不写日志、不写入输出、规则包、任务记录或结果包。",
+        "不进入仓库；本机确需持久化时只放被忽略的 *.local 配置；不进入外部模型上下文。"
+      ]
+    },
+    "localExecutor": {
+      "hostData": "只读 qimeng-data 内 SQLite/WAL、在线快照与既有导出文件；禁止写事务、VACUUM 或改动文件时间。",
+      "maintenanceDirectory": "仅在用户授权根内读写；写入前规范化路径并校验仍在授权根内，保留外部替换保护。",
+      "businessWrites": "只经正式 API（Bearer admin）与领域服务；禁止直连数据库/SQL、绕过鉴权或客户端拼事务。",
+      "testData": "8420 真库禁止测试写入；测试只用隔离实例、临时目录与合成媒体。"
+    },
+    "privacy": [
+      "不向外部模型导出密钥、令牌、真实媒体或含个人信息的任务记录。",
+      "任务记录、结果包与日志使用合成 ID/占位符；真实凭据只放忽略的本地配置。",
+      "标签只读；AI 不写标签，不做标签隐私增强或密钥迁移。"
+    ]
+  }
+}

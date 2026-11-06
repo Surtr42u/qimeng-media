@@ -69,3 +69,33 @@ func MostRecent(sources []Source) (Source, bool) {
 	}
 	return Source{}, false
 }
+
+// TXTOrder uses the same parsers and identity rules as import, preserving the first
+// occurrence across stored fragments. The printed numeric labels are decorative.
+func TXTOrder(sources []Source) map[string]int {
+	result := make(map[string]int)
+	add := func(name string) {
+		id := authoring.GenerateAuthorID(name)
+		if id == "" {
+			return
+		}
+		if _, exists := result[id]; !exists {
+			result[id] = len(result) + 1
+		}
+	}
+	for _, source := range sources {
+		blocks := authoring.ParseAuthorBlocks(source.Content)
+		if len(blocks) == 0 {
+			for _, name := range authoring.ParsePlainAuthorNames(source.Content) {
+				add(name)
+			}
+			continue
+		}
+		for _, block := range blocks {
+			if len(block.AuthorNames) > 0 {
+				add(block.AuthorNames[0])
+			}
+		}
+	}
+	return result
+}

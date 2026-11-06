@@ -28,6 +28,7 @@
 | 新功能/能力评估 | `docs/CAPABILITY_MAP.md` 对应域 + ADR 索引相关决策 |
 | 架构缘由/历史/里程碑 | `docs/adr/INDEX.md` / `docs/history/INDEX.md` / `docs/PROJECT_PLAN.md`，仅命中时读 |
 | 文档组织/维护 | `AI_README_FIRST.md`「文档维护」；完整导航见 `llms.txt` |
+| 外部AI维护工具、规则包、本地权限与无前台桥接 | `docs/AI_MAINTENANCE_TASKBOOK.md` 第4–6节、第11节；决策见 `docs/adr/0052-外部AI维护需求修订.md` |
 | 代码/PR 审查 | 本文件「Review guidelines」；再按改动域读取上表对应专题 |
 
 ## 工作尺度

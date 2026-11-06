@@ -24,9 +24,19 @@ func (s *Server) GetApiV1Authors(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "查询作者列表", err)
 		return
 	}
+	sources, err := authorattach.LoadSources(r.Context(), s.q)
+	if err != nil {
+		s.internalErr(w, "读取作者清单顺序", err)
+		return
+	}
+	order := authorattach.TXTOrder(sources)
 	out := make([]gen.Author, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, authorFromListRow(row))
+		author := authorFromListRow(row)
+		if position, ok := order[row.ID]; ok {
+			author.TxtOrder = &position
+		}
+		out = append(out, author)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

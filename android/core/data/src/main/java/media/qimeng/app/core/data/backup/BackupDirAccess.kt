@@ -4,6 +4,8 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.File
+import java.io.ByteArrayOutputStream
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -16,23 +18,27 @@ data class BackupFileStatus(
     val lastModifiedMillis: Long,
 )
 
-/**
- * 备份目录（SAF 树 URI）访问端口：固定名 [AutoBackupRunner.BACKUP_FILE_NAME] 的写/读/状态三件。
- * 为什么抽端口：备份页「导入导出」与「自动备份」共用同一 SAF 授权目录同一文件（任务S 2026-09-19
- * 两卡收敛：导出=直写该文件、导入=直读该文件、自动备份=定时直写），读写细节（find-or-create/
- * 覆盖写/元数据查询）单源收口在此；同时 JVM 单测以 fake 注入（真实 Context 不可得，
- * AutoBackupRunner 测试同款约束）。
- */
+/** 固定的两个备份槽；不接受任意文件名或路径。 */
+enum class BackupFileKind(val fileName: String) {
+    MANUAL(AutoBackupRunner.BACKUP_FILE_NAME),
+    AUTOMATIC(AutoBackupRunner.AUTO_BACKUP_FILE_NAME),
+    PRE_IMPORT("qimeng_backup.before-import.json"),
+    CURRENT("影库备份.json"),
+    PREVIOUS("影库备份（上次）.json"),
+    OLDER("影库备份（上上次）.json"),
+}
+
+/** 同一授权目录内，手动/PC备份与自动输出独立，恢复必须显式选定。 */
 interface BackupDirAccess {
 
     /** 覆盖写固定名备份文件（不存在先在树根创建），返回实写字节数；失败返回 null */
-    suspend fun writeBytes(dirUri: String, json: String): Long?
+    suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind = BackupFileKind.MANUAL): Long?
 
     /** 读固定名备份文件全量字节；无文件/读失败返回 null */
-    suspend fun readBytes(dirUri: String): ByteArray?
+    suspend fun readBytes(dirUri: String, kind: BackupFileKind = BackupFileKind.MANUAL): ByteArray?
 
     /** 固名备份文件状态（大小/修改时间）；无文件/查询失败返回 null */
-    suspend fun fileStatus(dirUri: String): BackupFileStatus?
+    suspend fun fileStatus(dirUri: String, kind: BackupFileKind = BackupFileKind.MANUAL): BackupFileStatus?
 }
 
 /**
@@ -45,15 +51,20 @@ class SafBackupDirAccess @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : BackupDirAccess {
 
-    override suspend fun writeBytes(dirUri: String, json: String): Long? = withContext(Dispatchers.IO) {
+    override suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind): Long? = withContext(Dispatchers.IO) {
         runCatching {
+            if (Uri.parse(dirUri).scheme == "file") {
+                val folder = checkedSharedFolder(requireNotNull(Uri.parse(dirUri).path))
+                writeMaintenanceFile(folder, kind.fileName, json)
+                return@runCatching json.toByteArray(Charsets.UTF_8).size.toLong()
+            }
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
             val treeDocId = DocumentsContract.getTreeDocumentId(tree)
             val treeDoc = DocumentsContract.buildDocumentUriUsingTree(tree, treeDocId)
             // 已存在则截断覆写；不存在先在树根创建（旧版「绮梦影库目录写 qimeng_backup.json」同语义）
-            val target = findDocumentUri(resolver, tree, treeDocId)
-                ?: DocumentsContract.createDocument(resolver, treeDoc, JSON_MIME, AutoBackupRunner.BACKUP_FILE_NAME)
+            val target = findDocumentUri(resolver, tree, treeDocId, kind)
+                ?: DocumentsContract.createDocument(resolver, treeDoc, JSON_MIME, kind.fileName)
                 ?: return@runCatching null
             resolver.openOutputStream(target, WRITE_MODE_TRUNCATE)?.use { out ->
                 out.write(json.toByteArray(Charsets.UTF_8))
@@ -62,18 +73,49 @@ class SafBackupDirAccess @Inject constructor(
         }.getOrNull()
     }
 
-    override suspend fun readBytes(dirUri: String): ByteArray? = withContext(Dispatchers.IO) {
+    override suspend fun readBytes(dirUri: String, kind: BackupFileKind): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
+            if (Uri.parse(dirUri).scheme == "file") {
+                val folder = checkedSharedFolder(requireNotNull(Uri.parse(dirUri).path))
+                val file = File(folder, kind.fileName)
+                require(file.canonicalFile.parentFile == folder)
+                if (!file.isFile) return@runCatching null
+                require(file.length() <= BackupValidator.BACKUP_MAX_BYTES.toLong()) { "备份超过64MiB上限" }
+                val bytes = file.inputStream().use { stream ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = stream.read(buffer, 0, minOf(buffer.size, BackupValidator.BACKUP_MAX_BYTES + 1 - output.size()))
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        require(output.size() <= BackupValidator.BACKUP_MAX_BYTES) { "备份超过64MiB上限" }
+                    }
+                    output.toByteArray()
+                }
+                val checksum = File(folder, kind.fileName + ".sha256")
+                require(checksum.canonicalFile.parentFile == folder)
+                require(checksum.length() <= 1024) { "备份摘要文件过大" }
+                if (checksum.isFile && checksum.readText(Charsets.UTF_8).trim() != maintenanceSha256(bytes)) {
+                    error("备份摘要不一致，请重新导出完整备份")
+                }
+                return@runCatching bytes
+            }
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
-            val target = findDocumentUri(resolver, tree, DocumentsContract.getTreeDocumentId(tree))
+            val target = findDocumentUri(resolver, tree, DocumentsContract.getTreeDocumentId(tree), kind)
                 ?: return@runCatching null
             resolver.openInputStream(target)?.use { stream -> stream.readBytes() }
         }.getOrNull()
     }
 
-    override suspend fun fileStatus(dirUri: String): BackupFileStatus? = withContext(Dispatchers.IO) {
+    override suspend fun fileStatus(dirUri: String, kind: BackupFileKind): BackupFileStatus? = withContext(Dispatchers.IO) {
         runCatching {
+            if (Uri.parse(dirUri).scheme == "file") {
+                val folder = checkedSharedFolder(requireNotNull(Uri.parse(dirUri).path))
+                val file = File(folder, kind.fileName)
+                require(file.canonicalFile.parentFile == folder)
+                return@runCatching if (file.isFile) BackupFileStatus(file.length(), file.lastModified()) else null
+            }
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)
             resolver.query(
@@ -90,7 +132,7 @@ class SafBackupDirAccess @Inject constructor(
                 null, null, null,
             )?.use { cursor ->
                 while (cursor.moveToNext()) {
-                    if (cursor.getString(1) == AutoBackupRunner.BACKUP_FILE_NAME) {
+                    if (cursor.getString(1) == kind.fileName) {
                         return@runCatching BackupFileStatus(
                             sizeBytes = cursor.getLong(2),
                             lastModifiedMillis = cursor.getLong(3),
@@ -103,7 +145,7 @@ class SafBackupDirAccess @Inject constructor(
     }
 
     /** 树根下按显示名找固定名文件（部分 provider 不支持 selection 过滤，取回后内存比对） */
-    private fun findDocumentUri(resolver: ContentResolver, tree: Uri, treeDocId: String): Uri? {
+    private fun findDocumentUri(resolver: ContentResolver, tree: Uri, treeDocId: String, kind: BackupFileKind): Uri? {
         resolver.query(
             DocumentsContract.buildChildDocumentsUriUsingTree(tree, treeDocId),
             arrayOf(
@@ -113,7 +155,7 @@ class SafBackupDirAccess @Inject constructor(
             null, null, null,
         )?.use { cursor ->
             while (cursor.moveToNext()) {
-                if (cursor.getString(1) == AutoBackupRunner.BACKUP_FILE_NAME) {
+                if (cursor.getString(1) == kind.fileName) {
                     return DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0))
                 }
             }

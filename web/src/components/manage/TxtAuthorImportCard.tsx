@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ManageQueryError } from './ManagePageHeader'
 import { batchFailureReason } from '@/lib/batch'
 import { validateAuthorTxtFile } from '@/lib/author-txt'
+import { authorizeMaintenanceFolder, readMaintenanceTxt } from '@/lib/maintenance-folder'
 
 /**
  * 作者 TXT 导入卡（旧版数据管理「TXT导入作者」的 web 对等物）：
@@ -40,7 +41,7 @@ interface TxtConflictState {
  *  status 并进同一对象抛出（lib/api-client.ts），这里按此形状收窄 */
 type TxtConflictError = Partial<TxtImportConflict> & { status?: number }
 
-export function TxtAuthorImportCard() {
+export function TxtAuthorImportCard({ folderMode = false }: { folderMode?: boolean }) {
   const query = useTxtImportedFiles()
   const { data: files = [], isLoading } = query
   const importTxt = useImportAuthorTxt()
@@ -51,6 +52,7 @@ export function TxtAuthorImportCard() {
   const [conflict, setConflict] = useState<TxtConflictState | null>(null)
   const [reading, setReading] = useState(false)
   const readingLock = useRef(false)
+  const [folderFiles, setFolderFiles] = useState<File[]>([])
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   const busy = reading || importTxt.isPending || deleteTxt.isPending || rebuildTxt.isPending
 
@@ -59,9 +61,21 @@ export function TxtAuthorImportCard() {
   // "[object Object]"——与批量操作共用一份提取口径，勿再内联 instanceof 模式。
 
   const onPick = (e: ChangeEvent<HTMLInputElement>): void => {
-    const f = e.target.files?.[0]
-    e.target.value = '' // 置空以允许连续导入同名文件
-    if (!f) return
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) importFile(file)
+  }
+
+  const readFolder = async (): Promise<void> => {
+    if (busy || readingLock.current || conflict) return
+    readingLock.current = true
+    setReading(true)
+    try { setFolderFiles(await readMaintenanceTxt(await authorizeMaintenanceFolder())) }
+    catch (error) { toast.error(batchFailureReason(error)) }
+    finally { readingLock.current = false; setReading(false) }
+  }
+
+  const importFile = (f: File): void => {
     if (busy || readingLock.current || conflict) return
     try {
       validateAuthorTxtFile(f)
@@ -155,6 +169,10 @@ export function TxtAuthorImportCard() {
         <h3>作者 TXT 导入</h3>
         <span className="rank-note">{files.length} 份片段</span>
       </div>
+      {folderMode && <div className="upload-queue-actions">
+        <button type="button" className="pill" disabled={busy || conflict !== null} onClick={() => void readFolder()}>读取维护目录的TXT</button>
+        {folderFiles.map(file => <button type="button" className="pill" disabled={busy || conflict !== null} key={file.name} onClick={() => importFile(file)}>导入 {file.name}</button>)}
+      </div>}
       {query.isError && <ManageQueryError retry={() => { void query.refetch() }}>已导入片段读取失败，请重新读取后核对。</ManageQueryError>}
       {/* 导入动作视觉焦点：复用上传卡 .upload-drop 虚线导入区（点击=打开文件选择）。
           空态/有片段态提示文案不同；pending 复用 .disabled 视觉并拦截点击（对齐原按钮 disabled） */}

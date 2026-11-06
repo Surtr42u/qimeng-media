@@ -19,6 +19,7 @@ export function AuthorMirrorCard({ onDirtyChange }: { onDirtyChange: (dirty: boo
   const mirror: AuthorMirrorConfig = mirrorDraft ?? {
     path: mirrorData?.path ?? '',
     fragmentFilename: mirrorData?.fragmentFilename ?? '',
+    mode: mirrorData?.mode ?? 'fragment',
   }
   const busy = saveMirror.isPending || query.isLoading || query.isError || mirrorData === undefined
 
@@ -30,7 +31,7 @@ export function AuthorMirrorCard({ onDirtyChange }: { onDirtyChange: (dirty: boo
   const doSaveMirror = (): void => {
     if (busy || mirrorDraft === null) return
     saveMirror.mutate(
-      { path: mirror.path ?? '', fragmentFilename: mirror.fragmentFilename ?? '' },
+      { path: mirror.path ?? '', fragmentFilename: mirror.fragmentFilename ?? '', mode: mirror.mode },
       {
         onSuccess: () => {
           setMirrorDraft(null)

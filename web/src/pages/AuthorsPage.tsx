@@ -6,6 +6,7 @@ import { SearchIcon } from '@/components/shell/icons'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
 import { AuthorEditDialog } from '@/components/manage/AuthorEditDialog'
+import { AuthorAvatar } from '@/components/author/AuthorAvatar'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import {
   useAuthors,
@@ -15,11 +16,12 @@ import {
   useToggleFollow,
 } from '@/hooks/use-authors'
 import { authorDisplayName } from '@/lib/format'
+import { compareAuthorAddedOrder } from '@/lib/author-order'
 import { batchFailureReason } from '@/lib/batch'
-import { collectionPath, COLLECTION_AUTHOR } from '@/lib/route-keys'
+import { authorCollectionPath } from '@/lib/route-keys'
 
 type AuthorZone = '全部' | '常规' | 'cos'
-type AuthorSort = 'default' | 'browse' | 'works'
+type AuthorSort = 'default' | 'browse' | 'works' | 'added-asc' | 'added-desc'
 
 /** 体系胶囊：data-zone 值与作者 type 字段对应（cos 小写），展示文案 COS 大写 */
 const ZONES: { zone: AuthorZone; label: string }[] = [
@@ -32,6 +34,8 @@ const SORTS: { key: AuthorSort; label: string }[] = [
   { key: 'default', label: '默认' },
   { key: 'browse', label: '经常浏览' },
   { key: 'works', label: '文件数量' },
+  { key: 'added-asc', label: '加入较早' },
+  { key: 'added-desc', label: '加入较晚' },
 ]
 
 /** 体系胶囊 → 协议 Author.type（「全部」不筛） */
@@ -46,6 +50,8 @@ const A_SORTERS: Record<AuthorSort, (a: Author, b: Author) => number> = {
   default: () => 0,
   browse: (a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0),
   works: (a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0),
+  'added-asc': (a, b) => compareAuthorAddedOrder(a, b),
+  'added-desc': (a, b) => compareAuthorAddedOrder(a, b, true),
 }
 
 
@@ -168,34 +174,34 @@ export default function AuthorsPage() {
             {s.label}
           </button>
         ))}
-        <button
+        {zone !== 'cos' && <button
           type="button"
           className="pill"
           style={{ marginLeft: 'auto' }}
           onClick={() => setPrompt({ mode: 'create' })}
         >
           新建作者
-        </button>
+        </button>}
       </div>
-      <div className="rank-card a-list">
+      <div className="a-list">
         {isError ? (<p className="a-empty" role="alert">作者列表读取失败 <button className="pill" onClick={() => void refetch()}>重试</button></p>) : isLoading ? (
           <LoadingHint className="a-empty" />
         ) : rows.length ? (
           <ul>
             {rows.map((a) => (
               <li key={a.id}>
-                <button type="button" className="author-identity" onClick={() => a.displayName && navigate(collectionPath(COLLECTION_AUTHOR, a.displayName))}>
-                  <span className="author-avatar" aria-hidden="true">{Array.from(a.displayName ?? '?')[0]}</span>
-                  <span className="author-info"><strong>{authorDisplayName(a)}</strong><small>{a.fileCount ?? 0} 个文件 · {a.type === 'cos' ? '目录管理' : '常规作者'}</small></span>
+                <button type="button" className="author-identity" onClick={() => a.id && a.displayName && navigate(authorCollectionPath(a.id, a.displayName))}>
+                  <AuthorAvatar authorId={a.id ?? ''} name={a.displayName ?? ''} />
+                  <span className="author-info"><strong>{a.displayName}</strong><small>{a.type === 'cos' && <span className="author-type">COS</span>}<span>{a.fileCount ?? 0} 个文件</span></small></span>
                 </button>
                 <button type="button" className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`} disabled={toggleFollow.isPending}
                   onClick={() => a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed }, { onError: err => toast.error(manageFailureText(err)) })}>
                   {a.followed ? '已关注' : '关注'}
                 </button>
-                {a.type !== 'cos' && <>
+                {a.type !== 'cos' && <div className="author-manage-actions">
                   <button type="button" className="pill" onClick={() => setPrompt({ mode: 'rename', author: a })}>编辑资料</button>
                   <button type="button" className="pill" onClick={() => setDeleteTarget(a)}>删除</button>
-                </>}
+                </div>}
               </li>
             ))}
           </ul>

@@ -13,14 +13,31 @@ import org.junit.Test
 class BackupValidatorTest {
     @Test
     fun portableEventsSurviveSdkSerialization() {
-        val text = """{"format":"qimeng_backup","schemaVersion":2,"appIdentifier":"com.qimeng.media","data":{"viewEvents":[{"eventId":"synthetic-event","recordKey":"r","kind":"open","sessionId":"source-session","startedAt":"2026-10-19T00:00:00.000Z","seconds":null}],"mediaFiles":[{"recordKey":"r","assetId":"synthetic-asset","relPath":"folder/a.jpg","libraryName":"source","fileName":"a.jpg","mediaType":"image","sizeBytes":1,"modifiedAtMillis":1}]}}"""
+        // PC 导出的三种事件与原始UTC/会话日键，经App校验→SDK发网序列化后不能丢失。
+        val text = """
+            {"format":"qimeng_backup","schemaVersion":2,"appIdentifier":"com.qimeng.media","exportedAtMillis":1793786400000,
+            "data":{"viewEvents":[
+                {"eventId":"portable:source-open","recordKey":"r","kind":"open","sessionId":"same-session","startedAt":"2026-10-19T15:59:59.999Z","seconds":null,"day":"2026-10-19"},
+                {"eventId":"source-dwell","recordKey":"r","kind":"dwell","sessionId":"same-session","startedAt":"2026-10-19T16:00:00.001Z","seconds":123,"day":"2026-10-20"},
+                {"eventId":"legacy:play:stable-key","recordKey":"r","kind":"play","sessionId":"legacy-source","startedAt":"2026-10-18T00:00:00.000Z","seconds":null}
+            ],"mediaFiles":[{"recordKey":"r","assetId":"synthetic-asset","relPath":"folder/a.jpg","libraryName":"source","fileName":"a.jpg","mediaType":"image","sizeBytes":1,"modifiedAtMillis":1}]}}
+        """.trimIndent()
         val result = BackupValidator.validate("backup.json", text.toByteArray()) as BackupValidator.Result.Ok
         val adapter = media.qimeng.sdk.infrastructure.Serializer.moshi.adapter(media.qimeng.sdk.models.LegacyBackupImport::class.java)
         val again = adapter.fromJson(adapter.toJson(result.payload.sdkPayload))!!
-        assertEquals("synthetic-event", again.data.viewEvents!!.single().eventId)
-        assertEquals("source-session", again.data.viewEvents!!.single().sessionId)
+        val events = again.data.viewEvents!!
+        assertEquals(result.payload.sdkPayload.data.viewEvents, events)
+        assertEquals(3, result.summary.eventRows)
+        assertEquals(listOf("open", "dwell", "play"), events.map { it.kind })
+        assertEquals(listOf("portable:source-open", "source-dwell", "legacy:play:stable-key"), events.map { it.eventId })
+        assertEquals("2026-10-19T15:59:59.999Z", events[0].startedAt)
+        assertEquals("2026-10-19T16:00:00.001Z", events[1].startedAt)
+        assertEquals(listOf("2026-10-19", "2026-10-20", null), events.map { it.day })
+        assertEquals(listOf(null, 123L, null), events.map { it.seconds })
+        assertEquals(listOf("same-session", "same-session", "legacy-source"), events.map { it.sessionId })
         assertEquals("folder/a.jpg", again.data.mediaFiles!!.single().relPath)
-        assertEquals(null, again.data.viewEvents!!.single().seconds)
+        assertEquals(1793786400000L, again.exportedAtMillis)
+
     }
 
     /** 最小合法信封：各数组元素只带其强类型模型的必填字段（ Legacy* 生成物口径） */

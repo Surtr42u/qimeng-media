@@ -18,6 +18,7 @@ import {
 } from '@/api/generated'
 import { getAuthHeaders, unwrapSdkResult } from '@/lib/api-client'
 import { downloadBlob } from '@/lib/download'
+import { authorizeMaintenanceFolder, maintenanceFolderStore, maintenanceFolderSupported, writeMaintenanceSnapshot, writePreImportSnapshot } from '@/lib/maintenance-folder'
 import {
   ASSETS_QUERY_KEY,
   AUTHORS_QUERY_KEY,
@@ -35,15 +36,19 @@ const EXPORT_BACKUP_PATH = '/api/v1/export/qimeng-backup'
 const BACKUP_FILE_NAME = 'qimeng_backup.json'
 
 /** 导出备份：GET 原始字节 → 触发浏览器下载；onSuccess 回传文件大小供提示 */
-export function useExportQimengBackup() {
+export async function fetchBackupBlob(): Promise<Blob> {
+  const resp = await fetch(EXPORT_BACKUP_PATH, { headers: getAuthHeaders() })
+  if (!resp.ok) throw new Error(`导出失败（HTTP ${resp.status}）`)
+  return resp.blob()
+}
+
+export function useExportQimengBackup(folderMode = false) {
   return useMutation({
     mutationFn: async (): Promise<{ sizeBytes: number }> => {
-      const resp = await fetch(EXPORT_BACKUP_PATH, { headers: getAuthHeaders() })
-      if (!resp.ok) {
-        throw new Error(`导出失败（HTTP ${resp.status}）`)
-      }
-      const blob = await resp.blob()
-      downloadBlob(blob, BACKUP_FILE_NAME)
+      const selected = folderMode ? await authorizeMaintenanceFolder() : null
+      const blob = await fetchBackupBlob()
+      if (selected) await writeMaintenanceSnapshot(selected, blob)
+      else downloadBlob(blob, BACKUP_FILE_NAME)
       return { sizeBytes: blob.size }
     },
   })
@@ -53,8 +58,20 @@ export function useExportQimengBackup() {
 export function useImportQimengBackup() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (payload: LegacyBackupImport): Promise<LegacyImportResult> =>
-      unwrapSdkResult(postApiV1ImportQimengBackup({ body: payload })),
+    mutationFn: async (payload: LegacyBackupImport): Promise<LegacyImportResult> => {
+      if (maintenanceFolderSupported()) await maintenanceFolderStore.load()
+      if (maintenanceFolderSupported() && maintenanceFolderStore.snapshot()) {
+        const selected = await authorizeMaintenanceFolder()
+        await writePreImportSnapshot(selected, await fetchBackupBlob())
+      }
+      const result = await unwrapSdkResult(postApiV1ImportQimengBackup({ body: payload }))
+      const selected = maintenanceFolderStore.snapshot()
+      if (selected) {
+        try { await writeMaintenanceSnapshot(selected, await fetchBackupBlob()) }
+        catch (error) { maintenanceFolderStore.setError(`导入已完成，但最新备份写回失败。${error instanceof Error ? error.message : String(error)}`) }
+      }
+      return result
+    },
     onSuccess: () => {
       // 迁移写入面横跨多域：资产（含收藏/点赞详情）/作者/标签/推荐/统计/排行/
       // 观看历史整族失效。stats 族此前手写 ['api/v1/stats'] 与 use-stats 的

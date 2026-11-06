@@ -143,6 +143,10 @@ interface DataModule {
     fun bindBackupDirAccess(impl: media.qimeng.app.core.data.backup.SafBackupDirAccess): media.qimeng.app.core.data.backup.BackupDirAccess
 
     @Binds
+    fun bindMaintenanceBackupWriter(impl: media.qimeng.app.core.data.backup.MaintenanceFolderRepository): media.qimeng.app.core.data.backup.MaintenanceBackupWriter
+
+
+    @Binds
     @Singleton
     fun bindSystemInfoRepository(impl: media.qimeng.app.core.data.repository.SdkSystemInfoRepository): media.qimeng.app.core.data.repository.SystemInfoRepository
 

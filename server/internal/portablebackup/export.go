@@ -24,6 +24,7 @@ package portablebackup
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -32,6 +33,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -95,6 +97,11 @@ func (exp *backupExport) buildSnapshot() (*BackupFile, error) {
 	}
 
 	data := BackupData{}
+	master, err := authorattach.MasterTXT(exp.ctx, exp.q)
+	if err != nil {
+		return nil, err
+	}
+	data.AuthorMasterTxt = &master
 	if err := exp.fillFiles(&data, assets); err != nil {
 		return nil, err
 	}
@@ -254,11 +261,31 @@ func (exp *backupExport) fillAuthors(data *BackupData, byID map[string]*exportAs
 	}
 	authors := make([]Author, 0, len(authorRows))
 	for _, r := range authorRows {
+		profile, err := creatorprofile.Load(exp.ctx, exp.q, r.ID)
+		if err != nil {
+			return fmt.Errorf("读取作者档案: %w", err)
+		}
+		var profilePtr *string
+		var avatarPtr *string
+		if !creatorprofile.IsEmpty(profile) {
+			raw, marshalErr := json.Marshal(profile)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			value := string(raw)
+			profilePtr = &value
+			if len(profile.AvatarData) > 0 {
+				encoded := base64.StdEncoding.EncodeToString(profile.AvatarData)
+				avatarPtr = &encoded
+			}
+		}
 		createdAt, err := millisOf(r.CreatedAt)
 		if err != nil {
 			return fmt.Errorf("作者 %s created_at 解析: %w", r.ID, err)
 		}
 		authors = append(authors, Author{
+			AvatarData:      avatarPtr,
+			ProfileJson:     profilePtr,
 			AuthorId:        r.ID,
 			DisplayName:     r.DisplayName,
 			CreatedAtMillis: &createdAt,

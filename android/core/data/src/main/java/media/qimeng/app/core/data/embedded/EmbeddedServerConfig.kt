@@ -3,6 +3,7 @@ package media.qimeng.app.core.data.embedded
 import java.io.File
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.TimeZone
 
 /**
  * 内嵌服务端（任务T T6 / 任务U11 批次D，ADR-0015 形态 B）的装配纯逻辑：
@@ -99,12 +100,14 @@ object EmbeddedServerConfig {
         dataDir: String,
         nativeLibraryDir: String,
         devSharedSecret: String,
+        timeZoneId: String = TimeZone.getDefault().id,
     ): Map<String, String> = mapOf(
         "QIMENG_LISTEN" to LISTEN_ADDRESS,
         "QIMENG_DATA_DIR" to dataDir,
         "QIMENG_THUMBNAIL_FFMPEG_PATH" to File(nativeLibraryDir, FFMPEG_BINARY).absolutePath,
         "QIMENG_THUMBNAIL_FFPROBE_PATH" to File(nativeLibraryDir, FFPROBE_BINARY).absolutePath,
         "QIMENG_AUTH_DEV_MODE" to "1",
+        "QIMENG_TIMEZONE" to timeZoneId,
         DEV_SHARED_SECRET_ENV to devSharedSecret,
     )
 

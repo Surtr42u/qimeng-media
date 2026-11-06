@@ -50,6 +50,8 @@ import {
   LIBRARIES_QUERY_KEY,
 } from '@/lib/query-keys'
 import { getAuthHeaders } from '@/lib/api-client'
+import { archiveUploadedFile, captureUploadArchive } from '@/lib/upload-archive'
+import { batchFailureReason } from '@/lib/batch'
 import { UPLOAD_PATH } from '@/lib/constants'
 import { composeUploadName, extensionOf } from '@/lib/upload-naming'
 import { uploadTargetFromRelativePath } from '@/lib/folder-upload'
@@ -97,6 +99,7 @@ export interface StagedFileInput {
 
 /** 队列单条（渲染口径：文件名/大小/目标/挂靠/进度条/状态 + 失败原因） */
 export interface UploadItem {
+  archiveNote?: string
   id: string
   /** 落库名（编辑基名 + 锁定扩展名拼装后的实际 filename 参数值） */
   name: string
@@ -118,6 +121,7 @@ export interface UploadItem {
 
 /** enqueue 的批次目标（调用时刻快照进每一条；之后切换只影响下一批） */
 export interface UploadBatchTarget {
+  libraryName?: string
   /** 目标库 ID（协议必填；空串时整批直接判失败、不发任何请求） */
   libraryId: string
   /** 目标目录（库内相对路径，'/' 分隔；'' = 库根——协议语义原样透传） */
@@ -142,6 +146,8 @@ const UPLOAD_ID_PREFIX = 'upload-'
  *  chunkSessionId/chunkOffset/createdAt 为传输与持久化的内部字段（不在渲染契约）：
  *  会话 id 由分片通道 onSession 回写并持久化、断点偏移由 onOffset 回写并持久化 */
 interface QueueEntry extends UploadItem {
+  archiveFolder?: ReturnType<typeof captureUploadArchive>
+  archiveLibraryName?: string
   uploadId: string
   sourceMtime?: number
   file: File | null
@@ -284,7 +290,18 @@ function uploadOne(item: QueueEntry): Promise<void> {
      *  append 来源，任何挂靠错误转「已入库待挂靠」；不持队列状态）→ 终态
      *  补丁落回本条（挂靠完成才 resolve，串行泵才拾取下一条） */
     const attachThenSettle = async (body: string): Promise<void> => {
-      settle(await postUploadOutcome(body, item.attach))
+      const outcome: Partial<UploadItem> = await postUploadOutcome(body, item.attach)
+      if (outcome.status === 'done' || outcome.status === 'attach-failed') {
+        try {
+          const archive = await item.archiveFolder
+          if (archive?.error) throw archive.error
+          if (archive?.folder) {
+            patchEntry(item.id, { archiveNote: '正在保存原件副本…' })
+            outcome.archiveNote = await archiveUploadedFile(archive.folder, file, item.archiveLibraryName || item.targetLibraryId || '未命名库', item.targetDir ?? '', item.name)
+          }
+        } catch (error) { outcome.archiveNote = `原件副本归档失败：${batchFailureReason(error)}` }
+      }
+      settle(outcome)
     }
 
     // ≥16MB 走分片会话流（ADR-0028，阈值与状态机在 lib/upload-chunked，XHR 直连
@@ -419,6 +436,8 @@ function enqueue(inputs: readonly StagedFileInput[], batch: UploadBatchTarget): 
         attach: it.attach,
         errorText: target === null ? '拖入路径不安全（含 .. 或绝对路径），已拦截' : undefined,
         file: it.file,
+        archiveFolder: captureUploadArchive(),
+        archiveLibraryName: batch.libraryName,
         chunkSessionId: null,
         chunkOffset: 0,
         createdAt: Date.now(),

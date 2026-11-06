@@ -16,6 +16,19 @@ import org.junit.Test
  */
 class QimengMediaGridCellsTest {
 
+    @Test
+    fun `viewport prefetch selects nearby rows in either direction and skips animated originals`() {
+        val items = (0..9).map { asset("$it").copy(thumbUrl = "https://example.org/$it.webp") }
+        val cells = flattenGridCells(listOf(GridSection(label = "group", items = items)))
+        assertEquals(listOf("https://example.org/2.webp", "https://example.org/3.webp", "https://example.org/4.webp", "https://example.org/5.webp"),
+            nearbyThumbnailUrls(cells, first = 0, last = 2, columns = 2, forward = true))
+        assertEquals(listOf("https://example.org/4.webp", "https://example.org/3.webp", "https://example.org/2.webp", "https://example.org/1.webp"),
+            nearbyThumbnailUrls(cells, first = 6, last = 8, columns = 2, forward = false))
+        val animated = listOf(GridCell(null, items[0]), GridCell(null, items[1].copy(mediaType = MediaKind.ANIMATED_IMAGE)))
+        assertEquals(emptyList<String>(), nearbyThumbnailUrls(animated, 0, 0, 2, true))
+        assertEquals(emptyList<String>(), nearbyThumbnailUrls(cells, -1, -1, 2, true))
+    }
+
     private fun asset(id: String) = MediaAsset(
         id = id,
         fileName = "$id.jpg",

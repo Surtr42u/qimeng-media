@@ -160,9 +160,6 @@ fun HistoryScreen(
                     onNearBottom = viewModel::onNearBottom,
                     // 问题A（2026-09-28）：加载结束重评估信号（KDoc 见 QimengMediaGrid.reloadTick）
                     reloadTick = state.reloadTick,
-                    // 滚动暂停缩略图加载（任务I I5，GUIDE_UI §浏览历史 L394）：拖拽/fling 期间
-                    // 暂缓新缩略图请求、停滚恢复（门控在 QimengThumbnail；QimengMediaGrid 开关）
-                    pauseThumbnailsWhileScrolling = true,
                     // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
                     // 镜像 AllScreen/HomeScreen 接线）；点击统一走：先写批次上下文（详情页 i/N
                     // 序号+滑动切换数据链，2026-09-09 拍板对齐首页机制），再交壳层导航

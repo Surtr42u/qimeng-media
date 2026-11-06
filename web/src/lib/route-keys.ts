@@ -24,8 +24,15 @@ export const BROWSING_REVIEW_PATH = '/app/data/review'
 /** 作者管理入口；与按名字浏览作者作品的集合路由不同。 */
 export const AUTHORS_PATH = '/app/authors'
 
+export const AUTHOR_PROFILE_PATTERN = '/app/authors/:authorId/profile'
+export function authorProfilePath(authorId: string): string {
+  return generatePath(AUTHOR_PROFILE_PATTERN, { authorId })
+}
+
 /** 维护页路由（Sidebar 底部图标组入口） */
 export const MAINTENANCE_PATH = '/app/maintenance'
+export const MAINTENANCE_STORAGE_PATH = '/app/maintenance/storage'
+export const MAINTENANCE_LOGS_PATH = '/app/maintenance/client-errors'
 
 /** 设置页路由（Sidebar 底部图标组入口） */
 export const SETTINGS_PATH = '/app/settings'
@@ -65,6 +72,11 @@ export const COLLECTION_PATTERN = '/app/collection/:kind/:name'
  */
 export function collectionPath(kind: string, name: string): string {
   return generatePath(COLLECTION_PATTERN, { kind, name })
+}
+
+/** 作者主页显式携身份，普通/COS 同名时不依赖显示名反查。 */
+export function authorCollectionPath(authorId: string, displayName: string): string {
+  return `${collectionPath(COLLECTION_AUTHOR, displayName)}?${new URLSearchParams({ authorId })}`
 }
 
 /**

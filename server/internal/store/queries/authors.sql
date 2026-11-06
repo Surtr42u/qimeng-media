@@ -25,7 +25,7 @@ WITH asset_views AS (
       AND ve.asset_id IN (SELECT asset_id FROM asset_authors)
     GROUP BY ve.asset_id
 )
-SELECT au.id, au.display_name, au.type, au.followed,
+SELECT au.id, au.display_name, au.type, au.followed, au.created_at,
        COUNT(aa.asset_id) AS file_count,
        COALESCE(SUM(av.opens), 0) AS view_count
 FROM authors au
@@ -189,3 +189,34 @@ UPDATE asset_authors SET author_id = ? WHERE author_id = ?;
 -- selector: (new id, new display name, old id).
 INSERT INTO authors (id, display_name, type, followed, created_at, origin)
 SELECT ?, ?, au.type, au.followed, au.created_at, au.origin FROM authors au WHERE au.id = ?;
+
+-- name: CountAssetAuthorsByAuthorID :one
+-- Author merge step 1a: total source links before migration. The merge
+-- compares this with CountSharedAssetAuthors to report moved vs deduped.
+SELECT COUNT(*) FROM asset_authors WHERE author_id = ?;
+
+-- name: CountSharedAssetAuthors :one
+-- Author merge step 1b: assets already linked to BOTH identities. Their
+-- target row is kept verbatim (origin/created_at preserved) and only the
+-- source row is deleted.
+SELECT COUNT(*)
+FROM asset_authors src
+JOIN asset_authors dst ON dst.asset_id = src.asset_id
+WHERE src.author_id = sqlc.arg(source_author_id)
+  AND dst.author_id = sqlc.arg(target_author_id);
+
+-- name: MergeAssetAuthors :exec
+-- Author merge step 2: move non-conflicting source links to the target.
+-- UPDATE OR IGNORE leaves the target's existing row (and its provenance)
+-- untouched when the same asset is already linked to the target; a
+-- follow-up DeleteAssetAuthorsByAuthorID removes those leftover source
+-- rows. Non-conflicting rows keep created_at/origin (ADR-0032: never
+-- fabricate provenance during a merge).
+UPDATE OR IGNORE asset_authors SET author_id = sqlc.arg(target_author_id)
+WHERE author_id = sqlc.arg(source_author_id);
+
+-- name: DeleteAssetAuthorsByAuthorID :exec
+-- Author merge step 3: drop the deduped source rows left behind by
+-- MergeAssetAuthors (and any source row should the target row disappear
+-- concurrently). Author delete itself uses DeleteAssetAuthorsByAuthorIds.
+DELETE FROM asset_authors WHERE author_id = ?;

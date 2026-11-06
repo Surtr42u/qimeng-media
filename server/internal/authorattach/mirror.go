@@ -6,6 +6,7 @@ package authorattach
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"qimeng-media/server/internal/authoring"
@@ -28,6 +31,7 @@ import (
 type MirrorConfig struct {
 	Path             string `json:"path"`
 	FragmentFilename string `json:"fragmentFilename"`
+	Mode             string `json:"mode,omitempty"`
 }
 
 // mirrorTempPrefix 是镜像原子写在目标目录内的临时文件名前缀（点开头，
@@ -46,6 +50,9 @@ func LoadMirrorConfig(ctx context.Context, q *db.Queries) (MirrorConfig, error) 
 	var cfg MirrorConfig
 	if err := json.Unmarshal([]byte(v), &cfg); err != nil {
 		return MirrorConfig{}, fmt.Errorf("authorattach: 解析镜像配置 JSON: %w", err)
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = "fragment"
 	}
 	return cfg, nil
 }
@@ -72,6 +79,8 @@ type MirrorWriter struct {
 	Logger *slog.Logger
 }
 
+var mirrorWriteMu sync.Mutex
+
 func (w *MirrorWriter) logger() *slog.Logger {
 	if w.Logger != nil {
 		return w.Logger
@@ -84,6 +93,8 @@ func (w *MirrorWriter) logger() *slog.Logger {
 // 镜像路径。任何失败 slog.Warn（含 path 与 err）后返回——绝不向上抛错。
 // 任何改变片段内容的服务端操作都应在同一时机调用（REQ §3.4）。
 func (w *MirrorWriter) Refresh(ctx context.Context, q *db.Queries) {
+	mirrorWriteMu.Lock()
+	defer mirrorWriteMu.Unlock()
 	cfg, err := LoadMirrorConfig(ctx, q)
 	if err != nil {
 		w.logger().Warn("作者镜像：读取配置失败", "err", err)
@@ -91,6 +102,20 @@ func (w *MirrorWriter) Refresh(ctx context.Context, q *db.Queries) {
 	}
 	if cfg.Path == "" {
 		return // 未配置 = 关闭
+	}
+	if cfg.Mode == "master" {
+		content, err := MasterTXT(ctx, q)
+		if err == nil {
+			var sources []Source
+			sources, err = LoadSources(ctx, q)
+			if err == nil {
+				err = writeMasterFile(cfg.Path, content, sources)
+			}
+		}
+		if err != nil {
+			w.logger().Warn("作者总表：写入失败", "err", err)
+		}
+		return
 	}
 	sources, err := LoadSources(ctx, q)
 	if err != nil {
@@ -107,6 +132,54 @@ func (w *MirrorWriter) Refresh(ctx context.Context, q *db.Queries) {
 	if err := writeFileAtomically(cfg.Path, content); err != nil {
 		w.logger().Warn("作者镜像：写入失败", "path", cfg.Path, "err", err)
 	}
+}
+
+func writeMasterFile(path, content string, sources []Source) error {
+	current, readErr := os.ReadFile(path)
+	if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
+		return readErr
+	}
+	checksum, err := os.ReadFile(path + ".sha256")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err == nil {
+		accepted := string(current) == content
+		for _, source := range sources {
+			if source.Content == string(current) {
+				accepted = true
+				break
+			}
+		}
+		if readErr == nil && !accepted && strings.TrimSpace(string(checksum)) != fmt.Sprintf("%x", sha256.Sum256(current)) {
+			return errors.New("作者主表已被外部编辑，请先导入后再写回")
+		}
+	}
+	if readErr == nil && string(current) != content {
+		previous := strings.TrimSuffix(path, filepath.Ext(path)) + "（上次）" + filepath.Ext(path)
+		older := strings.TrimSuffix(path, filepath.Ext(path)) + "（上上次）" + filepath.Ext(path)
+		last, err := os.ReadFile(previous)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		// A retry after a partial write must not rotate the same generation twice.
+		if err == nil && string(last) != string(current) {
+			if err := writeCheckedMaster(older, string(last)); err != nil {
+				return err
+			}
+		}
+		if err := writeCheckedMaster(previous, string(current)); err != nil {
+			return err
+		}
+	}
+	return writeCheckedMaster(path, content)
+}
+
+func writeCheckedMaster(path, content string) error {
+	if err := writeFileAtomically(path, content); err != nil {
+		return err
+	}
+	return writeFileAtomically(path+".sha256", fmt.Sprintf("%x", sha256.Sum256([]byte(content))))
 }
 
 // mirrorTarget 定位镜像对象的内容：指名片段按 Filename 精确匹配；空名 →

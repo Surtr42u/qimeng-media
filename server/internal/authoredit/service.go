@@ -209,6 +209,24 @@ func (s *Service) DeleteAuthor(ctx context.Context, id string) error {
 	return nil
 }
 
+// MergeAuthors 原子合并重复作者：事务内把 source 身份并入 target（TXT 块、
+// 资产关联、关注、附属档案、上传条目、作者行全部同事务），提交成功后刷新
+// 本地镜像。不可撤销；失败整体回滚、零副作用（低层哨兵错误原样透传）。
+func (s *Service) MergeAuthors(ctx context.Context, sourceID, targetID string) (authorattach.MergeResult, error) {
+	now := s.now()
+	var result authorattach.MergeResult
+	err := s.withTx(ctx, func(qtx *db.Queries) error {
+		var err error
+		result, err = s.attach.MergeAuthors(ctx, qtx, now, sourceID, targetID)
+		return err
+	})
+	if err != nil {
+		return authorattach.MergeResult{}, err
+	}
+	s.mirror.Refresh(ctx, s.queries)
+	return result, nil
+}
+
 // ReplaceAssetAuthors 整体替换资产作者：资产行、所在库类型与当前文件名
 // 都在同一事务内读取（旧快照不跨过事务边界）；既有作者按 ids 顺序解析
 // （ids 已在 httpapi 层保序、trim 并去重），新名字批量解析后合并，用

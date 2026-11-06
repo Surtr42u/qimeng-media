@@ -58,10 +58,10 @@ private val RULE_LINES = listOf(
 /** 16dp：内容水平内边距（备份/作者 TXT 子页同档） */
 private val ScreenContentPadding = 16.dp
 
-/** 8dp：卡内元素纵向节奏（BackupCards.BackupRowInnerSpacing 同值） */
+/** 8dp：卡内元素纵向节奏（本页卡片统一） */
 private val CardRowSpacing = 8.dp
 
-/** 12dp：卡四向内边距（BackupCards.BackupCardInnerPadding 同值） */
+/** 12dp：卡四向内边距（本页卡片统一） */
 private val CardInnerPadding = 12.dp
 
 /** 24dp：滚动列尾部垫高（LibraryManageScreen 同值） */

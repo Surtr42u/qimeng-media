@@ -7,6 +7,9 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/url"
+	"strings"
 	"testing"
 
 	"qimeng-media/server/internal/authoring"
@@ -66,12 +69,14 @@ func listAuthors(t *testing.T, e *testEnv) []genAuthor {
 
 // genAuthor 是 gen.Author 的测试侧宽松投影。
 type genAuthor struct {
-	Id          *string `json:"id"`
-	DisplayName *string `json:"displayName"`
-	Type        *string `json:"type"`
-	FileCount   *int    `json:"fileCount"`
-	Followed    *bool   `json:"followed"`
-	ViewCount   *int    `json:"viewCount"`
+	Id            *string `json:"id"`
+	DisplayName   *string `json:"displayName"`
+	Type          *string `json:"type"`
+	FileCount     *int    `json:"fileCount"`
+	Followed      *bool   `json:"followed"`
+	ViewCount     *int    `json:"viewCount"`
+	AddedAtMillis *int64  `json:"addedAtMillis"`
+	TXTOrder      *int    `json:"txtOrder"`
 }
 
 func findAuthor(t *testing.T, list []genAuthor, id string) genAuthor {
@@ -364,5 +369,90 @@ func TestAuthorsTxtRebuildEmpty(t *testing.T) {
 	env := newTestEnv(t)
 	if imported, matched, code := rebuildTxt(t, env); code != 200 || imported != 0 || matched != 0 {
 		t.Fatalf("无片段重放得到 (%d, %d, code %d), want (0, 0, 200)", imported, matched, code)
+	}
+}
+
+func TestAuthorsExposeTXTOrderAndStableRecordTime(t *testing.T) {
+	e := newTestEnv(t)
+	importTXT(t, e, "first.txt", "99  Zeta\n作品\na.jpg\n1  Alpha\n作品\nb.jpg")
+	before := listAuthors(t, e)
+	zeta := findAuthor(t, before, "zeta")
+	alpha := findAuthor(t, before, "alpha")
+	if zeta.TXTOrder == nil || *zeta.TXTOrder != 1 || alpha.TXTOrder == nil || *alpha.TXTOrder != 2 {
+		t.Fatalf("unexpected TXT order: %v %v", zeta.TXTOrder, alpha.TXTOrder)
+	}
+	if zeta.AddedAtMillis == nil || *zeta.AddedAtMillis <= 0 {
+		t.Fatal("missing record timestamp")
+	}
+	importTXT(t, e, "second.txt", "1  Zeta\n作品\nc.mp4\n2  Beta")
+	after := listAuthors(t, e)
+	updated := findAuthor(t, after, "zeta")
+	if updated.AddedAtMillis == nil || *updated.AddedAtMillis != *zeta.AddedAtMillis {
+		t.Fatal("reimport reset timestamp")
+	}
+	beta := findAuthor(t, after, "beta")
+	if beta.TXTOrder == nil || *beta.TXTOrder != 3 {
+		t.Fatal("duplicate changed first-occurrence order")
+	}
+}
+
+func TestBackupAuthorReferencesSurviveTXTRebuild(t *testing.T) {
+	e := newTestEnv(t)
+	response := e.do(t, "GET", "/api/v1/export/qimeng-backup", "")
+	var snapshot struct {
+		Data struct {
+			MediaFiles []struct {
+				RecordKey string `json:"recordKey"`
+				FileName  string `json:"fileName"`
+			} `json:"mediaFiles"`
+		} `json:"data"`
+	}
+	if err := decodeBody(response, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	closeBody(response)
+	key := ""
+	for _, media := range snapshot.Data.MediaFiles {
+		if media.FileName == "a.jpg" {
+			key = media.RecordKey
+		}
+	}
+	if key == "" {
+		t.Fatal("missing synthetic file")
+	}
+	payload := map[string]any{"format": "qimeng_backup", "schemaVersion": 2, "appIdentifier": "com.qimeng.media", "data": map[string]any{
+		"viewEvents": []any{}, "mediaFiles": snapshot.Data.MediaFiles,
+		"authors":         []any{map[string]any{"authorId": "synthetic_roundtrip", "displayName": "Synthetic Roundtrip"}},
+		"authorMediaRefs": []any{map[string]any{"recordKey": key, "fileName": "a.jpg", "authorId": "synthetic_roundtrip"}},
+	}}
+	// Use the complete exported file metadata while replacing only author segments.
+	fullResponse := e.do(t, "GET", "/api/v1/export/qimeng-backup", "")
+	var full map[string]any
+	if err := decodeBody(fullResponse, &full); err != nil {
+		t.Fatal(err)
+	}
+	closeBody(fullResponse)
+	payload["data"].(map[string]any)["mediaFiles"] = full["data"].(map[string]any)["mediaFiles"]
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported := e.do(t, "POST", "/api/v1/import/qimeng-backup", string(raw))
+	if imported.StatusCode != 200 {
+		body, _ := io.ReadAll(imported.Body)
+		t.Fatalf("import failed: %s", body)
+	}
+	closeBody(imported)
+	exported := e.do(t, "GET", "/api/v1/authors/import-txt/export?filename="+url.QueryEscape(authoring.AutoFragmentFilename), "")
+	text, err := io.ReadAll(exported.Body)
+	closeBody(exported)
+	if err != nil || exported.StatusCode != 200 || !strings.Contains(string(text), "a.jpg") {
+		t.Fatalf("backup link missing from exported TXT: status=%d body=%s err=%v", exported.StatusCode, text, err)
+	}
+	rebuilt := e.do(t, "POST", "/api/v1/authors/import-txt/rebuild", "")
+	closeBody(rebuilt)
+	author := findAuthor(t, listAuthors(t, e), "synthetic_roundtrip")
+	if author.FileCount == nil || *author.FileCount != 1 {
+		t.Fatal("TXT rebuild lost restored author link")
 	}
 }

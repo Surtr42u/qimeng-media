@@ -13,6 +13,43 @@ async function openSettings(page: Page, onConfig: (route: Route) => Promise<void
   await page.goto('/app/settings')
 }
 
+test('保存和退出跟随推荐偏好下方，桌面和窄屏均不另占侧栏或遮挡', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await openSettings(page, route => route.fulfill({ json: initial }))
+  await expect(page.getByRole('navigation', { name: '设置分类' })).toHaveCount(0)
+  await expect(page.locator('.settings-workspace')).toHaveCount(0)
+  const actions = page.getByRole('group', { name: '设置操作', exact: true })
+  const recommendation = page.locator('.settings-preference-column > .settings-card')
+  await expect(recommendation.getByRole('heading', { name: '推荐偏好', exact: true })).toBeVisible()
+  await actions.scrollIntoViewIfNeeded()
+  const desktopActions = await actions.boundingBox()
+  const desktopRecommendation = await recommendation.boundingBox()
+  expect(desktopActions!.y).toBeGreaterThanOrEqual(desktopRecommendation!.y + desktopRecommendation!.height)
+  expect(desktopActions!.x).toBeGreaterThanOrEqual(desktopRecommendation!.x)
+  expect(desktopActions!.x + desktopActions!.width).toBeLessThanOrEqual(desktopRecommendation!.x + desktopRecommendation!.width + 1)
+  const appearance = await page.locator('.settings-preferences > .settings-card').boundingBox()
+  const save = await actions.getByRole('button', { name: '保存设置', exact: true }).boundingBox()
+  expect(Math.abs(save!.y + save!.height - appearance!.y - appearance!.height)).toBeLessThanOrEqual(2)
+  await page.screenshot({ path: testInfo.outputPath('settings-desktop-actions.png'), fullPage: true, animations: 'disabled' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await actions.scrollIntoViewIfNeeded()
+  const mobileActions = await actions.boundingBox()
+  const mobileRecommendation = await recommendation.boundingBox()
+  expect(mobileActions!.y).toBeGreaterThanOrEqual(mobileRecommendation!.y + mobileRecommendation!.height)
+  await expect(actions.getByRole('button', { name: '保存设置', exact: true })).toBeVisible()
+  await expect(actions.getByRole('button', { name: '退出登录', exact: true })).toBeVisible()
+  for (const name of ['保存设置', '退出登录']) {
+    const button = actions.getByRole('button', { name, exact: true })
+    await expect(button).toBeInViewport()
+    const box = await button.boundingBox()
+    for (const fab of await page.locator('.refresh-fab, .backtop-fab.shown').all()) {
+      const floating = await fab.boundingBox()
+      expect(box!.x + box!.width).toBeLessThanOrEqual(floating!.x)
+    }
+  }
+  await page.screenshot({ path: testInfo.outputPath('settings-mobile-actions.png'), fullPage: true, animations: 'disabled' })
+})
+
 test('慢保存 A 完成后保留新草稿 B，连续保存发送 B', async ({ page }) => {
   let pending: Route | undefined
   const submissions: unknown[] = []

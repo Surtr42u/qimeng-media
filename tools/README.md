@@ -23,6 +23,22 @@ python -X utf8 tools/audit_library.py --db <数据目录>/qimeng.db --backup <�
 
 `test_audit_library.py` 仅在云端用临时合成库/文件验证不写库、WAL 可见、统计/外键/缺失关联/身份冲突检测和路径拒绝；文档 workflow 在 Linux 和 Windows 执行相关测试，随后执行文档门禁。真实数据只读运行是运维对账，不代替合成测试。
 
+## 作者公开档案受控填充
+
+公开身份研究、平台来源、判定口径、头像核验与跨 AI 证据交接见[作者资料研究指南](AUTHOR_RESEARCH.md)。通用方法随仓库维护，真实作者名单、查询缓存和待复核交接包保留在忽略的本地 audit 目录。
+
+`import_creator_profiles.py`仅通过正式API填充研究报告中的公开档案，不读取媒体、数据库或凭据文件。输入是忽略目录中的JSON报告；默认离线dry-run，只输出候选/跳过数量，不输出作者名、链接或令牌：
+
+```powershell
+python -X utf8 tools/import_creator_profiles.py audit/authors-public-research.local
+```
+
+实际写入须显式`--apply`及`--base-url`（或`QIMENG_BASE_URL`），Bearer仅从`QIMENG_API_TOKEN`环境读取。客户端禁环境代理与HTTP重定向，单请求20秒、响应最多2MiB。执行前先GET作者列表，将本批所有候选的内部ID、原名与普通/COS类型逐项核对；任一不匹配整轮零写入。逐条GET档案，存在人工资料/待审候选则跳过；空资料（含删除重建后的非0版本）使用GET返回的当前revision提交，409单独计数，失败不中断后续项，不覆盖既有TXT来源或身份。输出仅计数与固定错误类别，不回显上游错误正文。部分成功不是全量完成，冲突/失败使退出码为1，输入或目标预检失败为2。
+
+只有已搜索、存在安全HTTPS平台链接和证据的候选可填充；未解决条目不猜测。研究子代理标记verified仍按candidate写入。主代理逐项复核后可提供`--reviewed-ids <忽略的JSON名单>`（字符串ID数组）才写verified；只有额外显式`--enable-auto-refresh`才为这些已复核条目开启资料维护。默认autoRefresh/trackUpdates均关闭，不导入自动动态订阅；缺少平台或证据的条目即使在审核名单中也不生成资料。实际apply必须处于用户当前真实资料维护授权范围，并由主代理复核报告与目标部署后执行，不能把示例数据写入8420。
+
+`test_import_creator_profiles.py`使用合成报告与API替身，验证错库预检、COS隔离、人工字段保留、审核状态、dry-run无网络及重定向/错误脱敏；随文档workflow在云端运行。
+
 ## 隐私与密钥门禁
 
 `check_privacy.py` 用标准库补充私人文件路径/个人邮箱/设备标识/实际库汇总和 Git 作者元数据检查；密钥规则复用 [Gitleaks](https://github.com/gitleaks/gitleaks) **8.30.1** 默认规则，`.gitleaks.toml` 只对 auth 测试的一条明确合成 token 作精确放行，不豁免测试目录。扫描器云端下载经过固定 SHA-256 核对，不引入应用运行时依赖。
@@ -91,3 +107,11 @@ Web 云端浏览器检查将合成作者管理场景的窄屏/桌面截图与失
 ## 局域网发现调试接口
 
 `python -X utf8 tools/discover_lan.py --json`输出`{status, servers}`，退出码0=找到、1=未找到、2=网络/参数错误。重复`--prefer http://192.0.2.8:8420`按顺序优先查最多五个地址，`--broadcast 192.0.2.255`可选指定网卡广播地址（示例为文档测试网段）。默认广播255.255.255.255，多网卡调试可显式指定广播地址。与App/Go共用[发现线协议](../server/README.md#局域网发现)，不登录、不发送token、不请求业务库。优先历史的单播与广播均有界，地址输出是本机隐私，落盘只放忽略的`build/*.local/`；它不证明密码、媒体访问或目标实例身份正确。
+
+[媒体复核与双端整理](MEDIA_RESEARCH_IMPORT.md)说明新目录逐文件清单、Google/Lens留证、命名延续、正式入库、标签同步及作者总表当天增量交付；身份查询继续以[作者研究指南](AUTHOR_RESEARCH.md)为入口。
+
+外部AI维护的工具契约、规则发现、本地维护权限、作者清理与无前台跨端维护、头像/链接/简介写入教程及后台任务入口见[任务书](../docs/AI_MAINTENANCE_TASKBOOK.md)。当前研究/导入工具继续按各自已有能力使用，任务书中的新工具和常驻执行器待分阶段交付。
+
+AI 维护规则包与只读查询 CLI（P1，写入能力 planned）见 [ai_maintenance/README.md](ai_maintenance/README.md)。
+
+研究用途的 Google Lens/Google 文本搜索 sidecar（loopback + token，仅 PC/NAS，默认不启用，嵌入式/移动端禁用）见 [research_sidecar/README.md](research_sidecar/README.md)。

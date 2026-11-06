@@ -28,7 +28,7 @@ class AuthorSourcesTest {
             override suspend fun authorSourcesById(authorId: String): List<String> = error("offline")
             override suspend fun replaceAuthorSources(authorId: String, sources: List<String>) { writes++ }
         }
-        val vm = AuthorViewModel(repo, resolver)
+        val vm = AuthorViewModel(repo, resolver, UnavailableCreatorProfiles)
         vm.openSourcesEditor(author)
         advanceUntilIdle()
         vm.saveSources()
@@ -48,7 +48,7 @@ class AuthorSourcesTest {
                 writes.add(sources)
             }
         }
-        val vm = AuthorViewModel(repo, resolver)
+        val vm = AuthorViewModel(repo, resolver, UnavailableCreatorProfiles)
         vm.openSourcesEditor(author)
         advanceUntilIdle()
         vm.changeSources(emptyList())
@@ -70,7 +70,7 @@ class AuthorSourcesTest {
             override suspend fun setFollowed(authorId: String, followed: Boolean) = Unit
             override suspend fun authorSourcesById(authorId: String) = if (authorId == "one") pending.await() else listOf("site-b")
         }
-        val vm = AuthorViewModel(repo, resolver)
+        val vm = AuthorViewModel(repo, resolver, UnavailableCreatorProfiles)
         vm.openSourcesEditor(author)
         runCurrent()
         vm.dismissSourcesEditor()

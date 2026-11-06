@@ -44,8 +44,8 @@ export function UpNextList({
   // 新批次到达后再归位；instant也取消键盘End尚未结束的平滑滚动。
   // CSS overflow-anchor 禁止浏览器按复用行恢复旧位置（见glass.css）。
   useLayoutEffect(() => {
-    listRef.current?.scrollTo({ top: 0, behavior: 'instant' })
-  }, [assetId, seed, data])
+    if (!isFetching) listRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+  }, [assetId, seed, data, isFetching])
   // 类型谓词收窄 id：协议 AssetSummary.id 可空，但本列表行必须有 id 才可跳详情
   const items = (data ?? []).filter((a): a is AssetSummary & { id: string } => !!a.id && a.id !== assetId)
   // E5 批次导航快照：本列表（排除当前资产后）的 id 序即流快照，行下标即所点

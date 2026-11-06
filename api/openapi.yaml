@@ -784,6 +784,85 @@ paths:
         "200": { description: 已新建或复用（复用返回既有行）, content: { application/json: { schema: { $ref: "#/components/schemas/Author" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { description: 与 COS 作者行撞名, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/merge:
+    post:
+      summary: 原子合并重复作者（源身份删除并并入目标身份；不可撤销）
+      description: |
+        作者管理页「合并重复作者」与 AI 清理 author.cleanup.apply 的原子执行端点
+        （2026-11-06，ADR-0024 后续）。**不可撤销**：合并即删除源身份
+        （sourceAuthorId），没有撤销端点，也不保留可恢复的源身份快照；执行前应由
+        author.cleanup.prepare 只读清点候选与影响数量并经用户或任务授权确认（AI
+        维护任务书 5.1），或由作者管理页向用户展示影响后二次确认。两个 ID 均必填，
+        且都必须是**常规作者**：COS 作者由目录扫描管理 → 400 INVALID_PARAM；任一
+        不存在 → 404 NOT_FOUND；两个 ID 相同 → 400 INVALID_PARAM。
+
+        语义（同一事务，任一步失败整体回滚，零副作用）：
+        - **TXT 片段合并**：目标块保留在目标片段原位置，全部源块移除。目标块别名 =
+          目标现有别名 + 源别名中未出现者（保持目标顺序、去重）；作品行、来源区
+          同法并入（按块内现有行序去重）。源/目标分处不同片段时分别处理：源块从
+          所在片段移除，其别名/作品/来源并入目标块所在片段。目标无块但源有块时，
+          在源块所在片段新建目标块（编号行取目标身份的往返安全别名）。
+        - **关联迁移**：asset_authors 中 source→target；同一资产已同时关联两端时
+          保留 target 既有行（origin/created_at 原样），删除 source 行；其余行迁移
+          并原样保留 origin/created_at（ADR-0032 溯源不伪造）。
+        - **关注并集**：target.followed = target.followed OR source.followed。
+        - **附属档案**：目标已有非空档案则完整保留，源档案不合并、随源删除；目标
+          无档案而源有非空档案则把源档案迁到目标（revision 按既有迁移语义递增）；
+          两端都有非空档案时保留目标，sourceProfileDiscarded=true 如实反映取舍，
+          不静默覆盖人工资料。
+        - **上传写入条目**：source 条目改指 target（AuthorID/Names/DisplayName 同步，
+          与 target 同片段条目按作品行/来源行保序去重合并），避免同文件名重导入
+          误报 409。
+        - **删除源作者行**；媒体文件与资产本体保留（DOMAIN_RULES §6）。提交成功后
+          刷新本地作者镜像。重复调用（源已被删）→ 404；并发改名撞身份仍按改名
+          端点 409 处理，本端点不新建身份也不改变该语义。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorMergeRequest" }
+      responses:
+        "200": { description: 合并完成（源身份已删除，目标身份保留）, content: { application/json: { schema: { $ref: "#/components/schemas/AuthorMergeResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/authors/{authorId}/profile:
+    parameters:
+      - { name: authorId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: 读取作者公开档案（普通与COS；删除重建后保留版本代际）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CreatorProfile" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      summary: 保存作者档案及维护开关（revision冲突不写入；显式审阅候选后提交）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatorProfileWrite" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CreatorProfile" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: 档案已更新，请重新读取, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/{authorId}/profile/refresh:
+    parameters:
+      - { name: authorId, in: path, required: true, schema: { type: string } }
+    post:
+      summary: 从已确认主页获取公开资料候选与可选RSS动态，不覆盖人工字段
+      responses:
+        "200": { description: 完成检查（上游失败见lastError，保留原资料）, content: { application/json: { schema: { $ref: "#/components/schemas/CreatorProfile" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: 档案更新或刷新已在进行, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/{authorId}/profile/avatar:
+    parameters:
+      - { name: authorId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: 认证后代理已保存作者头像（仅安全公网HTTPS图片，无任意URL参数）
+      responses:
+        "200": { description: 安全头像图片, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: 头像来源暂不可用, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /api/v1/authors/{authorId}:
     put:
       summary: 修改作者显示名（改名；身份随之迁移，ADR-0024 修订 5）
@@ -1377,6 +1456,96 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ---------- 媒体研究（作者/作品核验与反查，ADR-0053） ----------
+  # 服务端 provider 网关：每个 provider 只支持固定 operation 矩阵，其余组合
+  # 400 INVALID_PARAM。出口只走内建安全 HTTP 客户端（仅 https、域名白名单、
+  # 禁重定向与环境代理、DNS 解析后校验公网地址、超时与响应字节上限），不提供
+  # 任意 URL 抓取面；Lens 只转发给本机 loopback sidecar。
+  /api/v1/research/context:
+    get:
+      summary: 研究能力上下文（启停、sidecar 状态、provider 矩阵与限额）
+      description: |
+        返回 ResearchContext：enabled 取 research.enabled（默认 false，嵌入式/
+        Android 形态默认关闭）；sidecar.configured 表示是否配置 loopback 端点，
+        sidecar.available 是最近一次 /healthz 探测结果（短缓存，未配置恒 false），
+        sidecar.pending 是当前在途 Lens 请求数（sidecar 单实例串行、1 并发）；
+        providers 是 v1 固定矩阵及各 provider 限额，limits 是 Lens 每小时/每日
+        预算。研究整体关闭时本端点仍返回 200 并以 enabled=false 告知，便于客户端
+        隐藏入口；不返回 503。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ResearchContext" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/research/providers/{provider}/query:
+    post:
+      summary: 按 provider + operation 查询作者/作品/标签/存档/创意工坊/搜索
+      description: |
+        v1 provider-operation 矩阵（不支持组合 400 INVALID_PARAM）：
+        fxtwitter(author,post)、pixiv(author,work)、yandere(artist,tags)、
+        e621(post,tags)、wayback(url)、steam(workshop)、bing(search)。
+        target 语义随 operation：author/artist 为账号或画师名，post 为帖子 ID
+        或链接，work 为作品 ID，tags 为逗号分隔标签，url 为待查存档 URL，
+        workshop 为创意工坊 ID，search 为搜索词；空串或超过 500 字符 400。
+        options.limit 取值 1–50（缺省 10），items 最多 20 条。
+        证据等级只看 provider 平台接口返回的字段：检索类结果（bing/wayback）
+        只是线索，不能单独支撑作者核验结论。status=rate_limited（进程内每
+        分钟预算耗尽）与 status=provider_unavailable（上游超时/5xx/解析失败）
+        仍返回 200，由 status 与 error 表达；research.enabled=false 时返回
+        503 RESEARCH_DISABLED。
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ResearchProviderName" }
+          description: provider 名（v1 固定矩阵；未知 provider 400 INVALID_PARAM）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResearchProviderQuery" }
+      responses:
+        "200": { description: 查询结果（status 表达 ok/not_found/blocked/rate_limited/provider_unavailable）, content: { application/json: { schema: { $ref: "#/components/schemas/ResearchProviderResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { description: 'RESEARCH_DISABLED：research.enabled=false', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/research/lens:
+    post:
+      summary: 本地 Lens sidecar 视觉反查（best-effort；links 可为空）
+      description: |
+        multipart/form-data，表单字段名 file；仅接受 JPEG/PNG/WebP（以魔数嗅探
+        为准，不信任声明类型），单文件不超过 20MiB。图片只转发给本机 loopback
+        sidecar，不落盘不入库；证据只记哈希与启发式摘要。
+        sidecar 的视觉匹配卡片没有稳定外链，links[] 经常为空，不得把 links 当作
+        识别成功的证据；topTitles/topDomains/cites 来自正文启发式，status=ok
+        不等于识别出了作者。frameSha256 恒有（可复算去重）；textSha256、
+        fetchedAt、elapsedMs 在 sidecar 返回时才有。
+        sidecar 的业务状态（blocked_bot/timeout/upload_rejected）以 200 + status
+        表达，HTTP 4xx/5xx 只用于网关侧失败。错误映射：400 INVALID_PARAM（非
+        multipart/缺 file/类型不支持）、413 TOO_LARGE（超过 20MiB）、
+        429 RATE_LIMITED（Lens 每小时/每日预算耗尽，或 sidecar 429 BUSY）、
+        502 RESEARCH_SIDECAR_ERROR（sidecar 异常响应，含 NO_RESULT/鉴权失败/
+        结构不符）、503 RESEARCH_SIDECAR_DISABLED（研究关闭或 sidecar 未配置）、
+        503 RESEARCH_SIDECAR_UNAVAILABLE（sidecar 不可达）、
+        504 RESEARCH_SIDECAR_TIMEOUT（网关等待 sidecar 超过 120s；sidecar 自行
+        报告的超时以 200 status=timeout 返回）。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: 待反查图片（JPEG/PNG/WebP，≤20MiB） }
+      responses:
+        "200": { description: sidecar 结果（status 表达 ok/blocked/timeout/upload_rejected/sidecar_unavailable）, content: { application/json: { schema: { $ref: "#/components/schemas/ResearchLensResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { description: 'TOO_LARGE：图片超过 20MiB 上限', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: 'RATE_LIMITED：Lens 每小时/每日预算耗尽，或 sidecar 忙（429 BUSY）', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: 'RESEARCH_SIDECAR_ERROR：sidecar 返回异常响应（含 NO_RESULT/鉴权失败/结构不符）', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 'RESEARCH_SIDECAR_DISABLED（研究关闭或 sidecar 未配置）/ RESEARCH_SIDECAR_UNAVAILABLE（sidecar 不可达）', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "504": { description: 'RESEARCH_SIDECAR_TIMEOUT：网关等待 sidecar 超过 120s（sidecar 自报超时有 200 status=timeout）', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
 components:
   headers:
     NextOffset:
@@ -1450,6 +1619,146 @@ components:
       properties:
         items:    { type: array, items: { $ref: "#/components/schemas/BackupInfo" }, description: 按创建时间倒序（新→旧） }
         schedule: { $ref: "#/components/schemas/BackupSchedule" }
+
+    ResearchContext:
+      type: object
+      description: GET /api/v1/research/context 响应：研究能力上下文（ADR-0053）
+      required: [enabled, sidecar, providers, limits, fetchedAt]
+      properties:
+        enabled:   { type: boolean, description: research.enabled（默认 false；嵌入式/Android 形态默认关闭，不新增监听面） }
+        sidecar:   { $ref: "#/components/schemas/ResearchSidecarStatus" }
+        providers: { type: array, items: { $ref: "#/components/schemas/ResearchProviderInfo" }, description: v1 provider 固定矩阵（顺序固定，便于客户端直接渲染） }
+        limits:    { $ref: "#/components/schemas/ResearchLimits" }
+        fetchedAt: { type: string, format: date-time, description: 本响应生成时刻（RFC3339） }
+
+    ResearchSidecarStatus:
+      type: object
+      description: 本机 Lens sidecar 状态（loopback HTTP + Bearer token）
+      required: [configured, available]
+      properties:
+        configured: { type: boolean, description: 是否配置了 loopback sidecar 端点（未配置时 Lens 端点 503 RESEARCH_SIDECAR_DISABLED） }
+        available:  { type: boolean, description: 最近一次 GET /healthz 探测是否可达（短缓存；未配置恒 false） }
+        pending:    { type: integer, minimum: 0, description: 当前在途 Lens 请求数（sidecar 单实例串行、1 并发） }
+
+    ResearchLimits:
+      type: object
+      description: Lens 预算（进程内内存计数，时钟可注入；重启进程即清零）
+      required: [lensPerHour, lensPerDay]
+      properties:
+        lensPerHour: { type: integer, minimum: 0, description: 每滚动小时 Lens 请求上限（research.lens_per_hour，默认 20） }
+        lensPerDay:  { type: integer, minimum: 0, description: 每自然日 Lens 请求上限（research.lens_per_day，默认 100） }
+
+    ResearchProviderName:
+      type: string
+      description: provider 名（v1 固定矩阵）
+      enum: [fxtwitter, pixiv, yandere, e621, wayback, steam, bing]
+      # x-enum-varnames：Go 侧常量必须带前缀。oapi-codegen v2.8.0 对"裸值常量名"
+      # 做全局去重——新增一个含 ok 的枚举会把既有 EventsViewAcceptedOutcome 的
+      # Ok 常量重命名为前缀形式，直接编译不过；显式命名后互不干扰。
+      x-enum-varnames: [ResearchProviderFxTwitter, ResearchProviderPixiv, ResearchProviderYandere, ResearchProviderE621, ResearchProviderWayback, ResearchProviderSteam, ResearchProviderBing]
+
+    ResearchOperation:
+      type: string
+      description: 研究操作语义（每个 provider 只支持矩阵内的组合）
+      enum: [author, post, work, artist, tags, url, workshop, search]
+      x-enum-varnames: [ResearchOpAuthor, ResearchOpPost, ResearchOpWork, ResearchOpArtist, ResearchOpTags, ResearchOpURL, ResearchOpWorkshop, ResearchOpSearch]
+
+    ResearchProviderLimits:
+      type: object
+      description: 单个 provider 的进程内预算
+      required: [perMinute, perDay]
+      properties:
+        perMinute: { type: integer, minimum: 0, description: 每分钟请求上限（research.provider_per_minute，默认 20；0=不限制） }
+        perDay:    { type: integer, minimum: 0, description: 每日请求上限（v1 不设每日 provider 预算，恒 0=不限制） }
+
+    ResearchProviderInfo:
+      type: object
+      required: [name, operations, enabled, limits]
+      properties:
+        name:       { $ref: "#/components/schemas/ResearchProviderName" }
+        operations: { type: array, items: { $ref: "#/components/schemas/ResearchOperation" }, description: 该 provider 在 v1 支持的 operation（矩阵固定） }
+        enabled:    { type: boolean, description: research.enabled 且该 provider 已注册 }
+        limits:     { $ref: "#/components/schemas/ResearchProviderLimits" }
+
+    ResearchProviderQuery:
+      type: object
+      required: [operation, target]
+      properties:
+        operation: { $ref: "#/components/schemas/ResearchOperation" }
+        target:    { type: string, minLength: 1, maxLength: 500, description: 查询目标（语义随 operation；空串或超过 500 字符 400 INVALID_PARAM） }
+        options:
+          type: object
+          properties:
+            limit: { type: integer, minimum: 1, maximum: 50, default: 10, description: 期望条数（1–50，缺省 10；无论取值多少，items 最多 20 条） }
+
+    ResearchItem:
+      type: object
+      description: 单条 provider 结果（字段按 provider 能力尽力填充，缺失即省略）
+      properties:
+        title:       { type: string, description: 标题/名称/摘要（检索类为结果标题） }
+        url:         { type: string, description: 可核验的公开链接（平台页或归档页） }
+        domain:      { type: string, description: url 的主机名（小写，不含端口） }
+        author:      { type: string, description: 作者名/账号（平台字段） }
+        id:          { type: string, description: 平台内稳定 ID（帖子/作品/用户/存档时间戳） }
+        publishedAt: { type: string, description: 平台发布时间原文或归一化时刻（各 provider 口径不同） }
+        extra:       { type: object, additionalProperties: { type: string }, description: provider 附加字段（字符串化；仅保留已核实字段） }
+
+    ResearchProviderResult:
+      type: object
+      description: POST /api/v1/research/providers/{provider}/query 响应
+      required: [provider, operation, target, status, fetchedAt, latencyMs, items]
+      properties:
+        provider:  { $ref: "#/components/schemas/ResearchProviderName" }
+        operation: { $ref: "#/components/schemas/ResearchOperation" }
+        target:    { type: string, description: 回显请求目标（去首尾空白后） }
+        status:    { type: string, enum: [ok, not_found, blocked, rate_limited, provider_unavailable], x-enum-varnames: [ResearchStatusOk, ResearchStatusNotFound, ResearchStatusBlocked, ResearchStatusRateLimited, ResearchStatusProviderUnavailable], description: 'ok=平台返回可用字段；not_found=平台明确不存在或空结果；blocked=平台拒绝（403/需要登录）；rate_limited=本地每分钟预算耗尽；provider_unavailable=上游超时/5xx/响应不可解析' }
+        fetchedAt: { type: string, format: date-time, description: 上游响应完成时刻（RFC3339） }
+        latencyMs: { type: integer, format: int64, minimum: 0, description: 本次查询耗时（毫秒） }
+        items:     { type: array, maxItems: 20, items: { $ref: "#/components/schemas/ResearchItem" }, description: 最多 20 条 }
+        error:     { $ref: "#/components/schemas/Error" }
+
+    ResearchLensTitle:
+      type: object
+      description: sidecar 正文启发式得到的标题 + 域名（不保证是作品真名）
+      required: [title, domain]
+      properties:
+        title:  { type: string }
+        domain: { type: string }
+
+    ResearchLensCite:
+      type: object
+      description: sidecar 正文启发式引用条目
+      required: [url, domain]
+      properties:
+        title:  { type: string }
+        url:    { type: string }
+        domain: { type: string }
+
+    ResearchLensLink:
+      type: object
+      description: sidecar 结果卡片外链（best-effort，经常为空；不得当作识别证据）
+      required: [url, domain]
+      properties:
+        url:    { type: string }
+        domain: { type: string }
+        title:  { type: string }
+
+    ResearchLensResult:
+      type: object
+      description: POST /api/v1/research/lens 响应（best-effort 视觉反查）
+      required: [status, frameSha256, topTitles, topDomains, cites, links]
+      properties:
+        status:     { type: string, enum: [ok, blocked, timeout, upload_rejected, sidecar_unavailable], x-enum-varnames: [LensStatusOk, LensStatusBlocked, LensStatusTimeout, LensStatusUploadRejected, LensStatusSidecarUnavailable], description: 'ok=sidecar 完成识别（不等于认出作者）；blocked=sidecar 被上游/验证码挡住；timeout=sidecar 帧处理超时；upload_rejected=sidecar 拒绝该图片；sidecar_unavailable=sidecar 不可达（HTTP 层已另行返回 503）' }
+        frameSha256: { type: string, description: 入参图片字节的 SHA-256（小写十六进制，可复算去重） }
+        textSha256:  { type: string, description: sidecar 提取正文的 SHA-256（无正文时省略） }
+        fetchedAt:   { type: string, format: date-time, description: sidecar 抓取时刻（sidecar 返回时才有） }
+        elapsedMs:   { type: integer, format: int64, minimum: 0, description: sidecar 单帧耗时（已实测 17–18s；单帧 25–40s 也属正常范围） }
+        topTitles:   { type: array, items: { $ref: "#/components/schemas/ResearchLensTitle" }, description: 正文启发式标题（可为空） }
+        topDomains:  { type: array, items: { type: string }, description: 正文启发式域名（可为空） }
+        cites:       { type: array, items: { $ref: "#/components/schemas/ResearchLensCite" }, description: 正文启发式引用（可为空） }
+        links:       { type: array, description: 'best-effort 外链；经常为空数组，不得当作识别成功或作者证据', items: { $ref: "#/components/schemas/ResearchLensLink" } }
+        resultUrl:   { type: string, description: sidecar 结果页 URL（如有） }
+        error:       { $ref: "#/components/schemas/Error" }
 
     CreateUploadRequest:
       type: object
@@ -1885,6 +2194,58 @@ components:
         name:      { type: string }
         fileCount: { type: integer }
 
+    CreatorProfileCandidate:
+      type: object
+      required: [nickname, biography, avatarUrl, homepageUrl, evidenceUrls]
+      properties:
+        nickname: { type: string, maxLength: 200 }
+        biography: { type: string, maxLength: 2000 }
+        avatarUrl: { type: string, maxLength: 2000 }
+        homepageUrl: { type: string, maxLength: 2000 }
+        evidenceUrls: { type: array, maxItems: 8, items: { type: string, maxLength: 2000 } }
+    CreatorXProfile:
+      type: object
+      description: 单独保留X简介原文与账号来源，不替换整理简介。空字符串可显式清空，旧客户端省略整个对象时保留原值。
+      required: [url, biography]
+      properties:
+        url: { type: string, maxLength: 2000, description: HTTPS X或Twitter账号主页，可为空 }
+        biography: { type: string, maxLength: 1000, description: 已核对账号的简介原文，可为空 }
+        biographyZh: { type: string, maxLength: 2000, description: 中文译文；省略且账号与原文相同时保留已有译文，显式空字符串清空。原文为空时译文须为空。 }
+    CreatorProfileWrite:
+      type: object
+      required: [revision, nickname, biography, avatarUrl, homepageUrl, evidenceUrls, status, autoRefresh, feedUrl, trackUpdates]
+      properties:
+        revision: { type: integer, format: int64, minimum: 0 }
+        nickname: { type: string, maxLength: 200 }
+        biography: { type: string, maxLength: 2000 }
+        avatarUrl: { type: string, maxLength: 2000 }
+        homepageUrl: { type: string, maxLength: 2000 }
+        evidenceUrls: { type: array, maxItems: 8, items: { type: string, maxLength: 2000 } }
+        status: { type: string, enum: [empty, candidate, verified] }
+        autoRefresh: { type: boolean }
+        feedUrl: { type: string, maxLength: 2000 }
+        trackUpdates: { type: boolean }
+        xProfile: { $ref: "#/components/schemas/CreatorXProfile" }
+    CreatorUpdate:
+      type: object
+      required: [id, title, url, publishedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        url: { type: string }
+        publishedAt: { type: string }
+    CreatorProfile:
+      allOf:
+        - { $ref: "#/components/schemas/CreatorProfileWrite" }
+        - type: object
+          required: [authorId, lastCheckedAt, lastSuccessAt, lastError, candidate, updates]
+          properties:
+            authorId: { type: string }
+            lastCheckedAt: { type: string }
+            lastSuccessAt: { type: string }
+            lastError: { type: string }
+            candidate: { $ref: "#/components/schemas/CreatorProfileCandidate" }
+            updates: { type: array, maxItems: 30, items: { $ref: "#/components/schemas/CreatorUpdate" } }
     Author:
       type: object
       properties:
@@ -1894,6 +2255,34 @@ components:
         fileCount: { type: integer }
         followed:  { type: boolean }
         viewCount: { type: integer, description: 该作者全部作品累计浏览次数（kind='open' 事件计数） }
+        addedAtMillis: { type: integer, format: int64, description: 作者记录首次入库时刻；历史批量导入仅代表入库记录时间，无法推定原始加入日期 }
+        txtOrder: { type: integer, minimum: 1, description: 全部已存TXT片段按存储顺序解析后的首次出现序号；重复作者只计一次，COS及未出现者缺省 }
+
+    AuthorMergeRequest:
+      type: object
+      description: 作者合并请求（POST /authors/merge）；两个 ID 均必填，须为不同且存在的常规作者。合并不可撤销。
+      required: [sourceAuthorId, targetAuthorId]
+      properties:
+        sourceAuthorId: { type: string, description: 被合并并删除的身份（source）；其 TXT 块/关联/关注/档案/上传条目并入 target }
+        targetAuthorId: { type: string, description: 保留的身份（target）；合并后唯一存在的作者 }
+
+    AuthorMergeResult:
+      type: object
+      description: 作者合并结果（POST /authors/merge 200）；计数均为本次实际变更量（去重后）。
+      required: [sourceAuthorId, targetAuthorId, assetsMoved, associationsDeduped, worksMerged, sourcesMerged, aliasesMerged, followsMerged, profileMoved, sourceProfileDiscarded, uploadEntriesMoved, deletedSource]
+      properties:
+        sourceAuthorId: { type: string, description: 已删除的源身份 }
+        targetAuthorId: { type: string, description: 保留的目标身份 }
+        assetsMoved: { type: integer, description: 实际从 source 迁移到 target 的资产关联数（不含双端已同时关联而去重的行） }
+        associationsDeduped: { type: integer, description: 同一资产已同时关联两端、删除 source 行而保留 target 行的关联数 }
+        worksMerged: { type: integer, description: 并入目标块的作品行数（已去重） }
+        sourcesMerged: { type: integer, description: 并入目标块的来源词数（已去重） }
+        aliasesMerged: { type: integer, description: 并入目标块编号行的别名数（已去重） }
+        followsMerged: { type: boolean, description: 关注并集是否实际改变（target 原未关注且 source 已关注 = true；target 原已关注 = false） }
+        profileMoved: { type: boolean, description: 源档案是否迁到目标（仅目标无档案而源有档案时为 true；迁移后 revision 递增） }
+        sourceProfileDiscarded: { type: boolean, description: 源档案是否有内容但未合并、随源删除（两端都有档案时保留目标，不静默覆盖人工资料） }
+        uploadEntriesMoved: { type: integer, description: 改指/合并到 target 的上传写入条目数 }
+        deletedSource: { type: boolean, description: 源作者行已删除（成功恒为 true；供调用方回读核对） }
 
     TimelineTag:
       type: object
@@ -1960,6 +2349,7 @@ components:
       properties:
         path: { type: string, description: 镜像文件绝对路径；空=关闭（默认） }
         fragmentFilename: { type: string, description: 镜像目标片段名；空=最近导入的片段 }
+        mode: { type: string, enum: [fragment, master], default: fragment, description: master将全部常规作者与当前关联合成为一份作者总表；fragment使用指定片段 }
 
     AssetAuthorsReplaceRequest:
       type: object
@@ -2235,6 +2625,7 @@ components:
     LegacyBackupData:
       type: object
       properties:
+        authorMasterTxt: { type: string, description: 导出同一快照生成的常规作者总表，按片段首次出现排序并补齐当前关联；用于统一目录维护，导入以authors/authorMediaRefs及txtFragments为准 }
         viewEvents: { type: array, items: { $ref: "#/components/schemas/PortableViewEvent" }, description: 当前v2必须携带（可为空）；仅按原事件身份合并，mediaStats/dailyBrowse/history仅作展示，不用于合成事件；不再接收v1 }
         mediaFiles:        { type: array, items: { $ref: "#/components/schemas/LegacyMediaFile" } }
         txtFragments:      { type: array, items: { $ref: "#/components/schemas/LegacyTxtFragment" }, description: TXT 作者片段逐字载荷（2026-10-01 起；旧备份无此段向后兼容，导入端零处理）。导入按 DOMAIN_RULES §10「TXT 片段」口径合并，处理顺序在 authors/authorMediaRefs 段之前（片段导入触发统一重建，后处理会冲掉备份携带的关联数据） }
@@ -2305,6 +2696,8 @@ components:
       type: object
       required: [authorId, displayName]
       properties:
+        avatarData: { type: string, maxLength: 2796204, description: 可选离线头像的标准Base64；解码后最多2MiB且必须是PNG/JPEG/GIF/WebP，须同条profileJson绑定头像来源；已有资料只在来源一致且缺离线头像时补齐 }
+        profileJson: { type: string, maxLength: 262144, description: 作者公开附属档案JSON；可选v2扩展，旧备份缺省无操作；导入不覆盖本端已有档案且关闭自动维护 }
         authorId:         { type: string, description: 常规作者原样；COS 作者带 cos_ 前缀原样保留 }
         displayName:      { type: string }
         createdAtMillis:  { type: integer, format: int64 }

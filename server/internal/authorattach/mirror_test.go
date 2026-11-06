@@ -56,6 +56,49 @@ func TestMirrorWriterDisabledWithoutConfig(t *testing.T) {
 	}
 }
 
+func TestMasterMirrorProtectsUnimportedEdits(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "master.txt")
+	if err := writeMasterFile(path, "initial", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("manual"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMasterFile(path, "updated", nil); err == nil {
+		t.Fatal("unimported manual edit was overwritten")
+	}
+	if got, _ := readMirror(t, path); got != "manual" {
+		t.Fatal("manual contents changed")
+	}
+	if err := writeMasterFile(path, "updated", []Source{{Content: "manual"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := readMirror(t, path); got != "updated" {
+		t.Fatal("accepted import did not resume projection")
+	}
+}
+
+func TestMasterMirrorKeepsThreeDistinctGenerations(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "master.txt")
+	for _, content := range []string{"one", "two", "three", "three", "four"} {
+		if err := writeMasterFile(path, content, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, expected := range map[string]string{
+		"master.txt": "four", "master（上次）.txt": "three", "master（上上次）.txt": "two",
+	} {
+		if got, _ := readMirror(t, filepath.Join(dir, name)); got != expected {
+			t.Fatalf("%s = %q, want %q", name, got, expected)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 6 {
+		t.Fatalf("want three files and their checksums, got %d: %v", len(entries), err)
+	}
+}
+
 func TestMirrorWriterRefresh(t *testing.T) {
 	q := newTestDB(t)
 	ctx := context.Background()

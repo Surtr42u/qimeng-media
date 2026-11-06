@@ -23,6 +23,11 @@ import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import media.qimeng.app.core.ui.component.QimengAuthorAvatar
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -242,6 +247,12 @@ internal fun DetailAuthorSheet(
     onEdit: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val avatars: DetailAuthorAvatarViewModel = hiltViewModel()
+    val images by avatars.state.collectAsStateWithLifecycle()
+    val authorIds = authors.map { it.id }
+    val currentServer = avatars.currentServerScope()
+    val visibleImages = if (images.ids == authorIds.toSet() && images.server == currentServer) images.loaded else emptyMap()
+    LaunchedEffect(authorIds, currentServer) { avatars.load(authorIds) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         // 三个缺省行为陷阱的处置沿革与现口径（S1b 点外关闭已恢复）见上 KDoc（alpha15 短内容 sheet P1 实证）
@@ -339,20 +350,13 @@ internal fun DetailAuthorSheet(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    modifier = Modifier.size(36.dp),
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = DetailAuthorIcon,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                }
+                                QimengAuthorAvatar(
+                                    name = author.displayName,
+                                    bytes = visibleImages[author.id],
+                                    loading = !visibleImages.containsKey(author.id),
+                                    cacheKey = "${images.scope}|${author.id}",
+                                    size = 44.dp,
+                                )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {

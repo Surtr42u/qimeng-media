@@ -8,6 +8,7 @@
 - [AI_README_FIRST.md](AI_README_FIRST.md)：按任务读取的协作、验证和文档维护规范
 - [README.md](README.md)：产品总览与常用命令
 - [HANDOVER](docs/HANDOVER.md)：当前形态、工作事项与验证边界
+- [外部AI维护任务书](docs/AI_MAINTENANCE_TASKBOOK.md)：用户场景、工具调用、本地维护权限与无前台跨端通道、可发现写入规范、后台任务、两代备份与NAS阶段及重构验收
 - [性能与质量改进任务书](docs/OPTIMIZATION_TASKBOOK_20261025.md)：已实施范围、逐项验收缺口、基线审查记录与待选产品；不新增默认必读项
 - [此前代码质量任务书](docs/CODE_QUALITY_TASKBOOK.md)：此前职责整理的范围、参考代码和验收标准；交付状态查 HANDOVER，不重复立项
 
@@ -41,6 +42,7 @@
 - [作者/词表](docs/api/authors.md)
 - [上传/整理/回收站](docs/api/files.md)
 - [便携迁移/库快照](docs/api/backup.md)
+- [研究/核验](docs/api/research.md)：provider 网关与 Lens sidecar（默认关闭）
 - [Makefile](Makefile)：构建与检查命令
 - [服务端](server/README.md)
 - [Web](web/README.md)

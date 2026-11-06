@@ -4,6 +4,7 @@ import {
   assetDetail,
   assetDetailWithSearch,
   collectionPath,
+  authorCollectionPath,
   isAssetDetailPath,
   listKeyFromPath,
   readAssetNavState,
@@ -159,5 +160,16 @@ describe('assetDetailWithSearch', () => {
     // 实测 react-router 8 generatePath：空参产出无尾斜杠的 /app/asset（函数层不拦截）
     expect(assetDetailWithSearch('', '?tab=cos')).toBe('/app/asset?tab=cos')
     expect(assetDetailWithSearch('a b', '')).toBe('/app/asset/a%20b')
+  })
+})
+
+
+describe('authorCollectionPath', () => {
+  it('普通与COS同名主页保留各自身份，特殊字符不会拆散查询串', () => {
+    const regular = new URL(authorCollectionPath('a&b', '同名'), 'https://example.org')
+    const cos = new URL(authorCollectionPath('cos_a', '同名'), 'https://example.org')
+    expect(regular.pathname).toBe(cos.pathname)
+    expect(regular.searchParams.get('authorId')).toBe('a&b')
+    expect(cos.searchParams.get('authorId')).toBe('cos_a')
   })
 })
