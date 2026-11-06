@@ -37,7 +37,7 @@ export const maintenanceFolderStore = {
 export async function chooseMaintenanceFolder(): Promise<Directory> {
   // Call the picker before any awaited IO, retaining the user's activation.
   const picker = (window as Window & {
-    showDirectoryPicker(options: { mode: 'readwrite'; id: string }): Promise<Directory>
+    showDirectoryPicker?(options: { mode: 'readwrite'; id: string }): Promise<Directory>
   }).showDirectoryPicker
   if (!picker) throw new Error('当前浏览器未提供目录读写，请使用文件下载或在支持目录授权的浏览器打开')
   const selected = await picker.call(window, { mode: 'readwrite', id: 'qimeng-maintenance' })

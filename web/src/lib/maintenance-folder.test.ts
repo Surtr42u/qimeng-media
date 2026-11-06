@@ -7,7 +7,7 @@ const snapshot: LegacyBackupImport = {
   data: { viewEvents: [], authors: [{ authorId: 'synthetic', displayName: 'Synthetic',
     profileJson: JSON.stringify({ status: 'verified', xProfile: { biography: 'Original biography', biographyZh: '合成中文简介' } }) }],
   authorMediaRefs: [{ authorId: 'synthetic', recordKey: 'one', fileName: 'synthetic.png' }],
-  txtFragments: [{ filename: 'authors.txt', content: '1  Synthetic\r\n作品\r\nsynthetic.png\r\n' }] },
+  txtFragments: [{ importedAtMillis: 0, filename: 'authors.txt', content: '1  Synthetic\r\n作品\r\nsynthetic.png\r\n' }] },
 }
 
 class MemoryDirectory {

@@ -38,7 +38,7 @@ class MaintenanceFolderRepository @Inject constructor(
     val root = prefs.data.map { it[ROOT] }
     private val mutex = Mutex()
 
-    suspend fun select(path: String) = mutex.withLock {
+    suspend fun select(path: String): Unit = mutex.withLock {
         withContext(Dispatchers.IO) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 check(Environment.isExternalStorageManager()) { "请先授予所有文件访问权限" }
@@ -52,6 +52,7 @@ class MaintenanceFolderRepository @Inject constructor(
                 it[BACKUP_URI] = Uri.fromFile(childDirectory(folder, BACKUPS)).toString()
                 it[ARCHIVE_PATH] = childDirectory(folder, ARCHIVE).path
             }
+            Unit
         }
     }
 
