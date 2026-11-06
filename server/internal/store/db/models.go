@@ -117,6 +117,47 @@ type Like struct {
 	CreatedAt string
 }
 
+type MaintenanceArtifact struct {
+	ID        int64
+	JobID     string
+	Kind      string
+	Uri       string
+	Sha256    string
+	Bytes     int64
+	CreatedAt string
+}
+
+type MaintenanceJob struct {
+	ID                 string
+	Kind               string
+	Status             string
+	LibraryID          sql.NullString
+	PayloadJson        string
+	InputFingerprint   string
+	RulesVersion       string
+	AuthorizationScope string
+	BudgetJson         string
+	IdempotencyKey     string
+	LeaseOwner         sql.NullString
+	LeaseUntil         sql.NullString
+	CreatedAt          string
+	UpdatedAt          string
+	StartedAt          sql.NullString
+	FinishedAt         sql.NullString
+	ErrorCode          sql.NullString
+	ErrorMessage       sql.NullString
+}
+
+type MaintenanceStep struct {
+	JobID      string
+	Step       string
+	Status     string
+	Attempt    int64
+	StartedAt  sql.NullString
+	FinishedAt sql.NullString
+	DetailJson string
+}
+
 type PortableEventIdentity struct {
 	EventID  int64
 	StableID string

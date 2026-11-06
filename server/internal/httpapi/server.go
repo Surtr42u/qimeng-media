@@ -19,6 +19,7 @@ import (
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/libraryrevision"
+	"qimeng-media/server/internal/maintenance"
 	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/portablebackup"
 	"qimeng-media/server/internal/research"
@@ -182,6 +183,9 @@ type Deps struct {
 	// Research 媒体研究流水线服务（internal/research，ADR-0053）；nil 时
 	// New 内部按 deps.Cfg.Research 构造缺省实例（生产 main 显式装配）。
 	Research *research.Service
+	// Maintenance 持久维护任务账本（internal/maintenance，ADR-0054）；nil 时
+	// New 内部用同源 Conn/Queries/Now/Logger 构造缺省实例（缺省即生产实现）。
+	Maintenance *maintenance.Service
 }
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
@@ -230,6 +234,9 @@ type Server struct {
 	// research 媒体研究流水线服务（Deps.Research 的落位；默认关闭时仍存在，
 	// 由 research.Service 自己回报 enabled=false）。
 	research *research.Service
+	// maintenance 持久维护任务账本（Deps.Maintenance 的落位；无独立开关，
+	// 账本端点恒可用，worker 执行面本轮未实现）。
+	maintenance *maintenance.Service
 	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
 	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
 	uploads *uploadsess.Manager
@@ -352,6 +359,13 @@ func New(deps Deps) (*Server, error) {
 			return nil, researchErr
 		}
 		s.research = researchSvc
+	}
+	// 维护任务账本缺省兜底：与其余 store 型服务同源，不创建第二套权威状态。
+	s.maintenance = deps.Maintenance
+	if s.maintenance == nil {
+		s.maintenance = maintenance.New(maintenance.Options{
+			Conn: deps.Conn, Queries: deps.Queries, Now: now, Logger: logger,
+		})
 	}
 	s.txt = deps.TXT
 	if s.txt == nil {

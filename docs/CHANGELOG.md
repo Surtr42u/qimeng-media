@@ -1,3 +1,13 @@
+## feat(maintenance): 持久维护任务队列服务端垂直切片（2026-11-07 第六百九十六笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 新增 migration `0023_maintenance_jobs`：只增 `maintenance_jobs`/`maintenance_steps`/`maintenance_artifacts` 三表与状态、幂等、租约、步骤/工件索引；状态机覆盖 queued→inventory→research→planned→applying→verifying→completed、waiting_evidence/waiting_authorization/waiting_device 与 paused/partial/failed/cancelled，终态不可变更。
+- 新增 `server/internal/maintenance`：Create/List/Get/Pause/Resume/Cancel、同事务状态校验、幂等键冲突返回既有任务、输入指纹、租约字段与 Claim/Heartbeat/Complete、RecordStep/AddArtifact 内部原语；只依赖 store/db，不依赖 httpapi（depguard）。
+- 协议新增 `POST/GET /api/v1/maintenance/jobs`、`GET /api/v1/maintenance/jobs/{id}` 与 `POST …/{id}/pause|resume|cancel` 六端点；创建幂等 201/200，非法迁移/终态 409 STATE_CONFLICT，不存在 404，列表 status/limit/cursor 与详情步骤/工件/error。`make sdk` 三端生成通过，`api/sdk.lock` 同批更新为 331 项。
+- httpapi 只做协议校验/错误映射/响应装配；测试覆盖创建/幂等重复/并发同键、列表过滤与游标、状态机合法/非法迁移、暂停/恢复/取消、终态不可变与 404/409 映射，全部使用临时 SQLite 与合成数据。文档同批：`docs/api/maintenance.md`、ADR-0054 与索引、能力地图、HANDOVER、AI_MAINTENANCE_P0 §4.2/§5、llms 导航。
+- 验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet` 与迁移只增检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；worker 执行器、Web 任务中心、PC→手机桥接、作者清理工具与两代布局仍未实现。第六百六十六笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
+
 ## feat(app): 安装 796d813f 双端并完成研究流水线真实实例试验（2026-11-07 第六百九十五笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
@@ -267,11 +277,4 @@
 - 回顾协议新增dwell总时长、互斥类型及每小时值，窗口总量复用日物化统计，小时按开始记录整段归桶，视频不冒称播放时长；不改既有open与兴趣公式。云端40838207408生成sqlc/三端SDK及sdk.lock，增加停留/仅dwell日/孤立记录及类型守恒回归；双端消费、UI/API/领域专题同步。最终e616127c完整CI40840676484、安全40840676388、文档40840676426及PC40840675733全部成功（Web35场景）。同源Web产物在桌面/390px宽度核验；Android/Go与dc18799a一致，其调试包在qimeng_api35只读临时克隆核对7/30天、零预取、时长堆叠/读数及精简兴趣行。该阶段尚未覆盖安装；后续实际安装见下一条及HANDOVER。
 - 用户随后授权直接覆盖电脑和手机、不追加测试；双端已安装同来源e9d762cf，电脑服务端/110份Web字节一致并保持关闭，原手机同签名保留数据更新0.2.1/code11→12，已装APK字节/首次安装记录保留。旧包保留，不启动App或执行设备业务测试；出包来源及边界见HANDOVER。
 - 整理装机概览与安装前阶段记录，修正能力地图将旧冷启动验收套用于code12的表述，更新产品/预览入口；用户已授权PR #24合并master。此笔后补文档不改变e9d762cf产物身份或增加设备验收。
-- 执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## feat(stats): 双端浏览回顾替换混合发现（2026-10-28～29 第六百六十六笔）
-
-- 数据页“浏览回顾”定位个人浏览报告：首次/再次浏览、兴趣份额变化与活跃时段。Web/桌面提供摘要及独立报告，Android主页仅显示名称入口，进入后按所选窗口取数；推荐与周期榜公式保留。
-- OpenAPI先行，云端生成40710714537并同步sdk.lock/sqlc；复用日统计与只读有界查询，统一服务端公式，无migration/历史重建。零记录、无前期比较和读取失败分别呈现，旧发现API仅兼容已装客户端；领域/API/UI/端入口及预览文档同步。
-- 来源1e16937f的完整CI40718757752、安全40718757635、文档40718757908均成功，含Web35个交互场景和Android全模块构建/单测/Lint。修正本轮图标引用与测试夹具；现有备份测试首轮波动，同代码重跑通过，边界见HANDOVER。Web云端产物已在隔离浏览器核对；同源调试APK在qimeng_api35只读临时克隆验证名称入口、进入前零预取、7/30天报告及窗口传递。截图/来源留在忽略目录，现用双端未安装此候选。
 - 执行AI：具体型号变体不可核实（当前会话Codex，主代理）。

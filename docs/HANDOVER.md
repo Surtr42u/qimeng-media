@@ -1,6 +1,6 @@
 # HANDOVER - 当前工作交接
 
-> 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-11-06。
+> 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-11-07。
 
 ## 1. 当前使用形态
 
@@ -67,12 +67,18 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 
 用户要求混合媒体下载后由外部AI研究、校对命名、补作者/头像/链接/双语简介并执行清理与关联维护，任务后台执行、双端可用，未来延伸到NAS云端模型。第二批需求（2026-11-06）重新划定范围：[ADR-0052](adr/0052-外部AI维护需求修订.md)取代ADR-0051的标签加密部分，取消标签加密、外部代号与AI标签维护；新增本地维护权限（只读服务端数据目录、授权维护目录读写、业务写入走正式API）、无前台 PC→手机桥接、作者清理/去重、两代备份分代目录与可发现规则包。
 
-交接入口为[详细任务书](AI_MAINTENANCE_TASKBOOK.md)，含用户场景、工具契约、本地维护权限与无前台跨端通道、规则包、后台任务、两代备份及阶段验收。本轮只交付需求与文档：工具、持久任务队列、桥接、作者维护工具和两代备份布局均未实现，现行三代备份、标签明文与无桥接通道继续有效。
+交接入口为[详细任务书](AI_MAINTENANCE_TASKBOOK.md)，含用户场景、工具契约、本地维护权限与无前台跨端通道、规则包、后台任务、两代备份及阶段验收。规则包/只读 CLI（第六百九十二笔）、作者合并端点（第六百九十一笔）与持久任务账本端点（第六百九十六笔，[ADR-0054](adr/0054-持久维护任务队列.md)）已实现；worker 执行器、Web 任务中心、PC→手机桥接、作者清理工具和两代备份布局仍未实现，现行三代备份、标签明文与无桥接通道继续有效。
 
-实际运行包仍为上文264b9d83（PC 0.2.1/schema22、arm64 APK code35）；后续实现者按任务书P0核对现状与缺口再逐阶段推进，不把文档完成当作代码或装机完成。P0 底稿见[现状、缺口与最小方案](AI_MAINTENANCE_P0.md)，待用户确认关键设计默认方案后进入 P1。后续项目重构须继承任务书记录的场景、权限、恢复及数据不变量。
+实际运行包仍为上文264b9d83（PC 0.2.1/schema22、arm64 APK code35）；后续实现者按任务书P0核对现状与缺口再逐阶段推进，不把文档完成当作代码或装机完成。P0 底稿见[现状、缺口与最小方案](AI_MAINTENANCE_P0.md)：P1 规则包/CLI 与 P2 作者合并已落地，P3 第一刀（持久账本+端点）已交付源码与 SDK 但**未安装**，worker/Web/桥接/两代布局仍未做。后续项目重构须继承任务书记录的场景、权限、恢复及数据不变量。
 
 ## 6. 研究流水线（2026-11-06）
 
 服务端 provider 网关与本机 Lens sidecar 代理已按 [ADR-0053](adr/0053-研究流水线API集成.md) 集成：`GET /api/v1/research/context`、`POST /api/v1/research/providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵）、`POST /api/v1/research/lens`（multipart，loopback sidecar）。安全 HTTP 出口（仅 https、域名白名单、禁重定向与环境代理、DNS 后校验公网地址、超时与响应上限）、provider/minute 与 Lens/hour/day 进程内预算、证据落盘（剥会话参数、不入库）同批落地；协议先改 OpenAPI，SDK 与 `api/sdk.lock` 由 `make sdk` 生成。
 
 **实际状态：已随 796d813f 安装，并完成一次真实实例试验（2026-11-07）。** PC 以临时 `QIMENG_RESEARCH_*` 环境启动（日常启动 bat 不带这些变量，研究仍默认关闭）：`GET /research/context` 返回 `enabled=true`、sidecar available、7 个 provider；`POST /research/lens` 真实返回 200/约 13 秒，`frameSha256` 与真实库图片一致，但 `links=[]`、top 域多为噪声（再次验证 best-effort）。`POST /providers/fxtwitter/query` 返回 `provider_unavailable / ADDRESS_BLOCKED`：本机 DNS 把域名解析到 `198.18.1.x`（保留测试段，常见于代理 fake-IP 模式），被安全出口的 SSRF 校验拦截；未为打通而放宽安全策略，需本机切真实 DNS/redir-host 或后续另立显式逃生配置再验。真实 429/503/504 映射仍未触发。已知缺陷与限制见[研究 API 专题](api/research.md)。
+
+## 7. 持久维护任务队列（2026-11-07）
+
+维护任务账本已按 [ADR-0054](adr/0054-持久维护任务队列.md) 落地 P3 第一刀：migration `0023_maintenance_jobs` 新增 `maintenance_jobs/maintenance_steps/maintenance_artifacts` 三表；`server/internal/maintenance` 提供状态机、幂等、租约字段与步骤/工件索引；OpenAPI 新增 `POST/GET /api/v1/maintenance/jobs`、`GET /api/v1/maintenance/jobs/{id}` 与 `POST …/{id}/pause|resume|cancel` 六个端点，SDK 三端与 `api/sdk.lock` 同批生成（331 项）。创建幂等（同 key 返回既有任务，201/200），非法迁移/终态 409 `STATE_CONFLICT`，不存在 404；任务载荷/预算为有上限的 JSON 对象，工件正文不入库。
+
+**实际状态：已实现、未安装。** 本轮未在现装 PC/手机部署，也未对真实库创建任务；现装仍为上文 264b9d83。worker 执行器尚未实现——没有进程消费 queued 任务，租约 `Claim/Heartbeat/Complete` 与步骤/工件写入只是包内原语、无 HTTP 端点；Web 任务中心、PC→手机桥接、`author.cleanup.prepare/apply` 与 MCP 适配仍未做。业务 `go test` 按仓库规定走云端 CI，本地已跑 `go build ./...`、`gofmt`、`go vet` 与 `make sdk`。端点无独立开关，但因无 worker，创建后任务只会停在 queued（或人工暂停/取消）。

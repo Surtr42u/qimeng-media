@@ -68,6 +68,8 @@ const (
 	codeResearchSidecarUnavailable = "RESEARCH_SIDECAR_UNAVAILABLE"
 	codeResearchSidecarTimeout     = "RESEARCH_SIDECAR_TIMEOUT"
 	codeResearchSidecarError       = "RESEARCH_SIDECAR_ERROR"
+	// 持久维护任务账本（ADR-0054）：非法状态迁移/终态不可变更。
+	codeStateConflict = "STATE_CONFLICT"
 )
 
 // contentTypeJSON 全部 JSON 响应的 Content-Type 唯一取值（charset 显式

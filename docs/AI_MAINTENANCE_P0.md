@@ -1,8 +1,8 @@
 # 外部AI维护 P0：现状、缺口与最小阶段方案
 
-> 状态：P0 底稿（2026-11-06）。依据[外部AI维护任务书](AI_MAINTENANCE_TASKBOOK.md)与 [ADR-0052](adr/0052-外部AI维护需求修订.md) 撰写；第六百九十一/六百九十二笔已落地作者合并端点与规则包/只读 CLI，其余默认方案待用户确认后进入 P1。
+> 状态：P0 底稿（2026-11-06），P1/P2 已落地部分能力，P3 第一刀已落地（2026-11-07）。依据[外部AI维护任务书](AI_MAINTENANCE_TASKBOOK.md)与 [ADR-0052](adr/0052-外部AI维护需求修订.md) 撰写；第六百九十一/六百九十二笔已落地作者合并端点与规则包/只读 CLI，第六百九十六笔落地持久任务账本与端点（worker 待做），其余默认方案仍待推进。
 > 边界：本文为纯文档底稿，不涉及真实库/8420/设备操作；作者合并与规则包实现的验证边界见 CHANGELOG 第六百九十一/六百九十二笔。
-> 事实基线：现装仍为 264b9d83、0.2.1/schema22；维护目录三代同目录、标签明文、无跨端桥接。规则包与只读 CLI、作者合并端点已于 2026-11-06 落地（第六百九十一/六百九十二笔）；持久队列、两代分代目录、手机桥接、`author.cleanup.*`、Web 任务中心与 MCP 适配仍属**待实现**项，未取得交付证据前不得写成已实现或已安装。
+> 事实基线：现装仍为 264b9d83、0.2.1/schema22；维护目录三代同目录、标签明文、无跨端桥接。规则包与只读 CLI、作者合并端点已于 2026-11-06 落地（第六百九十一/六百九十二笔）；持久任务队列已落地**仅账本与端点**（第六百九十六笔，worker 待做，未安装）；两代分代目录、手机桥接、`author.cleanup.*`、Web 任务中心与 MCP 适配仍属**待实现**项，未取得交付证据前不得写成已实现或已安装。
 
 ## 1. 核对基线
 
@@ -72,7 +72,7 @@
 | 查询与计划工具 | 端点齐全，但每次调用都要重读文档拼参数 | 无有界分页封装、无「当前 revision/受保护字段」聚合返回、无计划结构 | `library.query`/`asset.query`/`author.query`/`author.profile.prepare`/`maintenance.inventory`/`maintenance.plan` 组合现有 GET，输出固定 JSON 与错误码 | `server/internal/httpapi`（仅读）、`server/internal/store`（只读理解） | P1 |
 | 作者清理 prepare/apply | 删除/改名/改挂可单点执行，无批量口径 | 无候选清点、无影响数量、无计划指纹与幂等 | `author.cleanup.prepare` 只读组合查询输出候选与影响数量；`apply` 按计划绑定指纹+幂等键逐项调用现有端点并回读 | 工具侧新增；服务端不改 | P2 |
 | 重复作者合并 | 改名撞身份 409 且不合并 | 曾缺事务性合并与逐项计数 | **已实现（第六百九十一笔）**：`POST /api/v1/authors/merge`（sourceAuthorId/targetAuthorId）单事务迁移关联、合并 TXT 块、关注并集、档案保留目标/空目标迁入源、上传条目改指并删除源作者；不可撤销，无撤销端点 | [api/openapi.yaml](../api/openapi.yaml)、`server/internal/authoredit`、`server/internal/authorattach`、`server/internal/authoring` | 已完成（原 P2） |
-| 持久任务队列与状态机 | 无 job 表、无租约、无状态机；只有进程内守护循环 | 重启/断网/部分成功无法恢复 | 新包 `server/internal/maintenance` + migration `0023+` 的 jobs/steps/artifacts + `/api/v1/maintenance/jobs` 端点 + PC worker | `server/migrations`、`server/internal/maintenance`（待建）、`server/internal/httpapi` | P3 |
+| 持久任务队列与状态机 | 无 job 表、无租约、无状态机；只有进程内守护循环 | 重启/断网/部分成功无法恢复 | **已落地（仅队列与端点，worker 待做）**：`server/internal/maintenance` + migration `0023_maintenance_jobs` 的 jobs/steps/artifacts + `/api/v1/maintenance/jobs` 六个端点；worker 执行器、Web 任务中心与桥接仍待做 | `server/migrations`、`server/internal/maintenance`、`server/internal/httpapi`、`api/openapi.yaml` | P3（第一刀已落地） |
 | 两代备份分代目录 | 三代同目录（Go/TS/Kotlin 三处同名轮换） | 无 `当前/`、`上次/` 代目录；无迁移与清理授权流程 | 目录改为 `资料维护/{当前,上次}/{作者资料,备份}`；服务端镜像按配置推导上一代路径；旧上上次按授权清理 | `server/internal/authorattach/mirror.go`、`web/src/lib/maintenance-folder.ts`、`android/…/MaintenanceFolderRepository.kt` | P3 |
 | 本地权限与凭据 | 单用户 admin Bearer；数据目录可由本机进程读取；维护目录由各端自行授权 | 无「宿主数据只读」的机制化约束；凭据存放无统一约定 | 沿用 admin Bearer + 忽略的本地配置（`QIMENG_*`/`*.local`）；工具只以只读方式打开 SQLite（`mode=ro`、`query_only=ON`）；维护目录限授权根 | [SECURITY](SECURITY.md)、工具侧配置 | P1 起 |
 | 无前台手机桥接（结果包/配对/worker） | 手机与 PC 是两个独立实例；无服务端→手机回写通道；手机无后台拉取 Worker | 无结果包协议、无配对流程、无后台应用链路 | PC 端 `device.apply.*` 端点登记/领取/回传/状态；Android 新 Worker 在充电+Wi-Fi 下拉取、先导出两代、再按段应用、回读、回传 | `server/internal/httpapi`、`server/internal/store`、`android/core/data` | P4 |
@@ -97,6 +97,8 @@
 - 依赖未锁定的 YAML/OpenAPI 第三方库：指纹会随依赖漂移。生成器如需 YAML 解析，按「开发/检查工具」轻量通道锁定版本并记入指纹；否则先经固定版本工具转出 JSON 再解析。
 
 ### 4.2 持久任务队列
+
+**状态（2026-11-07）：已落地（仅队列与端点，worker 待做）。** migration `0023_maintenance_jobs` 已新增 `maintenance_jobs`/`maintenance_steps`/`maintenance_artifacts` 三表；`server/internal/maintenance` 已提供状态机、幂等、租约字段与步骤/工件索引；`POST/GET /api/v1/maintenance/jobs`、`GET /api/v1/maintenance/jobs/{id}`、`POST …/{id}/pause|resume|cancel` 已进 OpenAPI 并生成三端 SDK/锁。**worker 执行器、Web 任务中心与 PC→手机桥接仍未实现**；创建的任务不会被自动消费，租约 `Claim/Heartbeat/Complete` 只是包内原语。详细语义见 [维护任务 API](api/maintenance.md) 与 [ADR-0054](adr/0054-持久维护任务队列.md)。
 
 **推荐做法**：新增 Go 包 `server/internal/maintenance`（职责：任务账本、状态机、租约、幂等、步骤与工件索引，不实现业务规则），只依赖 `store`/领域包，不依赖 `httpapi`（守 depguard）。migration `0023` 起新增 `maintenance_jobs`、`maintenance_steps`、`maintenance_artifacts` 三表（含实例标识、输入指纹、规则版本、授权范围、预算、幂等键、租约到期、状态、终态时间）。状态机覆盖任务书第 8 节全部状态：`queued → inventory → research → planned → applying → verifying` 与等待态 `waiting_evidence`/`waiting_authorization`/`waiting_device`，以及 `paused`/`completed`/`partial`/`failed`/`cancelled`。租约：worker 领取写 `lease_until + lease_owner`，过期由下一轮接管；同一步骤只用一条有效租约。幂等键 = 任务 + 输入版本 + 目标实例 + 动作 + 载荷指纹。新端点 `/api/v1/maintenance/jobs`（创建/列表/详情/暂停/恢复/取消），httpapi 只校验与映射，编排在 `maintenance` 包。
 
@@ -196,7 +198,7 @@
 | --- | --- | --- | --- |
 | P1 规则包 + 查询工具 | **已落地（第六百九十二笔）**：`tools/ai_maintenance/` 规则源与生成器、只读 CLI、README 指南；AI 客户端接入模板、合成夹具与 MCP 适配待做 | 新 AI 只靠规则包与示例完成：查作者、生成合法档案计划、读懂冲突码；指纹变化时重新取上下文（CLI 22 项 unittest 已覆盖规则包/CLI 合同） | 只读、无 OpenAPI/migration 变更；`check_docs.py`、`check_privacy.py`；合成数据 |
 | P2 合并端点 + 清理工具 | **合并端点已落地（第六百九十一笔）**：`POST /authors/merge`、OpenAPI 与 SDK/锁、事务编排；`author.cleanup.prepare/apply` 待做 | 合并先出影响数量、执行后回读一致、409 不静默合并、事务回滚无残留；清理计划绑定指纹与幂等键（待验收） | OpenAPI 先行 → `make sdk` → 同批 [api/sdk.lock](../api/sdk.lock)；migration 只增（本阶段应为零）；隔离实例合成数据 |
-| P3 队列 + PC worker + 两代布局 + Web 任务中心 | `server/internal/maintenance`、migration `0023+`、`/maintenance/jobs` 端点、PC worker、两代目录（服务端/Web/Android）、Web 任务列表与详情 | 重启/断网/取消/部分成功可恢复；两代轮换与摘要成立；相同数据不挤掉上次；旧文件清理需授权 | `check_migrations.py`；OpenAPI → SDK → 锁；depguard 与 `go test ./...`（云端）；Web 合成场景 |
+| P3 队列 + PC worker + 两代布局 + Web 任务中心 | **第一刀已落地（仅队列与端点，worker 待做）**：`server/internal/maintenance`、migration `0023_maintenance_jobs`、`/maintenance/jobs` 六端点；PC worker、两代目录（服务端/Web/Android）、Web 任务列表与详情仍待做 | 账本已覆盖创建/幂等/列表/详情/暂停/恢复/取消/终态不可变与 404/409 映射；重启/断网/取消/部分成功的 worker 执行恢复、两代轮换与 Web 场景待 worker/客户端落地后验收 | 已跑 `check_migrations.py`、OpenAPI → SDK → 锁、`go build ./...`、`gofmt`、`go vet`；depguard 与 `go test ./...`（云端）、Web 合成场景待后续 |
 | P4 Android 无前台桥接 | `device.apply.*` 端点、结果包存储、Android Worker、配对入口 | 不打开 App 前台、不接 USB 完成拉取与应用；充电/Doze/进程被杀可恢复且不重复应用；导出失败即中止 | OpenAPI → SDK → 锁；migration 只增；Android JVM 单测 + `qimeng_api35`/用户真机验收 |
 | P5 NAS 执行器 | 执行器部署说明、资源预算、断线/重启/掉电恢复、目标硬件记录 | 目标 NAS 上完整链路与预算实测通过 | 部署与恢复文档同步；设备/NAS 验收记录独立于云端自动化 |
 
