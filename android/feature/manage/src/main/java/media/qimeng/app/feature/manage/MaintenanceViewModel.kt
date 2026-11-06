@@ -26,7 +26,8 @@ data class MaintenanceUiState(
     val granted: Boolean = false,
     val message: String? = null,
     val error: String? = null,
-    val documents: List<AuthorTxtDocument> = emptyList(),
+    val documents: List<String> = emptyList(),
+    val pendingDocument: AuthorTxtDocument? = null,
 )
 
 @HiltViewModel
@@ -83,9 +84,17 @@ class MaintenanceViewModel @Inject constructor(
         _state.update { it.copy(message = "已更新手动备份、作者TXT及资料总表") }
     }
 
+    fun prepareDocument(filename: String) = operation {
+        val document = folders.authorDocuments().firstOrNull { it.filename == filename }
+            ?: error("作者TXT已变更或被移除，请刷新目录")
+        _state.update { it.copy(pendingDocument = document) }
+    }
+
+    fun dismissDocument() { _state.update { it.copy(pendingDocument = null) } }
+
     private suspend fun loadDocuments() {
         val documents = folders.authorDocuments()
-        _state.update { it.copy(documents = documents) }
+        _state.update { it.copy(documents = documents.map { document -> document.filename }) }
     }
 
     private suspend fun loadDirectory(path: String) {

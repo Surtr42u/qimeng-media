@@ -18,8 +18,6 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -30,7 +28,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.Lifecycle
-import media.qimeng.app.core.data.authorimport.AuthorTxtDocument
 import media.qimeng.app.core.ui.component.DirectoryBrowserCard
 import media.qimeng.app.core.ui.component.DirectoryBrowserEntry
 import media.qimeng.app.core.ui.component.QimengSettingsCard
@@ -54,9 +51,8 @@ fun MaintenanceScreen(
     val backup: BackupViewModel = hiltViewModel()
     val backupState by backup.uiState.collectAsStateWithLifecycle()
     val blocked = state.busy || authorState.importing || authorState.removing || authorState.rebuilding || authorState.mirrorSaving ||
-        backupState.importing || backupState.exporting || backupState.pendingImport != null
+        backupState.importing || backupState.exporting || backupState.pendingImport != null || state.pendingDocument != null
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
-    var pending by remember { mutableStateOf<AuthorTxtDocument?>(null) }
     Column(Modifier.fillMaxSize().softDaylightBackground()) {
         QimengTopBar(title = "资料备份与归档", onBack = onBack)
         QimengSettingsCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -107,8 +103,8 @@ fun MaintenanceScreen(
                     onPickUnifiedRoot = viewModel::browse, externalBusy = state.busy)
                 1 -> Column(Modifier.weight(1f)) {
                     if (state.documents.isNotEmpty()) Column(Modifier.padding(horizontal = 16.dp)) {
-                        state.documents.forEach { document ->
-                            TextButton(enabled = !blocked, onClick = { pending = document }) { Text("导入 ${document.filename}") }
+                        state.documents.forEach { filename ->
+                            TextButton(enabled = !blocked, onClick = { viewModel.prepareDocument(filename) }) { Text("导入 $filename") }
                         }
                     }
                     AuthorTxtImportScreen(onBack, modifier = Modifier.weight(1f), embedded = true, viewModel = authors, externalBusy = state.busy)
@@ -122,10 +118,10 @@ fun MaintenanceScreen(
             }
         }
     }
-    pending?.let { document ->
-        AlertDialog(onDismissRequest = { pending = null }, title = { Text("导入作者TXT？") },
+    state.pendingDocument?.let { document ->
+        AlertDialog(onDismissRequest = viewModel::dismissDocument, title = { Text("导入作者TXT？") },
             text = { Text("${document.filename}\n将按全部已存TXT重建常规作者关联，请先同步媒体并完成扫描。") },
-            confirmButton = { TextButton(onClick = { authors.onFilePicked(document.filename, document.content); pending = null }) { Text("导入") } },
-            dismissButton = { TextButton(onClick = { pending = null }) { Text("取消") } })
+            confirmButton = { TextButton(onClick = { authors.onFilePicked(document.filename, document.content); viewModel.dismissDocument() }) { Text("导入") } },
+            dismissButton = { TextButton(onClick = viewModel::dismissDocument) { Text("取消") } })
     }
 }
