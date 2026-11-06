@@ -106,3 +106,7 @@ App 上传单文件 201 后客户端依次调 `PUT /assets/{id}/authors`（autho
 ### 合成作者总表镜像
 
 GET/PUT authors/mirror增加mode字段。master按现存常规作者、全部TXT片段及实际资产关联生成单一总表，fragment使用指定片段原文。新统一目录使用master，不要求事先存在某个固定片段。v2导出data.authorMasterTxt与其他段共用只读快照，导入以原始片段和作者/资产关联为准。
+
+## 面向AI的规则发现规划
+
+用户要求工具能主动解释作者身份、完整PUT、revision、头像地址/离线数据、来源链接、原文及中文译文的写法。目标契约与合成教程见[任务书](../AI_MAINTENANCE_TASKBOOK.md#5-让ai理解规范的规则包)。实际字段与上限继续以OpenAPI为准，新规则发现和写入工具待实现。
