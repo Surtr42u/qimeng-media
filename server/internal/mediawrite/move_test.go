@@ -261,7 +261,7 @@ func TestMoveBusinessRecomputesCosAuthorAndWork(t *testing.T) {
 func TestRenameKeepsAuthorTXTReproducibleWithoutResettingProvenance(t *testing.T) {
 	s, asset, _, _, _ := moveFixture(t)
 	ctx := context.Background()
-	if _, err := s.conn.Exec(`INSERT INTO authors(id,display_name,type,created_at,origin) VALUES('synthetic','Synthetic','regular','2026-10-21T00:00:00.000Z','import')`); err != nil {
+	if _, err := s.conn.Exec(`INSERT INTO authors(id,display_name,type,created_at,origin) VALUES('synthetic','Synthetic','regular','2026-10-21T00:00:00.000Z','legacy')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.conn.Exec(`INSERT INTO asset_authors(asset_id,author_id,created_at,origin) VALUES(?,'synthetic','2026-10-21T01:00:00.000Z','import')`, asset.AssetID); err != nil {
@@ -283,4 +283,9 @@ func TestRenameKeepsAuthorTXTReproducibleWithoutResettingProvenance(t *testing.T
 	if err != nil || len(after) != 1 || before[0] != after[0] {
 		t.Fatalf("link provenance changed: %v %v", after, err)
 	}
+	var origin string
+	if err := s.conn.QueryRow(`SELECT origin FROM authors WHERE id='synthetic'`).Scan(&origin); err != nil || origin != "legacy" {
+		t.Fatalf("author provenance changed: %s %v", origin, err)
+	}
+
 }

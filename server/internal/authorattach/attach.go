@@ -34,11 +34,12 @@ func (s *Service) logger() *slog.Logger {
 // 文件名（含扩展名）——禁止传用户原始名（REQ §3.3 第 3 条：挂靠记录的是
 // 重命名后文件名）；Sources 已 trim 去重。
 type AttachRequest struct {
-	AssetID    string   // 刚入库的资产 ID
-	FinalName  string   // 最终落盘文件名（含扩展名）
-	AuthorID   string   // 已有作者（与 AuthorName 二选一）
-	AuthorName string   // 新建作者显示名（调用方已过 ValidNewAuthorName）
-	Sources    []string // 来源词（已 trim 去重）
+	recordWorksOnly bool     // internal repair of an existing link, preserving author/link provenance
+	AssetID         string   // 刚入库的资产 ID
+	FinalName       string   // 最终落盘文件名（含扩展名）
+	AuthorID        string   // 已有作者（与 AuthorName 二选一）
+	AuthorName      string   // 新建作者显示名（调用方已过 ValidNewAuthorName）
+	Sources         []string // 来源词（已 trim 去重）
 }
 
 // AttachResult 挂靠结果回执。
@@ -145,6 +146,9 @@ func (s *Service) Apply(ctx context.Context, qtx *db.Queries, now time.Time, req
 		}
 	}
 
+	if req.recordWorksOnly {
+		return AttachResult{AuthorID: id, DisplayName: displayName, Fragment: fragment, CreatedAuthor: !blockFound}, nil
+	}
 	if err := qtx.UpsertAuthor(ctx, db.UpsertAuthorParams{
 		ID: id, DisplayName: displayName, Type: authoring.AuthorTypeRegular, CreatedAt: store.FormatTimestamp(now),
 		// 溯源章（ADR-0032）：客户端挂靠通道（上传流程/编辑页新增作者共用
