@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -442,11 +443,11 @@ func TestBackupAuthorReferencesSurviveTXTRebuild(t *testing.T) {
 		t.Fatalf("import failed: %s", body)
 	}
 	closeBody(imported)
-	exported := e.do(t, "GET", "/api/v1/authors/import-txt/export", "")
+	exported := e.do(t, "GET", "/api/v1/authors/import-txt/export?filename="+url.QueryEscape(authoring.AutoFragmentFilename), "")
 	text, err := io.ReadAll(exported.Body)
 	closeBody(exported)
-	if err != nil || !strings.Contains(string(text), "a.jpg") {
-		t.Fatal("backup link missing from exported TXT")
+	if err != nil || exported.StatusCode != 200 || !strings.Contains(string(text), "a.jpg") {
+		t.Fatalf("backup link missing from exported TXT: status=%d body=%s err=%v", exported.StatusCode, text, err)
 	}
 	rebuilt := e.do(t, "POST", "/api/v1/authors/import-txt/rebuild", "")
 	closeBody(rebuilt)
