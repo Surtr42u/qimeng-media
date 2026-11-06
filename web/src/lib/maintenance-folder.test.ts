@@ -40,7 +40,7 @@ describe('unified maintenance snapshot', () => {
     expect(backups.files.get('影库备份.json')).toBe(blob)
     const authors = await root.getDirectoryHandle('作者资料')
     expect(authors.directories.has('原始片段')).toBe(false)
-    expect(authors.files.get('作者总表.txt')).toBe(snapshot.data.authorMasterTxt)
+    expect(await (await (await authors.getFileHandle('作者总表.txt')).getFile()).text()).toBe(snapshot.data.authorMasterTxt)
     expect(authors.files.get('作者资料.md')).toContain('合成中文简介')
     authors.files.set('stale.txt', '1  Removed')
     expect((await readMaintenanceTxt(root.handle())).map(file => file.name)).toEqual(['作者总表.txt'])

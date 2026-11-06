@@ -9,8 +9,8 @@ export function MaintenanceFolderCard() {
     <div className="rank-head"><h3><FolderOpen aria-hidden="true" /> 维护根目录</h3><span className="rank-note">电脑本地目录</span></div>
     <p>{root?.name ?? '选择一个文件夹，统一保存作者资料、备份和上传归档。'}</p>
     <div className="maintenance-folder-layout">
-      <span>作者资料 <small>原始TXT · 双语简介 · 身份与作品清单</small></span>
-      <span>备份 <small>完整v2资料与离线头像</small></span>
+      <span>作者资料 <small>作者主表 · 双语简介 · 来源与作品清单</small></span>
+      <span>备份 <small>完整v2资料与离线头像 · 自动保留三代</small></span>
       <span>上传归档 <small>按库及目标目录保存原件副本</small></span>
     </div>
     {supported ? <button type="button" className="pill" disabled={choose.isPending} onClick={() => choose.mutate(undefined, {
