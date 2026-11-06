@@ -100,6 +100,10 @@ class MaintenanceFolderRepository @Inject constructor(
     }
 
     private suspend fun exportLocked(path: String, kind: BackupFileKind): Long {
+        val target = factory.currentBaseUrl()
+        val mirror = if (ServerAddress.isLocalModePreset(target)) factory.forServer(target).create().apiV1AuthorsMirrorGet() else null
+        val expectedMaster = File(File(path, AUTHORS), "作者总表.txt").canonicalPath
+        val serverOwnsMaster = mirror?.mode == media.qimeng.sdk.models.AuthorMirrorConfig.Mode.master && mirror.path == expectedMaster
         val json = backups.exportJson()
         return withContext(Dispatchers.IO) {
             val folder = checkedSharedFolder(path)
@@ -134,21 +138,23 @@ class MaintenanceFolderRepository @Inject constructor(
                 }
             }
             documents.forEach { (name, content) -> writeMaintenanceFile(originals, name, content) }
-            val oldMaster = File(authors, "作者总表.txt")
-            require(oldMaster.canonicalFile.parentFile == authors)
-            if (oldMaster.isFile) {
-                require(oldMaster.length() <= BackupValidator.BACKUP_MAX_BYTES) { "原作者主表超过64MiB，请先移走保留" }
-                val old = oldMaster.readText(Charsets.UTF_8)
-                val checksum = File(authors, "作者总表.txt.sha256")
-                require(checksum.canonicalFile.parentFile == authors && checksum.length() <= 1024)
-                val imported = documents.any { it.second == old }
-                check(!checksum.isFile || old == master || imported || checksum.readText(Charsets.UTF_8).trim() == maintenanceSha256(old.toByteArray(Charsets.UTF_8))) {
-                    "作者主表已被外部编辑，请先导入主表后再写回"
+            if (!serverOwnsMaster) {
+                val oldMaster = File(authors, "作者总表.txt")
+                require(oldMaster.canonicalFile.parentFile == authors)
+                if (oldMaster.isFile) {
+                    require(oldMaster.length() <= BackupValidator.BACKUP_MAX_BYTES) { "原作者主表超过64MiB，请先移走保留" }
+                    val old = oldMaster.readText(Charsets.UTF_8)
+                    val checksum = File(authors, "作者总表.txt.sha256")
+                    require(checksum.canonicalFile.parentFile == authors && checksum.length() <= 1024)
+                    val imported = documents.any { it.second == old }
+                    check(!checksum.isFile || old == master || imported || checksum.readText(Charsets.UTF_8).trim() == maintenanceSha256(old.toByteArray(Charsets.UTF_8))) {
+                        "作者主表已被外部编辑，请先导入主表后再写回"
+                    }
+                    if (old != master) writeMaintenanceFile(childDirectory(originals, "历史"), "作者总表.previous.txt", old)
                 }
-                if (old != master) writeMaintenanceFile(childDirectory(originals, "历史"), "作者总表.previous.txt", old)
+                writeMaintenanceFile(authors, "作者总表.txt", master)
+                writeMaintenanceFile(authors, "作者总表.txt.sha256", maintenanceSha256(master.toByteArray(Charsets.UTF_8)))
             }
-            writeMaintenanceFile(authors, "作者总表.txt", master)
-            writeMaintenanceFile(authors, "作者总表.txt.sha256", maintenanceSha256(master.toByteArray(Charsets.UTF_8)))
             writeMaintenanceFile(authors, "作者资料.md", maintenanceAuthorReport(data))
             writeMaintenanceFile(authors, "作者片段索引.json", org.json.JSONArray(listOf("作者总表.txt")).toString())
             writeMaintenanceFile(folder, "目录说明.md", MAINTENANCE_README)
