@@ -23,6 +23,9 @@ import media.qimeng.app.core.data.authorimport.AuthorTxtDocument
 import media.qimeng.app.core.data.authorimport.readAuthorTxtDocument
 import media.qimeng.app.core.data.di.ClientPrefsDataStore
 import media.qimeng.app.core.data.repository.BackupRepository
+import media.qimeng.app.core.data.repository.BusinessApiFactory
+import media.qimeng.app.core.network.ServerAddress
+import kotlinx.coroutines.NonCancellable
 import org.json.JSONObject
 
 interface MaintenanceBackupWriter {
@@ -34,6 +37,7 @@ interface MaintenanceBackupWriter {
 class MaintenanceFolderRepository @Inject constructor(
     @ClientPrefsDataStore private val prefs: DataStore<Preferences>,
     private val backups: BackupRepository,
+    private val factory: BusinessApiFactory,
 ) : MaintenanceBackupWriter {
     val root = prefs.data.map { it[ROOT] }
     private val mutex = Mutex()
@@ -46,11 +50,31 @@ class MaintenanceFolderRepository @Inject constructor(
             val folder = checkedSharedFolder(path)
             require(folder != Environment.getExternalStorageDirectory().canonicalFile) { "请选择内部存储中的子文件夹" }
             listOf(AUTHORS, BACKUPS, ARCHIVE).forEach { childDirectory(folder, it) }
-            // Consumers retain their existing keys. Selection commits all three together.
-            prefs.edit {
-                it[ROOT] = folder.path
-                it[BACKUP_URI] = Uri.fromFile(childDirectory(folder, BACKUPS)).toString()
-                it[ARCHIVE_PATH] = childDirectory(folder, ARCHIVE).path
+            // A phone path is only sent to its own embedded service. Remote
+            // connections keep their server mirror location unchanged.
+            val target = factory.currentBaseUrl()
+            val api = if (ServerAddress.isLocalModePreset(target)) factory.forServer(target).create() else null
+            val hasMaster = api?.apiV1AuthorsImportTxtGet()?.any { it.filename == "作者总表.txt" } == true
+            val previousMirror = if (hasMaster) api?.apiV1AuthorsMirrorGet() else null
+            if (previousMirror != null) {
+                api?.apiV1AuthorsMirrorPut(media.qimeng.sdk.models.AuthorMirrorConfig(
+                    path = File(childDirectory(folder, AUTHORS), "作者总表.txt").path,
+                    fragmentFilename = "作者总表.txt",
+                ))
+            }
+            try {
+                // Consumers retain their existing keys. Selection commits all three together.
+                prefs.edit {
+                    it[ROOT] = folder.path
+                    it[BACKUP_URI] = Uri.fromFile(childDirectory(folder, BACKUPS)).toString()
+                    it[ARCHIVE_PATH] = childDirectory(folder, ARCHIVE).path
+                }
+            } catch (failure: Throwable) {
+                if (previousMirror != null) withContext(NonCancellable) {
+                    try { api?.apiV1AuthorsMirrorPut(previousMirror) }
+                    catch (restoreFailure: Exception) { failure.addSuppressed(restoreFailure) }
+                }
+                throw failure
             }
             Unit
         }
