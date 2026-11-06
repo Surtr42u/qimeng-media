@@ -731,6 +731,7 @@ private class FakeBackupDirAccess : BackupDirAccess {
             BackupFileKind.AUTOMATIC -> automaticFile = bytes
             BackupFileKind.MANUAL -> file = bytes
             BackupFileKind.PRE_IMPORT -> preImportFile = bytes
+            else -> file = bytes
         }
         return bytes.size.toLong()
     }

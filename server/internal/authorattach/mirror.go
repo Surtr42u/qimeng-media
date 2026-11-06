@@ -135,15 +135,15 @@ func (w *MirrorWriter) Refresh(ctx context.Context, q *db.Queries) {
 }
 
 func writeMasterFile(path, content string, sources []Source) error {
+	current, readErr := os.ReadFile(path)
+	if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
+		return readErr
+	}
 	checksum, err := os.ReadFile(path + ".sha256")
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if err == nil {
-		current, readErr := os.ReadFile(path)
-		if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
-			return readErr
-		}
 		accepted := string(current) == content
 		for _, source := range sources {
 			if source.Content == string(current) {
@@ -155,6 +155,27 @@ func writeMasterFile(path, content string, sources []Source) error {
 			return errors.New("作者主表已被外部编辑，请先导入后再写回")
 		}
 	}
+	if readErr == nil && string(current) != content {
+		previous := strings.TrimSuffix(path, filepath.Ext(path)) + "（上次）" + filepath.Ext(path)
+		older := strings.TrimSuffix(path, filepath.Ext(path)) + "（上上次）" + filepath.Ext(path)
+		last, err := os.ReadFile(previous)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		// A retry after a partial write must not rotate the same generation twice.
+		if err == nil && string(last) != string(current) {
+			if err := writeCheckedMaster(older, string(last)); err != nil {
+				return err
+			}
+		}
+		if err := writeCheckedMaster(previous, string(current)); err != nil {
+			return err
+		}
+	}
+	return writeCheckedMaster(path, content)
+}
+
+func writeCheckedMaster(path, content string) error {
 	if err := writeFileAtomically(path, content); err != nil {
 		return err
 	}

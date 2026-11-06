@@ -23,6 +23,9 @@ enum class BackupFileKind(val fileName: String) {
     MANUAL(AutoBackupRunner.BACKUP_FILE_NAME),
     AUTOMATIC(AutoBackupRunner.AUTO_BACKUP_FILE_NAME),
     PRE_IMPORT("qimeng_backup.before-import.json"),
+    CURRENT("影库备份.json"),
+    PREVIOUS("影库备份（上次）.json"),
+    OLDER("影库备份（上上次）.json"),
 }
 
 /** 同一授权目录内，手动/PC备份与自动输出独立，恢复必须显式选定。 */

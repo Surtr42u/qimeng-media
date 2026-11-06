@@ -148,8 +148,10 @@ fun BackupScreen(
                 exporting = state.exporting || externalBusy,
                 importing = state.importing,
                 onExport = onUnifiedExport ?: viewModel::exportToBackupDir,
-                onImport = { viewModel.importFromBackupDir(BackupFileKind.MANUAL) },
-                onImportAutomatic = { viewModel.importFromBackupDir(BackupFileKind.AUTOMATIC) },
+                onImport = { viewModel.importFromBackupDir(if (embedded) BackupFileKind.CURRENT else BackupFileKind.MANUAL) },
+                onImportAutomatic = { viewModel.importFromBackupDir(if (embedded) BackupFileKind.PREVIOUS else BackupFileKind.AUTOMATIC) },
+                onImportOlder = if (embedded) ({ viewModel.importFromBackupDir(BackupFileKind.OLDER) }) else null,
+                rolling = embedded,
             )
 
             // 先设置共享的备份目录，再执行导入/导出；原自动备份状态与动作仍由 VM 持有。

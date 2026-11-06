@@ -183,7 +183,10 @@ class BackupViewModel @Inject constructor(
             try {
                 autoBackupRunner.snapshotBeforeImport()
                 val result = backupRepository.importBackup(pending.payload)
-                val warnings = result.warnings.orEmpty()
+                val warnings = result.warnings.orEmpty().toMutableList()
+                try { autoBackupRunner.refreshAfterImport() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { warnings.add("导入已完成，但最新备份写回失败：${failure.message ?: failure.javaClass.simpleName}") }
                 _uiState.update {
                     it.copy(
                         importing = false,

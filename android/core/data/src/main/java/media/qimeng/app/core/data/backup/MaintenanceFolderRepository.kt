@@ -31,6 +31,7 @@ import org.json.JSONObject
 
 interface MaintenanceBackupWriter {
     suspend fun writeIfManaged(dirUri: String, kind: BackupFileKind): Long?
+    suspend fun readKind(dirUri: String, kind: BackupFileKind): BackupFileKind = kind
 }
 
 /** One device-local folder owns the existing backup and upload-archive paths. */
@@ -57,13 +58,6 @@ class MaintenanceFolderRepository @Inject constructor(
             val api = if (ServerAddress.isLocalModePreset(target)) factory.forServer(target).create() else null
             val previousMirror = api?.apiV1AuthorsMirrorGet()
             if (previousMirror != null) {
-                val existing = File(childDirectory(folder, AUTHORS), "作者总表.txt")
-                require(existing.canonicalFile.parentFile == childDirectory(folder, AUTHORS))
-                if (existing.isFile) {
-                    require(existing.length() <= BackupValidator.BACKUP_MAX_BYTES) { "原作者主表过大，请先移走保留" }
-                    val history = childDirectory(childDirectory(childDirectory(folder, AUTHORS), "原始片段"), "历史")
-                    writeMaintenanceFile(history, "作者总表.before-select.txt", existing.readText(Charsets.UTF_8))
-                }
                 api?.apiV1AuthorsMirrorPut(media.qimeng.sdk.models.AuthorMirrorConfig(
                     path = File(childDirectory(folder, AUTHORS), "作者总表.txt").path,
                     fragmentFilename = "作者总表.txt",
@@ -99,6 +93,12 @@ class MaintenanceFolderRepository @Inject constructor(
         exportLocked(path, kind)
     }
 
+    override suspend fun readKind(dirUri: String, kind: BackupFileKind): BackupFileKind {
+        val path = root.first() ?: return kind
+        return if (Uri.fromFile(File(path, BACKUPS)).toString() == dirUri &&
+            kind in listOf(BackupFileKind.MANUAL, BackupFileKind.AUTOMATIC)) BackupFileKind.CURRENT else kind
+    }
+
     private suspend fun exportLocked(path: String, kind: BackupFileKind): Long {
         val serverOwnsMaster = withContext(Dispatchers.IO) {
             val target = factory.currentBaseUrl()
@@ -117,19 +117,10 @@ class MaintenanceFolderRepository @Inject constructor(
             val bytes = json.toByteArray(Charsets.UTF_8)
             require(bytes.size <= BackupValidator.BACKUP_MAX_BYTES) { "备份超过64MiB" }
             val backupFolder = childDirectory(folder, BACKUPS)
-            val previous = File(backupFolder, kind.fileName)
-            require(previous.canonicalFile.parentFile == backupFolder)
-            if (previous.isFile) {
-                require(previous.length() <= BackupValidator.BACKUP_MAX_BYTES) { "原备份超过64MiB，请先移走保留" }
-                val old = previous.readText(Charsets.UTF_8)
-                writeMaintenanceFile(backupFolder, kind.fileName + ".previous", old)
-                writeMaintenanceFile(backupFolder, kind.fileName + ".previous.sha256", maintenanceSha256(old.toByteArray(Charsets.UTF_8)))
-            }
-            writeMaintenanceFile(backupFolder, kind.fileName, json)
-            writeMaintenanceFile(backupFolder, kind.fileName + ".sha256", maintenanceSha256(bytes))
+            writeMaintenanceGeneration(backupFolder, BackupFileKind.CURRENT.fileName, json,
+                protectExternal = kind == BackupFileKind.AUTOMATIC, backup = true)
             if (kind == BackupFileKind.PRE_IMPORT) return@withContext bytes.size.toLong()
             val authors = childDirectory(folder, AUTHORS)
-            val originals = childDirectory(authors, "原始片段")
             val master = data.getString("authorMasterTxt")
             val fragments = data.optJSONArray("txtFragments")
             val names = mutableSetOf<String>()
@@ -143,7 +134,6 @@ class MaintenanceFolderRepository @Inject constructor(
                     add(name to fragment.getString("content"))
                 }
             }
-            documents.forEach { (name, content) -> writeMaintenanceFile(originals, name, content) }
             if (!serverOwnsMaster) {
                 val oldMaster = File(authors, "作者总表.txt")
                 require(oldMaster.canonicalFile.parentFile == authors)
@@ -156,10 +146,8 @@ class MaintenanceFolderRepository @Inject constructor(
                     check(!checksum.isFile || old == master || imported || checksum.readText(Charsets.UTF_8).trim() == maintenanceSha256(old.toByteArray(Charsets.UTF_8))) {
                         "作者主表已被外部编辑，请先导入主表后再写回"
                     }
-                    if (old != master) writeMaintenanceFile(childDirectory(originals, "历史"), "作者总表.previous.txt", old)
                 }
-                writeMaintenanceFile(authors, "作者总表.txt", master)
-                writeMaintenanceFile(authors, "作者总表.txt.sha256", maintenanceSha256(master.toByteArray(Charsets.UTF_8)))
+                writeMaintenanceGeneration(authors, "作者总表.txt", master)
             }
             writeMaintenanceFile(authors, "作者资料.md", maintenanceAuthorReport(data))
             writeMaintenanceFile(authors, "作者片段索引.json", org.json.JSONArray(listOf("作者总表.txt")).toString())
@@ -184,7 +172,7 @@ class MaintenanceFolderRepository @Inject constructor(
                     File(directory, name)
                 }
             } else (directory.listFiles() ?: error("读取作者资料目录失败"))
-                .filter { it.isFile && it.name.endsWith(".txt", true) }.sortedBy { it.name }
+                .filter { it.isFile && it.name.endsWith(".txt", true) && !it.name.endsWith("（上次）.txt") && !it.name.endsWith("（上上次）.txt") }.sortedBy { it.name }
             files.map { file ->
                 require(file.canonicalFile.parentFile == directory) { "作者文件超出目录" }
                 readAuthorTxtDocument(file.name, file.length()) { file.inputStream() }
@@ -226,6 +214,43 @@ internal fun safeMaintenanceName(name: String): Boolean =
 internal fun maintenanceSha256(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
+/** Rotate only changed data. Retrying after an interrupted write keeps the same history. */
+internal fun writeMaintenanceGeneration(folder: File, name: String, content: String, protectExternal: Boolean = false, backup: Boolean = false) {
+    val current = File(folder, name)
+    require(current.canonicalFile.parentFile == folder.canonicalFile)
+    val old = if (current.isFile) {
+        require(current.length() <= BackupValidator.BACKUP_MAX_BYTES) { "原文件超过64MiB，请先移走保留" }
+        current.readText(Charsets.UTF_8)
+    } else null
+    val checksum = File(folder, "$name.sha256")
+    require(checksum.canonicalFile.parentFile == folder.canonicalFile && checksum.length() <= 1024)
+    if (protectExternal && old != null) {
+        check(checksum.isFile && checksum.readText(Charsets.UTF_8).trim() == maintenanceSha256(old.toByteArray(Charsets.UTF_8))) {
+            "备份已被外部替换，请先导入该文件，再更新备份"
+        }
+    }
+    val changed = old != null && if (backup) JSONObject(old).getJSONObject("data").toString() != JSONObject(content).getJSONObject("data").toString() else old != content
+    if (changed) {
+        val stem = name.substringBeforeLast('.')
+        val extension = name.substringAfterLast('.')
+        val previousName = "$stem（上次）.$extension"
+        val previous = File(folder, previousName)
+        require(previous.canonicalFile.parentFile == folder.canonicalFile)
+        if (previous.isFile) {
+            require(previous.length() <= BackupValidator.BACKUP_MAX_BYTES) { "上次文件超过64MiB" }
+            val last = previous.readText(Charsets.UTF_8)
+            if (last != old) writeCheckedMaintenanceFile(folder, "$stem（上上次）.$extension", last)
+        }
+        writeCheckedMaintenanceFile(folder, previousName, requireNotNull(old))
+    }
+    writeCheckedMaintenanceFile(folder, name, content)
+}
+
+private fun writeCheckedMaintenanceFile(folder: File, name: String, content: String) {
+    writeMaintenanceFile(folder, name, content)
+    writeMaintenanceFile(folder, "$name.sha256", maintenanceSha256(content.toByteArray(Charsets.UTF_8)))
+}
+
 @Synchronized
 internal fun writeMaintenanceFile(folder: File, name: String, content: String) {
     require(safeMaintenanceName(name))
@@ -242,7 +267,7 @@ internal fun writeMaintenanceFile(folder: File, name: String, content: String) {
     }
 }
 
-/** Human-readable companion. Importable TXT fragments stay byte-for-byte original. */
+/** Human-readable companion to the current portable backup. */
 internal fun maintenanceAuthorReport(data: JSONObject): String = buildString {
     val authors = data.optJSONArray("authors")
     val refs = data.optJSONArray("authorMediaRefs")
@@ -302,10 +327,11 @@ internal fun maintenanceAuthorReport(data: JSONObject): String = buildString {
 
 internal const val MAINTENANCE_README = """# 绮梦影库维护目录
 
-- 作者资料/作者总表.txt是日常维护的唯一主表，原始片段子目录只作留档，作者资料.md供阅读。
+- 作者资料保存作者总表.txt、作者总表（上次）.txt、作者总表（上上次）.txt，作者资料.md供阅读。
 - 备份保存完整v2元数据、作者资料和离线头像，媒体原件需要另外同步。
-- qimeng_backup.json是明确导出的手动备份，qimeng_backup.auto.json是自动输出，两者独立。
-- 每份目录备份带SHA-256摘要，覆盖时留上一份，导入前保存before-import快照。
+- 备份只保留影库备份.json、影库备份（上次）.json、影库备份（上上次）.json，手动与自动共用三代。
+- 导入前的本机状态纳入三代轮换，导入完成后刷新最新一份。每份数据文件附带.sha256校验文件，请一起复制。
+- 原始TXT片段保存在完整备份内部，目录不再额外输出原始片段和历史副本。
 - 上传归档按目标库归档上传成功的原件，沿用上传页的既有操作。
 - 导入前先同步媒体并扫描，再核对确认备份或TXT的导入范围。
 """

@@ -49,6 +49,8 @@ internal fun ImportExportCard(
     onExport: () -> Unit,
     onImport: () -> Unit,
     onImportAutomatic: () -> Unit,
+    onImportOlder: (() -> Unit)? = null,
+    rolling: Boolean = false,
 ) {
     val busy = exporting || importing
     val locale = LocalConfiguration.current.locales[0]
@@ -62,7 +64,7 @@ internal fun ImportExportCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                 Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("手动备份", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (rolling) "最新备份 · 自动保留三代" else "手动备份", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(when {
                         !dirSet -> "先设置维护目录"
                         fileStatus == null -> "还没有保存备份"
@@ -82,9 +84,14 @@ internal fun ImportExportCard(
                     Text(if (importing) "恢复中…" else "导入恢复")
                 }
             }
-            TextButton(onClick = onImportAutomatic, enabled = dirSet && !busy) {
-                Icon(HistoryRecentIcon, null, Modifier.padding(end = 8.dp).size(18.dp))
-                Text("从自动备份恢复")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onImportAutomatic, enabled = dirSet && !busy) {
+                    Icon(HistoryRecentIcon, null, Modifier.padding(end = 8.dp).size(18.dp))
+                    Text(if (rolling) "恢复上次" else "从自动备份恢复")
+                }
+                onImportOlder?.let { restore ->
+                    TextButton(onClick = restore, enabled = dirSet && !busy) { Text("恢复上上次") }
+                }
             }
         }
     }
@@ -124,10 +131,10 @@ internal fun AutoBackupCard(
 internal fun BackupRuleNotes() {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(
-            "导入前自动保存当前资料快照，保存失败会停止恢复。",
+            "导入前保存本机资料并纳入三代轮换，保存失败会停止恢复。",
             "浏览记录按事件身份合并，同一备份重复导入不会翻倍。",
             "先同步媒体并扫描，再检查匹配率和迁移提示。",
-            "目录备份附完整性摘要，手动备份与自动备份各自保存。",
+            "统一目录备份附完整性摘要，手动与自动合计保留最新、上次、上上次。",
         ).forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }

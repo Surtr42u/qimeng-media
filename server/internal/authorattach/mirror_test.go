@@ -78,6 +78,27 @@ func TestMasterMirrorProtectsUnimportedEdits(t *testing.T) {
 	}
 }
 
+func TestMasterMirrorKeepsThreeDistinctGenerations(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "master.txt")
+	for _, content := range []string{"one", "two", "three", "three", "four"} {
+		if err := writeMasterFile(path, content, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, expected := range map[string]string{
+		"master.txt": "four", "master（上次）.txt": "three", "master（上上次）.txt": "two",
+	} {
+		if got, _ := readMirror(t, filepath.Join(dir, name)); got != expected {
+			t.Fatalf("%s = %q, want %q", name, got, expected)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 6 {
+		t.Fatalf("want three files and their checksums, got %d: %v", len(entries), err)
+	}
+}
+
 func TestMirrorWriterRefresh(t *testing.T) {
 	q := newTestDB(t)
 	ctx := context.Background()

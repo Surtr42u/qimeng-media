@@ -64,7 +64,13 @@ export function useImportQimengBackup() {
         const selected = await authorizeMaintenanceFolder()
         await writePreImportSnapshot(selected, await fetchBackupBlob())
       }
-      return unwrapSdkResult(postApiV1ImportQimengBackup({ body: payload }))
+      const result = await unwrapSdkResult(postApiV1ImportQimengBackup({ body: payload }))
+      const selected = maintenanceFolderStore.snapshot()
+      if (selected) {
+        try { await writeMaintenanceSnapshot(selected, await fetchBackupBlob()) }
+        catch (error) { maintenanceFolderStore.setError(`导入已完成，但最新备份写回失败。${error instanceof Error ? error.message : String(error)}`) }
+      }
+      return result
     },
     onSuccess: () => {
       // 迁移写入面横跨多域：资产（含收藏/点赞详情）/作者/标签/推荐/统计/排行/

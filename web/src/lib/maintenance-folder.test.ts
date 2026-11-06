@@ -32,16 +32,14 @@ class MemoryDirectory {
 }
 
 describe('unified maintenance snapshot', () => {
-  it('keeps the manual slot while writing automatic output and original TXT bytes', async () => {
+  it('writes a readable current bundle without raw fragment directories', async () => {
     const root = new MemoryDirectory()
     const backups = await root.getDirectoryHandle('备份', { create: true })
-    backups.files.set('qimeng_backup.json', 'old manual')
     const blob = new Blob([JSON.stringify(snapshot)])
     await writeMaintenanceSnapshot(root.handle(), blob, true)
-    expect(backups.files.get('qimeng_backup.json')).toBe('old manual')
-    expect(backups.files.get('qimeng_backup.auto.json')).toBe(blob)
+    expect(backups.files.get('影库备份.json')).toBe(blob)
     const authors = await root.getDirectoryHandle('作者资料')
-    expect((await authors.getDirectoryHandle('原始片段')).files.get('authors.txt')).toBe(snapshot.data.txtFragments![0].content)
+    expect(authors.directories.has('原始片段')).toBe(false)
     expect(authors.files.get('作者总表.txt')).toBe(snapshot.data.authorMasterTxt)
     expect(authors.files.get('作者资料.md')).toContain('合成中文简介')
     authors.files.set('stale.txt', '1  Removed')
@@ -66,16 +64,45 @@ describe('unified maintenance snapshot', () => {
     expect(report).toContain('- synthetic.png')
   })
 
-  it('checks backup bytes and preserves manual input during a pre-import snapshot', async () => {
+  it('checks backup bytes and shares import protection with the same three-generation chain', async () => {
     const root = new MemoryDirectory()
     const blob = new Blob([JSON.stringify(snapshot)])
     await writeMaintenanceSnapshot(root.handle(), blob)
     const backups = await root.getDirectoryHandle('备份')
     expect(await (await readMaintenanceBackup(root.handle())).text()).toBe(await blob.text())
     await writePreImportSnapshot(root.handle(), blob)
-    expect(backups.files.get('qimeng_backup.json')).toBe(blob)
-    expect(backups.files.has('qimeng_backup.before-import.json.sha256')).toBe(true)
-    backups.files.set('qimeng_backup.json', '{}')
+    expect(backups.files.has('影库备份.json.sha256')).toBe(true)
+    expect(backups.files.has('qimeng_backup.before-import.json')).toBe(false)
+    expect(backups.files.size).toBe(2)
+    backups.files.set('影库备份.json', '{}')
     await expect(readMaintenanceBackup(root.handle())).rejects.toThrow('摘要不一致')
   })
+  it('keeps only latest, last and older data across manual, automatic and pre-import writes', async () => {
+    const root = new MemoryDirectory()
+    const blob = (index: number, time = index) => new Blob([JSON.stringify({ ...snapshot, exportedAtMillis: time,
+      data: { ...snapshot.data, authorMasterTxt: `generation ${index}` } })])
+    for (let index = 1; index <= 6; index++) await writeMaintenanceSnapshot(root.handle(), blob(index), index % 2 === 0)
+    await writeMaintenanceSnapshot(root.handle(), blob(6, 100), true)
+    await writePreImportSnapshot(root.handle(), blob(6, 200))
+    const backups = await root.getDirectoryHandle('备份')
+    const authors = await root.getDirectoryHandle('作者资料')
+    expect(backups.files.size).toBe(6)
+    for (const [index, suffix] of [[6, ''], [5, '（上次）'], [4, '（上上次）']] as const) {
+      const file = await (await backups.getFileHandle(`影库备份${suffix}.json`)).getFile()
+      expect(JSON.parse(await file.text()).data.authorMasterTxt).toBe(`generation ${index}`)
+      expect(await (await (await authors.getFileHandle(`作者总表${suffix}.txt`)).getFile()).text()).toBe(`generation ${index}`)
+    }
+    expect(JSON.parse(await (await readMaintenanceBackup(root.handle(), 2)).text()).data.authorMasterTxt).toBe('generation 4')
+  })
+
+  it('protects an externally replaced pending import from automatic output', async () => {
+    const root = new MemoryDirectory()
+    const blob = new Blob([JSON.stringify(snapshot)])
+    await writeMaintenanceSnapshot(root.handle(), blob)
+    const backups = await root.getDirectoryHandle('备份')
+    backups.files.set('影库备份.json', '{"pending":"external"}')
+    await expect(writeMaintenanceSnapshot(root.handle(), blob, true)).rejects.toThrow('外部替换')
+    expect(backups.files.get('影库备份.json')).toBe('{"pending":"external"}')
+  })
+
 })

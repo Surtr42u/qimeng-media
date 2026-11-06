@@ -56,16 +56,22 @@ class AutoBackupRunner @Inject constructor(
         check(writeToDir(dirUri, BackupFileKind.PRE_IMPORT) != null) { "导入前快照保存失败，请检查备份目录" }
     }
 
+    /** Only a managed folder participates in three-generation refresh after a merge. */
+    suspend fun refreshAfterImport() {
+        val dirUri = prefs.state.first().dirUri ?: return
+        maintenance.writeIfManaged(dirUri, BackupFileKind.MANUAL)
+    }
+
     /** 读备份目录内固定名备份文件全量字节（备份页「导入」数据源）；未设目录/无文件/读失败返回 null */
     suspend fun readBackupBytes(kind: BackupFileKind = BackupFileKind.MANUAL): ByteArray? {
         val dirUri = prefs.state.first().dirUri ?: return null
-        return dirAccess.readBytes(dirUri, kind)
+        return dirAccess.readBytes(dirUri, maintenance.readKind(dirUri, kind))
     }
 
     /** 读备份目录内固定名备份文件状态（备份页状态行数据源）；未设目录/无文件/查询失败返回 null */
     suspend fun readFileStatus(kind: BackupFileKind = BackupFileKind.MANUAL): BackupFileStatus? {
         val dirUri = prefs.state.first().dirUri ?: return null
-        return dirAccess.fileStatus(dirUri, kind)
+        return dirAccess.fileStatus(dirUri, maintenance.readKind(dirUri, kind))
     }
 
     /**

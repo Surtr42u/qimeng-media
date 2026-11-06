@@ -67,13 +67,13 @@ export function BackupCard({ folderMode = false, directoryLoading = false }: { f
     })
   }
 
-  const readFolderBackup = async (automatic: boolean): Promise<void> => {
+  const readFolderBackup = async (generation: 0 | 1 | 2): Promise<void> => {
     if (busy || readingLock.current || pending) return
     readingLock.current = true
     setReading(true)
     try {
       const selected = await authorizeMaintenanceFolder()
-      setPending(await parseBackupFile(await readMaintenanceBackup(selected, automatic)))
+      setPending(await parseBackupFile(await readMaintenanceBackup(selected, generation)))
     } catch (error) { toast.error(batchFailureReason(error)) }
     finally { readingLock.current = false; setReading(false) }
   }
@@ -91,8 +91,9 @@ export function BackupCard({ folderMode = false, directoryLoading = false }: { f
         <span className="rank-note">当前库全量（文件清单/作者/标签/统计/收藏点赞），可导入本项目其他实例；不含媒体原件</span>
       </div>
       {folderMode && <div className="upload-queue-actions" style={{ marginTop: 12 }}>
-        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(false)}>导入目录手动备份</button>
-        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(true)}>导入目录自动备份</button>
+        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(0)}>恢复最新备份</button>
+        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(1)}>恢复上次备份</button>
+        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(2)}>恢复上上次备份</button>
       </div>}
       <div
         className={`upload-drop${busy ? ' disabled' : ''}`}
