@@ -221,3 +221,7 @@ eventstats 编排在写事务内读取真相并重建派生统计；stats/materi
 ## 外部AI维护的目标结构
 
 用户按[ADR-0051](adr/0051-外部AI维护与标签隐私.md)与[ADR-0052](adr/0052-外部AI维护需求修订.md)确认外部工具、机器可读规则包、持久后台执行与本地维护权限方向，实施要求见[任务书](AI_MAINTENANCE_TASKBOOK.md)。当前OpenAPI与领域服务作为复用基座，新增编排遵守§5及ADR-0019。工具与常驻执行器部署在PC/NAS可信执行端，可只读服务端数据目录、在授权维护目录内读写；手机以后台worker主动拉取PC任务（PC→手机单向，手机不新增监听面）。业务写入一律走正式API，不直写数据库；App/Web消费同一业务和任务语义。工具、队列、桥接与NAS部署仍待分阶段实现和验收。
+
+### 维护任务账本与设备结果包（2026-11-07 已落地）
+
+migration 0023 新增 `maintenance_jobs`/`maintenance_steps`/`maintenance_artifacts`，migration 0024 新增 `device_apply_tasks`/`device_apply_segments`（均为只增表，不改既有表）。维护队列账本记录状态机、幂等键、租约与步骤/工件索引，对外提供 `/api/v1/maintenance/jobs` 族端点；设备结果包账本只存清单、摘要与状态，段字节落 `<dataDir>/device-apply-packages/<taskId>/`，由 `/api/v1/device/apply-tasks` 族端点登记、领取与回传。两个领域包（`server/internal/maintenance`、`server/internal/deviceapply`）只依赖 store/领域包、不依赖 httpapi，业务写入仍走正式 API；worker、PC→手机配对、Android 后台 Worker 与 Web 任务中心仍待后续阶段实现。

@@ -1,6 +1,6 @@
 # CAPABILITY_MAP - 能力与缺口
 
-> 新功能提案先查本表和相关 ADR。每域只维护能力状态/缺口，机制详情链接专题；当前事项见 HANDOVER。维护日期：2026-11-06。
+> 新功能提案先查本表和相关 ADR。每域只维护能力状态/缺口，机制详情链接专题；当前事项见 HANDOVER。维护日期：2026-11-07。
 
 本表描述已实现能力与真正缺口；PC/手机的实际安装来源、现场结果、最近源码门禁及审查结论只在[HANDOVER](HANDOVER.md)维护，不把源码合并当已安装，也不把单项成功当完整验收。
 
@@ -32,13 +32,15 @@
 | 上传/同步/整理 | 直传、双端分片续传、目录拖拽、SAF/分享、归档一键上传、本机同步；[API files](api/files.md) | 首次手机上传使用本次时间、归档再传PC/NAS保留，七天完成凭据、会话预算和手机归档外部上传后释放已云端验证并部署，状态见 HANDOVER；此前 Android 目标 URL 与分片把手持久化/单测通过，手机由用户自测确认，切服/重启等场景未逐项记录；新增异常场景已过云端合成回归，真实设备全流程另验收 | 已有；增强待办 |
 | 本机同步 | 库名映射、30s 轮询、根 TXT keep 导入与归档 | GBK/GB18030 待实际非 UTF-8 输入；fsnotify/指标化待延迟需求；词表 UTF-8 门禁待异常输入 | 已有 |
 | 标签/收藏/点赞/时间轴 | 各端管理和事件联动；[行为规则](domain/engagement.md) | 2026-11-06 第二批需求取消标签加密、外部代号与 AI 标签维护（[ADR-0052](adr/0052-外部AI维护需求修订.md)）；标签维持现行明文/FTS/UNIQUE 与搜索筛选关联语义，不再做隐私增强 | 基础能力已有；加密明确不做 |
-| 作者/词表 | TXT/COS双体系、资产编辑、作者新建/改名/删除、词表维护与并集合并；附属公开档案、候选审核、认证头像代理与可选资料/RSS检查；[作者](domain/authors.md) | 档案Web/API已随3525cb6a部署，Android code23已静默安装但按要求未启动验收；真实身份资料仍需审核且本轮未填充；重复作者合并（当前撞身份409）与搁置作者批量清理工具待实现（[ADR-0052](adr/0052-外部AI维护需求修订.md)）；COS由目录管理，手工改名/删除不适用 | 已有；安装范围见HANDOVER |
+| 作者/词表 | TXT/COS双体系、资产编辑、作者新建/改名/删除、词表维护与并集合并；附属公开档案、候选审核、认证头像代理与可选资料/RSS检查；[作者](domain/authors.md) | 档案Web/API已随3525cb6a部署，Android code23已静默安装但按要求未启动验收；真实身份资料仍需审核且本轮未填充；重复作者合并端点已实现（第六百九十一笔；不可撤销），搁置作者批量清理工具待实现（[ADR-0052](adr/0052-外部AI维护需求修订.md)）；COS由目录管理，手工改名/删除不适用 | 已有；安装范围见HANDOVER |
 | 监控/探针 | 内置状态、指标、维护页；[监控](OBSERVABILITY.md) | Grafana 长期曲线后置；访问日志及脱敏；readyz 媒体根/磁盘检查已云端验证并部署，边界见 HANDOVER | 已有；增强待办 |
 | 部署 | amd64 Docker/compose 与 fnOS 历史彩排；[部署](../deploy/README.md) | 当前无 NAS，未来设备重新验收；arm64 按需储备 | 已有交付；目标设备待验收 |
 | 新库类型 | normal/cos 接口与分派基座（ADR-0012） | 其他 kind 按实际目录需求接入 | 基座已有 |
 | 视频画质/插帧 | Web/桌面 HTML5 视频与 Android Media3 原片播放 | 未接入视频超分、HDR 增强或插帧；Go 可调度外部处理，实时增强须适配播放器帧/GPU 管线及目标硬件，不能按 Go 插件加载等同处理。用户 2026-10-22 决定暂时不做，PC/手机均不列入当前实施计划；重提时再评估 | 暂缓；未实现 |
 | 插件/外部扩展 | OpenAPI 与三端 SDK 可作外部工具接入契约；内部模块、库 kind 可按源码扩展（ADR-0012/0019） | 无通用插件安装器、运行时注册/加载、独立权限和兼容版本协议；第三方插件须按其具体协议评估适配，不能直接通用安装 | 接口基座已有；插件运行时未实现 |
-| 外部AI维护与后台任务 | 现有OpenAPI、作者/文件/标签/关联和研究规范可复用 | 规则发现、工具封装、持久队列、本地维护权限、无前台 PC→手机桥接、作者清理/去重、两代备份分代目录及 NAS 云端模型执行，见[任务书](AI_MAINTENANCE_TASKBOOK.md)与 [ADR-0051](adr/0051-外部AI维护与标签隐私.md)/[ADR-0052](adr/0052-外部AI维护需求修订.md)；P0 现状/缺口与最小方案见[任务书](AI_MAINTENANCE_TASKBOOK.md)所链底稿 | 用户已确认；P0 底稿已出待确认，工具、桥接与备份布局待实现 |
+| 外部AI维护与后台任务 | 规则包/只读 CLI（第六百九十二笔）、作者合并端点（第六百九十一笔）、持久任务账本端点（`/api/v1/maintenance/jobs`，migration 0023，[ADR-0054](adr/0054-持久维护任务队列.md)）、PC→手机设备结果包服务端 API（migration 0024，[ADR-0055](adr/0055-手机无前台维护结果包协议.md)）已实现；现有 OpenAPI、作者/文件/标签/关联和研究规范可复用 | worker 执行器、Android 无前台 Worker 与配对/设备身份、Web 任务中心、作者清理/去重工具、两代备份分代目录及 NAS 云端模型执行待实现，见[任务书](AI_MAINTENANCE_TASKBOOK.md)与 [ADR-0051](adr/0051-外部AI维护与标签隐私.md)/[ADR-0052](adr/0052-外部AI维护需求修订.md)；P0 现状/缺口见[底稿](AI_MAINTENANCE_P0.md) | 部分实现（规则包/合并/账本/结果包 API）；执行面、Worker、配对与备份布局未实现；未安装 |
+| 维护任务队列 | `server/internal/maintenance` 账本 + migration 0023 三表 + 六个 `/api/v1/maintenance/jobs` 端点（创建/列表/详情/暂停/恢复/取消）；状态机覆盖 queued→inventory→research→planned→applying→verifying→completed、waiting_*、paused/partial/failed/cancelled；幂等键终态后仍唯一；租约字段与 Claim/Heartbeat/Complete 内部原语已备。[维护任务 API](api/maintenance.md)、[ADR-0054](adr/0054-持久维护任务队列.md) | worker 执行器、Web 任务中心、PC→手机桥接的 Android Worker/配对（服务端结果包 API 见下行）、`author.cleanup.prepare/apply`、MCP 仍未实现；本切片源码/SDK 已交付但**未安装**，现装仍为 HANDOVER 记录版本 | 已实现未安装；执行面待做 |
+| 设备结果包 API | `server/internal/deviceapply` 账本 + migration 0024 两表 + 七个 `/api/v1/device/apply-tasks` 端点（登记/列表/详情/领取/段下载/回传/取消）；段字节落 `<dataDir>/device-apply-packages/<taskId>/`，写库前复算 SHA-256/字节数；领取、相同结果回传与取消的幂等语义见专题。[设备结果包 API](api/device.md)、[ADR-0055](adr/0055-手机无前台维护结果包协议.md) | Android Worker（WorkManager、充电+Wi-Fi、前台立即应用）、配对/设备身份、真机后台领取/应用/回传、包清理与 Web 任务中心未实现；本切片源码/SDK 已交付但**未安装** | 已实现未安装；Worker/配对/真机未做 |
 | 研究/核验 API | 服务端 provider 网关与 Lens 代理已实现：`GET /api/v1/research/context`、`POST /providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵）、`POST /lens`（multipart，loopback sidecar）；安全 HTTP 出口、进程内预算、证据落盘与三端 SDK 同批生成。[研究 API](api/research.md)、[ADR-0053](adr/0053-研究流水线API集成.md) | 默认关闭（嵌入式/Android 同样默认关闭）；已随 796d813f 安装并跑通 context 与真实 Lens；provider 查询在本机因 DNS fake-IP 被 SSRF 防护拦截（ADDRESS_BLOCKED），真实平台查询尚未验收；Bing/第三方接口改版只能回退；Lens `links` 常空；证据目录无自动轮转 | 已实现并安装；真实 provider 查询待本机 DNS 条件满足后验收 |
 
 ## 可靠性与工程待办

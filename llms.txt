@@ -43,6 +43,8 @@
 - [上传/整理/回收站](docs/api/files.md)
 - [便携迁移/库快照](docs/api/backup.md)
 - [研究/核验](docs/api/research.md)：provider 网关与 Lens sidecar（默认关闭）
+- [维护任务队列](docs/api/maintenance.md)：持久账本、状态机、幂等与 worker 边界（已实现未安装，worker 待做）
+- [设备结果包](docs/api/device.md)：PC→手机结果包登记/领取/段下载/回传/取消（服务端已实现未安装，Android Worker/配对待做）
 - [Makefile](Makefile)：构建与检查命令
 - [服务端](server/README.md)
 - [Web](web/README.md)

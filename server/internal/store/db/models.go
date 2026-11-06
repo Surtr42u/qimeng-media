@@ -91,6 +91,29 @@ type DailyShown struct {
 	Count   int64
 }
 
+type DeviceApplySegment struct {
+	TaskID  string
+	Kind    string
+	Bytes   int64
+	Sha256  string
+	RelPath string
+}
+
+type DeviceApplyTask struct {
+	ID               string
+	TargetDeviceID   string
+	Status           string
+	ProtocolVersion  int64
+	RulesFingerprint string
+	ManifestJson     string
+	CreatedAt        string
+	UpdatedAt        string
+	ClaimedAt        sql.NullString
+	FinishedAt       sql.NullString
+	ExpiresAt        string
+	ResultJson       sql.NullString
+}
+
 type Favorite struct {
 	AssetID   string
 	CreatedAt string
@@ -115,6 +138,47 @@ type Like struct {
 	AssetID   string
 	Day       string
 	CreatedAt string
+}
+
+type MaintenanceArtifact struct {
+	ID        int64
+	JobID     string
+	Kind      string
+	Uri       string
+	Sha256    string
+	Bytes     int64
+	CreatedAt string
+}
+
+type MaintenanceJob struct {
+	ID                 string
+	Kind               string
+	Status             string
+	LibraryID          sql.NullString
+	PayloadJson        string
+	InputFingerprint   string
+	RulesVersion       string
+	AuthorizationScope string
+	BudgetJson         string
+	IdempotencyKey     string
+	LeaseOwner         sql.NullString
+	LeaseUntil         sql.NullString
+	CreatedAt          string
+	UpdatedAt          string
+	StartedAt          sql.NullString
+	FinishedAt         sql.NullString
+	ErrorCode          sql.NullString
+	ErrorMessage       sql.NullString
+}
+
+type MaintenanceStep struct {
+	JobID      string
+	Step       string
+	Status     string
+	Attempt    int64
+	StartedAt  sql.NullString
+	FinishedAt sql.NullString
+	DetailJson string
 }
 
 type PortableEventIdentity struct {
