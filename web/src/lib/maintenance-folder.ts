@@ -3,6 +3,7 @@ import { openDatabase, runTx } from '@/lib/idb'
 
 type Directory = FileSystemDirectoryHandle & {
   requestPermission(options: { mode: 'readwrite' }): Promise<PermissionState>
+  queryPermission(options: { mode: 'readwrite' }): Promise<PermissionState>
 }
 
 const listeners = new Set<() => void>()
@@ -10,6 +11,7 @@ let root: Directory | null = null
 let loaded: Promise<void> | undefined
 let writing = false
 let rootRevision = 0
+let syncError: string | null = null
 const database = () => openDatabase('qimeng-maintenance-folders', 1, db => db.createObjectStore('roots'))
 const storageKey = () => location.origin
 
@@ -20,6 +22,8 @@ export function maintenanceFolderSupported(): boolean {
 export const maintenanceFolderStore = {
   subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
   snapshot: () => root,
+  errorSnapshot: () => syncError,
+  setError(error: string | null) { syncError = error; listeners.forEach(listener => listener()) },
   async load() {
     loaded ??= (async () => {
       const revision = rootRevision
@@ -85,6 +89,8 @@ export async function writeMaintenanceSnapshot(selected: Directory, blob: Blob, 
 
 async function writeSnapshot(selected: Directory, blob: Blob, automatic: boolean): Promise<void> {
   const snapshot = JSON.parse(await blob.text()) as LegacyBackupImport
+  const master = snapshot.data.authorMasterTxt
+  if (typeof master !== 'string') throw new Error('当前服务端未提供作者主表，请先更新服务端')
   const fragments = snapshot.data.txtFragments ?? []
   const names = new Set<string>()
   const documents = fragments.map(fragment => {
@@ -96,18 +102,67 @@ async function writeSnapshot(selected: Directory, blob: Blob, automatic: boolean
   })
   const backups = await selected.getDirectoryHandle('备份', { create: true })
   const authors = await selected.getDirectoryHandle('作者资料', { create: true })
+  const originals = await authors.getDirectoryHandle('原始片段', { create: true })
+  const previous = await existingFile(authors, '作者总表.txt')
+  const masterChecksum = await existingFile(authors, '作者总表.txt.sha256')
+  if (masterChecksum && masterChecksum.size > 1024) throw new Error('作者主表摘要文件过大')
+  if (previous && previous.size > 64 * 1024 * 1024) throw new Error('原作者主表过大，请先移走保留')
+  const previousText = previous ? await previous.text() : null
+  const imported = documents.some(document => document.content === previousText)
+  if (previous && masterChecksum && previousText !== master && !imported && (await masterChecksum.text()).trim() !== await sha256(previous)) throw new Error('作者主表已被外部编辑，请先导入主表后再写回')
   await selected.getDirectoryHandle('上传归档', { create: true })
-  await writeFile(backups, automatic ? 'qimeng_backup.auto.json' : 'qimeng_backup.json', blob)
-  for (const document of documents) await writeFile(authors, document.name, document.content)
+  await writeCheckedBackup(backups, automatic ? 'qimeng_backup.auto.json' : 'qimeng_backup.json', blob)
+  for (const document of documents) await writeFile(originals, document.name, document.content)
+  if (previous && previousText !== master) await writeFile(await originals.getDirectoryHandle('历史', { create: true }), '作者总表.previous.txt', previous)
+  await writeFile(authors, '作者总表.txt', master)
+  await writeFile(authors, '作者总表.txt.sha256', await sha256(new Blob([master])))
   await writeFile(authors, '作者资料.md', maintenanceAuthorReport(snapshot))
-  await writeFile(authors, '作者片段索引.json', JSON.stringify(documents.map(document => document.name)))
+  await writeFile(authors, '作者片段索引.json', JSON.stringify(['作者总表.txt']))
   await writeFile(selected, '目录说明.md', MAINTENANCE_README)
 }
 
 export async function readMaintenanceBackup(selected: Directory, automatic = false): Promise<File> {
   if (writing) throw new Error('维护目录正在更新，请稍后读取')
   const folder = await selected.getDirectoryHandle('备份')
-  return (await folder.getFileHandle(automatic ? 'qimeng_backup.auto.json' : 'qimeng_backup.json')).getFile()
+  const name = automatic ? 'qimeng_backup.auto.json' : 'qimeng_backup.json'
+  const file = await (await folder.getFileHandle(name)).getFile()
+  const checksum = await existingFile(folder, `${name}.sha256`)
+  if (checksum && checksum.size > 1024) throw new Error('备份摘要文件过大')
+  if (checksum && (await checksum.text()).trim() !== await sha256(file)) throw new Error('备份摘要不一致，文件可能未写完或已被替换，请重新导出或选择完整的外部备份')
+  return file
+}
+
+async function existingFile(folder: FileSystemDirectoryHandle, name: string): Promise<File | null> {
+  try { return await (await folder.getFileHandle(name)).getFile() }
+  catch (error) {
+    if (error instanceof DOMException && error.name === 'NotFoundError') return null
+    throw error
+  }
+}
+
+async function sha256(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function writeCheckedBackup(folder: FileSystemDirectoryHandle, name: string, blob: Blob): Promise<void> {
+  if (blob.size > 64 * 1024 * 1024) throw new Error('备份超过64MiB，请先处理备份容量')
+  const previous = await existingFile(folder, name)
+  if (previous) {
+    if (previous.size > 64 * 1024 * 1024) throw new Error('原备份超过64MiB，请先移走保留')
+    await writeFile(folder, `${name}.previous`, previous)
+    await writeFile(folder, `${name}.previous.sha256`, await sha256(previous))
+  }
+  await writeFile(folder, name, blob)
+  await writeFile(folder, `${name}.sha256`, await sha256(blob))
+}
+
+/** A separate slot preserves the current state before a confirmed merge. */
+export async function writePreImportSnapshot(selected: Directory, blob: Blob): Promise<void> {
+  if (writing) throw new Error('维护目录正在更新，请稍后导入')
+  writing = true
+  try { await writeCheckedBackup(await selected.getDirectoryHandle('备份', { create: true }), 'qimeng_backup.before-import.json', blob) }
+  finally { writing = false }
 }
 
 export async function readMaintenanceTxt(selected: Directory): Promise<File[]> {
@@ -176,9 +231,11 @@ export function maintenanceAuthorReport(snapshot: LegacyBackupImport): string {
 
 const MAINTENANCE_README = `# 绮梦影库维护目录
 
-- 作者资料保存原始TXT片段和可阅读的作者资料.md。
+- 作者资料/作者总表.txt是唯一日常维护主表，原始片段子目录只作留档，作者资料.md供阅读。
 - 备份保存完整v2元数据、作者档案和离线头像，媒体原件需要另外同步。
 - qimeng_backup.json供手动导出，qimeng_backup.auto.json供自动输出，两个槽独立。
+- 每份目录备份带SHA-256摘要，覆盖时留上一份，导入前保存before-import快照。
+- Web打开并保持目录授权时自动写回，关闭浏览器后将在再次打开时补齐。
 - 上传归档保存上传成功原件的副本，按库及目标目录归档。
 - 导入前先同步媒体并扫描，再核对确认备份或TXT的导入范围。
 `

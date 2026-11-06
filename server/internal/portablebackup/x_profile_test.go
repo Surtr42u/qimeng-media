@@ -56,3 +56,18 @@ func TestTranslationFillProtectsOriginalAndManualClear(t *testing.T) {
 		t.Fatal("manual empty translation overwritten")
 	}
 }
+
+func TestProfileConflictIgnoresRevisionAndMaintenanceFlags(t *testing.T) {
+	current := creatorprofile.Empty("synthetic")
+	current.Biography = "manual biography"
+	incoming := current
+	incoming.Revision = 17
+	incoming.AutoRefresh = true
+	if profilesConflict(current, incoming) {
+		t.Fatal("revision is not a content conflict")
+	}
+	incoming.Biography = "different biography"
+	if !profilesConflict(current, incoming) {
+		t.Fatal("changed biography was not reported")
+	}
+}

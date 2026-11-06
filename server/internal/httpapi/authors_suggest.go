@@ -129,6 +129,9 @@ func (s *Server) GetApiV1AuthorsMirror(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "读取作者镜像配置", err)
 		return
 	}
+	if cfg.Mode == "" {
+		cfg.Mode = "fragment"
+	}
 	writeJSON(w, http.StatusOK, gen.AuthorMirrorConfig{
 		Path:             &cfg.Path,
 		FragmentFilename: &cfg.FragmentFilename,

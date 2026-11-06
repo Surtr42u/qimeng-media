@@ -50,6 +50,12 @@ class AutoBackupRunner @Inject constructor(
         return written
     }
 
+    /** A failed safety snapshot prevents the caller from starting the merge. */
+    suspend fun snapshotBeforeImport() {
+        val dirUri = prefs.state.first().dirUri ?: return
+        check(writeToDir(dirUri, BackupFileKind.PRE_IMPORT) != null) { "导入前快照保存失败，请检查备份目录" }
+    }
+
     /** 读备份目录内固定名备份文件全量字节（备份页「导入」数据源）；未设目录/无文件/读失败返回 null */
     suspend fun readBackupBytes(kind: BackupFileKind = BackupFileKind.MANUAL): ByteArray? {
         val dirUri = prefs.state.first().dirUri ?: return null

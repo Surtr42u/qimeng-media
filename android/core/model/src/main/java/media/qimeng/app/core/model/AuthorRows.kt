@@ -131,4 +131,5 @@ fun List<NameSuggestion>.sortedShortestFirst(): List<NameSuggestion> =
 data class AuthorMirrorConfig(
     val path: String = "",
     val fragmentFilename: String = "",
+    val mode: String = "fragment",
 )

@@ -93,6 +93,9 @@ func buildMasterTXT(sources []Source, authors []db.ListAuthorsRow, works map[str
 			add(authoring.AuthorBlock{AuthorNames: names})
 		}
 	}
+	if len(order) == 0 {
+		return ""
+	}
 	content := "绮梦影库 作者总表\n完整档案、头像、COS及标签请使用同目录v2备份迁移。\n"
 	for _, id := range order {
 		block := blocks[id]

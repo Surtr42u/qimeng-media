@@ -32,10 +32,10 @@ type AuthorMediaRef struct {
 }
 
 type BackupData struct {
-	AuthorMasterTxt *string                   `json:"authorMasterTxt,omitempty"`
-	AlbumRules      *[]map[string]interface{} `json:"albumRules,omitempty"`
+	AlbumRules *[]map[string]interface{} `json:"albumRules,omitempty"`
 
 	AppPrefs        *AppPrefs         `json:"appPrefs,omitempty"`
+	AuthorMasterTxt *string           `json:"authorMasterTxt,omitempty"`
 	AuthorMediaRefs *[]AuthorMediaRef `json:"authorMediaRefs,omitempty"`
 	Authors         *[]Author         `json:"authors,omitempty"`
 	CosWorks        *[]CosWork        `json:"cosWorks,omitempty"`

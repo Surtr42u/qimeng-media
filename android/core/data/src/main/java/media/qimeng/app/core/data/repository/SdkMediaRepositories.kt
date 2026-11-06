@@ -494,6 +494,7 @@ class SdkAuthorRepository @Inject constructor(
             AuthorMirrorConfig(
                 path = res.path.orEmpty(),
                 fragmentFilename = res.fragmentFilename.orEmpty(),
+                mode = res.mode?.value ?: "fragment",
             )
         }
     }
@@ -505,11 +506,13 @@ class SdkAuthorRepository @Inject constructor(
                 media.qimeng.sdk.models.AuthorMirrorConfig(
                     path = config.path,
                     fragmentFilename = config.fragmentFilename.ifBlank { null },
+                    mode = media.qimeng.sdk.models.AuthorMirrorConfig.Mode.values().first { it.value == config.mode },
                 ),
             )
             AuthorMirrorConfig(
                 path = res.path.orEmpty(),
                 fragmentFilename = res.fragmentFilename.orEmpty(),
+                mode = res.mode?.value ?: "fragment",
             )
         }
     }

@@ -18,7 +18,7 @@ import {
 } from '@/api/generated'
 import { getAuthHeaders, unwrapSdkResult } from '@/lib/api-client'
 import { downloadBlob } from '@/lib/download'
-import { authorizeMaintenanceFolder, writeMaintenanceSnapshot } from '@/lib/maintenance-folder'
+import { authorizeMaintenanceFolder, maintenanceFolderStore, maintenanceFolderSupported, writeMaintenanceSnapshot, writePreImportSnapshot } from '@/lib/maintenance-folder'
 import {
   ASSETS_QUERY_KEY,
   AUTHORS_QUERY_KEY,
@@ -58,8 +58,14 @@ export function useExportQimengBackup(folderMode = false) {
 export function useImportQimengBackup() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (payload: LegacyBackupImport): Promise<LegacyImportResult> =>
-      unwrapSdkResult(postApiV1ImportQimengBackup({ body: payload })),
+    mutationFn: async (payload: LegacyBackupImport): Promise<LegacyImportResult> => {
+      if (maintenanceFolderSupported()) await maintenanceFolderStore.load()
+      if (maintenanceFolderSupported() && maintenanceFolderStore.snapshot()) {
+        const selected = await authorizeMaintenanceFolder()
+        await writePreImportSnapshot(selected, await fetchBackupBlob())
+      }
+      return unwrapSdkResult(postApiV1ImportQimengBackup({ body: payload }))
+    },
     onSuccess: () => {
       // 迁移写入面横跨多域：资产（含收藏/点赞详情）/作者/标签/推荐/统计/排行/
       // 观看历史整族失效。stats 族此前手写 ['api/v1/stats'] 与 use-stats 的

@@ -5,6 +5,7 @@ import { chooseMaintenanceFolder, maintenanceFolderStore, maintenanceFolderSuppo
 
 export function useMaintenanceFolder() {
   const root = useSyncExternalStore(maintenanceFolderStore.subscribe, maintenanceFolderStore.snapshot)
+  const syncError = useSyncExternalStore(maintenanceFolderStore.subscribe, maintenanceFolderStore.errorSnapshot)
   const [loadError, setLoadError] = useState<unknown>(null)
   const [loading, setLoading] = useState(maintenanceFolderSupported)
   useEffect(() => {
@@ -15,5 +16,5 @@ export function useMaintenanceFolder() {
     await writeMaintenanceSnapshot(selected, await fetchBackupBlob(), true)
     setLoadError(null)
   } })
-  return { root, choose, loadError, loading, supported: maintenanceFolderSupported() }
+  return { root, choose, loadError: loadError ?? syncError, loading, supported: maintenanceFolderSupported() }
 }

@@ -22,6 +22,7 @@ data class BackupFileStatus(
 enum class BackupFileKind(val fileName: String) {
     MANUAL(AutoBackupRunner.BACKUP_FILE_NAME),
     AUTOMATIC(AutoBackupRunner.AUTO_BACKUP_FILE_NAME),
+    PRE_IMPORT("qimeng_backup.before-import.json"),
 }
 
 /** 同一授权目录内，手动/PC备份与自动输出独立，恢复必须显式选定。 */
@@ -77,7 +78,7 @@ class SafBackupDirAccess @Inject constructor(
                 require(file.canonicalFile.parentFile == folder)
                 if (!file.isFile) return@runCatching null
                 require(file.length() <= BackupValidator.BACKUP_MAX_BYTES.toLong()) { "备份超过64MiB上限" }
-                return@runCatching file.inputStream().use { stream ->
+                val bytes = file.inputStream().use { stream ->
                     val output = ByteArrayOutputStream()
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     while (true) {
@@ -88,6 +89,13 @@ class SafBackupDirAccess @Inject constructor(
                     }
                     output.toByteArray()
                 }
+                val checksum = File(folder, kind.fileName + ".sha256")
+                require(checksum.canonicalFile.parentFile == folder)
+                require(checksum.length() <= 1024) { "备份摘要文件过大" }
+                if (checksum.isFile && checksum.readText(Charsets.UTF_8).trim() != maintenanceSha256(bytes)) {
+                    error("备份摘要不一致，请重新导出完整备份")
+                }
+                return@runCatching bytes
             }
             val resolver = context.contentResolver
             val tree = Uri.parse(dirUri)

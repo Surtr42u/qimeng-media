@@ -546,6 +546,33 @@ class BackupViewModelTest {
         assertEquals(listOf(BackupFileKind.MANUAL), kinds)
     }
 
+    @Test
+    fun `confirmed import saves a separate snapshot and retains the incoming manual file`() = runTest {
+        val prefs = FakeBackupAutoPrefs()
+        prefs.setDirUri("file:///synthetic/备份")
+        val directory = FakeBackupDirAccess().apply { file = validBytes }
+        val (vm, repository) = newViewModel(prefs = prefs, dirAccess = directory)
+        vm.onFilePicked("qimeng_backup.json", validBytes)
+        vm.confirmImport()
+        driveIdle()
+        assertEquals(listOf(BackupFileKind.PRE_IMPORT), directory.writtenKinds)
+        assertTrue(directory.file!!.contentEquals(validBytes))
+        assertEquals(1, repository.importCalls.size)
+    }
+
+    @Test
+    fun `snapshot failure prevents confirmed import`() = runTest {
+        val prefs = FakeBackupAutoPrefs()
+        prefs.setDirUri("file:///synthetic/备份")
+        val directory = FakeBackupDirAccess().apply { writeError = true }
+        val (vm, repository) = newViewModel(prefs = prefs, dirAccess = directory)
+        vm.onFilePicked("qimeng_backup.json", validBytes)
+        vm.confirmImport()
+        driveIdle()
+        assertTrue(repository.importCalls.isEmpty())
+        assertNotNull(vm.uiState.value.errorMessage)
+    }
+
 }
 
 /**
@@ -674,6 +701,8 @@ private class FakeBackupAutoPrefs : BackupAutoPrefsRepository {
 private class FakeBackupDirAccess : BackupDirAccess {
     var file: ByteArray? = null
     var automaticFile: ByteArray? = null
+    var preImportFile: ByteArray? = null
+    var writeError: Boolean = false
     var readError: Boolean = false
     var readGate: CompletableDeferred<Unit>? = null
     var readCancellation: Boolean = false
@@ -696,8 +725,13 @@ private class FakeBackupDirAccess : BackupDirAccess {
     override suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind): Long? {
         writtenJsons.add(json)
         writtenKinds.add(kind)
+        if (writeError) return null
         val bytes = json.toByteArray(Charsets.UTF_8)
-        if (kind == BackupFileKind.AUTOMATIC) automaticFile = bytes else file = bytes
+        when (kind) {
+            BackupFileKind.AUTOMATIC -> automaticFile = bytes
+            BackupFileKind.MANUAL -> file = bytes
+            BackupFileKind.PRE_IMPORT -> preImportFile = bytes
+        }
         return bytes.size.toLong()
     }
 

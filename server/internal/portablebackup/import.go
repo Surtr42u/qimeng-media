@@ -158,6 +158,7 @@ func (imp *backupImport) importSegment(stage string, fn func(qx *db.Queries)) {
 // 逐行 autocommit，中途失败会留下作者已建而关联缺失的半段状态，重跑虽可
 // 幂等补齐但中间窗口内读侧看到半成品；段级原子后窗口消除）。
 func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef) {
+	conflicts := 0
 	imp.importSegment("作者", func(qx *db.Queries) {
 		for _, a := range sliceOrEmpty(authors) {
 			authorType := "regular"
@@ -190,6 +191,9 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 				fillAvatar := a.AvatarData != nil && len(current.AvatarData) == 0 && current.AvatarURL == profile.AvatarURL
 				fillX := canFillXProfile(current, profile)
 				fillTranslation := canFillXTranslation(current, profile)
+				if !restore && profilesConflict(current, profile) {
+					conflicts++
+				}
 				if !restore && !fillAvatar && !fillX && !fillTranslation {
 					imp.bump(&imp.res.AuthorsImported)
 					continue
@@ -256,6 +260,9 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 			}
 		}
 	})
+	if imp.err == nil && conflicts > 0 {
+		imp.warn("%d 位作者的备份资料与本机不同，已保留本机已有资料，仅按规则补齐同来源缺失信息；如需替换请在作者资料页核对编辑", conflicts)
+	}
 	if imp.err == nil && len(sliceOrEmpty(refs)) > 0 {
 		imp.s.mirror.Refresh(imp.ctx, imp.s.q)
 	}

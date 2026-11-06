@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { LegacyBackupImport } from '@/api/generated'
-import { maintenanceAuthorReport, readMaintenanceTxt, safeMaintenanceName, writeMaintenanceSnapshot } from './maintenance-folder'
+import { maintenanceAuthorReport, readMaintenanceBackup, readMaintenanceTxt, safeMaintenanceName, writeMaintenanceSnapshot, writePreImportSnapshot } from './maintenance-folder'
 
 const snapshot: LegacyBackupImport = {
   format: 'qimeng_backup', schemaVersion: 2, appIdentifier: 'com.qimeng.media', exportedAtMillis: 1000,
-  data: { viewEvents: [], authors: [{ authorId: 'synthetic', displayName: 'Synthetic',
+  data: { authorMasterTxt: '1  Synthetic\n作品\nsynthetic.png\n', viewEvents: [], authors: [{ authorId: 'synthetic', displayName: 'Synthetic',
     profileJson: JSON.stringify({ status: 'verified', xProfile: { biography: 'Original biography', biographyZh: '合成中文简介' } }) }],
   authorMediaRefs: [{ authorId: 'synthetic', recordKey: 'one', fileName: 'synthetic.png' }],
   txtFragments: [{ importedAtMillis: 0, filename: 'authors.txt', content: '1  Synthetic\r\n作品\r\nsynthetic.png\r\n' }] },
@@ -41,10 +41,11 @@ describe('unified maintenance snapshot', () => {
     expect(backups.files.get('qimeng_backup.json')).toBe('old manual')
     expect(backups.files.get('qimeng_backup.auto.json')).toBe(blob)
     const authors = await root.getDirectoryHandle('作者资料')
-    expect(authors.files.get('authors.txt')).toBe(snapshot.data.txtFragments![0].content)
+    expect((await authors.getDirectoryHandle('原始片段')).files.get('authors.txt')).toBe(snapshot.data.txtFragments![0].content)
+    expect(authors.files.get('作者总表.txt')).toBe(snapshot.data.authorMasterTxt)
     expect(authors.files.get('作者资料.md')).toContain('合成中文简介')
     authors.files.set('stale.txt', '1  Removed')
-    expect((await readMaintenanceTxt(root.handle())).map(file => file.name)).toEqual(['authors.txt'])
+    expect((await readMaintenanceTxt(root.handle())).map(file => file.name)).toEqual(['作者总表.txt'])
   })
 
   it('rejects escaping and duplicate names before replacing a backup', async () => {
@@ -63,5 +64,18 @@ describe('unified maintenance snapshot', () => {
     expect(report).toContain('内部ID `synthetic`')
     expect(report).toContain('Original biography')
     expect(report).toContain('- synthetic.png')
+  })
+
+  it('checks backup bytes and preserves manual input during a pre-import snapshot', async () => {
+    const root = new MemoryDirectory()
+    const blob = new Blob([JSON.stringify(snapshot)])
+    await writeMaintenanceSnapshot(root.handle(), blob)
+    const backups = await root.getDirectoryHandle('备份')
+    expect(await (await readMaintenanceBackup(root.handle())).text()).toBe(await blob.text())
+    await writePreImportSnapshot(root.handle(), blob)
+    expect(backups.files.get('qimeng_backup.json')).toBe(blob)
+    expect(backups.files.has('qimeng_backup.before-import.json.sha256')).toBe(true)
+    backups.files.set('qimeng_backup.json', '{}')
+    await expect(readMaintenanceBackup(root.handle())).rejects.toThrow('摘要不一致')
   })
 })

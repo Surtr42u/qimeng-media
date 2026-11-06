@@ -181,6 +181,7 @@ class BackupViewModel @Inject constructor(
         _uiState.update { it.copy(pendingImport = null, importing = true, errorMessage = null) }
         viewModelScope.launch {
             try {
+                autoBackupRunner.snapshotBeforeImport()
                 val result = backupRepository.importBackup(pending.payload)
                 val warnings = result.warnings.orEmpty()
                 _uiState.update {
