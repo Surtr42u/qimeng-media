@@ -239,6 +239,9 @@ type Config struct {
 	LocalSync LocalSyncConfig `yaml:"local_sync"`
 	// Scanner 是后台文件监听及全量对账调度配置。
 	Scanner ScannerConfig `yaml:"scanner"`
+	// Research 是媒体研究流水线（服务端 provider 网关 + 本机 Lens sidecar）
+	// 配置，默认关闭（ADR-0053；嵌入式/Android 形态同样默认关闭）。
+	Research ResearchConfig `yaml:"research"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -268,6 +271,12 @@ func Load(path string) (*Config, error) {
 		LocalSync: LocalSyncConfig{
 			Interval:  DefaultLocalSyncInterval,
 			StableAge: DefaultLocalSyncStableAge,
+		},
+		Research: ResearchConfig{
+			Enabled:           false,
+			LensPerHour:       DefaultResearchLensPerHour,
+			LensPerDay:        DefaultResearchLensPerDay,
+			ProviderPerMinute: DefaultResearchProviderPerMinute,
 		},
 	}
 
@@ -319,6 +328,13 @@ func Load(path string) (*Config, error) {
 	if cfg.Scanner.PollInterval <= 0 {
 		cfg.Scanner.PollInterval = DefaultScannerPollInterval
 	}
+	// 研究段：预算兜底后强制校验（端点只允许回环、配置端点必须带凭据）。
+	// 与 backup/trash 同款「加载末尾统一兜底」位置；校验失败拒绝启动，避免
+	// 运行时才发现 sidecar 地址写错或凭据缺失。
+	cfg.Research.applyResearchDefaults()
+	if err := cfg.Research.Validate(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -337,6 +353,7 @@ func applyEnv(cfg *Config) error {
 		applyTrashEnv,
 		applyLocalSyncEnv,
 		applyScannerEnv,
+		applyResearchEnv,
 	} {
 		if err := section(cfg); err != nil {
 			return err

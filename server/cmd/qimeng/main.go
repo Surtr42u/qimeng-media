@@ -36,6 +36,7 @@ import (
 	"qimeng-media/server/internal/landiscovery"
 	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/mediawrite"
+	"qimeng-media/server/internal/research"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
@@ -254,6 +255,24 @@ func main() {
 	syncService := syncchannel.New(syncchannel.Options{Config: cfg, Queries: queries, Writes: writeService,
 		TXT: txtService, Mirror: mirrorWriter, Logger: logger, Now: time.Now})
 	creatorProfiles := creatorprofile.New(conn, queries, time.Now, logger)
+	// 媒体研究流水线（ADR-0053）：服务端 provider 网关 + 本机 Lens sidecar。
+	// 默认关闭（嵌入式/Android 同样默认关闭，不新增监听面）；启用时 provider
+	// 出口只走内建安全 HTTP 客户端，Lens 只转发给 loopback sidecar。端点/凭据
+	// 不合法在构造期报错——与配置校验同口径，拒绝带病启动。
+	researchService, err := research.New(research.Options{
+		Config: cfg.Research, DataDir: cfg.DataDir, Logger: logger, Now: time.Now,
+	})
+	if err != nil {
+		logger.Error("组装研究流水线失败", "error", err)
+		os.Exit(1)
+	}
+	if cfg.Research.Enabled {
+		logger.Info("媒体研究流水线已启用",
+			"sidecar", cfg.Research.SidecarEndpoint != "",
+			"lensPerHour", cfg.Research.LensPerHour,
+			"lensPerDay", cfg.Research.LensPerDay,
+			"providerPerMinute", cfg.Research.ProviderPerMinute)
+	}
 	apiSrv, err := httpapi.New(httpapi.Deps{
 		CreatorProfiles: creatorProfiles,
 		Revision:        revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
@@ -276,6 +295,7 @@ func main() {
 		Attach:     attachService,
 		Mirror:     mirrorWriter,
 		AuthorEdit: authorEditService,
+		Research:   researchService,
 	})
 	if err != nil {
 		logger.Error("组装 HTTP 服务失败", "error", err)

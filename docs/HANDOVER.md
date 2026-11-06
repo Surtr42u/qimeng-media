@@ -70,3 +70,9 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 交接入口为[详细任务书](AI_MAINTENANCE_TASKBOOK.md)，含用户场景、工具契约、本地维护权限与无前台跨端通道、规则包、后台任务、两代备份及阶段验收。本轮只交付需求与文档：工具、持久任务队列、桥接、作者维护工具和两代备份布局均未实现，现行三代备份、标签明文与无桥接通道继续有效。
 
 实际运行包仍为上文264b9d83（PC 0.2.1/schema22、arm64 APK code35）；后续实现者按任务书P0核对现状与缺口再逐阶段推进，不把文档完成当作代码或装机完成。P0 底稿见[现状、缺口与最小方案](AI_MAINTENANCE_P0.md)，待用户确认关键设计默认方案后进入 P1。后续项目重构须继承任务书记录的场景、权限、恢复及数据不变量。
+
+## 6. 研究流水线（2026-11-06）
+
+服务端 provider 网关与本机 Lens sidecar 代理已按 [ADR-0053](adr/0053-研究流水线API集成.md) 集成：`GET /api/v1/research/context`、`POST /api/v1/research/providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵）、`POST /api/v1/research/lens`（multipart，loopback sidecar）。安全 HTTP 出口（仅 https、域名白名单、禁重定向与环境代理、DNS 后校验公网地址、超时与响应上限）、provider/minute 与 Lens/hour/day 进程内预算、证据落盘（剥会话参数、不入库）同批落地；协议先改 OpenAPI，SDK 与 `api/sdk.lock` 由 `make sdk` 生成。
+
+**实际状态：已实现，但未安装 sidecar、未在真实实例验收。** `research.enabled` 默认 false，嵌入式/Android 形态同样默认关闭且不新增监听面；现装 PC/手机运行包仍是上文 264b9d83，研究端点尚未随该包安装或在真实平台跑通。后续启用条件：PC 上另行运行 Lens sidecar（loopback + Bearer），配置 `research.sidecar_endpoint` 与 `QIMENG_RESEARCH_SIDECAR_TOKEN`，再设 `research.enabled=true`；验收至少覆盖一次真实 provider 查询、一次真实 Lens 反查和 429/503/504 错误映射。已知缺陷与限制见[研究 API 专题](api/research.md)。

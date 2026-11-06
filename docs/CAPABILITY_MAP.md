@@ -39,6 +39,7 @@
 | 视频画质/插帧 | Web/桌面 HTML5 视频与 Android Media3 原片播放 | 未接入视频超分、HDR 增强或插帧；Go 可调度外部处理，实时增强须适配播放器帧/GPU 管线及目标硬件，不能按 Go 插件加载等同处理。用户 2026-10-22 决定暂时不做，PC/手机均不列入当前实施计划；重提时再评估 | 暂缓；未实现 |
 | 插件/外部扩展 | OpenAPI 与三端 SDK 可作外部工具接入契约；内部模块、库 kind 可按源码扩展（ADR-0012/0019） | 无通用插件安装器、运行时注册/加载、独立权限和兼容版本协议；第三方插件须按其具体协议评估适配，不能直接通用安装 | 接口基座已有；插件运行时未实现 |
 | 外部AI维护与后台任务 | 现有OpenAPI、作者/文件/标签/关联和研究规范可复用 | 规则发现、工具封装、持久队列、本地维护权限、无前台 PC→手机桥接、作者清理/去重、两代备份分代目录及 NAS 云端模型执行，见[任务书](AI_MAINTENANCE_TASKBOOK.md)与 [ADR-0051](adr/0051-外部AI维护与标签隐私.md)/[ADR-0052](adr/0052-外部AI维护需求修订.md)；P0 现状/缺口与最小方案见[任务书](AI_MAINTENANCE_TASKBOOK.md)所链底稿 | 用户已确认；P0 底稿已出待确认，工具、桥接与备份布局待实现 |
+| 研究/核验 API | 服务端 provider 网关与 Lens 代理已实现：`GET /api/v1/research/context`、`POST /providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵）、`POST /lens`（multipart，loopback sidecar）；安全 HTTP 出口、进程内预算、证据落盘与三端 SDK 同批生成。[研究 API](api/research.md)、[ADR-0053](adr/0053-研究流水线API集成.md) | 默认关闭（嵌入式/Android 同样默认关闭）；Lens sidecar 未安装、未在真实实例验收真实平台查询；Bing/第三方接口改版只能回退；Lens `links` 常空是已确认缺陷；证据目录无自动轮转 | 已实现；未安装、未在真实实例验收 |
 
 ## 可靠性与工程待办
 

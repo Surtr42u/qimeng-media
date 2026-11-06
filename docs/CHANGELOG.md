@@ -11,13 +11,13 @@
 - 署名补全（2026-10-23，用户明确确认）：2026-10-22 第五百七十五至第五百八十四笔原标未知，补为 GPT-6.1 Sol；各笔执行分工和历史验证边界不变。
 - 署名更正（2026-10-20，用户明确确认）：2026-10-19～20 的第五百三十八至第五百四十五笔原误署 GPT-6 或仅署 Codex，统一更正为 GPT-6.1 Sol；保留各条主代理/执行子代理及复核分工。
 
-## feat(api): 原子作者合并端点与 SDK 指纹锁（2026-11-06 第六百九十一笔）
+## feat(research): 媒体研究流水线 API 集成（provider 网关 + Lens sidecar）（2026-11-06 第六百九十三笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
 
-- 新增 `POST /api/v1/authors/merge`（`AuthorMergeRequest` sourceAuthorId/targetAuthorId → `AuthorMergeResult`）：同一事务把源常规作者并入目标，TXT 块别名/作品行/来源词保序去重、`asset_authors` 迁移并对双端重复保留 target 既有行及其 origin/created_at、关注并集、档案 target 优先（仅 target 空档案时迁入源档案；target 与源均非空时 `sourceProfileDiscarded=true`）、上传条目改指目标块；删除源作者行，媒体文件与资产本体保留。不可撤销、无撤销端点；同 ID/空 ID/COS 400 INVALID_PARAM，任一不存在 404 NOT_FOUND，失败整体回滚。
-- 按协议先行执行 `make sdk`：三端 clean 后重新生成 Go/TS/Kotlin、`go build ./...` 通过，`api/sdk.lock` 同批重算（283 项）。文档同步 `docs/api/authors.md`「作者合并」与 `docs/domain/authors.md`「作者合并」，并在领域说明中衔接改名 409 旧语义与 `author.cleanup` planned 关系。
-- 验证边界：`server/internal/authoredit/merge_test.go`、`server/internal/authoring/merge_test.go`、`server/internal/httpapi/authors_merge_test.go` 覆盖全量合并、目标无块、档案保留、哨兵错误、回滚与零副作用；全部使用合成数据/测试库，未做真实实例端到端，未向 8420 真库写入。
+- 新增 `GET /api/v1/research/context`、`POST /api/v1/research/providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵，矩阵外 400 INVALID_PARAM）、`POST /api/v1/research/lens`（multipart file ≤20MiB，loopback sidecar）；错误映射含 400/401/413/429/502/503/504 与 `RESEARCH_DISABLED`、`RESEARCH_SIDECAR_*` 码，provider 上游失败以 200+status 表达。协议先改 OpenAPI，再 `make sdk` 生成三端并同批重算 `api/sdk.lock`；Go 枚举用 `x-enum-varnames` 规避 oapi-codegen v2.8.0 的常量去重冲突（否则既有 `Ok` 常量被改名、编译失败）。
+- 新包 `server/internal/research`：provider 接口与注册表、安全 HTTP 出口（仅 https、域名白名单、禁重定向与环境代理、DNS 解析后校验公网地址、20s 超时/2MiB 响应上限）、进程内预算（provider 每分钟、Lens 每小时/每日，时钟可注入、UTC 对齐）、sidecar 客户端（loopback 校验、Bearer、/healthz、/lens multipart、超时映射）与证据落盘（剥会话参数、只记哈希/公开字段、不入库）。配置新增 `research` 段与 `QIMENG_RESEARCH_*`，默认关闭，启动期校验端点/凭据/预算；嵌入式/Android 默认关闭且不新增监听面。
+- 验证边界：research 与 httpapi 测试全部使用 httptest 假上游、假 sidecar 与合成数据，不访问真实平台、不触碰 8420 真库；**未安装 Lens sidecar、未在真实实例验收真实平台查询**，现装 PC/手机仍为 264b9d83。文档同批：`docs/api/research.md`、ADR-0053 与索引、能力地图、HANDOVER 研究交接、llms 导航，规则包增研究能力/工作流/手册节。第六百六十三笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
 
 ## feat(tools): 外部 AI 维护规则包与只读 CLI（2026-11-06 第六百九十二笔）
 
@@ -25,6 +25,14 @@
 
 - 新增 `tools/ai_maintenance/`：`rules.json` 为唯一手写领域规则源，`rulepack.py` 从规则源与 `api/openapi.yaml` 原始字节生成稳定规则包（`openapiSha256`、路径、字段上限、能力、作者动作、备份/错误/工作流/权限），端点缺失时自动把 `supported/available` 降级为 planned；当前 OpenAPI 的 `/authors/merge` 只标 `apiStatus=available`，写入仍 planned。`cli.py` 提供只读 `context/health/libraries/assets/authors/author-profile/author-sources`，无任何写入命令，`author.cleanup`、设备结果包、MCP 等仍为 planned；`tools/README.md` 加一行入口。
 - 凭据只从 `QIMENG_API_BASE`/`QIMENG_API_TOKEN` 读取，错误不回显 token；网络命令拒绝重定向、禁用环境代理、20 秒超时、2 MiB 响应上限。`tools/test_ai_maintenance.py` 覆盖规则包必需键/指纹稳定性/未知端点降级与 CLI 配置、认证头、分页、HTTP/超时错误分类、重定向拒绝；仅临时目录与 127.0.0.1 stub，不访问真实 8420/外网。
+
+## feat(api): 原子作者合并端点与 SDK 指纹锁（2026-11-06 第六百九十一笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 新增 `POST /api/v1/authors/merge`（`AuthorMergeRequest` sourceAuthorId/targetAuthorId → `AuthorMergeResult`）：同一事务把源常规作者并入目标，TXT 块别名/作品行/来源词保序去重、`asset_authors` 迁移并对双端重复保留 target 既有行及其 origin/created_at、关注并集、档案 target 优先（仅 target 空档案时迁入源档案；target 与源均非空时 `sourceProfileDiscarded=true`）、上传条目改指目标块；删除源作者行，媒体文件与资产本体保留。不可撤销、无撤销端点；同 ID/空 ID/COS 400 INVALID_PARAM，任一不存在 404 NOT_FOUND，失败整体回滚。
+- 按协议先行执行 `make sdk`：三端 clean 后重新生成 Go/TS/Kotlin、`go build ./...` 通过，`api/sdk.lock` 同批重算（283 项）。文档同步 `docs/api/authors.md`「作者合并」与 `docs/domain/authors.md`「作者合并」，并在领域说明中衔接改名 409 旧语义与 `author.cleanup` planned 关系。
+- 验证边界：`server/internal/authoredit/merge_test.go`、`server/internal/authoring/merge_test.go`、`server/internal/httpapi/authors_merge_test.go` 覆盖全量合并、目标无块、档案保留、哨兵错误、回滚与零副作用；全部使用合成数据/测试库，未做真实实例端到端，未向 8420 真库写入。
 
 ## docs(docs): 外部AI维护P0现状与最小方案（2026-11-06 第六百九十笔）
 
@@ -263,8 +271,3 @@
 - 按用户要求将PR #19合入master（71b186f2），同来源7c135d5c完整CI/安全/文档通过；PR #24同步主线仅有文档变化，生产代码及双端产物来源仍为已通过全部门禁的5cf2658b/code11。
 - 电脑已保留数据覆盖更新0.2.1/schema20：版本/清单/摘要、105份实际Web资源字节、healthz/readyz和只读数据库检查通过，配置/密钥保持，旧程序/Web保留；按安装前状态正常关闭后端，不打开前台。
 - 手机Release包同签名、code11、仅arm64/非Debug、内嵌提交和三件套摘要已核对；设备连接在安装前断开，尚未执行安装，当前仍为现场确认的e508a6fe/code10。已请求重连，未卸载/清数据；新包与旧APK已准备，待连接后继续保留数据覆盖并核对安装字节。交接明确区分已安装和待安装，不沿用旧证据。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## chore(app): 同步Android独立分支以合入主线（2026-10-28 第六百六十三笔）
-
-- 用户明确要求PR #19合入主分支。保留其已安装e508a6fe的我的/管理/上传界面及推荐保存反馈，与当前主线同步；生产代码自动合并，文档冲突按现行主线加Android专题处理，原独立分支三笔重号历史单独归档，不改写正文。
-- 手机现场只读确认为0.2.1/code10、内嵌e508a6fe，同证书和首次安装记录已留本机核对；不沿用旧b60f2a76身份。首次同步误提交未处理的文档冲突，已在本次修正并由本地文档检查阻断复核；新组合完整CI/安全/文档通过后再合并，不把旧版门禁当新结果。实际双端更新由PR #24的code11候选承接，本提交不替换设备。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。

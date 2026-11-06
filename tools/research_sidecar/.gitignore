@@ -1,0 +1,12 @@
+# Local secrets, logs and browser session state. Never commit.
+*.token
+sidecar.token
+.env
+*.log
+*.pid
+session/
+.session/
+edge-profile/
+data/
+tmp/
+*.local/

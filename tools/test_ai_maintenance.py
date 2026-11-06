@@ -82,6 +82,9 @@ class RulepackTest(unittest.TestCase):
             "/api/v1/authors",
             "/api/v1/authors/{authorId}/profile",
             "/api/v1/authors/{authorId}/sources",
+            "/api/v1/research/context",
+            "/api/v1/research/providers/{provider}/query",
+            "/api/v1/research/lens",
         ):
             self.assertIn(known, pack["paths"])
         self.assertTrue(all(entry["status"] == "planned" for entry in pack["capabilities"]["write"].values()))
@@ -94,7 +97,7 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual("read-only", pack["tags"]["access"])
         self.assertEqual("not_supported", pack["tags"]["write"])
         self.assertTrue(pack["backup"]["exportBeforeImport"])
-        self.assertEqual(3, len(pack["workflows"]))
+        self.assertEqual(4, len(pack["workflows"]))
         self.assertEqual("QIMENG_API_TOKEN", pack["permissions"]["api"]["tokenEnv"])
 
         profile = pack["fields"]["authorProfile"]
@@ -104,6 +107,28 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(8, profile["evidenceUrls"]["maxItems"])
         self.assertEqual(2000, profile["evidenceUrls"]["items"]["maxLength"])
         self.assertEqual(["empty", "candidate", "verified"], profile["status"]["enum"])
+
+    def test_research_capabilities_follow_openapi_and_keep_lens_caveat(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pack = rulepack.build_rulepack(openapi_path=self.snapshot(directory))
+        read = pack["capabilities"]["read"]
+        for name, path in (
+            ("research.context", "/api/v1/research/context"),
+            ("research.provider.query", "/api/v1/research/providers/{provider}/query"),
+            ("research.lens", "/api/v1/research/lens"),
+        ):
+            entry = read[name]
+            self.assertEqual("supported", entry["status"])
+            self.assertIn(path, entry["endpoint"])
+            self.assertTrue(entry["endpointPresent"])
+            self.assertTrue(entry["requiresResearchEnabled"])
+        research = [w for w in pack["workflows"] if w["id"] == "research-author-verify"]
+        self.assertEqual(1, len(research))
+        self.assertTrue(research[0]["status"].startswith("api-supported"))
+        self.assertTrue(any("links" in note for note in research[0]["notes"]))
+        guide = [section for section in pack["guide"]["sections"] if "研究" in section["heading"]]
+        self.assertEqual(1, len(guide))
+        self.assertTrue(any("links" in point for point in guide[0]["points"]))
 
     def test_merge_marker_follows_openapi_and_write_stays_planned(self):
         with tempfile.TemporaryDirectory() as directory:

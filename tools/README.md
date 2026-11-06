@@ -113,3 +113,5 @@ Web 云端浏览器检查将合成作者管理场景的窄屏/桌面截图与失
 外部AI维护的工具契约、规则发现、本地维护权限、作者清理与无前台跨端维护、头像/链接/简介写入教程及后台任务入口见[任务书](../docs/AI_MAINTENANCE_TASKBOOK.md)。当前研究/导入工具继续按各自已有能力使用，任务书中的新工具和常驻执行器待分阶段交付。
 
 AI 维护规则包与只读查询 CLI（P1，写入能力 planned）见 [ai_maintenance/README.md](ai_maintenance/README.md)。
+
+研究用途的 Google Lens/Google 文本搜索 sidecar（loopback + token，仅 PC/NAS，默认不启用，嵌入式/移动端禁用）见 [research_sidecar/README.md](research_sidecar/README.md)。

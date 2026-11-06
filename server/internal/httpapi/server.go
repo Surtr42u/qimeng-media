@@ -21,6 +21,7 @@ import (
 	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/portablebackup"
+	"qimeng-media/server/internal/research"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
@@ -178,6 +179,9 @@ type Deps struct {
 	// 的唯一读写通道，libraryrevision 包）；nil 时 New 内部用 deps.Queries
 	// 构造缺省实例并引导基线——Service 只依赖 store，缺省即生产实现。
 	Revision *libraryrevision.Service
+	// Research 媒体研究流水线服务（internal/research，ADR-0053）；nil 时
+	// New 内部按 deps.Cfg.Research 构造缺省实例（生产 main 显式装配）。
+	Research *research.Service
 }
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
@@ -223,6 +227,9 @@ type Server struct {
 	creatorProfiles *creatorprofile.Service
 	// rev 库内容修订号服务（Deps.Revision 的落位；handler 与 bump 链共用）。
 	rev *libraryrevision.Service
+	// research 媒体研究流水线服务（Deps.Research 的落位；默认关闭时仍存在，
+	// 由 research.Service 自己回报 enabled=false）。
+	research *research.Service
 	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
 	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
 	uploads *uploadsess.Manager
@@ -333,6 +340,18 @@ func New(deps Deps) (*Server, error) {
 				}
 				return err
 			}})
+	}
+	// 研究流水线缺省兜底：只依赖配置与日志，缺省即生产形态；sidecar 端点
+	// 不合法会在构造期报错，宁可拒绝启动也不带病运行。
+	s.research = deps.Research
+	if s.research == nil {
+		researchSvc, researchErr := research.New(research.Options{
+			Config: deps.Cfg.Research, DataDir: deps.Cfg.DataDir, Logger: logger, Now: now,
+		})
+		if researchErr != nil {
+			return nil, researchErr
+		}
+		s.research = researchSvc
 	}
 	s.txt = deps.TXT
 	if s.txt == nil {

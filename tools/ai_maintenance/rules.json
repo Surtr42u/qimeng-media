@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "rulesVersion": "2026-11-06.1",
+  "rulesVersion": "2026-11-06.2",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_MAINTENANCE_TASKBOOK.md",
@@ -47,6 +47,17 @@
           "改挂使用 PUT /api/v1/assets/{assetId}/authors；authorIds 与 newAuthorNames 取并集；移除关联会删除作品行；仅 authorAttach=true 的库可用。",
           "重复作者合并使用专用端点 POST /api/v1/authors/merge：原子、不可撤销，执行前仍须出计划与影响数量，禁止客户端用多次删除/改挂模拟事务性合并。",
           "搁置作者的判定阈值不预设；先列候选、证据和影响数量，由用户确认后再执行。"
+        ]
+      },
+      {
+        "heading": "研究/核验（默认关闭）",
+        "points": [
+          "三个研究端点：GET /api/v1/research/context、POST /api/v1/research/providers/{provider}/query、POST /api/v1/research/lens；全部走 Bearer，默认 research.enabled=false 时 context 仍可读、查询 503 RESEARCH_DISABLED。",
+          "provider v1 固定矩阵：fxtwitter(author,post)、pixiv(author,work)、yandere(artist,tags)、e621(post,tags)、wayback(url)、steam(workshop)、bing(search)；矩阵外组合 400 INVALID_PARAM，不自动换 provider。",
+          "证据等级只看平台接口字段：bing/wayback 只是线索；单个 provider 失败以 status=provider_unavailable 表达且仍 200，可按需改走其他 provider 或人工核对，不要重复重试打爆预算。",
+          "Lens 走 PC 本地 loopback sidecar（单实例串行、单帧 17–18s）：links[] 经常为空，不得当作识别证据；status=ok 不等于认出作者。",
+          "超限语义：provider 查询返回 status=rate_limited（200）；Lens 返回 429 RATE_LIMITED；sidecar 未配置/不可达/超时/异常分别 503 RESEARCH_SIDECAR_DISABLED、503 RESEARCH_SIDECAR_UNAVAILABLE、504 RESEARCH_SIDECAR_TIMEOUT、502 RESEARCH_SIDECAR_ERROR。",
+          "研究结果不入库，证据只落盘到 server 的 research-evidence 目录；不要把研究结论直接写成作者 verified，先按作者档案候选口径人工审核。"
         ]
       },
       {
@@ -114,6 +125,27 @@
         "status": "supported",
         "cli": "author-sources",
         "endpoint": "GET /api/v1/authors/{authorId}/sources"
+      },
+      "research.context": {
+        "status": "supported",
+        "cli": null,
+        "endpoint": "GET /api/v1/research/context",
+        "requiresResearchEnabled": true,
+        "description": "研究能力上下文：启停、sidecar 状态、provider 矩阵与限额；研究关闭时仍可读（enabled=false）。本切片未提供研究 CLI，直接走正式 API。"
+      },
+      "research.provider.query": {
+        "status": "supported",
+        "cli": null,
+        "endpoint": "POST /api/v1/research/providers/{provider}/query",
+        "requiresResearchEnabled": true,
+        "description": "按 provider+operation 查询作者/作品/标签/存档/工坊/搜索；矩阵外组合 400，上游失败以 status 表达且仍 200。"
+      },
+      "research.lens": {
+        "status": "supported",
+        "cli": null,
+        "endpoint": "POST /api/v1/research/lens",
+        "requiresResearchEnabled": true,
+        "description": "Lens 视觉反查代理：multipart file（JPEG/PNG/WebP ≤20MiB），需要本机 loopback sidecar；links 可为空，不得当作证据。"
       },
       "backup.export": {
         "status": "planned",
@@ -460,6 +492,23 @@
         "零关联、无有效档案、长期未维护只是候选证据，不是自动删除阈值。",
         "删除只解除业务关联，媒体文件保留；永久删除媒体走独立管理操作。",
         "改名前先查重名；409 不自动合并。"
+      ]
+    },
+    {
+      "id": "research-author-verify",
+      "title": "作者/作品核验：先用 context 确认启停与预算，再按 provider 矩阵取平台字段，最后才考虑 Lens 反查",
+      "status": "api-supported; lens-requires-local-sidecar",
+      "steps": [
+        {"step": 1, "action": "读研究上下文，确认 enabled、provider 矩阵与 Lens 预算；关闭时不要调用查询/Lens", "command": "GET /api/v1/research/context", "status": "supported"},
+        {"step": 2, "action": "按已知账号/作品 ID 走平台 provider（fxtwitter/pixiv/yandere/e621/steam）取平台字段作为证据", "command": "POST /api/v1/research/providers/{provider}/query", "status": "supported"},
+        {"step": 3, "action": "目标未知时用 bing/wayback 取线索（只作指向，不单独支撑 verified）", "command": "POST /api/v1/research/providers/bing/query", "status": "supported"},
+        {"step": 4, "action": "仅在已部署本机 sidecar 时用 Lens 反查图片；接受 links 为空与单帧 17–18s 的排队成本", "command": "POST /api/v1/research/lens", "status": "requires-local-sidecar"},
+        {"step": 5, "action": "把核验结果按作者档案候选口径保存（先 candidate），人工审核后再 verified；不要直接把研究结论写库", "status": "planned"}
+      ],
+      "notes": [
+        "provider 查询返回 200 时读 status：ok/not_found/blocked/rate_limited/provider_unavailable；只有 ok 的平台字段可作为证据。",
+        "一次失败不要连环重试：每分钟预算默认 20 次，超限后等下一分钟或换 provider。",
+        "Lens 的 topTitles/topDomains/cites 是正文启发式，links 是 best-effort，均不能单独证明作者身份。"
       ]
     },
     {

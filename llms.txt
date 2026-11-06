@@ -42,6 +42,7 @@
 - [作者/词表](docs/api/authors.md)
 - [上传/整理/回收站](docs/api/files.md)
 - [便携迁移/库快照](docs/api/backup.md)
+- [研究/核验](docs/api/research.md)：provider 网关与 Lens sidecar（默认关闭）
 - [Makefile](Makefile)：构建与检查命令
 - [服务端](server/README.md)
 - [Web](web/README.md)

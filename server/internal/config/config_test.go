@@ -396,3 +396,120 @@ func TestTimeZoneSetting(t *testing.T) {
 		t.Fatalf("timezone env override = %q", cfg.TimeZone)
 	}
 }
+
+// TestLoadResearchDefaults 锁定研究段默认关闭与默认预算（ADR-0053）：
+// 默认 false 是嵌入式/Android 形态不新增出网面的前提；预算默认值同时写在
+// OpenAPI 描述里，改动须双同步。
+func TestLoadResearchDefaults(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") 报错: %v", err)
+	}
+	if cfg.Research.Enabled {
+		t.Error("research.enabled 默认必须为 false")
+	}
+	if cfg.Research.SidecarEndpoint != "" || cfg.Research.SidecarToken != "" {
+		t.Errorf("默认不应配置 sidecar: endpoint=%q tokenSet=%v", cfg.Research.SidecarEndpoint, cfg.Research.SidecarToken != "")
+	}
+	if cfg.Research.LensPerHour != DefaultResearchLensPerHour || cfg.Research.LensPerDay != DefaultResearchLensPerDay ||
+		cfg.Research.ProviderPerMinute != DefaultResearchProviderPerMinute {
+		t.Errorf("默认预算 = %d/%d/%d, 期望 %d/%d/%d", cfg.Research.LensPerHour, cfg.Research.LensPerDay,
+			cfg.Research.ProviderPerMinute, DefaultResearchLensPerHour, DefaultResearchLensPerDay, DefaultResearchProviderPerMinute)
+	}
+}
+
+// TestLoadResearchYAMLAndEnv 验证 yaml 覆盖、env 优先与凭据只走环境变量的口径。
+func TestLoadResearchYAMLAndEnv(t *testing.T) {
+	path := writeYAML(t, "research:\n  enabled: true\n  sidecar_endpoint: \"http://127.0.0.1:18641\"\n  sidecar_token: \"from-yaml-token\"\n  lens_per_hour: 3\n  lens_per_day: 4\n  provider_per_minute: 5\n  evidence_dir: \"/evidence\"\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if !cfg.Research.Enabled || cfg.Research.SidecarEndpoint != "http://127.0.0.1:18641" ||
+		cfg.Research.LensPerHour != 3 || cfg.Research.LensPerDay != 4 || cfg.Research.ProviderPerMinute != 5 ||
+		cfg.Research.EvidenceDir != "/evidence" {
+		t.Fatalf("yaml 覆盖未生效: %+v", cfg.Research)
+	}
+
+	t.Setenv("QIMENG_RESEARCH_ENABLED", "false")
+	t.Setenv("QIMENG_RESEARCH_SIDECAR_ENDPOINT", "http://[::1]:19000")
+	t.Setenv("QIMENG_RESEARCH_SIDECAR_TOKEN", "from-env-token")
+	t.Setenv("QIMENG_RESEARCH_LENS_PER_HOUR", "7")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load(env) 报错: %v", err)
+	}
+	if cfg.Research.Enabled {
+		t.Error("env QIMENG_RESEARCH_ENABLED=false 未覆盖 yaml true")
+	}
+	if cfg.Research.SidecarEndpoint != "http://[::1]:19000" || cfg.Research.SidecarToken != "from-env-token" {
+		t.Errorf("env 未覆盖 sidecar: endpoint=%q", cfg.Research.SidecarEndpoint)
+	}
+	if cfg.Research.LensPerHour != 7 {
+		t.Errorf("LensPerHour = %d, 期望 env 覆盖为 7", cfg.Research.LensPerHour)
+	}
+}
+
+// TestResearchSidecarEndpointValidation 锁定 sidecar 只允许回环 http 字面量：
+// Bearer token 只该发给本机进程，域名/https/局域网 IP 在启动期拒绝。
+func TestResearchSidecarEndpointValidation(t *testing.T) {
+	bad := []string{
+		"https://127.0.0.1:18641",
+		"http://localhost:18641",
+		"http://sidecar.example.com:18641",
+		"http://192.168.1.10:18641",
+		"http://127.0.0.1",
+		"http://127.0.0.1:0",
+		"http://127.0.0.1:70000",
+		"http://user:pass@127.0.0.1:18641",
+		"http://127.0.0.1:18641/lens",
+		"http://127.0.0.1:18641?x=1",
+	}
+	for _, endpoint := range bad {
+		yaml := "research:\n  sidecar_endpoint: \"" + endpoint + "\"\n  sidecar_token: \"synthetic-token\"\n"
+		if _, err := Load(writeYAML(t, yaml)); err == nil {
+			t.Errorf("endpoint %q 应被拒绝", endpoint)
+		}
+	}
+}
+
+// TestResearchSidecarTokenRequired 验证配置端点必须同时有凭据；凭据可由 env 补。
+func TestResearchSidecarTokenRequired(t *testing.T) {
+	path := writeYAML(t, "research:\n  sidecar_endpoint: \"http://127.0.0.1:18641\"\n")
+	if _, err := Load(path); err == nil {
+		t.Fatal("缺少 sidecar_token 时应拒绝启动")
+	}
+	t.Setenv("QIMENG_RESEARCH_SIDECAR_TOKEN", "synthetic-token")
+	if _, err := Load(path); err != nil {
+		t.Fatalf("env 提供凭据后应通过: %v", err)
+	}
+}
+
+// TestParseResearchSidecarEndpointNormalizes 校验规范化输出（IPv6 加中括号、
+// 端口去前导零），研究客户端只用规范化结果拼请求。
+func TestParseResearchSidecarEndpointNormalizes(t *testing.T) {
+	cases := map[string]string{
+		"http://127.0.0.1:18641":    "http://127.0.0.1:18641",
+		" http://127.0.0.1:18641/ ": "http://127.0.0.1:18641",
+		"http://[::1]:19000":        "http://[::1]:19000",
+		"http://127.0.0.1:018641":   "http://127.0.0.1:18641",
+	}
+	for raw, want := range cases {
+		got, err := ParseResearchSidecarEndpoint(raw)
+		if err != nil {
+			t.Errorf("ParseResearchSidecarEndpoint(%q) 报错: %v", raw, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("ParseResearchSidecarEndpoint(%q) = %q, 期望 %q", raw, got, want)
+		}
+	}
+}
+
+// TestLoadResearchInvalidEnv 验证非法 env 值报错而非静默忽略。
+func TestLoadResearchInvalidEnv(t *testing.T) {
+	t.Setenv("QIMENG_RESEARCH_LENS_PER_HOUR", "0")
+	if _, err := Load(""); err == nil {
+		t.Error("QIMENG_RESEARCH_LENS_PER_HOUR=0 应报错")
+	}
+}
