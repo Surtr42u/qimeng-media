@@ -1,3 +1,13 @@
+## feat(server): 设备结果包服务端 API（PC→手机无前台维护第一刀）（2026-11-07 第六百九十七笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 新增 migration `0024_device_apply_tasks`：只增 `device_apply_tasks`/`device_apply_segments` 两表与「设备+状态+新建倒序」「过期」索引，不改历史表/索引；任务状态机 pending→claimed→applied/partial/failed、pending/claimed→cancelled/expired，终态不可变更，过期由读写路径惰性标记。
+- 新增 `server/internal/deviceapply`：manifest 校验（targetDeviceId/protocolVersion=1/rulesFingerprint/ttl/段 kind/bytes/SHA-256/expectedReadback）、段落盘时流式复算摘要与字节数后再单事务写库、失败清理任务目录；Create/List/Get/Claim/OpenSegment/Result/Cancel；领取对已 claimed 未过期任务幂等、相同归一化结果回传幂等（不同结果 409）、取消对 cancelled 幂等；段相对路径逐字校验+根目录包含，下载前复核文件类型与大小；只依赖 store/db，不依赖 httpapi（depguard）。
+- 协议新增 7 个 `/api/v1/device/apply-tasks` 端点（登记/列表/详情/领取/段下载/回传/取消）：登记为 multipart manifest + masterTxt≤1MiB + v2Backup≤64MiB，单个段或整体请求体超限 413；段下载 octet-stream + Content-Length + X-Content-SHA256；`make sdk` 三端生成、go build ./... 通过，`api/sdk.lock` 同批重算（355 项）。
+- httpapi 只做 multipart/query 校验、错误映射与响应装配；测试覆盖创建/段落盘 SHA-256/超限/指纹不符、列表过滤与游标、领取幂等与过期、段下载头/终态/路径安全、回传终态与重复回传、取消、404/409/413，全部使用临时 SQLite、临时包目录与合成字节（含 1KB 段）。
+- 文档同批：`docs/api/device.md`、ADR-0055 与索引、能力地图、HANDOVER §8、AI_MAINTENANCE_P0 §4.5/§5/§6、llms 导航。验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet`、文档/隐私/迁移检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；Android Worker、配对/设备身份、真机后台同步与包清理仍未实现。第六百六十七笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
+
 ## feat(maintenance): 持久维护任务队列服务端垂直切片（2026-11-07 第六百九十六笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
@@ -270,11 +280,3 @@
 
 - 双端以固定0–100%刻度的空心上期/实心本期双点连线和更多/较少关注代替默认百分比行，精确份额、次数和百分点由按钮展开/收起。Web沿用紫青token/玻璃材质，Android沿用中性主题，不改接口、排序、兴趣公式或浏览数据。
 - 文档影响：GUIDE_UI与双端README同步展示和展开约定；Web既有浏览回顾场景改为检查图形语义和详情展开/收起。实现bedf58e3的完整CI40849634268、安全40849634247、文档40849634241及PC出包40849654515均通过，含Web浏览器场景与Android构建/单测/双Lint。核对云端包来源/清单字节后，在隔离合成预览核对深色桌面、浅色390px窄屏及详情展开/收起；差异与直接消费点自审无可确认发现。未安装双端日常版本，未做App实机视觉核验；后补记录不重标产物来源。
-
-## feat(app): 细化双端浏览回顾的对比与小时详情（2026-10-29 第六百六十七笔）
-
-- 按用户参考图重做浏览时长卡：窗口标题、大号真实停留时长、顶部小时刻度、24列蓝/黄/绿堆叠、底部图片/视频/动图时长图例；小时点击详情和Web键盘操作保留。丰富内容放在时长和类型构成；兴趣变化精简为名称/前后份额/升降的一行对比，去掉双进度条与嵌套卡片。
-- 回顾协议新增dwell总时长、互斥类型及每小时值，窗口总量复用日物化统计，小时按开始记录整段归桶，视频不冒称播放时长；不改既有open与兴趣公式。云端40838207408生成sqlc/三端SDK及sdk.lock，增加停留/仅dwell日/孤立记录及类型守恒回归；双端消费、UI/API/领域专题同步。最终e616127c完整CI40840676484、安全40840676388、文档40840676426及PC40840675733全部成功（Web35场景）。同源Web产物在桌面/390px宽度核验；Android/Go与dc18799a一致，其调试包在qimeng_api35只读临时克隆核对7/30天、零预取、时长堆叠/读数及精简兴趣行。该阶段尚未覆盖安装；后续实际安装见下一条及HANDOVER。
-- 用户随后授权直接覆盖电脑和手机、不追加测试；双端已安装同来源e9d762cf，电脑服务端/110份Web字节一致并保持关闭，原手机同签名保留数据更新0.2.1/code11→12，已装APK字节/首次安装记录保留。旧包保留，不启动App或执行设备业务测试；出包来源及边界见HANDOVER。
-- 整理装机概览与安装前阶段记录，修正能力地图将旧冷启动验收套用于code12的表述，更新产品/预览入口；用户已授权PR #24合并master。此笔后补文档不改变e9d762cf产物身份或增加设备验收。
-- 执行AI：具体型号变体不可核实（当前会话Codex，主代理）。

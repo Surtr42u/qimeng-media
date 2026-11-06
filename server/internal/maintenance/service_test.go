@@ -300,7 +300,7 @@ func TestConcurrentCreateSameIdempotencyKey(t *testing.T) {
 	}
 }
 
-func TestConcurrentPauseAndCancelOneWins(t *testing.T) {
+func TestConcurrentPauseAndCancelFinalState(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
 	job := mustCreate(t, svc, "race-state")
@@ -329,18 +329,19 @@ func TestConcurrentPauseAndCancelOneWins(t *testing.T) {
 			t.Fatalf("竞态返回异常错误: %v", err)
 		}
 	}
-	if success != 1 {
-		t.Fatalf("并发状态迁移成功数 = %d，期望 1", success)
+	// pause 与 cancel 都允许从 queued 出发；事务串行化后，若 pause 先提交，
+	// cancel 仍可把 paused 取消，因此两次都可能成功，但最终状态必为 cancelled。
+	if success < 1 || success > 2 {
+		t.Fatalf("并发状态迁移成功数 = %d，期望 1 或 2", success)
 	}
 	detail, err := svc.Get(ctx, job.Job.ID)
 	if err != nil {
 		t.Fatalf("回读失败: %v", err)
 	}
-	if detail.Job.Status != StatusPaused && detail.Job.Status != StatusCancelled {
-		t.Fatalf("竞态后状态异常: %s", detail.Job.Status)
+	if detail.Job.Status != StatusCancelled {
+		t.Fatalf("并发 pause/cancel 后最终状态应为 cancelled，得到 %s", detail.Job.Status)
 	}
 }
-
 func TestLeaseClaimHeartbeatComplete(t *testing.T) {
 	svc, clock := newTestService(t)
 	ctx := context.Background()

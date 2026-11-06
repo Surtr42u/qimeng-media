@@ -1649,8 +1649,165 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/StateConflict" }
 
+  # ---------- 设备结果包（PC→手机无前台维护服务端，ADR-0055） ----------
+  # 本切片只交付服务端账本/端点：targetDeviceId 是不透明标签，无配对、无设备身份
+  # 校验、无 Android Worker；段字节落 <dataDir>/device-apply-packages/<taskId>/，
+  # 数据库只存清单、摘要与状态。
+  /api/v1/device/apply-tasks:
+    post:
+      summary: 登记设备结果包（multipart：manifest + 可选段文件）
+      description: |
+        multipart/form-data。字段 manifest 是 JSON 字符串（解码后为 DeviceApplyManifest），
+        masterTxt / v2Backup 是可选的文件段，字段名必须与 manifest.segments[].kind 一一对应。
+        manifest 声明每段 kind、bytes 与 sha256；服务端逐段落盘并复算 SHA-256，字节数或摘要
+        不符、缺段/多段、targetDeviceId/protocolVersion/rulesFingerprint 非法均 400 INVALID_PARAM。
+        masterTxt ≤ 1MiB、v2Backup ≤ 64MiB、manifest ≤ 256KiB；单个段文件超过其类型
+        上限或整个请求体超过 66MiB 返回 413 TOO_LARGE，manifest 声明超限/与实际字节数
+        不符 400。登记成功返回 201；任务初始 pending，expiresAt = 创建时刻 +
+        ttlSeconds（缺省 24h，300s–7d）。targetDeviceId 只是不透明标签，本轮不校验设备
+        身份，也未实现配对。段字节不写入 SQLite。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [manifest]
+              properties:
+                manifest: { type: string, description: 'DeviceApplyManifest 的 JSON 字符串（声明的段必须随请求上传）' }
+                masterTxt: { type: string, format: binary, description: 作者主表 TXT（≤1MiB；manifest 声明该段时必填） }
+                v2Backup: { type: string, format: binary, description: v2 便携备份（≤64MiB；manifest 声明该段时必填） }
+      responses:
+        "201": { description: 已登记, content: { application/json: { schema: { $ref: "#/components/schemas/DeviceApplyTask" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+    get:
+      summary: 设备结果包列表（按 targetDevice 过滤 + 新建倒序 keyset 分页）
+      description: |
+        必须指定 targetDevice（不透明设备标签）；本切片没有跨设备管理列表。status 精确
+        过滤，省略即全部；limit 1–100（缺省 50）；cursor 使用上一页 nextCursor，非法游标
+        400 INVALID_CURSOR。读取前先惰性标记到期任务为 expired。列表项含 segmentCount，
+        不含段清单与结果正文。
+      parameters:
+        - name: targetDevice
+          in: query
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9._:-]{1,100}$' }
+          description: 目标设备不透明标签（必填）
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/DeviceApplyTaskStatus" }
+          description: 精确状态过滤；省略 = 全部状态
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+          description: 单页条数（1–100，缺省 50）
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: 上一页 nextCursor；非法游标 400 INVALID_CURSOR
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DeviceApplyTaskList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/device/apply-tasks/{id}:
+    get:
+      summary: 设备结果包详情（含段清单与已回传结果）
+      description: |
+        返回任务账本字段、manifest 声明的段清单（kind/bytes/sha256/expectedReadback）与
+        已回传的 result。不存在 404 NOT_FOUND；到期任务在读取前惰性标记 expired。
+      parameters: [ { $ref: "#/components/parameters/DeviceApplyTaskId" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DeviceApplyTask" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/device/apply-tasks/{id}/claim:
+    post:
+      summary: 手机领取结果包（pending -> claimed；重复领取幂等）
+      description: |
+        pending -> claimed 并写 claimedAt。同一任务再次 claim（未过期）幂等返回 200 且不改变
+        claimedAt：本切片没有设备身份/领取者字段，无法区分「同一手机重试」与「另一手机」，
+        因此重复领取按幂等处理（ADR-0055 写明）。applied/partial/failed/cancelled/expired
+        或已过期任务 409 STATE_CONFLICT；不存在 404。
+      parameters: [ { $ref: "#/components/parameters/DeviceApplyTaskId" } ]
+      responses:
+        "200": { description: 已领取（重复领取返回同一任务）, content: { application/json: { schema: { $ref: "#/components/schemas/DeviceApplyTask" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/StateConflict" }
+  /api/v1/device/apply-tasks/{id}/segments/{kind}:
+    get:
+      summary: 下载结果包段字节（octet-stream，恒带 X-Content-SHA256）
+      description: |
+        仅 pending/claimed 且未过期的任务可下载；返回原始字节，Content-Length = 段字节数，
+        X-Content-SHA256 = 登记时复算并保存的小写十六进制摘要。kind 必须在该包 manifest 中
+        声明，否则 404 NOT_FOUND；kind 不在枚举内 400 INVALID_PARAM；终态/过期任务
+        409 STATE_CONFLICT。不支持 Range 与条件请求。
+      parameters:
+        - { $ref: "#/components/parameters/DeviceApplyTaskId" }
+        - name: kind
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/DeviceApplySegmentKind" }
+          description: 段类型（必须在 manifest 中声明）
+      responses:
+        "200":
+          description: 段原始字节（Content-Length 为段字节数）
+          headers:
+            X-Content-SHA256: { $ref: "#/components/headers/X-Content-SHA256" }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/StateConflict" }
+  /api/v1/device/apply-tasks/{id}/result:
+    post:
+      summary: 回传应用结果（applied/partial/failed 终态；相同结果重放幂等）
+      description: |
+        仅 claimed 任务可回传；status 只接受 applied/partial/failed。readback 是任意 JSON
+        对象（≤64KiB，缺省 {}），deviceLocalHashes 是手机本地复算的 0–2 条段摘要（同 kind
+        不得重复），message 可选（≤2000 字符）。终态写入 finishedAt 并保存结果。对已终态
+        任务重复提交**完全相同**的结果（按 status / readback 归一化 JSON / deviceLocalHashes
+        排序后 / message 比较）返回 200 与原任务且不改变 finishedAt；任何字段不同返回
+        409 STATE_CONFLICT。未领取（pending）、cancelled/expired 或已过期任务 409；
+        不存在 404。
+      parameters: [ { $ref: "#/components/parameters/DeviceApplyTaskId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceApplyResultRequest" }
+      responses:
+        "200": { description: 已记录（重放返回原任务）, content: { application/json: { schema: { $ref: "#/components/schemas/DeviceApplyTask" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/StateConflict" }
+  /api/v1/device/apply-tasks/{id}/cancel:
+    post:
+      summary: 取消结果包（pending/claimed -> cancelled；重复取消幂等）
+      description: |
+        pending/claimed -> cancelled 并写 finishedAt；cancelled 重复取消幂等 200。
+        applied/partial/failed/expired 409 STATE_CONFLICT。取消不删除段文件，也不删除
+        账本行；本切片没有包清理任务（过期/取消后的字节清理留给后续维护阶段）。
+      parameters: [ { $ref: "#/components/parameters/DeviceApplyTaskId" } ]
+      responses:
+        "200": { description: 已取消（重复取消返回原任务）, content: { application/json: { schema: { $ref: "#/components/schemas/DeviceApplyTask" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/StateConflict" }
+
 components:
   headers:
+    X-Content-SHA256:
+      description: 段原始字节的 SHA-256（小写十六进制；登记时服务端已复算）
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
     NextOffset:
       description: '成功响应恒带。下一页的原始顺序偏移；-1 表示本轮顺序已扫描到底。当前页重新校验资格后可能变短或为空，客户端必须按本头续页，不能按数组长度判断到底。旧服务端无本头时才回退页长判据。'
       schema: { type: integer, minimum: -1 }
@@ -1664,6 +1821,7 @@ components:
     TrashId:   { name: trashId,   in: path, required: true, schema: { type: string } }
     BackupName: { name: name, in: path, required: true, schema: { type: string, pattern: "^qimeng-\\d{8}-\\d{6}\\.db$" }, description: 快照文件名（qimeng-YYYYMMDD-HHMMSS.db，本地时间） }
     MaintenanceJobId: { name: id, in: path, required: true, schema: { type: string, format: uuid }, description: 维护任务 ID（创建响应返回） }
+    DeviceApplyTaskId: { name: id, in: path, required: true, schema: { type: string, format: uuid }, description: 设备结果包任务 ID（创建响应返回） }
 
   responses:
     BadRequest:  { description: 参数错误, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
@@ -1676,6 +1834,7 @@ components:
     UploadCapacity: { description: 'UPLOAD_CAPACITY：在途会话数量或暂存总预算达到上限', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     StorageUnavailable: { description: 'STORAGE_UNAVAILABLE：目录不可访问或剩余空间不足，不暴露内部路径', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     StateConflict: { description: 'STATE_CONFLICT：当前状态不允许该迁移（含终态不可变更）', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    TooLarge: { description: 'TOO_LARGE：请求体超过上限（设备结果包整体 66MiB，或单个段超过其类型上限）', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   schemas:
     Error:
@@ -1963,6 +2122,129 @@ components:
       required: [items, nextCursor]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/MaintenanceJobSummary" } }
+        nextCursor: { type: [string, "null"], description: 下一页游标；null = 已到底 }
+
+    DeviceApplyTaskStatus:
+      type: string
+      description: |
+        设备结果包状态机：pending → claimed → applied/partial/failed；
+        pending/claimed → cancelled（PC 取消）或 expired（惰性过期）。
+        applied/partial/failed/cancelled/expired 为终态，不可再领取/回传/取消。
+      enum: [pending, claimed, applied, partial, failed, cancelled, expired]
+      x-enum-varnames: [DeviceApplyStatusPending, DeviceApplyStatusClaimed, DeviceApplyStatusApplied, DeviceApplyStatusPartial, DeviceApplyStatusFailed, DeviceApplyStatusCancelled, DeviceApplyStatusExpired]
+
+    DeviceApplySegmentKind:
+      type: string
+      description: 段类型；masterTxt=作者主表 TXT（≤1MiB），v2Backup=v2 便携备份（≤64MiB）
+      enum: [masterTxt, v2Backup]
+      x-enum-varnames: [DeviceApplySegmentKindMasterTxt, DeviceApplySegmentKindV2Backup]
+
+    DeviceApplyManifestSegment:
+      type: object
+      description: 段清单条目；请求体必须携带同名 multipart 文件段
+      required: [kind, bytes, sha256]
+      properties:
+        kind: { $ref: "#/components/schemas/DeviceApplySegmentKind" }
+        bytes: { type: integer, format: int64, minimum: 1, description: 段字节数（masterTxt ≤1048576，v2Backup ≤67108864；超限 400） }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 段原始字节 SHA-256（小写十六进制；落盘后复算，不符 400） }
+        expectedReadback: { type: object, additionalProperties: true, description: 期望回读指标（任意 JSON 对象，≤16KiB）；手机应用后以此对照 readback }
+
+    DeviceApplyManifest:
+      type: object
+      description: POST /api/v1/device/apply-tasks 的 manifest 字段解码后的结构（JSON 字符串）
+      required: [targetDeviceId, protocolVersion, rulesFingerprint, segments]
+      properties:
+        targetDeviceId: { type: string, pattern: '^[A-Za-z0-9._:-]{1,100}$', description: 不透明目标设备标签；本轮不做配对/设备身份校验 }
+        protocolVersion: { type: integer, minimum: 1, maximum: 1, description: 仅支持 1；未知版本 400 }
+        rulesFingerprint: { type: string, pattern: '^[0-9a-f]{64}$', description: 规则包指纹（64 位小写十六进制；服务端只校验格式并记录，不重算规则包） }
+        ttlSeconds: { type: integer, minimum: 300, maximum: 604800, default: 86400, description: 包有效期（秒）；缺省 86400，过期由读取/领取/回传路径惰性标记 }
+        segments: { type: array, minItems: 1, maxItems: 2, items: { $ref: "#/components/schemas/DeviceApplyManifestSegment" }, description: 段清单，kind 不得重复；请求体必须携带同名文件段 }
+
+    DeviceApplySegment:
+      type: object
+      description: 已登记段元数据（正文不入 SQLite）
+      required: [kind, bytes, sha256]
+      properties:
+        kind: { $ref: "#/components/schemas/DeviceApplySegmentKind" }
+        bytes: { type: integer, format: int64, minimum: 1 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 登记时复算并校验通过的段 SHA-256 }
+        expectedReadback: { type: object, additionalProperties: true, description: manifest 中该段的期望回读指标 }
+
+    DeviceApplyLocalHash:
+      type: object
+      description: 手机本地复算的段摘要
+      required: [kind, sha256]
+      properties:
+        kind: { $ref: "#/components/schemas/DeviceApplySegmentKind" }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+
+    DeviceApplyResultStatus:
+      type: string
+      description: 手机回传的终态结果（applied=全部应用；partial=部分应用；failed=失败）
+      enum: [applied, partial, failed]
+      x-enum-varnames: [DeviceApplyResultStatusApplied, DeviceApplyResultStatusPartial, DeviceApplyResultStatusFailed]
+
+    DeviceApplyResultRequest:
+      type: object
+      description: POST /api/v1/device/apply-tasks/{id}/result 请求体；相同归一化结果重放幂等
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/DeviceApplyResultStatus" }
+        readback: { type: object, additionalProperties: true, description: '手机回读指标（任意 JSON 对象，≤64KiB；缺省 {}）' }
+        deviceLocalHashes: { type: array, maxItems: 2, items: { $ref: "#/components/schemas/DeviceApplyLocalHash" }, description: 手机本地复算的段摘要（可选；同 kind 不得重复） }
+        message: { type: string, maxLength: 2000, description: 可选说明（failed/partial 建议填写） }
+
+    DeviceApplyResult:
+      type: object
+      description: 已记录的终态结果（详情/回传响应）
+      required: [status, readback, deviceLocalHashes, reportedAt]
+      properties:
+        status: { $ref: "#/components/schemas/DeviceApplyResultStatus" }
+        readback: { type: object, additionalProperties: true, description: '归一化后的回读指标（无则 {}）' }
+        deviceLocalHashes: { type: array, maxItems: 2, items: { $ref: "#/components/schemas/DeviceApplyLocalHash" }, description: '按 kind 排序后的本地摘要（无则 []）' }
+        message: { type: string, description: 可选说明 }
+        reportedAt: { type: string, format: date-time, description: 结果写入时刻（= finishedAt） }
+
+    DeviceApplyTaskSummary:
+      type: object
+      description: 设备结果包列表摘要（不含段清单与结果正文）
+      required: [id, targetDeviceId, status, protocolVersion, rulesFingerprint, createdAt, updatedAt, expiresAt, segmentCount]
+      properties:
+        id: { type: string, format: uuid }
+        targetDeviceId: { type: string }
+        status: { $ref: "#/components/schemas/DeviceApplyTaskStatus" }
+        protocolVersion: { type: integer }
+        rulesFingerprint: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        claimedAt: { type: [string, "null"], format: date-time, description: 首次领取时刻；未领取为 null }
+        finishedAt: { type: [string, "null"], format: date-time, description: 终态完成/失败/取消/过期时刻；非终态为 null }
+        expiresAt: { type: string, format: date-time }
+        segmentCount: { type: integer, minimum: 0, description: 已登记段数（0–2） }
+
+    DeviceApplyTask:
+      type: object
+      description: 设备结果包任务（创建/详情/领取/回传/取消共用）
+      required: [id, targetDeviceId, status, protocolVersion, rulesFingerprint, createdAt, updatedAt, expiresAt, segments]
+      properties:
+        id: { type: string, format: uuid }
+        targetDeviceId: { type: string }
+        status: { $ref: "#/components/schemas/DeviceApplyTaskStatus" }
+        protocolVersion: { type: integer }
+        rulesFingerprint: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        claimedAt: { type: [string, "null"], format: date-time, description: 首次领取时刻；未领取为 null }
+        finishedAt: { type: [string, "null"], format: date-time, description: 终态完成/失败/取消/过期时刻；非终态为 null }
+        expiresAt: { type: string, format: date-time }
+        segments: { type: array, maxItems: 2, items: { $ref: "#/components/schemas/DeviceApplySegment" }, description: 段清单（按 masterTxt、v2Backup 排序） }
+        result: { $ref: "#/components/schemas/DeviceApplyResult" }
+
+    DeviceApplyTaskList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DeviceApplyTaskSummary" } }
         nextCursor: { type: [string, "null"], description: 下一页游标；null = 已到底 }
 
     CreateUploadRequest:

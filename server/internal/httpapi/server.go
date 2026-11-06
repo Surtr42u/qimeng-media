@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"qimeng-media/server/internal/authorattach"
@@ -16,6 +17,7 @@ import (
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/creatorprofile"
+	"qimeng-media/server/internal/deviceapply"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/libraryrevision"
@@ -186,6 +188,9 @@ type Deps struct {
 	// Maintenance 持久维护任务账本（internal/maintenance，ADR-0054）；nil 时
 	// New 内部用同源 Conn/Queries/Now/Logger 构造缺省实例（缺省即生产实现）。
 	Maintenance *maintenance.Service
+	// DeviceApply 设备结果包账本与段文件存储（internal/deviceapply，
+	// ADR-0055）；nil 时 New 用同源 Conn/Queries 与 Cfg.DataDir 构造缺省实例。
+	DeviceApply *deviceapply.Service
 }
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
@@ -237,6 +242,9 @@ type Server struct {
 	// maintenance 持久维护任务账本（Deps.Maintenance 的落位；无独立开关，
 	// 账本端点恒可用，worker 执行面本轮未实现）。
 	maintenance *maintenance.Service
+	// deviceApply 设备结果包账本与段文件存储（Deps.DeviceApply 的落位；
+	// 无独立开关，配对/设备身份校验/Android Worker 本轮未实现）。
+	deviceApply *deviceapply.Service
 	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
 	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
 	uploads *uploadsess.Manager
@@ -365,6 +373,16 @@ func New(deps Deps) (*Server, error) {
 	if s.maintenance == nil {
 		s.maintenance = maintenance.New(maintenance.Options{
 			Conn: deps.Conn, Queries: deps.Queries, Now: now, Logger: logger,
+		})
+	}
+	// 设备结果包账本缺省兜底：段文件根固定为 <dataDir>/device-apply-packages，
+	// 与其余 store 型服务同源，不创建第二套权威状态。
+	s.deviceApply = deps.DeviceApply
+	if s.deviceApply == nil {
+		s.deviceApply = deviceapply.New(deviceapply.Options{
+			Conn: deps.Conn, Queries: deps.Queries,
+			RootDir: filepath.Join(deps.Cfg.DataDir, "device-apply-packages"),
+			Now:     now, Logger: logger,
 		})
 	}
 	s.txt = deps.TXT
