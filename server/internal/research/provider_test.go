@@ -207,8 +207,7 @@ func TestE621Provider(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/posts/31.json":
-			writeJSON(t, w, `{"post":{"id":31,"created_at":"2024-01-02T03:04:05.000-05:00","description":"Title line
-more","rating":"s","score":{"total":5},"tags":{"artist":["foo"],"general":["bar"]}}}`)
+			writeJSON(t, w, `{"post":{"id":31,"created_at":"2024-01-02T03:04:05.000-05:00","description":"Title line\nmore","rating":"s","score":{"total":5},"tags":{"artist":["foo"],"general":["bar"]}}}`)
 		case "/posts.json":
 			writeJSON(t, w, `{"posts":[{"id":32,"created_at":"2024-02-02T00:00:00.000Z","description":"Second","score":{"total":1},"tags":{"artist":["baz"],"general":[]}}]}`)
 		default:

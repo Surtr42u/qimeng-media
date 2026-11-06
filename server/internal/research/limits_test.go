@@ -33,26 +33,25 @@ func TestBudgetZeroMeansUnlimited(t *testing.T) {
 	}
 }
 
-// TestLimitsLensRequiresBothWindows：日预算耗尽时拒绝，且不白吃小时配额。
+// TestLimitsLensRequiresBothWindows：小时预算耗尽时归还日预算占用；下一小时
+// 仍可用满日预算，且日预算耗尽后拒绝。
 func TestLimitsLensRequiresBothWindows(t *testing.T) {
 	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return now }
-	limits := newLimits(clock, 20, 5, 1)
+	limits := newLimits(clock, 20, 1, 2)
 	if !limits.takeLens() {
 		t.Fatal("第一次应通过")
 	}
 	if limits.takeLens() {
-		t.Fatal("日预算耗尽后应拒绝")
+		t.Fatal("同一小时第二次应拒绝（小时预算=1）")
 	}
-	// 日预算耗尽不应消耗小时预算：换到新一天后仍可用满 5 次。
-	now = now.Add(24 * time.Hour)
-	for i := 0; i < 5; i++ {
-		if !limits.takeLens() {
-			t.Fatalf("新的一天第 %d 次应通过", i+1)
-		}
+	// 第二次被拒时已归还日预算占用：下一小时仍应能用掉剩余日预算。
+	now = now.Add(time.Hour)
+	if !limits.takeLens() {
+		t.Fatal("下一小时应通过（日预算未被白吃）")
 	}
 	if limits.takeLens() {
-		t.Fatal("小时预算耗尽后应拒绝")
+		t.Fatal("日预算耗尽后应拒绝")
 	}
 }
 
