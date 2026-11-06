@@ -110,7 +110,7 @@ class MaintenanceViewModel @Inject constructor(
         viewModelScope.launch {
             try { block() }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { _state.update { it.copy(error = failure.message ?: "维护操作失败，请重试") } }
+            catch (failure: Exception) { _state.update { it.copy(error = failure.message ?: "维护操作失败（${failure.javaClass.simpleName}），请重试") } }
             finally { _state.update { it.copy(busy = false) } }
         }
     }
