@@ -97,6 +97,11 @@ func (exp *backupExport) buildSnapshot() (*BackupFile, error) {
 	}
 
 	data := BackupData{}
+	master, err := authorattach.MasterTXT(exp.ctx, exp.q)
+	if err != nil {
+		return nil, err
+	}
+	data.AuthorMasterTxt = &master
 	if err := exp.fillFiles(&data, assets); err != nil {
 		return nil, err
 	}

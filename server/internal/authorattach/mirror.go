@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"qimeng-media/server/internal/authoring"
@@ -28,6 +29,7 @@ import (
 type MirrorConfig struct {
 	Path             string `json:"path"`
 	FragmentFilename string `json:"fragmentFilename"`
+	Mode             string `json:"mode,omitempty"`
 }
 
 // mirrorTempPrefix 是镜像原子写在目标目录内的临时文件名前缀（点开头，
@@ -70,6 +72,7 @@ func SaveMirrorConfig(ctx context.Context, q *db.Queries, now time.Time, cfg Mir
 // slog.Default()。
 type MirrorWriter struct {
 	Logger *slog.Logger
+	mu     sync.Mutex
 }
 
 func (w *MirrorWriter) logger() *slog.Logger {
@@ -84,6 +87,8 @@ func (w *MirrorWriter) logger() *slog.Logger {
 // 镜像路径。任何失败 slog.Warn（含 path 与 err）后返回——绝不向上抛错。
 // 任何改变片段内容的服务端操作都应在同一时机调用（REQ §3.4）。
 func (w *MirrorWriter) Refresh(ctx context.Context, q *db.Queries) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	cfg, err := LoadMirrorConfig(ctx, q)
 	if err != nil {
 		w.logger().Warn("作者镜像：读取配置失败", "err", err)
@@ -91,6 +96,16 @@ func (w *MirrorWriter) Refresh(ctx context.Context, q *db.Queries) {
 	}
 	if cfg.Path == "" {
 		return // 未配置 = 关闭
+	}
+	if cfg.Mode == "master" {
+		content, err := MasterTXT(ctx, q)
+		if err == nil {
+			err = writeFileAtomically(cfg.Path, content)
+		}
+		if err != nil {
+			w.logger().Warn("作者总表：写入失败", "err", err)
+		}
+		return
 	}
 	sources, err := LoadSources(ctx, q)
 	if err != nil {

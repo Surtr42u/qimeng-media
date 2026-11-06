@@ -2052,6 +2052,7 @@ components:
       properties:
         path: { type: string, description: 镜像文件绝对路径；空=关闭（默认） }
         fragmentFilename: { type: string, description: 镜像目标片段名；空=最近导入的片段 }
+        mode: { type: string, enum: [fragment, master], default: fragment, description: master将全部常规作者与当前关联合成为一份作者总表；fragment使用指定片段 }
 
     AssetAuthorsReplaceRequest:
       type: object
@@ -2327,6 +2328,7 @@ components:
     LegacyBackupData:
       type: object
       properties:
+        authorMasterTxt: { type: string, description: 导出同一快照生成的常规作者总表，按片段首次出现排序并补齐当前关联；用于统一目录维护，导入以authors/authorMediaRefs及txtFragments为准 }
         viewEvents: { type: array, items: { $ref: "#/components/schemas/PortableViewEvent" }, description: 当前v2必须携带（可为空）；仅按原事件身份合并，mediaStats/dailyBrowse/history仅作展示，不用于合成事件；不再接收v1 }
         mediaFiles:        { type: array, items: { $ref: "#/components/schemas/LegacyMediaFile" } }
         txtFragments:      { type: array, items: { $ref: "#/components/schemas/LegacyTxtFragment" }, description: TXT 作者片段逐字载荷（2026-10-01 起；旧备份无此段向后兼容，导入端零处理）。导入按 DOMAIN_RULES §10「TXT 片段」口径合并，处理顺序在 authors/authorMediaRefs 段之前（片段导入触发统一重建，后处理会冲掉备份携带的关联数据） }

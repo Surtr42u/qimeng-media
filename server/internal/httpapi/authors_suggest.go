@@ -132,6 +132,7 @@ func (s *Server) GetApiV1AuthorsMirror(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, gen.AuthorMirrorConfig{
 		Path:             &cfg.Path,
 		FragmentFilename: &cfg.FragmentFilename,
+		Mode:             (*gen.AuthorMirrorConfigMode)(&cfg.Mode),
 	})
 }
 
@@ -166,12 +167,20 @@ func (s *Server) PutApiV1AuthorsMirror(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "镜像目标片段名超过长度上限")
 		return
 	}
-	cfg := authorattach.MirrorConfig{Path: path, FragmentFilename: fragment}
+	mode := "fragment"
+	if body.Mode != nil {
+		mode = string(*body.Mode)
+	}
+	if mode != "fragment" && mode != "master" {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "不支持的作者镜像模式")
+		return
+	}
+	cfg := authorattach.MirrorConfig{Path: path, FragmentFilename: fragment, Mode: mode}
 	if err := authorattach.SaveMirrorConfig(r.Context(), s.q, s.now(), cfg); err != nil {
 		s.internalErr(w, "保存作者镜像配置", err)
 		return
 	}
 	s.mirror.Refresh(r.Context(), s.q)
-	stored := gen.AuthorMirrorConfig{Path: &path, FragmentFilename: &fragment}
+	stored := gen.AuthorMirrorConfig{Path: &path, FragmentFilename: &fragment, Mode: (*gen.AuthorMirrorConfigMode)(&mode)}
 	writeJSON(w, http.StatusOK, stored)
 }
