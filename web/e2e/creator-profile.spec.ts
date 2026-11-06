@@ -9,6 +9,7 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
     candidate: { nickname: '公开昵称', biography: '', avatarUrl: '', homepageUrl: 'https://example.org/creator', evidenceUrls: ['https://example.org/about'] }, updates: [],
   }
   const writes: Record<string, unknown>[] = []
+  let savedProfile: Record<string, unknown> = profile
   let fail = true
   await page.addInitScript(() => localStorage.setItem('qimeng_token', 'synthetic-session'))
   await page.route('**/api/**', async route => {
@@ -23,9 +24,10 @@ test('同名 COS 主页按身份读取，候选先入草稿；失败保留草稿
         const body = route.request().postDataJSON() as Record<string, unknown>
         writes.push(body)
         if (fail) return route.fulfill({ status: 409, json: { message: '修订冲突' } })
-        return route.fulfill({ json: { ...profile, ...body, revision: 4 } })
+        savedProfile = { ...savedProfile, ...body, revision: Number(savedProfile.revision) + 1 }
+        return route.fulfill({ json: savedProfile })
       }
-      return route.fulfill({ json: profile })
+      return route.fulfill({ json: savedProfile })
     }
     expect(route.request().method()).toBe('GET')
     if (path.endsWith('/facets')) return route.fulfill({ json: { characters: [], types: [] } })
