@@ -19,6 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -77,6 +80,8 @@ fun BackupScreen(
     externalBusy: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showTools by rememberSaveable { mutableStateOf(false) }
+    var showRules by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     // 词表合并同步卡（ADR-0035）：卡自带 VM，与页级 BackupViewModel 横幅互不干扰
     val vocabularyViewModel: VocabularySyncViewModel = hiltViewModel()
@@ -114,9 +119,9 @@ fun BackupScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = ScreenContentPadding),
-            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceL),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            QimengPageIntro("备份用于恢复与迁移；浏览记录补传、词表合并可分别操作。")
+            if (!embedded) QimengPageIntro("保存与恢复影库资料")
             state.errorMessage?.let { message ->
                 StatusMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
                     viewModel.dismissError()
@@ -136,15 +141,6 @@ fun BackupScreen(
                 WarningsCard(warnings = state.warnings, onDismiss = viewModel::dismissWarnings)
             }
 
-            // 先设置共享的备份目录，再执行导入/导出；原自动备份状态与动作仍由 VM 持有。
-            AutoBackupCard(
-                enabled = state.autoBackupEnabled,
-                dirUri = state.autoBackupDirUri,
-                lastRunMillis = state.autoBackupLastRunMillis,
-                onToggle = viewModel::setAutoBackupEnabled,
-                onPickDir = { if (!externalBusy) { if (onPickUnifiedRoot != null) onPickUnifiedRoot() else dirPickerLauncher.launch(pickerStartUri) } },
-            )
-
             // 卡1：导入导出（直读直写备份目录 qimeng_backup.json；确认弹窗见页尾）
             ImportExportCard(
                 dirSet = state.autoBackupDirUri != null,
@@ -156,33 +152,47 @@ fun BackupScreen(
                 onImportAutomatic = { viewModel.importFromBackupDir(BackupFileKind.AUTOMATIC) },
             )
 
-            // 浏览数据同步（独立功能不动，留页面原位——原主卡内第三行）
-            BackupActionCard(
-                title = ROW_SYNC_TITLE,
-                subtitle = listOf(
-                    when (val pending = state.pendingEvents) {
-                        null -> SYNC_PENDING_UNKNOWN
-                        else -> SYNC_PENDING_TEMPLATE.format(pending)
-                    },
-                    SYNC_SUBTITLE_SUFFIX,
-                ).joinToString(" · "),
-            ) {
-                TextButton(enabled = !state.eventSyncing, onClick = viewModel::syncEventsNow) {
-                    Text(if (state.eventSyncing) ROW_SYNC_ACTION_BUSY else ROW_SYNC_ACTION)
-                }
-            }
-
-            // 词表合并同步（ADR-0035）：两端词表只增不删增量合并，一键收敛到同一并集
-            VocabularyMergeSyncCard(
-                syncing = vocabularyState.syncing,
-                errorMessage = vocabularyState.errorMessage,
-                noticeMessage = vocabularyState.noticeMessage,
-                onSync = vocabularyViewModel::sync,
-                onDismissError = vocabularyViewModel::dismissError,
-                onDismissNotice = vocabularyViewModel::dismissNotice,
+            // 先设置共享的备份目录，再执行导入/导出；原自动备份状态与动作仍由 VM 持有。
+            AutoBackupCard(
+                enabled = state.autoBackupEnabled,
+                dirUri = state.autoBackupDirUri,
+                lastRunMillis = state.autoBackupLastRunMillis,
+                onToggle = viewModel::setAutoBackupEnabled,
+                showDirectory = !embedded,
+                onPickDir = { if (!externalBusy) { if (onPickUnifiedRoot != null) onPickUnifiedRoot() else dirPickerLauncher.launch(pickerStartUri) } },
             )
 
-            BackupRuleNotes()
+            TextButton(onClick = { showTools = !showTools }) { Text(if (showTools) "收起其他同步工具" else "其他同步工具") }
+            if (showTools) {
+                // 浏览数据同步（独立功能不动，留页面原位——原主卡内第三行）
+                BackupActionCard(
+                    title = ROW_SYNC_TITLE,
+                    subtitle = listOf(
+                        when (val pending = state.pendingEvents) {
+                            null -> SYNC_PENDING_UNKNOWN
+                            else -> SYNC_PENDING_TEMPLATE.format(pending)
+                        },
+                        SYNC_SUBTITLE_SUFFIX,
+                    ).joinToString(" · "),
+                ) {
+                    TextButton(enabled = !state.eventSyncing, onClick = viewModel::syncEventsNow) {
+                        Text(if (state.eventSyncing) ROW_SYNC_ACTION_BUSY else ROW_SYNC_ACTION)
+                    }
+                }
+
+                // 词表合并同步（ADR-0035）：两端词表只增不删增量合并，一键收敛到同一并集
+                VocabularyMergeSyncCard(
+                    syncing = vocabularyState.syncing,
+                    errorMessage = vocabularyState.errorMessage,
+                    noticeMessage = vocabularyState.noticeMessage,
+                    onSync = vocabularyViewModel::sync,
+                    onDismissError = vocabularyViewModel::dismissError,
+                    onDismissNotice = vocabularyViewModel::dismissNotice,
+                )
+
+            }
+            TextButton(onClick = { showRules = !showRules }) { Text(if (showRules) "收起恢复须知" else "恢复前须知") }
+            if (showRules) BackupRuleNotes()
 
 
 

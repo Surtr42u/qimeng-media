@@ -384,8 +384,6 @@ fun AllScreen(
                     // 问题A（2026-09-28）：加载结束重评估信号——翻页成功但新页为空时 totalCount
                     // 不变，哨兵需靠 tick 重触发（KDoc 见 QimengMediaGrid.reloadTick）
                     reloadTick = state.reloadTick,
-                    // 相册继续在滚动过程中加载缩略图，避免新进入视口的项目一直显示占位。
-                    pauseThumbnailsWhileScrolling = false,
                     // 卡片点击与长按：多选模式下点按切换勾选；常规模式下点击进详情、长按进多选
                     onAssetClick = { asset: MediaAsset ->
                         if (state.isSelectionMode) {

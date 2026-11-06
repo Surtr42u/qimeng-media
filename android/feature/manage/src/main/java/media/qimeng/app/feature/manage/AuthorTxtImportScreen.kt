@@ -11,10 +11,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +43,8 @@ import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.icon.TxtImportFileIcon
+import media.qimeng.app.core.ui.icon.DeleteIcon
 
 /** 页面文案（对齐 Web LibraryManagePage.tsx TxtAuthorImportCard L84-187 逐字） */
 private const val SCREEN_TITLE = "作者 TXT 导入"
@@ -46,11 +53,10 @@ private const val DROP_TITLE = "选择 TXT 导入"
 
 /** 导入中态标题（Web .upload-drop pending 文案逐字；两子页导入区共用单一来源） */
 internal const val DROP_TITLE_IMPORTING = "导入中…"
-private const val DROP_HINT_EMPTY = "点击选择旧项目导出的作者清单 .txt，开始重建作者关联"
+private const val DROP_HINT_EMPTY = "选择作者清单，恢复作者与作品的关联"
 private const val DROP_HINT_MORE = "点击选择新的 .txt 清单，同名文件自动覆盖"
 private const val REBUILD_BUTTON = "重新匹配"
 private const val REBUILD_BUTTON_BUSY = "重放中…"
-private const val ROW_ACTION_REMOVE = "移除"
 private const val ROW_ANONYMOUS = "（匿名导入）"
 private const val LIST_EMPTY = "还没有导入片段——从上方选择 .txt 开始。"
 private const val LIST_LOADING = "加载中…"
@@ -87,9 +93,13 @@ fun AuthorTxtImportScreen(
     viewModel: AuthorTxtImportViewModel = hiltViewModel(),
     embedded: Boolean = false,
     externalBusy: Boolean = false,
+    documents: List<String> = emptyList(),
+    onImportDocument: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val fileBusy = externalBusy || state.importing || state.removing || state.rebuilding || state.mirrorSaving
     var showMirror by rememberSaveable { mutableStateOf(false) }
+    var pendingRemoval by rememberSaveable { mutableStateOf<String?>(null) }
 
     // UI 只转交 URI；元数据、读取上限与 UTF-8 解码由数据层 reader 负责。
     val pickTxtLauncher = rememberLauncherForActivityResult(
@@ -106,7 +116,7 @@ fun AuthorTxtImportScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = ScreenContentPadding),
-            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceL),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             state.errorMessage?.let { message ->
                 StatusMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
@@ -119,48 +129,81 @@ fun AuthorTxtImportScreen(
                 }
             }
 
-            SectionHead(count = state.files.size)
-            ImportDropZone(
-                title = DROP_TITLE,
-                hint = if (state.files.isEmpty()) DROP_HINT_EMPTY else DROP_HINT_MORE,
-                importing = state.importing || externalBusy,
-                onPick = { pickTxtLauncher.launch(TXT_MIME_TYPES) },
-            )
-            RuleNotes()
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = viewModel::rebuild, enabled = state.canRebuild && !externalBusy) {
-                    Text(if (state.rebuilding) REBUILD_BUTTON_BUSY else REBUILD_BUTTON)
+            if (embedded) QimengSettingsCard {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(TxtImportFileIcon, null, Modifier.size(24.dp))
+                        Text("作者主表", style = MaterialTheme.typography.titleMedium)
+                    }
+                    Text("主表记录作者、来源与作品关联。简介和头像随完整备份保存。", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    documents.forEach { filename ->
+                        Button(enabled = !fileBusy, onClick = { onImportDocument(filename) },
+                            shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) { Text("导入 $filename") }
+                    }
+                    OutlinedButton(enabled = !fileBusy, onClick = { pickTxtLauncher.launch(TXT_MIME_TYPES) },
+                        shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) { Text("选择外部 TXT") }
+                    Text("${state.files.size} 份来源已保存", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            } else {
+                SectionHead(count = state.files.size)
+                ImportDropZone(
+                    title = DROP_TITLE,
+                    hint = if (state.files.isEmpty()) DROP_HINT_EMPTY else DROP_HINT_MORE,
+                    importing = fileBusy,
+                    onPick = { pickTxtLauncher.launch(TXT_MIME_TYPES) },
+                )
             }
-
-            when {
-                state.loading -> EmptyText(LIST_LOADING)
-                state.files.isEmpty() -> EmptyText(LIST_EMPTY)
-                else -> state.files.forEach { filename ->
-                    ImportedFileRow(
-                        displayName = if (filename.isEmpty()) ROW_ANONYMOUS else filename,
-                        removing = state.removing || externalBusy,
-                        onRemove = { viewModel.remove(filename) },
-                    )
+            TextButton(onClick = { showMirror = !showMirror }) {
+                Text(if (showMirror) "收起来源与高级维护" else "来源与高级维护")
+            }
+            if (showMirror) {
+                RuleNotes()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = viewModel::rebuild, enabled = state.canRebuild && !fileBusy) {
+                        Text(if (state.rebuilding) REBUILD_BUTTON_BUSY else REBUILD_BUTTON)
+                    }
                 }
-            }
 
-            if (embedded) TextButton(onClick = { showMirror = !showMirror }) { Text(if (showMirror) "收起高级镜像设置" else "高级镜像设置") }
-            if (!embedded || showMirror) AuthorMirrorCard(
-                mirrorPath = state.mirrorPath,
-                mirrorFragment = state.mirrorFragmentFilename,
-                saving = state.mirrorSaving || externalBusy,
-                onPathChange = viewModel::onMirrorPathChange,
-                onFragmentChange = viewModel::onMirrorFragmentChange,
-                onSave = viewModel::saveMirror,
-            )
+                when {
+                    state.loading -> EmptyText(LIST_LOADING)
+                    state.files.isEmpty() -> EmptyText(LIST_EMPTY)
+                    else -> state.files.forEach { filename ->
+                        ImportedFileRow(
+                            displayName = if (filename.isEmpty()) ROW_ANONYMOUS else filename,
+                            removing = fileBusy,
+                            onRemove = { pendingRemoval = filename },
+                        )
+                    }
+                }
+
+                AuthorMirrorCard(
+                    mirrorPath = state.mirrorPath,
+                    mirrorFragment = state.mirrorFragmentFilename,
+                    saving = fileBusy,
+                    onPathChange = viewModel::onMirrorPathChange,
+                    onFragmentChange = viewModel::onMirrorFragmentChange,
+                    onSave = viewModel::saveMirror,
+                )
+
+            }
 
             Spacer(modifier = Modifier.height(ScreenBottomSpacing))
         }
     }
+    pendingRemoval?.let { filename ->
+        AlertDialog(onDismissRequest = { pendingRemoval = null }, title = { Text("移除这份来源？") },
+            text = { Text("$filename\n将按剩余来源重新计算作品关联，作者资料保留。") },
+            confirmButton = { TextButton(enabled = !state.removing && !externalBusy, onClick = { viewModel.remove(filename); pendingRemoval = null }) {
+                Text("移除来源", color = MaterialTheme.colorScheme.error)
+            } },
+            dismissButton = { TextButton(onClick = { pendingRemoval = null }) { Text("取消") } })
+    }
+
 }
 
 /** 区块头：标题 + 「N 份片段」计数（Web rank-head/rank-note 同位） */
@@ -252,8 +295,8 @@ private fun ImportedFileRow(displayName: String, removing: Boolean, onRemove: ()
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onRemove, enabled = !removing) {
-                Text(ROW_ACTION_REMOVE)
+            IconButton(onClick = onRemove, enabled = !removing) {
+                Icon(DeleteIcon, "移除来源 $displayName", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

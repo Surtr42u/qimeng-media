@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +42,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,10 +58,32 @@ import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.ui.icon.CheckMarkIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /** 距底预加载阈值（LEGACY §H：距底 ≤6 项提前加载；数值与 RecommendPaging.PRELOAD_DISTANCE 同语义，
  *  但网格组件不依赖具体业务模块，此处独立成 UI 常量） */
 private const val GRID_PRELOAD_DISTANCE = 6
+
+// Shared across retained pages so opportunity requests stay bounded app-wide.
+private val gridThumbnailPrefetchPermits = Semaphore(2)
+
+internal fun nearbyThumbnailUrls(cells: List<GridCell>, first: Int, last: Int, columns: Int, forward: Boolean): List<String> {
+    if (first < 0 || last < first) return emptyList()
+    val count = minOf(columns * 2, 16)
+    val indices = if (forward) (last + 1)..minOf(last + count, cells.lastIndex)
+        else maxOf(0, first - count) until first
+    val ordered = if (forward) indices.toList() else indices.toList().asReversed()
+    return ordered.mapNotNull { index ->
+        cells.getOrNull(index)?.asset?.takeIf { it.mediaType != MediaKind.ANIMATED_IMAGE }?.thumbUrl?.takeIf { it.isNotBlank() }
+    }.distinct()
+}
 
 /** 网格格子：组头（跨全列）或资产卡（单列）；[flattenGridCells] 产物。internal 供 JVM 单测锁定 */
 internal data class GridCell(val header: String?, val asset: MediaAsset?)
@@ -194,10 +218,6 @@ private fun preloadDetailPoster(context: Context, mediaType: MediaKind, posterUr
  * @param bottomContentPadding 列表底部预留（clipToPadding=false 语义）——默认与网格间距同档；
  *   相册页传 [QimengDimens.ListBottomContentPadding]（180dp，防悬浮药丸面板遮挡末行，
  *   旧版 fragment_all_files.xml L149）
- * @param pauseThumbnailsWhileScrolling 滚动暂停缩略图加载（任务I I5，GUIDE_UI §浏览历史
- *   L394 / §收藏页 L411）：网格滚动进行中（拖拽/惯性 fling 均 true，[LazyGridState]
- *   .isScrollInProgress 口径）暂缓新缩略图请求、停滚自动恢复（门控在 [QimengThumbnail]）。
- *   默认 false——首页/搜索/全部页既有调用方行为零变化
  * @param tightenLeadingHeader 收紧列表首个组头的上内边距（修复C，2026-09-14 作者页用户
  *   反馈「下面的文件时间离胶囊过远」）：默认 false=组头恒 18dp 上距（旧版
  *   GroupedMediaAdapter setPadding(4,18,4,10) 对齐档，语义=与上一组末卡隔断）；
@@ -229,7 +249,6 @@ fun QimengMediaGrid(
      * totalCount 口径不变（触底判定仍以资产/组头格为准；尾标可见本身即触底）。
      */
     endFooterText: String? = null,
-    pauseThumbnailsWhileScrolling: Boolean = false,
     tightenLeadingHeader: Boolean = false,
     /** 作者资料等内容作为同一网格的跨列首项，随作品滚动，不挤占作品视口。 */
     leadingContent: (@Composable () -> Unit)? = null,
@@ -251,9 +270,35 @@ fun QimengMediaGrid(
         if (totalCount > 0 && shouldLoadMore) onNearBottom()
     }
 
-    // 滚动进行中观测（derivedStateOf：仅 isScrollInProgress 翻转时才让卡片层重组）
-    val scrolling by remember { derivedStateOf { listState.isScrollInProgress } }
-    val thumbnailsPaused = pauseThumbnailsWhileScrolling && scrolling
+    val context = LocalContext.current
+    val imageLoader = remember(context) { SingletonImageLoader.get(context) }
+    val focused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(cells, columns, leadingItemCount, listState, imageLoader, focused) {
+        if (!focused) return@LaunchedEffect
+        var previousFirst = -1
+        snapshotFlow {
+            val visible = listState.layoutInfo.visibleItemsInfo
+            (visible.firstOrNull()?.index ?: -1) to (visible.lastOrNull()?.index ?: -1)
+        }.distinctUntilChanged().map { (first, last) ->
+            val cellFirst = maxOf(0, first - leadingItemCount)
+            val cellLast = last - leadingItemCount
+            val forward = previousFirst < 0 || cellFirst >= previousFirst
+            previousFirst = cellFirst
+            nearbyThumbnailUrls(cells, cellFirst, cellLast, columns, forward)
+        }.distinctUntilChanged().collectLatest { urls ->
+            urls.chunked(2).forEach { batch ->
+                coroutineScope {
+                    batch.map { url ->
+                        async {
+                            gridThumbnailPrefetchPermits.withPermit {
+                                imageLoader.execute(ImageRequest.Builder(context).data(url).size(Size.ORIGINAL).build())
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+        }
+    }
 
     LazyVerticalGrid(
         state = listState,
@@ -322,7 +367,7 @@ fun QimengMediaGrid(
                     AssetCard(
                         asset = asset,
                         animatedUrlResolver = animatedUrlResolver,
-                        paused = thumbnailsPaused,
+                        paused = false,
                         isSelected = asset.id in selectedAssetIds,
                         isSelectionMode = isSelectionMode,
                         onAssetClick = onAssetClick,
