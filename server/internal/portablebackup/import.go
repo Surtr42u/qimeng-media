@@ -225,6 +225,8 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 			}
 			imp.bump(&imp.res.AuthorsImported)
 		}
+		var linkedAssets []string
+		seenAssets := make(map[string]bool)
 		for _, ref := range sliceOrEmpty(refs) {
 			assetID, ok := imp.keyToAsset[ref.RecordKey]
 			if !ok {
@@ -240,9 +242,23 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 				imp.fail("导入作者关联", err)
 				return
 			}
+			if !hasCosPrefix(ref.AuthorId) && !seenAssets[assetID] {
+				seenAssets[assetID] = true
+				linkedAssets = append(linkedAssets, assetID)
+			}
 			imp.bump(&imp.res.AuthorRefsImported)
 		}
+		recorder := authorattach.Service{Logger: imp.s.logger}
+		for _, assetID := range linkedAssets {
+			if err := recorder.RecordAssetWorks(imp.ctx, qx, imp.s.now(), assetID); err != nil {
+				imp.fail("同步作者TXT作品行", err)
+				return
+			}
+		}
 	})
+	if imp.err == nil && len(sliceOrEmpty(refs)) > 0 {
+		imp.s.mirror.Refresh(imp.ctx, imp.s.q)
+	}
 }
 
 // hasCosPrefix：COS 作者 id 约定前缀（0001 表注释 / DOMAIN_RULES §6）。
