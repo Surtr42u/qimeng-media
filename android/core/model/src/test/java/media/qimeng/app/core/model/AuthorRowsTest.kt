@@ -95,7 +95,7 @@ class AuthorRowsTest {
         assertTrue(suggestions.first().name.length <= suggestions.last().name.length)
     }
     @Test
-    fun `加入顺序优先清单且倒序反转完整顺序`() {
+    fun `加入顺序双向保留无清单及未知时间在后`() {
         val rows = listOf(
             author("manual", "Manual").copy(addedAtMillis = 20),
             author("second", "Second").copy(txtOrder = 2, addedAtMillis = 1),
@@ -104,7 +104,7 @@ class AuthorRowsTest {
         )
         val ascending = rows.applyAuthorRows(Zone.ALL, "", AuthorSortOption.ADDED_ASC)
         assertEquals(listOf("first", "second", "manual", "unknown"), ascending.map { it.id })
-        assertEquals(ascending.reversed(), rows.applyAuthorRows(Zone.ALL, "", AuthorSortOption.ADDED_DESC))
+        assertEquals(listOf("second", "first", "manual", "unknown"), rows.applyAuthorRows(Zone.ALL, "", AuthorSortOption.ADDED_DESC).map { it.id })
     }
 
 }

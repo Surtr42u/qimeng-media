@@ -50,8 +50,8 @@ const A_SORTERS: Record<AuthorSort, (a: Author, b: Author) => number> = {
   default: () => 0,
   browse: (a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0),
   works: (a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0),
-  'added-asc': compareAuthorAddedOrder,
-  'added-desc': (a, b) => compareAuthorAddedOrder(b, a),
+  'added-asc': (a, b) => compareAuthorAddedOrder(a, b),
+  'added-desc': (a, b) => compareAuthorAddedOrder(a, b, true),
 }
 
 

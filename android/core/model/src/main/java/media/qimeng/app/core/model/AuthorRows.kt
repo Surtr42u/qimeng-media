@@ -60,7 +60,7 @@ fun List<AuthorSummary>.applyAuthorRows(
                 AuthorSortOption.BROWSE -> compareByDescending { it.viewCount ?: 0 }
                 AuthorSortOption.WORKS -> compareByDescending { it.fileCount ?: 0 }
                 AuthorSortOption.ADDED_ASC -> authorAddedOrder
-                AuthorSortOption.ADDED_DESC -> authorAddedOrder.reversed()
+                AuthorSortOption.ADDED_DESC -> authorAddedDescending
             },
         )
 }
@@ -69,6 +69,16 @@ private val authorAddedOrder: Comparator<AuthorSummary> =
     compareBy<AuthorSummary> { it.txtOrder ?: Int.MAX_VALUE }
         .thenBy { it.addedAtMillis ?: Long.MAX_VALUE }
         .thenBy { it.id }
+
+private val authorAddedDescending = Comparator<AuthorSummary> { left, right ->
+    val group = (left.txtOrder == null).compareTo(right.txtOrder == null)
+    val unknown = (left.addedAtMillis == null).compareTo(right.addedAtMillis == null)
+    when {
+        group != 0 -> group
+        left.txtOrder == null && unknown != 0 -> unknown
+        else -> authorAddedOrder.compare(right, left)
+    }
+}
 
 /**
  * 常规作者种子：全量作者 → 空输入联想回退列表（GET /authors/suggest 协议规定空 q 必返空，
