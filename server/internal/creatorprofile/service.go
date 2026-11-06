@@ -16,6 +16,7 @@ const refreshInterval = 24 * time.Hour
 const refreshConcurrency = 2
 
 type Service struct {
+	AfterSave    func(context.Context)
 	conn         *sql.DB
 	q            *db.Queries
 	now          func() time.Time
@@ -93,7 +94,13 @@ func (s *Service) Save(ctx context.Context, id string, w Write) (Profile, error)
 	if err = Persist(ctx, q, p, s.now()); err != nil {
 		return p, err
 	}
-	return p, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return p, err
+	}
+	if s.AfterSave != nil {
+		s.AfterSave(ctx)
+	}
+	return p, nil
 }
 func (s *Service) Refresh(ctx context.Context, id string) (Profile, error) {
 	return s.refresh(ctx, id, true)

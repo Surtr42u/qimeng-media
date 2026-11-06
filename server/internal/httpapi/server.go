@@ -339,6 +339,12 @@ func New(deps Deps) (*Server, error) {
 		s.txt = authorimport.New(deps.Conn, deps.Queries, now, logger)
 	}
 	s.portable = portablebackup.New(portablebackup.Options{Conn: s.conn, Queries: s.q, TXT: s.txt, Mirror: s.mirror, Now: s.now, Logger: s.logger, Changed: s.notifyPortableImport})
+	if s.creatorProfiles.AfterSave == nil {
+		s.creatorProfiles.AfterSave = func(ctx context.Context) {
+			s.mirror.Refresh(ctx, s.q)
+			s.publishLibraryChanged()
+		}
+	}
 
 	s.sync = deps.Sync
 	if s.sync == nil {

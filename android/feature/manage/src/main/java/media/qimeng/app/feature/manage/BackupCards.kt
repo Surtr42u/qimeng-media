@@ -18,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,6 +51,7 @@ internal fun ImportExportCard(
     onImportAutomatic: () -> Unit,
 ) {
     val busy = exporting || importing
+    val locale = LocalConfiguration.current.locales[0]
     QimengSettingsCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -67,7 +69,7 @@ internal fun ImportExportCard(
                         else -> formatTimestamp(fileStatus.lastModifiedMillis, "时间未知")
                     }, style = MaterialTheme.typography.bodyMedium)
                     fileStatus?.let {
-                        Text(String.format(Locale.getDefault(), "%.1f MB · v2 完整资料", it.sizeBytes / 1048576.0),
+                        Text(String.format(locale, "%.1f MB · v2 完整资料", it.sizeBytes / 1048576.0),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"qimeng-media/server/internal/authoring"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/store/db"
 )
 
@@ -36,7 +37,18 @@ func MasterTXT(ctx context.Context, q *db.Queries) (string, error) {
 	for _, ref := range refs {
 		works[ref.AuthorID] = append(works[ref.AuthorID], files[ref.AssetID])
 	}
-	return buildMasterTXT(sources, authors, works), nil
+	content := buildMasterTXT(sources, authors, works)
+	for _, author := range authors {
+		if author.Type != authoring.AuthorTypeRegular {
+			continue
+		}
+		links, err := creatorprofile.VerifiedLinks(ctx, q, author.ID)
+		if err != nil {
+			return "", err
+		}
+		content, _ = authoring.AppendSources(content, author.ID, links)
+	}
+	return content, nil
 }
 
 func buildMasterTXT(sources []Source, authors []db.ListAuthorsRow, works map[string][]string) string {

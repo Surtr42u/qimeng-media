@@ -45,6 +45,7 @@ export async function chooseMaintenanceFolder(): Promise<Directory> {
   }).showDirectoryPicker
   if (!picker) throw new Error('当前浏览器未提供目录读写，请使用文件下载或在支持目录授权的浏览器打开')
   const selected = await picker.call(window, { mode: 'readwrite', id: 'qimeng-maintenance' })
+  if (await selected.requestPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('维护目录未获得读写授权，请确认目录授权')
   for (const name of ['作者资料', '备份', '上传归档']) await selected.getDirectoryHandle(name, { create: true })
   await writeFile(selected, '目录说明.md', MAINTENANCE_README)
   const db = await database()
