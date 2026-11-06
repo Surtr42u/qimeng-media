@@ -20,6 +20,6 @@ export function MaintenanceFolderCard() {
       : <p className="rank-note">当前浏览器未提供目录读写，可使用下方文件下载与导入。支持目录授权的浏览器可开启统一目录。</p>}
     {loadError != null && <p role="alert">目录记录读取失败，可重新选择目录。{batchFailureReason(loadError)}</p>}
     {choose.isError && <p role="alert">目录绑定失败。{batchFailureReason(choose.error)}</p>}
-    <p className="rank-note">选择目录生成独立自动备份；“更新全部归档”写入手动备份。恢复前仍需确认。</p>
+    <p className="rank-note">自动与手动共用三代备份，保留最新、上次、上上次。恢复前仍需确认。</p>
   </section>
 }

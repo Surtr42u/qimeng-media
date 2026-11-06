@@ -72,16 +72,16 @@ class MaintenanceViewModel @Inject constructor(
     fun selectCurrent() = operation {
         folders.select(_state.value.browsingPath)
         _state.update { it.copy(browsing = false) }
-        // An existing manual/PC import file survives folder selection.
+        // An externally replaced pending import is protected by its checksum.
         folders.export(automatic = true)
         loadDocuments()
-        _state.update { it.copy(message = "维护目录已设置，已生成自动备份、作者TXT及资料总表") }
+        _state.update { it.copy(message = "维护目录已设置，已生成备份和作者资料，最多保留三代") }
     }
 
     fun export() = operation {
         folders.export()
         loadDocuments()
-        _state.update { it.copy(message = "已更新手动备份、作者TXT及资料总表") }
+        _state.update { it.copy(message = "已更新最新备份和作者资料，最多保留三代") }
     }
 
     fun prepareDocument(filename: String) = operation {
