@@ -10,7 +10,8 @@ func TestBudgetWindowResets(t *testing.T) {
 	now := time.Date(2026, 11, 6, 12, 34, 10, 0, time.UTC)
 	clock := func() time.Time { return now }
 	b := newBudget(clock, 2, time.Minute)
-	if !b.take() || !b.take() {
+	first, second := b.take(), b.take()
+	if !first || !second {
 		t.Fatal("前两次占用应通过")
 	}
 	if b.take() {

@@ -130,7 +130,7 @@ func (s *Server) PostApiV1ResearchLens(w http.ResponseWriter, r *http.Request) {
 	// 总请求体上限 = 图片上限 + 边界开销；超过即 413（MaxBytesReader 在
 	// ParseMultipartForm 内触发）。
 	r.Body = http.MaxBytesReader(w, r.Body, maxLensImageBytes+lensMultipartOverhead)
-	if err := r.ParseMultipartForm(lensMultipartMemory); err != nil {
+	if err := r.ParseMultipartForm(lensMultipartMemory); err != nil { // #nosec G120 -- r.Body 已由 http.MaxBytesReader 限制为 20MiB+1MiB，超出即 413；临时文件在 handler 结束 RemoveAll。
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
 			writeErr(w, http.StatusRequestEntityTooLarge, codeTooLarge, "图片超过 20MiB 上限")

@@ -488,13 +488,14 @@ func TestResearchSidecarTokenRequired(t *testing.T) {
 // TestParseResearchSidecarEndpointNormalizes 校验规范化输出（IPv6 加中括号、
 // 端口去前导零），研究客户端只用规范化结果拼请求。
 func TestParseResearchSidecarEndpointNormalizes(t *testing.T) {
-	cases := map[string]string{
-		"http://127.0.0.1:18641":    "http://127.0.0.1:18641",
-		" http://127.0.0.1:18641/ ": "http://127.0.0.1:18641",
-		"http://[::1]:19000":        "http://[::1]:19000",
-		"http://127.0.0.1:018641":   "http://127.0.0.1:18641",
+	cases := []struct{ raw, want string }{
+		{"http://127.0.0.1:18641", "http://127.0.0.1:18641"},
+		{" http://127.0.0.1:18641/ ", "http://127.0.0.1:18641"},
+		{"http://[::1]:19000", "http://[::1]:19000"},
+		{"http://127.0.0.1:018641", "http://127.0.0.1:18641"},
 	}
-	for raw, want := range cases {
+	for _, tc := range cases {
+		raw, want := tc.raw, tc.want
 		got, err := ParseResearchSidecarEndpoint(raw)
 		if err != nil {
 			t.Errorf("ParseResearchSidecarEndpoint(%q) 报错: %v", raw, err)
