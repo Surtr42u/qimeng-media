@@ -384,3 +384,15 @@ func TestLoadAuthDevSharedSecret(t *testing.T) {
 		t.Errorf("AuthDevSharedSecret = %q, 期望 env 优先覆盖为 from-env", cfg.AuthDevSharedSecret)
 	}
 }
+
+func TestTimeZoneSetting(t *testing.T) {
+	path := writeYAML(t, "time_zone: UTC\n")
+	t.Setenv("QIMENG_TIMEZONE", "Asia/Shanghai")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TimeZone != "Asia/Shanghai" {
+		t.Fatalf("timezone env override = %q", cfg.TimeZone)
+	}
+}

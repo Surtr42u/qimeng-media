@@ -187,6 +187,8 @@ type Config struct {
 	DataDir string `yaml:"data_dir"`
 	// LogLevel 是日志级别：debug/info/warn/error（默认 info）。
 	LogLevel string `yaml:"log_level"`
+	// TimeZone is an optional IANA location. Empty uses the host's local zone.
+	TimeZone string `yaml:"time_zone"`
 	// Thumbnail 是缩略图管线配置。
 	Thumbnail ThumbnailConfig `yaml:"thumbnail"`
 	// Upload 是上传管线配置。
@@ -345,6 +347,9 @@ func applyEnv(cfg *Config) error {
 
 // applyBasicEnv 覆盖监听/数据目录/日志/库路径/密钥/SPA 目录/直链 TTL。
 func applyBasicEnv(cfg *Config) error {
+	if v := os.Getenv("QIMENG_TIMEZONE"); v != "" {
+		cfg.TimeZone = v
+	}
 	if v := os.Getenv("QIMENG_LISTEN"); v != "" {
 		cfg.Listen = v
 	}

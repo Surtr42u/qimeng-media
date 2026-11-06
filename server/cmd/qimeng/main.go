@@ -105,6 +105,10 @@ func main() {
 		bootLogger.Error("加载配置失败", "error", err, "configPath", *configPath)
 		os.Exit(1)
 	}
+	if err := configureLocalTimeZone(cfg.TimeZone); err != nil {
+		bootLogger.Error("配置本地时区失败", "error", err)
+		os.Exit(1)
+	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: cfg.SlogLevel(),
