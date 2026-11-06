@@ -20,7 +20,7 @@ v2备份还可携带离线头像图片；认证头像接口优先读本地持久
 
 TXT 导入/保护/移除/统一重建事务在 authorimport，手动、备份与本机同步入口共用；HTTP 只校验参数、映射领域结果和冲突载荷，协议字段不变。
 
-端点：GET /authors、**POST /authors、PUT/DELETE /authors/{id}**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow
+端点：GET /authors、**POST /authors、PUT/DELETE /authors/{id}、POST /authors/merge**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow
 
 作者 TXT 手动导入沿用普通 JSON 请求 **1 MiB** 上限（`httpapi.maxJSONBody`），不是同步通道或便携备份上限；限制包含 filename/content/conflictResolution 的整个 UTF-8 JSON 及转义开销。Android 在数据层先校验文件名/声明大小，再按原始字节上限+1 截止并核对实际 SDK 序列化大小；Web 读前检查 File 大小、出网前核对 JSON 字节。超限不提交片段，失败可重选。保留各端既有 UTF-8 解码策略，不增加编码支持；服务端拒绝仍为最后防线。本项澄清已有上限，不新增协议字段/schema 或限制。
 
@@ -64,6 +64,16 @@ SECURITY.md「作者总表镜像」）；
 格式 C 不触发（不存片段）；
 关注布尔；
 2026-09-03 响应加 viewCount（作者作品累计浏览次数）
+
+### 作者合并（2026-11-06）
+
+`POST /authors/merge`（body `{sourceAuthorId, targetAuthorId}`）把重复身份 source 原子并入 target：**不可撤销**——合并即删除 source 身份，没有撤销端点，也不保留可恢复的源身份快照。两端都必须是常规作者且存在、不能相同：COS 作者 400 INVALID_PARAM（目录扫描自动管理）、任一不存在 404 NOT_FOUND、同 ID/空 ID 400 INVALID_PARAM。
+
+语义（同一事务，任一步失败整体回滚）：source 在全部 TXT 片段中的块移除，块内别名/作品行/来源词按「target 现有顺序 + source 未出现者」保序去重并入 target 块（target 块留在目标片段原位置；target 无块时在首个 source 块所在片段新建目标块）；`asset_authors` 中 source→target，同一资产双端都关联时保留 target 原有行（origin/created_at 不动）、删除 source 行，其余迁移行保留原 origin/created_at（ADR-0032 不伪造溯源）；target.followed = target.followed OR source.followed；附属档案 target 有非空档案时完整保留，源档案非空则不合并、随源删除并置 `sourceProfileDiscarded=true`（不静默覆盖人工资料）；target 无档案/空档案而源非空则把源档案迁到 target（revision 递增、`profileMoved=true`）；`imported_txt_upload_entries` 的 source 条目改指 target 并随目标块所在片段合并去重（Names/DisplayName 同步），避免重导入误报 409；删除 source 作者行，媒体文件与资产本体保留。提交成功后刷新作者镜像。
+
+响应 `AuthorMergeResult` 含 sourceAuthorId/targetAuthorId、assetsMoved、associationsDeduped、worksMerged、sourcesMerged、aliasesMerged、followsMerged、profileMoved、sourceProfileDiscarded、uploadEntriesMoved、deletedSource；计数均为本次实际变更量（去重后）。重复调用（source 已删）→ 404；并发改名撞身份仍走改名端点 409，本端点不新建身份。
+
+**与 author.cleanup 的关系**：任务书/ADR-0052 设计的 `author.cleanup.prepare`（只读候选、影响数量、计划指纹）与 `author.cleanup.apply` 目前仍是 planned，本批规则包/CLI 只提供只读查询、未实现 cleanup 工具。确认计划后由本端点一次原子执行，不得用「删除 + 改名 + 改挂」拼装模拟事务性合并。本端点没有 dry-run 参数，调用前的影响预览只能由只读查询（或未来的 prepare）给出；作者管理页应在调用前向用户明示「源身份将删除、不可撤销」。
 
 ## 详情面关联溯源 `origin`/`createdAtMillis`
 

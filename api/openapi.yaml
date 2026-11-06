@@ -784,6 +784,47 @@ paths:
         "200": { description: 已新建或复用（复用返回既有行）, content: { application/json: { schema: { $ref: "#/components/schemas/Author" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { description: 与 COS 作者行撞名, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/merge:
+    post:
+      summary: 原子合并重复作者（源身份删除并并入目标身份；不可撤销）
+      description: |
+        作者管理页「合并重复作者」与 AI 清理 author.cleanup.apply 的原子执行端点
+        （2026-11-06，ADR-0024 后续）。**不可撤销**：合并即删除源身份
+        （sourceAuthorId），没有撤销端点，也不保留可恢复的源身份快照；执行前应由
+        author.cleanup.prepare 只读清点候选与影响数量并经用户或任务授权确认（AI
+        维护任务书 5.1），或由作者管理页向用户展示影响后二次确认。两个 ID 均必填，
+        且都必须是**常规作者**：COS 作者由目录扫描管理 → 400 INVALID_PARAM；任一
+        不存在 → 404 NOT_FOUND；两个 ID 相同 → 400 INVALID_PARAM。
+
+        语义（同一事务，任一步失败整体回滚，零副作用）：
+        - **TXT 片段合并**：目标块保留在目标片段原位置，全部源块移除。目标块别名 =
+          目标现有别名 + 源别名中未出现者（保持目标顺序、去重）；作品行、来源区
+          同法并入（按块内现有行序去重）。源/目标分处不同片段时分别处理：源块从
+          所在片段移除，其别名/作品/来源并入目标块所在片段。目标无块但源有块时，
+          在源块所在片段新建目标块（编号行取目标身份的往返安全别名）。
+        - **关联迁移**：asset_authors 中 source→target；同一资产已同时关联两端时
+          保留 target 既有行（origin/created_at 原样），删除 source 行；其余行迁移
+          并原样保留 origin/created_at（ADR-0032 溯源不伪造）。
+        - **关注并集**：target.followed = target.followed OR source.followed。
+        - **附属档案**：目标已有非空档案则完整保留，源档案不合并、随源删除；目标
+          无档案而源有非空档案则把源档案迁到目标（revision 按既有迁移语义递增）；
+          两端都有非空档案时保留目标，sourceProfileDiscarded=true 如实反映取舍，
+          不静默覆盖人工资料。
+        - **上传写入条目**：source 条目改指 target（AuthorID/Names/DisplayName 同步，
+          与 target 同片段条目按作品行/来源行保序去重合并），避免同文件名重导入
+          误报 409。
+        - **删除源作者行**；媒体文件与资产本体保留（DOMAIN_RULES §6）。提交成功后
+          刷新本地作者镜像。重复调用（源已被删）→ 404；并发改名撞身份仍按改名
+          端点 409 处理，本端点不新建身份也不改变该语义。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorMergeRequest" }
+      responses:
+        "200": { description: 合并完成（源身份已删除，目标身份保留）, content: { application/json: { schema: { $ref: "#/components/schemas/AuthorMergeResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/authors/{authorId}/profile:
     parameters:
       - { name: authorId, in: path, required: true, schema: { type: string } }
@@ -1986,6 +2027,32 @@ components:
         viewCount: { type: integer, description: 该作者全部作品累计浏览次数（kind='open' 事件计数） }
         addedAtMillis: { type: integer, format: int64, description: 作者记录首次入库时刻；历史批量导入仅代表入库记录时间，无法推定原始加入日期 }
         txtOrder: { type: integer, minimum: 1, description: 全部已存TXT片段按存储顺序解析后的首次出现序号；重复作者只计一次，COS及未出现者缺省 }
+
+    AuthorMergeRequest:
+      type: object
+      description: 作者合并请求（POST /authors/merge）；两个 ID 均必填，须为不同且存在的常规作者。合并不可撤销。
+      required: [sourceAuthorId, targetAuthorId]
+      properties:
+        sourceAuthorId: { type: string, description: 被合并并删除的身份（source）；其 TXT 块/关联/关注/档案/上传条目并入 target }
+        targetAuthorId: { type: string, description: 保留的身份（target）；合并后唯一存在的作者 }
+
+    AuthorMergeResult:
+      type: object
+      description: 作者合并结果（POST /authors/merge 200）；计数均为本次实际变更量（去重后）。
+      required: [sourceAuthorId, targetAuthorId, assetsMoved, associationsDeduped, worksMerged, sourcesMerged, aliasesMerged, followsMerged, profileMoved, sourceProfileDiscarded, uploadEntriesMoved, deletedSource]
+      properties:
+        sourceAuthorId: { type: string, description: 已删除的源身份 }
+        targetAuthorId: { type: string, description: 保留的目标身份 }
+        assetsMoved: { type: integer, description: 实际从 source 迁移到 target 的资产关联数（不含双端已同时关联而去重的行） }
+        associationsDeduped: { type: integer, description: 同一资产已同时关联两端、删除 source 行而保留 target 行的关联数 }
+        worksMerged: { type: integer, description: 并入目标块的作品行数（已去重） }
+        sourcesMerged: { type: integer, description: 并入目标块的来源词数（已去重） }
+        aliasesMerged: { type: integer, description: 并入目标块编号行的别名数（已去重） }
+        followsMerged: { type: boolean, description: 关注并集是否实际改变（target 原未关注且 source 已关注 = true；target 原已关注 = false） }
+        profileMoved: { type: boolean, description: 源档案是否迁到目标（仅目标无档案而源有档案时为 true；迁移后 revision 递增） }
+        sourceProfileDiscarded: { type: boolean, description: 源档案是否有内容但未合并、随源删除（两端都有档案时保留目标，不静默覆盖人工资料） }
+        uploadEntriesMoved: { type: integer, description: 改指/合并到 target 的上传写入条目数 }
+        deletedSource: { type: boolean, description: 源作者行已删除（成功恒为 true；供调用方回读核对） }
 
     TimelineTag:
       type: object

@@ -1,0 +1,3 @@
+# 规则包生成物不提交；默认输出到 stdout，或 --out 到 build/ 等忽略目录。
+rulepack.json
+rulepack.json.tmp
