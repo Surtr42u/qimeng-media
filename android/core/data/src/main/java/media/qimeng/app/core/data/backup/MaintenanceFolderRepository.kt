@@ -104,6 +104,9 @@ class MaintenanceFolderRepository @Inject constructor(
         val mirror = if (ServerAddress.isLocalModePreset(target)) factory.forServer(target).create().apiV1AuthorsMirrorGet() else null
         val expectedMaster = File(File(path, AUTHORS), "作者总表.txt").canonicalPath
         val serverOwnsMaster = mirror?.mode == media.qimeng.sdk.models.AuthorMirrorConfig.Mode.master && mirror.path == expectedMaster
+        if (serverOwnsMaster && kind != BackupFileKind.PRE_IMPORT) {
+            factory.forServer(target).create().apiV1AuthorsMirrorPut(requireNotNull(mirror))
+        }
         val json = backups.exportJson()
         return withContext(Dispatchers.IO) {
             val folder = checkedSharedFolder(path)
