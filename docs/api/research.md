@@ -166,9 +166,9 @@ research:
 - **部署方式**：PC 上另行运行 Lens sidecar（headless 浏览器 + 单实例串行），配置 `sidecar_endpoint` 与 `QIMENG_RESEARCH_SIDECAR_TOKEN`，再设 `research.enabled=true`；服务端不启动/托管 sidecar。
 - **嵌入式/Android**：默认关闭；打开只会带来出网与 CPU 开销，不新增监听面，但移动网络下的平台访问与 sidecar 依赖不保证。
 
-## 已知限制（未在本轮验收）
+## 已知限制（实际验收状态）
 
-- 本轮只验证源码、协议生成与合成数据测试：**未安装 sidecar、未在真实实例跑真实平台查询**，也未做真实库/8420 写入。
+- 796d813f 已安装 PC/手机；2026-11-07 真实实例试验跑通 `context` 与 `/lens`（13s、frame SHA 一致、links 空）。provider 真实查询未通过：本机 DNS fake-IP（198.18.1.x）触发 SSRF 防护 ADDRESS_BLOCKED，需切真实 DNS/代理模式或另立显式逃生配置后再验收；真实 429/503/504 未触发。默认关闭，日常启动不自动启用研究。
 - Bing 依赖 HTML 结构（`b_algo`），平台改版会导致 `provider_unavailable`；yande.re/e621/wayback 同为第三方公开接口，可用性不受本项目控制。
 - Lens 单实例串行、单帧耗时 17–18s（实测 25–40s/帧），批量反查需按预算排队；`links` 为空是已确认缺陷，不能靠重试修复。
 - 研究证据落盘目录随 `dataDir`（Docker 部署注意卷内空间与备份策略）。

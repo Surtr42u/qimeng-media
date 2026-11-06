@@ -22,11 +22,11 @@
 
 | 端 | 已安装来源 | 实际核验 |
 |---|---|---|
-| PC 服务端与 Web | 264b9d83，0.2.1/schema22 | health/ready均200，118份Web HTTP字节与云端清单一致；部署前后10张业务表、档案、媒体密钥及完整性核对通过 |
-| arm64 手机内嵌 | 264b9d83，0.2.1/code35 | 同签名保留数据覆盖，回拉APK字节、内嵌Go与FFmpeg身份核对；当前目录v2导入、完成后真实导出及两次重复导出已实际核验 |
+| PC 服务端与 Web | 796d813f，0.2.1/schema22 | version JSON revision=796d813f、modified=false；本地 119 项清单（服务端+118 Web）逐文件 SHA-256 通过，Web index HTTP 字节 3152 与清单一致；health/ready 均 200，旧程序与旧 Web 已备份到忽略目录 |
+| arm64 手机内嵌 | 796d813f，0.2.1/code35 | 同签名（证书 SHA-256 8f62ba55…）保留数据覆盖安装成功，versionCode 35/lastUpdateTime 2026-11-07 01:59；包来自同 SHA 云端 APK 出包 |
 | 桌面连接壳 | 原壳加载PC托管Web | 本轮更新共享Web，沿用现有壳 |
 
-同源264b9d83的[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/42208227103)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/42208227084)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/42208227109)、[PC出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42208361832)、[APK出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42208357598)均通过。完整CI含7项作业、Android单测及Debug/Release Lint、Go race、Web浏览器回归与SDK重建。APK版本0.2.1/code35，首次安装记录及应用身份保持；实际SHA-256与云端成品一致。
+同源796d813f的[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379160)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379165)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379174)、[PC出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42263417541)、[APK出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42263427121)均通过；CI 首轮 Windows 文件操作作业因环境清理失败，重跑同一作业后通过（同 SHA 门禁）。APK 版本 0.2.1/code35，证书 SHA-256 与既有安装一致；实际安装字节与核验记录在忽略目录。
 
 ### 数据与实际功能
 
@@ -75,4 +75,4 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 
 服务端 provider 网关与本机 Lens sidecar 代理已按 [ADR-0053](adr/0053-研究流水线API集成.md) 集成：`GET /api/v1/research/context`、`POST /api/v1/research/providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵）、`POST /api/v1/research/lens`（multipart，loopback sidecar）。安全 HTTP 出口（仅 https、域名白名单、禁重定向与环境代理、DNS 后校验公网地址、超时与响应上限）、provider/minute 与 Lens/hour/day 进程内预算、证据落盘（剥会话参数、不入库）同批落地；协议先改 OpenAPI，SDK 与 `api/sdk.lock` 由 `make sdk` 生成。
 
-**实际状态：已实现，但未安装 sidecar、未在真实实例验收。** `research.enabled` 默认 false，嵌入式/Android 形态同样默认关闭且不新增监听面；现装 PC/手机运行包仍是上文 264b9d83，研究端点尚未随该包安装或在真实平台跑通。后续启用条件：PC 上另行运行 Lens sidecar（loopback + Bearer），配置 `research.sidecar_endpoint` 与 `QIMENG_RESEARCH_SIDECAR_TOKEN`，再设 `research.enabled=true`；验收至少覆盖一次真实 provider 查询、一次真实 Lens 反查和 429/503/504 错误映射。已知缺陷与限制见[研究 API 专题](api/research.md)。
+**实际状态：已随 796d813f 安装，并完成一次真实实例试验（2026-11-07）。** PC 以临时 `QIMENG_RESEARCH_*` 环境启动（日常启动 bat 不带这些变量，研究仍默认关闭）：`GET /research/context` 返回 `enabled=true`、sidecar available、7 个 provider；`POST /research/lens` 真实返回 200/约 13 秒，`frameSha256` 与真实库图片一致，但 `links=[]`、top 域多为噪声（再次验证 best-effort）。`POST /providers/fxtwitter/query` 返回 `provider_unavailable / ADDRESS_BLOCKED`：本机 DNS 把域名解析到 `198.18.1.x`（保留测试段，常见于代理 fake-IP 模式），被安全出口的 SSRF 校验拦截；未为打通而放宽安全策略，需本机切真实 DNS/redir-host 或后续另立显式逃生配置再验。真实 429/503/504 映射仍未触发。已知缺陷与限制见[研究 API 专题](api/research.md)。
