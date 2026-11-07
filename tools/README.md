@@ -25,7 +25,7 @@ python -X utf8 tools/audit_library.py --db <数据目录>/qimeng.db --backup <�
 
 ## 作者公开档案受控填充
 
-公开身份研究、平台来源、判定口径、头像核验与跨 AI 证据交接见[作者资料研究指南](AUTHOR_RESEARCH.md)。通用方法随仓库维护，真实作者名单、查询缓存和待复核交接包保留在忽略的本地 audit 目录。
+公开身份研究、平台来源、判定口径、头像核验与跨 AI 证据交接见[作者资料研究指南](AUTHOR_RESEARCH.md)；识图优先序、作品归属证据分级与低 token 抓取约定见[识图与作品归属核实](IMAGE_RESEARCH.md)。通用方法随仓库维护，真实作者名单、查询缓存和待复核交接包保留在忽略的本地 audit 目录。
 
 `import_creator_profiles.py`仅通过正式API填充研究报告中的公开档案，不读取媒体、数据库或凭据文件。输入是忽略目录中的JSON报告；默认离线dry-run，只输出候选/跳过数量，不输出作者名、链接或令牌：
 
@@ -115,3 +115,5 @@ Web 云端浏览器检查将合成作者管理场景的窄屏/桌面截图与失
 AI 维护规则包与只读查询 CLI（P1，写入能力 planned）见 [ai_maintenance/README.md](ai_maintenance/README.md)。
 
 研究用途的 Google Lens/Google 文本搜索 sidecar（loopback + token，仅 PC/NAS，默认不启用，嵌入式/移动端禁用）见 [research_sidecar/README.md](research_sidecar/README.md)。
+
+低 token 识图/作者核实批处理工具包（Lens/Yandex/SauceNAO/FxTwitter/Kemono/ffprobe/dHash/头像/编排）见 [research_kit/README.md](research_kit/README.md)；结果、帧与缓存只放忽略目录，不写媒体库或数据库。
