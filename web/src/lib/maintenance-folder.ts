@@ -1,10 +1,44 @@
 import type { LegacyBackupImport } from '@/api/generated'
 import { openDatabase, runTx } from '@/lib/idb'
+import {
+  ARCHIVE_SECTION,
+  AUTHOR_INDEX_FILE_NAME,
+  AUTHOR_REPORT_FILE_NAME,
+  AUTHOR_SECTION,
+  BACKUP_FILE_NAME,
+  BACKUP_SECTION,
+  CHECKSUM_FILE_LIMIT_BYTES,
+  CURRENT_GENERATION,
+  GENERATION_FILE_LIMIT_BYTES,
+  MASTER_FILE_NAME,
+  PREVIOUS_GENERATION,
+  applyRotation,
+  clearRotationMarker,
+  digestsForWrites,
+  existingFile,
+  generationDirectory,
+  isNotFound,
+  matchesGeneration,
+  optionalDirectory,
+  optionalGenerationDirectory,
+  prepareRotation,
+  readRotationMarker,
+  readVerifiedGenerationFile,
+  repairGenerationChecksums,
+  rotateFileToPrevious,
+  rotationMarker,
+  safeMaintenanceName,
+  sha256,
+  writeFile,
+  writeGenerationFile,
+  writeRotationMarker,
+  type GenerationFile,
+  type MaintenanceDirectory,
+} from './maintenance-generation'
 
-type Directory = FileSystemDirectoryHandle & {
-  requestPermission(options: { mode: 'readwrite' }): Promise<PermissionState>
-  queryPermission(options: { mode: 'readwrite' }): Promise<PermissionState>
-}
+export { safeMaintenanceName } from './maintenance-generation'
+
+type Directory = MaintenanceDirectory
 
 /**
  * 维护目录两代布局（与 server/internal/authorattach/mirror 的「当前/上次」约定一致，
@@ -17,30 +51,16 @@ type Directory = FileSystemDirectoryHandle & {
  *   维护根/上次/备份/      上一代完整备份
  *   维护根/上传归档/       上传原件副本（不参与轮换）
  *
- * 轮换语义：内容变化时先把「当前」整代提交为「上次」，再写新「当前」；相同数据重导
- * 出只刷新当前、不挤掉上次；每代独立 .sha256；正文/摘要改用 createWritable 的
- * 临时文件+原子替换写入（File System Access 规范保证 close 时整文件替换）。
- * 摘要不符、缺摘要或不可读时拒绝覆盖并保留现场——绝不删除或覆盖来历不明文件。
+ * 写入顺序与中断恢复：先写轮换状态文件（旧当前代摘要 + 本次目标摘要），再整代轮换，
+ * 最后写新当前代（先正文后摘要）并删除状态文件；中断后下次写入按状态文件续跑，
+ * 不会把半成品当前代当「上次」覆盖，也不会重复轮换已相同的上次代。写入原语与恢复
+ * 判定集中在 maintenance-generation.ts。
  *
  * 旧三代同目录布局（同一目录内「（上次）/（上上次）」后缀）只做读取兼容与提示：
  * 不自动删除、不迁移、不写回旧位置；用户需要时按目录说明手动处理。
  */
 
-const CURRENT_GENERATION = '当前'
-const PREVIOUS_GENERATION = '上次'
-const AUTHOR_SECTION = '作者资料'
-const BACKUP_SECTION = '备份'
-const ARCHIVE_SECTION = '上传归档'
 const README_FILE_NAME = '目录说明.md'
-const BACKUP_FILE_NAME = '影库备份.json'
-const MASTER_FILE_NAME = '作者总表.txt'
-const AUTHOR_REPORT_FILE_NAME = '作者资料.md'
-const AUTHOR_INDEX_FILE_NAME = '作者片段索引.json'
-
-/** 单文件上限：完整 v2 备份/作者主表的既有 64MiB 预算（docs/api/backup.md）。 */
-const GENERATION_FILE_LIMIT_BYTES = 64 * 1024 * 1024
-/** .sha256 文件上限：外部写入超长内容时拒绝读取，避免摘要比较被拖垮。 */
-const CHECKSUM_FILE_LIMIT_BYTES = 1024
 
 /** 旧三代同目录文件名（读取兼容与「仅提示」清单；从不用于新写入）。 */
 const LEGACY_MASTER_NAMES = ['作者总表.txt', '作者总表（上次）.txt', '作者总表（上上次）.txt'] as const
@@ -48,27 +68,10 @@ const LEGACY_BACKUP_NAMES = ['影库备份.json', '影库备份（上次）.json
 /** 未建索引时扫描目录：跳过旧代后缀文件，只取当前文件。 */
 const LEGACY_MASTER_PATTERN = /（上(?:上)?次）\.txt$/u
 
-type SectionId = 'authors' | 'backups'
-
-interface GenerationFile {
-  section: SectionId
-  name: string
-  /** 是否带同名 .sha256（作者主表与完整备份） */
-  checksummed: boolean
+interface SnapshotWrite {
+  file: GenerationFile
+  content: Blob | string
 }
-
-const SECTION_NAMES: Record<SectionId, string> = {
-  authors: AUTHOR_SECTION,
-  backups: BACKUP_SECTION,
-}
-
-/** 「整代」包含的文件；报告/索引是派生只读展示，不做摘要。 */
-const GENERATION_FILES: readonly GenerationFile[] = [
-  { section: 'authors', name: MASTER_FILE_NAME, checksummed: true },
-  { section: 'authors', name: AUTHOR_REPORT_FILE_NAME, checksummed: false },
-  { section: 'authors', name: AUTHOR_INDEX_FILE_NAME, checksummed: false },
-  { section: 'backups', name: BACKUP_FILE_NAME, checksummed: true },
-]
 
 const listeners = new Set<() => void>()
 let root: Directory | null = null
@@ -128,29 +131,12 @@ export async function authorizeMaintenanceFolder(): Promise<Directory> {
   return selected
 }
 
-export function safeMaintenanceName(name: string): boolean {
-  return name.trim() !== '' && name !== '.' && name !== '..' && !/[\\/:\u0000-\u001f]/u.test(name)
-}
-
 /** 创建两代目录骨架与上传归档目录；重复调用幂等。 */
 async function ensureLayout(selected: FileSystemDirectoryHandle): Promise<void> {
   for (const generation of [CURRENT_GENERATION, PREVIOUS_GENERATION]) {
     for (const section of ['authors', 'backups'] as const) await generationDirectory(selected, generation, section, true)
   }
   await selected.getDirectoryHandle(ARCHIVE_SECTION, { create: true })
-}
-
-async function writeFile(directory: FileSystemDirectoryHandle, name: string, content: Blob | string): Promise<void> {
-  if (!safeMaintenanceName(name)) throw new Error('维护文件名不安全')
-  const file = await directory.getFileHandle(name, { create: true })
-  // createWritable 默认整文件替换（临时文件 + close 时原子换入），不在原文件上追加。
-  const writer = await file.createWritable()
-  try { await writer.write(content); await writer.close() }
-  catch (error) {
-    try { await writer.abort() }
-    catch (abortError) { throw new AggregateError([error, abortError], '维护文件写入及撤回均失败') }
-    throw error
-  }
 }
 
 /** Current backup and author documents come from the same consistent snapshot. */
@@ -162,7 +148,8 @@ export async function writeMaintenanceSnapshot(selected: Directory, blob: Blob, 
 }
 
 async function writeSnapshot(selected: Directory, blob: Blob, automatic: boolean): Promise<void> {
-  const snapshot = JSON.parse(await blob.text()) as LegacyBackupImport
+  const backupText = await blob.text()
+  const snapshot = JSON.parse(backupText) as LegacyBackupImport
   const master = snapshot.data.authorMasterTxt
   if (typeof master !== 'string') throw new Error('当前服务端未提供作者主表，请先更新服务端')
   const fragments = snapshot.data.txtFragments ?? []
@@ -174,7 +161,20 @@ async function writeSnapshot(selected: Directory, blob: Blob, automatic: boolean
     if (names.has(key)) throw new Error('作者片段文件名重复')
     names.add(key)
   }
+  // 写入内容只构造一次：摘要与正文必须来自同一份报告文本（报告含导出时间，重复生成会漂移）。
+  const reportText = maintenanceAuthorReport(snapshot)
+  const writes: SnapshotWrite[] = [
+    { file: { section: 'backups', name: BACKUP_FILE_NAME, checksummed: true }, content: blob },
+    { file: { section: 'authors', name: MASTER_FILE_NAME, checksummed: true }, content: new Blob([master]) },
+    { file: { section: 'authors', name: AUTHOR_REPORT_FILE_NAME, checksummed: false }, content: reportText },
+    { file: { section: 'authors', name: AUTHOR_INDEX_FILE_NAME, checksummed: false }, content: JSON.stringify([MASTER_FILE_NAME]) },
+  ]
+  const next = await digestsForWrites(writes)
   await ensureLayout(selected)
+  if (await recoverInterruptedSnapshot(selected, writes, automatic)) {
+    await writeFile(selected, README_FILE_NAME, MAINTENANCE_README)
+    return
+  }
   const currentAuthors = await generationDirectory(selected, CURRENT_GENERATION, 'authors', true)
   const currentBackups = await generationDirectory(selected, CURRENT_GENERATION, 'backups', true)
   const currentMaster = await existingFile(currentAuthors, MASTER_FILE_NAME)
@@ -183,12 +183,18 @@ async function writeSnapshot(selected: Directory, blob: Blob, automatic: boolean
   if (currentBackup && currentBackup.size > GENERATION_FILE_LIMIT_BYTES) throw new Error('原备份超过64MiB，请先移走保留')
   const hasCurrent = currentMaster !== null || currentBackup !== null
   const masterChanged = currentMaster === null ? true : (await currentMaster.text()) !== master
-  const backupChanged = currentBackup === null ? true : !sameBackupData(await currentBackup.text(), await blob.text())
-  if (hasCurrent && (masterChanged || backupChanged)) await rotateGeneration(selected)
-  await writeGenerationFile(currentBackups, BACKUP_FILE_NAME, blob, { checksummed: true, automatic })
-  await writeGenerationFile(currentAuthors, MASTER_FILE_NAME, new Blob([master]), { checksummed: true, automatic })
-  await writeFile(currentAuthors, AUTHOR_REPORT_FILE_NAME, maintenanceAuthorReport(snapshot))
-  await writeFile(currentAuthors, AUTHOR_INDEX_FILE_NAME, JSON.stringify([MASTER_FILE_NAME]))
+  const backupChanged = currentBackup === null ? true : !sameBackupData(await currentBackup.text(), backupText)
+  if (hasCurrent && (masterChanged || backupChanged)) {
+    // 先只读核对（当前代完整、上次目标可判定），再写状态文件、最后才动文件。
+    const plan = await prepareRotation(selected)
+    await writeRotationMarker(selected, rotationMarker(plan.old, next))
+    await applyRotation(plan)
+    await writeCurrentGeneration(selected, writes, { automatic })
+    await clearRotationMarker(selected)
+  } else {
+    // 相同数据只刷新当前代；allowRepair 用于修复此前刷新中断留下的过期摘要。
+    await writeCurrentGeneration(selected, writes, { automatic, allowRepair: true })
+  }
   await writeFile(selected, README_FILE_NAME, MAINTENANCE_README)
 }
 
@@ -203,91 +209,98 @@ function sameBackupData(previousText: string, nextText: string): boolean {
   }
 }
 
-/**
- * 把「当前」整代提交为「上次」：先只读核对全部文件（当前代摘要/上次目标可写性），
- * 全部通过后才开始复制，避免半代轮换。上次目标来历不明（缺摘要/摘要不符）时拒绝覆盖。
- */
-async function rotateGeneration(selected: FileSystemDirectoryHandle): Promise<void> {
-  const plan: Array<{ previous: FileSystemDirectoryHandle; name: string; body: File; checksummed: boolean }> = []
-  for (const file of GENERATION_FILES) {
-    const current = await optionalGenerationDirectory(selected, CURRENT_GENERATION, file.section)
-    if (!current) continue
-    const body = await verifiedGenerationFile(current, file.name, file.checksummed)
-    if (!body) continue
-    const previous = await generationDirectory(selected, PREVIOUS_GENERATION, file.section, true)
-    await assertPreviousOverwritable(previous, file.name, file.checksummed)
-    plan.push({ previous, name: file.name, body, checksummed: file.checksummed })
-  }
-  for (const item of plan) {
-    await writeFile(item.previous, item.name, item.body)
-    if (item.checksummed) await writeFile(item.previous, `${item.name}.sha256`, await sha256(item.body))
-  }
+function contentBlob(content: Blob | string): Blob {
+  return typeof content === 'string' ? new Blob([content]) : content
 }
 
-/** 当前代文件核对：有摘要必须相符；缺摘要/只有摘要都视为现场不完整，停止轮换。 */
-async function verifiedGenerationFile(folder: FileSystemDirectoryHandle, name: string, checksummed: boolean): Promise<File | null> {
-  const body = await existingFile(folder, name)
-  if (!body) {
-    if (checksummed && await existingFile(folder, `${name}.sha256`)) throw new Error(`当前代「${name}」只有摘要没有正文，已停止轮换并保留现场`)
-    return null
-  }
-  if (body.size > GENERATION_FILE_LIMIT_BYTES) throw new Error(`当前代「${name}」超过64MiB，已停止轮换`)
-  if (!checksummed) return body
-  const checksum = await existingFile(folder, `${name}.sha256`)
-  if (!checksum) throw new Error(`当前代「${name}」缺少同名摘要，无法确认内容；已停止轮换并保留现场`)
-  if (checksum.size > CHECKSUM_FILE_LIMIT_BYTES) throw new Error('摘要文件过大')
-  if ((await checksum.text()).trim() !== await sha256(body)) {
-    throw new Error(`当前代「${name}」摘要不符，文件可能已被外部替换或未写完；已停止轮换并保留现场`)
-  }
-  return body
-}
-
-/** 上次目标可写性：摘要不符/缺摘要/不可读时拒绝覆盖，绝不覆盖来历不明文件。 */
-async function assertPreviousOverwritable(folder: FileSystemDirectoryHandle, name: string, checksummed: boolean): Promise<void> {
-  const body = await existingFile(folder, name)
-  if (!body) {
-    if (checksummed && await existingFile(folder, `${name}.sha256`)) throw new Error(`上次代「${name}」只有摘要没有正文，已停止轮换并保留现场`)
-    return
-  }
-  if (body.size > GENERATION_FILE_LIMIT_BYTES) throw new Error(`上次代「${name}」超过64MiB，已停止轮换`)
-  if (!checksummed) return
-  const checksum = await existingFile(folder, `${name}.sha256`)
-  if (!checksum) throw new Error(`上次代「${name}」缺少同名摘要，无法确认来历；已停止轮换并保留现场，请核对或移走该文件`)
-  if (checksum.size > CHECKSUM_FILE_LIMIT_BYTES) throw new Error('摘要文件过大')
-  if ((await checksum.text()).trim() !== await sha256(body)) {
-    throw new Error(`上次代「${name}」摘要不符，拒绝覆盖并保留现场，请核对或移走该文件`)
-  }
-}
-
-/**
- * 写当前代文件：正文与摘要成对写入（每个文件独立原子替换）。
- * 已存在且摘要不符时，仅当正文恰好等于本次待写内容才按摘要过期修复；否则拒绝覆盖。
- */
-async function writeGenerationFile(
-  folder: FileSystemDirectoryHandle,
-  name: string,
-  blob: Blob,
-  options: { checksummed: boolean; automatic: boolean },
+async function writeCurrentGeneration(
+  selected: FileSystemDirectoryHandle,
+  writes: readonly SnapshotWrite[],
+  options: { automatic: boolean; allowRepair?: boolean; allowedDigests?: ReadonlySet<string> },
 ): Promise<void> {
-  if (blob.size > GENERATION_FILE_LIMIT_BYTES) throw new Error('文件超过64MiB，请先处理容量')
-  const existing = await existingFile(folder, name)
-  if (existing) {
-    if (existing.size > GENERATION_FILE_LIMIT_BYTES) throw new Error('原文件超过64MiB，请先移走保留')
-    if (options.checksummed) {
-      const checksum = await existingFile(folder, `${name}.sha256`)
-      if (!checksum) {
-        if (options.automatic) throw new Error(`当前代「${name}」缺少同名摘要，自动写回已暂停；请手动导出一次或核对文件`)
-      } else {
-        if (checksum.size > CHECKSUM_FILE_LIMIT_BYTES) throw new Error('摘要文件过大')
-        const actual = await sha256(existing)
-        if ((await checksum.text()).trim() !== actual && actual !== await sha256(blob)) {
-          throw new Error(`当前代「${name}」摘要不符，文件可能已被外部替换或未写完；已停止写入并保留现场`)
-        }
-      }
-    }
+  for (const write of writes) {
+    const folder = await generationDirectory(selected, CURRENT_GENERATION, write.file.section, true)
+    await writeGenerationFile(folder, write.file.name, contentBlob(write.content), {
+      checksummed: write.file.checksummed,
+      automatic: options.automatic,
+      allowRepair: options.allowRepair,
+      allowedDigests: options.allowedDigests,
+    })
   }
-  await writeFile(folder, name, blob)
-  if (options.checksummed) await writeFile(folder, `${name}.sha256`, await sha256(blob))
+}
+
+/**
+ * 中断恢复：存在轮换状态文件时，按两代现状决定续跑点。
+ * - 上次代已等于状态记录的旧当前代：轮换已完成，只需补齐摘要并按本次快照重写当前代；
+ *   若当前代还已等于本次目标（上次轮换和新当前都写完了，仅状态文件残留），清标记后
+ *   交回正常流程（内容不同会走正常轮换）。
+ * - 上次代未完成轮换：当前代必须仍是完整旧代 → 幂等补齐轮换，再写当前代。
+ * 任何不可判定的组合都拒绝写入并保留现场。
+ */
+async function recoverInterruptedSnapshot(
+  selected: FileSystemDirectoryHandle,
+  writes: readonly SnapshotWrite[],
+  automatic: boolean,
+): Promise<boolean> {
+  const marker = await readRotationMarker(selected)
+  if (!marker) return false
+  const allowedDigests = new Set([...Object.values(marker.old), ...Object.values(marker.next)])
+  if (await matchesGeneration(selected, PREVIOUS_GENERATION, marker.old)) {
+    // 上次代是安全的上一次已提交代：先把中断轮换可能漏写的摘要补回。
+    await repairGenerationChecksums(selected, PREVIOUS_GENERATION, marker.old)
+    if (await matchesGeneration(selected, CURRENT_GENERATION, marker.next)) {
+      await clearRotationMarker(selected)
+      return false
+    }
+    await writeCurrentGeneration(selected, writes, { automatic, allowedDigests })
+    await clearRotationMarker(selected)
+    return true
+  }
+  if (!await matchesGeneration(selected, CURRENT_GENERATION, marker.old)) {
+    throw new Error('检测到上次写入中断且「当前」「上次」都不是可判定的完整代，已停止写入并保留现场；请核对两代目录后重试')
+  }
+  const plan = await prepareRotation(selected)
+  await applyRotation(plan)
+  await writeCurrentGeneration(selected, writes, { automatic, allowedDigests })
+  await clearRotationMarker(selected)
+  return true
+}
+
+/** 列出旧三代布局残留文件（仅提示，绝不删除）；返回值形如「备份/影库备份（上次）.json」。 */
+export async function findLegacyGenerationFiles(selected: Directory): Promise<string[]> {
+  const found: string[] = []
+  const authors = await optionalDirectory(selected, AUTHOR_SECTION)
+  if (authors) for (const name of LEGACY_MASTER_NAMES) if (await existingFile(authors, name)) found.push(`${AUTHOR_SECTION}/${name}`)
+  const backups = await optionalDirectory(selected, BACKUP_SECTION)
+  if (backups) for (const name of LEGACY_BACKUP_NAMES) if (await existingFile(backups, name)) found.push(`${BACKUP_SECTION}/${name}`)
+  return found
+}
+
+/** Import protection writes the current backup generation (same rotation rules as manual export). */
+export async function writePreImportSnapshot(selected: Directory, blob: Blob): Promise<void> {
+  if (writing) throw new Error('维护目录正在更新，请稍后导入')
+  writing = true
+  try {
+    await ensureLayout(selected)
+    const backupText = await blob.text()
+    const current = await generationDirectory(selected, CURRENT_GENERATION, 'backups', true)
+    const previous = await generationDirectory(selected, PREVIOUS_GENERATION, 'backups', true)
+    const existing = await existingFile(current, BACKUP_FILE_NAME)
+    const existingSha = existing ? await sha256(existing) : null
+    const desiredSha = await sha256(blob)
+    const changed = existing !== null && existingSha !== desiredSha && !sameBackupData(await existing.text(), backupText)
+    if (!changed) {
+      // 首次写入/相同数据/中断后正文已是本次内容：只刷新当前代，摘要可安全修复。
+      await writeGenerationFile(current, BACKUP_FILE_NAME, blob, { checksummed: true, automatic: false, allowRepair: true })
+      return
+    }
+    const body = await readVerifiedGenerationFile(current, BACKUP_FILE_NAME, true)
+    if (!body) throw new Error('当前备份正文缺失，已停止写入并保留现场')
+    const bodySha = await sha256(body)
+    if (existingSha !== null && bodySha !== existingSha) throw new Error('当前备份读取结果不一致，已停止写入并保留现场')
+    await rotateFileToPrevious(previous, BACKUP_FILE_NAME, body, bodySha)
+    await writeGenerationFile(current, BACKUP_FILE_NAME, blob, { checksummed: true, automatic: false })
+  } finally { writing = false }
 }
 
 export async function readMaintenanceBackup(selected: Directory, generation: 0 | 1 | 2 = 0): Promise<File> {
@@ -317,38 +330,6 @@ async function readBackupFile(folder: FileSystemDirectoryHandle, name: string): 
     throw new Error('备份摘要不一致，文件可能未写完或已被替换，请重新导出或选择完整的外部备份')
   }
   return file
-}
-
-/** 列出旧三代布局残留文件（仅提示，绝不删除）；返回值形如「备份/影库备份（上次）.json」。 */
-export async function findLegacyGenerationFiles(selected: Directory): Promise<string[]> {
-  const found: string[] = []
-  const authors = await optionalDirectory(selected, AUTHOR_SECTION)
-  if (authors) for (const name of LEGACY_MASTER_NAMES) if (await existingFile(authors, name)) found.push(`${AUTHOR_SECTION}/${name}`)
-  const backups = await optionalDirectory(selected, BACKUP_SECTION)
-  if (backups) for (const name of LEGACY_BACKUP_NAMES) if (await existingFile(backups, name)) found.push(`${BACKUP_SECTION}/${name}`)
-  return found
-}
-
-/** Import protection writes the current backup generation (same rotation rules as manual export). */
-export async function writePreImportSnapshot(selected: Directory, blob: Blob): Promise<void> {
-  if (writing) throw new Error('维护目录正在更新，请稍后导入')
-  writing = true
-  try {
-    await ensureLayout(selected)
-    const current = await generationDirectory(selected, CURRENT_GENERATION, 'backups', true)
-    const previous = await generationDirectory(selected, PREVIOUS_GENERATION, 'backups', true)
-    const existing = await existingFile(current, BACKUP_FILE_NAME)
-    const changed = existing === null ? false : !sameBackupData(await existing.text(), await blob.text())
-    if (changed) {
-      const body = await verifiedGenerationFile(current, BACKUP_FILE_NAME, true)
-      await assertPreviousOverwritable(previous, BACKUP_FILE_NAME, true)
-      if (body) {
-        await writeFile(previous, BACKUP_FILE_NAME, body)
-        await writeFile(previous, `${BACKUP_FILE_NAME}.sha256`, await sha256(body))
-      }
-    }
-    await writeGenerationFile(current, BACKUP_FILE_NAME, blob, { checksummed: true, automatic: false })
-  } finally { writing = false }
 }
 
 export async function readMaintenanceTxt(selected: Directory): Promise<File[]> {
@@ -387,50 +368,6 @@ async function readUnindexedTxt(folder: FileSystemDirectoryHandle): Promise<File
     }
   }
   return files.sort((left, right) => left.name.localeCompare(right.name))
-}
-
-async function sha256(blob: Blob): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
-}
-
-function isNotFound(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'NotFoundError'
-}
-
-async function existingFile(folder: FileSystemDirectoryHandle, name: string): Promise<File | null> {
-  try { return await (await folder.getFileHandle(name)).getFile() }
-  catch (error) {
-    if (isNotFound(error)) return null
-    throw error
-  }
-}
-
-async function optionalDirectory(parent: FileSystemDirectoryHandle, name: string): Promise<FileSystemDirectoryHandle | null> {
-  try { return await parent.getDirectoryHandle(name) }
-  catch (error) {
-    if (isNotFound(error)) return null
-    throw error
-  }
-}
-
-async function generationDirectory(
-  parent: FileSystemDirectoryHandle,
-  generation: string,
-  section: SectionId,
-  create = false,
-): Promise<FileSystemDirectoryHandle> {
-  const generationHandle = await parent.getDirectoryHandle(generation, { create })
-  return generationHandle.getDirectoryHandle(SECTION_NAMES[section], { create })
-}
-
-async function optionalGenerationDirectory(
-  parent: FileSystemDirectoryHandle,
-  generation: string,
-  section: SectionId,
-): Promise<FileSystemDirectoryHandle | null> {
-  const generationHandle = await optionalDirectory(parent, generation)
-  return generationHandle ? optionalDirectory(generationHandle, SECTION_NAMES[section]) : null
 }
 
 export function maintenanceAuthorReport(snapshot: LegacyBackupImport): string {
@@ -487,6 +424,7 @@ const MAINTENANCE_README = `# 影库资料维护
 
 - 内容变化时先把「当前」整代提交为「上次」，再写新的「当前」；数据没变只刷新当前，不挤掉上次。
 - 每代各自带同名 .sha256 摘要；摘要不符或文件不可读时停止写入并保留现场，请先核对文件再更新。
+- 写入中断（浏览器关闭、磁盘写入失败等）后，下次更新会按根目录的「.两代轮换状态.json」续跑；该文件正常完成后自动删除，请勿手动修改。
 - 旧三代布局留下的 作者总表（上次）/（上上次）、影库备份（上次）/（上上次）等文件不会自动删除；确认不再需要后可按目录说明手动清理。
 - 作者资料.md是当前阅读版，作者片段索引.json供程序定位主表。原始TXT保存在完整备份内部，目录不额外堆积片段。
 - 自动保存发现备份被外部替换会暂停，请先在界面导入待恢复文件，再更新备份。
