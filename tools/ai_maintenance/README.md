@@ -1,29 +1,51 @@
-# AI 维护规则包与只读查询 CLI（P1）
+# 绮梦影库 AI 工具平台（R3：查询、计划与受控写入）
 
-> 本目录是外部 AI 维护的 P1 切片：规则包 + 只读查询与研究核验 CLI。**没有任何写入命令**；作者档案保存、删除/改名/改挂/合并、v2 导入、手机结果包与 MCP 适配器均标记为 planned。
+> 本目录是外部 AI 的**独立工具核心**：规则包 + 显式工具注册表 + 统一 CLI + 计划与
+> 受控写入 + stdio MCP 适配器。仅用 Python 3.13 标准库，不安装第三方依赖。
 >
-> 协议以 [api/openapi.yaml](../../api/openapi.yaml) 为准；领域规则以 [任务书](../../docs/AI_MAINTENANCE_TASKBOOK.md) 第 4–6 节和 [ADR-0052](../../docs/adr/0052-外部AI维护需求修订.md) 为准；作者字段用法见 [docs/api/authors.md](../../docs/api/authors.md)。
+> 协议以 [api/openapi.yaml](../../api/openapi.yaml) 为准；现行执行清单见
+> [统一任务书 V2](../../docs/AI_PLATFORM_TASKBOOK.md)，架构决策见
+> [ADR-0056](../../docs/adr/0056-独立AI接入平台架构.md)。旧
+> [任务书](../../docs/AI_MAINTENANCE_TASKBOOK.md)只作历史需求与设计来源。
 
 ## 文件
 
 | 文件 | 作用 |
 | --- | --- |
-| `rules.json` | 唯一手写领域规则源；字段名与 OpenAPI/任务书一致。 |
-| `rulepack.py` | 读取规则源与 OpenAPI，生成稳定规则包；含路径提取、指纹、端点核对与中文指南渲染。 |
-| `cli.py` | `argparse` + `urllib.request` 的只读命令行；无第三方依赖。 |
-| [test_ai_maintenance.py](../test_ai_maintenance.py) | unittest；仅使用临时目录与回环 HTTP stub。 |
+| `rules.json` | 唯一手写领域规则源：版本、工具开关、能力声明、作者/清理/组图命名/备份规则、错误码、工作流。 |
+| `versions.py` | platformVersion / toolContractVersion / planVersion 常量。 |
+| `openapi.py` | OpenAPI **分块解析**（path → method → requestBody/parameters → schema required/properties）与按工具的能力核对；不引入 YAML 依赖。 |
+| `registry.py` | 显式工具注册表：ID/版本/描述/输入输出 Schema/权限/只读/副作用/确认/超时/错误码/能力依赖/实现状态。 |
+| `execution.py` | 统一 dispatch：禁用策略、Schema 校验、能力核对、确认门禁、错误分类。CLI 与 MCP 共用。 |
+| `plans.py` | 计划结构、稳定指纹、幂等键与版本绑定校验。 |
+| `client.py` | 唯一 HTTP 客户端：origin 校验、禁代理/重定向、超时、响应上限、token 脱敏。 |
+| `validation.py` | 作者档案/URL/名称/跨字段约束的机器可读校验。 |
+| `tools_query.py` | 只读查询与研究工具实现。 |
+| `tools_author.py` | 作者档案 prepare/update、清理 prepare/apply、原子合并。 |
+| `tools_asset.py` | 资产作者关联 prepare/apply。 |
+| `tools_media.py` | media.organize.prepare/apply 适配层；命名算法唯一实现在 `media_naming.py`（缺失时工具为 planned）。 |
+| `profile_import.py` | 作者公开档案受控填充的**唯一写入实现**；旧脚本 `../import_creator_profiles.py` 只转发。 |
+| `rulepack.py` | 生成规则包（分离版本 + 工具状态 + 能力核对），稳定可比较。 |
+| `cli.py` | 统一入口：兼容旧只读子命令 + `version`/`tools`/`tool call`。 |
+| `mcp_server.py` | stdio MCP 适配器（JSON-RPC 2.0 最小子集），与 CLI 共用注册表与 dispatch。 |
+| [test_ai_maintenance.py](../test_ai_maintenance.py) | 规则包/旧 CLI 合同回归（合成数据、127.0.0.1 stub）。 |
+| [test_ai_toolkit.py](../test_ai_toolkit.py) | 分块解析、能力降级、注册表/禁用、计划指纹、作者/清理/合并/资产流程。 |
+| [test_ai_mcp.py](../test_ai_mcp.py) | 两个独立合成 MCP 客户端的协议、超时、取消与脱敏回归。 |
 
-生成的规则包默认输出到 stdout；使用 `--out` 时写入文件。生成物不提交，本目录的 `.gitignore` 已忽略 `rulepack.json`；建议写到被忽略的 `build/ai-maintenance/`。
+生成物默认输出到 stdout；`--out` 写入文件。本目录 `.gitignore` 已忽略 `rulepack.json`；
+建议写到被忽略的 `build/ai-maintenance/`。
 
 ## 安装与运行
 
-只需要 Python 3.13 标准库，不需要 `pip install`。在仓库根执行：
+只需要 Python 3.13 标准库。在仓库根执行：
 
 ```powershell
+python -X utf8 tools/ai_maintenance/cli.py version
 python -X utf8 tools/ai_maintenance/cli.py context --markdown
+python -X utf8 tools/ai_maintenance/cli.py tools list
 ```
 
-`context` 是纯本地命令，不联网，也不要求 token；其余命令通过正式 API 只读查询。
+`context`/`version`/`tools list`/`tools show` 纯本地：不联网、不需要 token。
 
 ## 配置
 
@@ -31,202 +53,190 @@ python -X utf8 tools/ai_maintenance/cli.py context --markdown
 
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
-| `QIMENG_API_BASE` | 网络命令必填 | 形如 `http://127.0.0.1:8420` 的 origin；不能带子路径、查询、片段或用户信息。`http` 只允许回环/私有地址，远程用 `https` 或既有隧道。 |
-| `QIMENG_API_TOKEN` | 网络命令必填 | 管理员 Bearer token；只从环境读取，CLI 不打印、不写日志、不写入规则包。 |
-
-PowerShell 当前会话示例（占位符不是真实凭据）：
+| `QIMENG_API_BASE` | 网络工具必填 | `http://127.0.0.1:8420` 形式的 origin；不能带子路径、查询、片段或用户信息。`http` 只允许回环/私有地址，远程用 `https` 或既有隧道。 |
+| `QIMENG_API_TOKEN` | 网络工具必填 | 管理员 Bearer token；只从环境读取，不打印、不写日志、不写入规则包/结果。 |
+| `QIMENG_AI_DISABLED_TOOLS` | 可选 | 逗号分隔的工具 ID，单独禁用工具。 |
+| `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求前拒绝全部有副作用工具。 |
+| `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
+| `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
 
 ```powershell
 $env:QIMENG_API_BASE = "http://127.0.0.1:8420"
 $env:QIMENG_API_TOKEN = "<admin-token>"
 ```
 
-bash 示例：
+真实值不要写进仓库、任务记录、结果包或外部模型上下文。缺配置时退出码为 2，
+错误只列变量名，不回显值。
 
-```bash
-export QIMENG_API_BASE="http://127.0.0.1:8420"
-export QIMENG_API_TOKEN="<admin-token>"
-```
+## 版本与兼容
 
-真实值不要写进仓库、任务记录、结果包或外部模型上下文；需要本机持久配置时放被忽略的 `*.local` 文件或启动脚本。缺少任一变量时 CLI 退出码为 2，错误只列变量名，不回显值。
-
-## 只读命令
-
-### context
-
-```powershell
-python -X utf8 tools/ai_maintenance/cli.py context
-python -X utf8 tools/ai_maintenance/cli.py context --markdown
-python -X utf8 tools/ai_maintenance/cli.py context --out build/ai-maintenance/rulepack.json
-```
-
-- 默认输出规则包 JSON（含 `guide` 中文摘要），可被机器解析。
-- `--markdown` 输出简明中文指南；与 `--out` 可同时使用（文件总是 JSON）。
-- `--openapi`、`--rules` 只用于排障/验证其他 checkout，普通使用不需要。
-
-### health / libraries
-
-```powershell
-python -X utf8 tools/ai_maintenance/cli.py health
-python -X utf8 tools/ai_maintenance/cli.py health --ready
-python -X utf8 tools/ai_maintenance/cli.py libraries
-```
-
-`health` 默认 `GET /api/v1/healthz`，`--ready` 使用 `GET /api/v1/readyz`。即使探针免鉴权，CLI 也按统一配置发送 Bearer 头；这不改变服务端的公开探针语义。
-
-### assets
-
-```powershell
-python -X utf8 tools/ai_maintenance/cli.py assets --limit 20 --q "合成关键词"
-python -X utf8 tools/ai_maintenance/cli.py assets --page 2 --size 20 --q "合成关键词"
-python -X utf8 tools/ai_maintenance/cli.py assets --cursor "<nextCursor>" --limit 20
-python -X utf8 tools/ai_maintenance/cli.py assets --size 20 --library-id "<libraryId>" --media-type image
-```
-
-当前 OpenAPI 的资产列表是 **cursor + limit**，没有 `page` 参数。CLI 接受现有参数的最小子集：`--limit`（别名 `--size`，1..200）、`--cursor`、`--q`、`--library-id`、`--media-type`、`--sort`、`--order`。
-
-`--page` 是本 CLI 的便利选项：按响应里的 `nextCursor` 顺序取第 N 页，最多 50 页；它**不会**向服务端发送 `page` 参数。`--page` 与 `--cursor` 不能同时使用；直接翻页（或超过 50 页）请使用 `--cursor`。
-
-### authors
-
-```powershell
-python -X utf8 tools/ai_maintenance/cli.py authors
-python -X utf8 tools/ai_maintenance/cli.py authors --page 1 --size 50
-```
-
-`GET /api/v1/authors` 当前返回全量数组，OpenAPI 没有分页参数；`--page`/`--size` 只在本地对结果切片（`--page` 从 1 开始，`--size` 上限 1000；只给 `--page` 时默认 50），不会改变服务端请求。
-
-### author-profile / author-sources
-
-```powershell
-python -X utf8 tools/ai_maintenance/cli.py author-profile --author-id "<authorId>"
-python -X utf8 tools/ai_maintenance/cli.py author-sources "<authorId>"
-```
-
-两者都只是 `GET`：档案返回 revision/字段/候选，来源返回来源词列表；不包含 PUT。
-
-### research context / provider / lens
-
-研究核验同样只读，全部走同一组环境变量；研究默认关闭（`research.enabled=false`），Lens 依赖**另行部署**的本机 loopback sidecar。研究命令默认输出人读摘要，加全局 `--json`（放在子命令前后都可）输出原始 JSON。
-
-```powershell
-python -X utf8 tools/ai_maintenance/cli.py research context
-python -X utf8 tools/ai_maintenance/cli.py research provider --provider fxtwitter --operation author --target "@synthetic" --limit 5
-python -X utf8 tools/ai_maintenance/cli.py research provider --provider bing --operation search --target "合成关键词" --json
-python -X utf8 tools/ai_maintenance/cli.py research lens --file "<本地图片>.png"
-```
-
-- `research context`：`GET /api/v1/research/context`，打印 `enabled`、sidecar 的 configured/available/pending、provider 矩阵（operation 与限额）和 Lens 限额；研究关闭时仍可读。
-- `research provider`：`POST /api/v1/research/providers/{provider}/query`，请求体为 `{operation,target,options.limit}`。CLI **不硬编码矩阵**：未知 provider、矩阵外组合或非法参数由服务端返回 400 `INVALID_PARAM`（退出码 1），也不自动换 provider；200 响应打印 `status`、`items` 数量与 `error`。
-- `research lens`：`POST /api/v1/research/lens` 的 `multipart/form-data`（字段 `file`）。本地只预检扩展名（`.jpg/.jpeg/.png/.webp`）与 20MiB 上限，随后原样转发字节；真实类型由服务端按魔数嗅探。摘要只打印 `status`、`frameSha256`、`topTitles` 与 `links` 数量，**不打印图片内容**；`links` 为空是常态，不代表识别失败。单帧 17–40s，Lens 请求的 CLI 超时为 150 秒（其他命令仍 20 秒）。
-
-常见研究错误码（统一按 HTTP 非 2xx 处理：stderr `{status,error:"http_error",body}`，退出码 1）：
-
-- 503 `RESEARCH_DISABLED`：研究未启用；先设服务端 `research.enabled=true`。
-- 503 `RESEARCH_SIDECAR_DISABLED` / 503 `RESEARCH_SIDECAR_UNAVAILABLE` / 504 `RESEARCH_SIDECAR_TIMEOUT` / 502 `RESEARCH_SIDECAR_ERROR`：sidecar 未配置/不可达/超时/响应异常；部署并检查 sidecar，不要靠重试修复。
-- 429 `RATE_LIMITED`：Lens 预算耗尽或 sidecar 忙；等下一个窗口，不要并发重试。
-- 413 `TOO_LARGE` / 400 `INVALID_PARAM`：本地预检通常已先拦截；绕过或参数非法时按 message 修正。
-
-研究结果不入库，证据只落盘在服务端 `research-evidence` 目录；`status=ok` 或 Lens 的 `topTitles` 都不能直接写成作者 `verified`。
-
-### 输出与退出码
-
-- 成功：上游 JSON（或 `null`）输出到 stdout；research 命令默认输出人读摘要，`--json` 输出原始 JSON；退出码 0。
-- HTTP 非 2xx：stderr 输出 `{status,error:"http_error",body,target}`；退出码 1。
-- 超时/网络错误：stderr 输出 `{error:"timeout"|"network_error",target}`；退出码 1。
-- 响应非 JSON/过大：stderr 输出固定错误类别；退出码 1。
-- 配置缺失/非法、参数约束、规则包生成失败：退出码 2。
-- `target` 只显示 host:port；任何输出都不含 token。CLI 禁用环境代理与重定向，单请求超时 20 秒（Lens 150 秒）、响应上限 2 MiB。
-
-## 规则包与指纹
-
-`rulepack.py` 生成 JSON 对象，必需键：
-
-`schemaVersion`、`rulesVersion`、`openapiSha256`、`paths`、`capabilities`、`fields`、`authorActions`、`tags`、`backup`、`errors`、`workflows`、`permissions`；另含 `guide` 中文摘要。
-
-- `openapiSha256`：`api/openapi.yaml` **原始字节**的 SHA-256；不用格式化后的文本。
-- `paths`：用简单行解析提取的当前 `/api/v1` 路径，排序去重；不依赖 YAML 库。
-- 不写 `generatedAt`：同一 OpenAPI 字节与同一 `rules.json` 生成结果稳定，指纹不会因生成时刻漂移。
-- `capabilities.read` 是本切片实际支持状态；`capabilities.write` 全部为 `planned`。
-- 端点若不在当前 OpenAPI 中，规则包会把 `supported/available` 降级为 `planned`，并置 `endpointPresent=false`；不编造不存在的端点。
-- 当前 OpenAPI 若已包含 `POST /api/v1/authors/merge`（本批次并发加入），规则包会把 `authorActions.merge.apiStatus` 标为 `available`，但 `authorActions.merge.status` 和 `capabilities.write.author.merge.status` 仍为 `planned`：本 CLI 不执行合并。若目标 checkout 尚未包含该端点，会自动回到 `planned`。
-- OpenAPI 或规则源变化后，重新运行 `context`；不要手工编辑 `api/openapi.yaml` 或生成物。
-
-运行 `context` 会输出实际 `rulesVersion`、`openapiSha256` 与路径数；不要把某一时点的哈希写死到部署脚本或任务记录，执行前重新读取。当前本切片规则版本为 `2026-11-06.3`。
-
-## AI 客户端接入模板
-
-### 给模型的系统提示（占位符）
-
-```text
-你是绮梦影库的维护助手。开始前先调用 project.context 读取规则包与 openapiSha256。
-只使用规则包 capabilities.read 中声明 supported 的只读工具；写入能力均为 planned，
-不得声称已执行写入，也不得编造端点、字段或执行结果。
-先查现状、保留人工字段；发现 409 时重读并说明冲突，不盲目覆盖。
-不写标签、不直连数据库，不把 token、真实媒体或个人信息放进输出。
-```
-
-### 工具映射
-
-| 目标工具名 | 本切片实现 | 客户端命令 |
+| 版本 | 含义 | 变化时的影响 |
 | --- | --- | --- |
-| `project.context` | 支持（本地） | `python -X utf8 tools/ai_maintenance/cli.py context` |
-| `health.check` | 支持 | `... health` |
-| `library.query` | 支持 | `... libraries` |
-| `asset.query` | 支持（有界 cursor/limit） | `... assets --limit 20 [--q ...]` |
-| `author.query` | 支持 | `... authors [--page ... --size ...]` |
-| `author.profile.read` | 支持 | `... author-profile --author-id <authorId>` |
-| `author.sources.read` | 支持 | `... author-sources <authorId>` |
-| `research.context` | 支持 | `... research context [--json]` |
-| `research.provider.query` | 支持（服务端开关） | `... research provider --provider <name> --operation <op> --target <值>` |
-| `research.lens` | 支持（需本机 sidecar） | `... research lens --file <本地图片>` |
-| `author.cleanup.prepare` | planned | 暂无；不要用本地脚本猜测影响数量 |
-| `author.profile.update` | planned | 暂无写入命令 |
-| `author.cleanup.apply` | planned | 暂无写入命令 |
-| `device.apply.prepare/submit/status` | planned | 暂无；手机侧协议未实现 |
-| `mcp.adapter` | planned | 见下方占位说明 |
+| `platformVersion` | 工具包发行版本 | 新增/修复工具；不单独使计划失效。 |
+| `toolContractVersion` | 工具 ID/Schema/错误语义契约 | 变化后旧计划被拒绝（`PLAN_VERSION_MISMATCH`）。 |
+| `rulepackVersion` | `rules.json` 规则版本 | 规则变化后旧计划需重新 prepare。 |
+| `openapiSha256` | OpenAPI 原始字节指纹 | 仅来源/构建追踪；**不单独决定工具失效**。 |
 
-工具适配层只做参数校验、调用和结果透传，不复制 `rules.json` 中的领域规则；模型输出先经计划/校验器，再交给正式 API。
+每个工具按自己声明的「端点 + 方法 + 请求 schema/必需字段 + 参数」独立核对：
+supported / unavailable / incompatible / planned。OpenAPI 中「路径存在」不等于
+工具可用；无关 API 字段变化不会让全部工具失效。
 
-### 云端模型代理运行器
+## CLI
 
-- 模型 API key 只由代理运行器持有；工具进程只拿到 `QIMENG_API_BASE` 与 `QIMENG_API_TOKEN`，不把模型 key 传给工具。
-- 运行器负责持久化任务 ID、计划指纹与逐项结果；这些记录放被忽略的本地目录，不写仓库。
-- 工具输出中的真实作者名、媒体名、路径与证据链接属于用户数据；导出给外部模型前按任务范围脱敏，至少去掉 token、内网地址和本机绝对路径。
-- 客户端暂时不能连接工具时，可先运行 `context --markdown` 并导出所选只读命令的 JSON，交给可信执行器复核；不要手工编造执行结果。
+### 兼容的只读子命令（参数/JSON/退出码保持旧契约）
 
-### 未来 MCP 适配占位（未实现）
+```powershell
+python -X utf8 tools/ai_maintenance/cli.py health [--ready]
+python -X utf8 tools/ai_maintenance/cli.py libraries
+python -X utf8 tools/ai_maintenance/cli.py assets [--page N | --cursor C] [--limit N] [--q TEXT]
+python -X utf8 tools/ai_maintenance/cli.py authors [--page N] [--size N]
+python -X utf8 tools/ai_maintenance/cli.py author-profile --author-id <authorId>
+python -X utf8 tools/ai_maintenance/cli.py author-sources --author-id <authorId>
+python -X utf8 tools/ai_maintenance/cli.py research context|provider|lens ...
+```
 
-计划中的 MCP 适配器只把上述工具映射到本 CLI 的 stdio 调用，不重新实现领域规则，也不新增写入通道。建议：
+`assets` 的 `--page` 只是按 `nextCursor` 顺序取页，不向服务端发送 `page` 参数；
+`authors` 的 `--page/--size` 是客户端切片。research 默认人读摘要，全局 `--json`
+（子命令前后都可）输出原始 JSON。
 
-1. MCP 服务进程继承 `QIMENG_API_BASE`/`QIMENG_API_TOKEN` 环境变量，不把 token 放进工具参数或日志。
-2. `project.context` 返回 `context` 的 JSON；查询工具返回对应子命令的 JSON；错误保留退出码/错误类别。
-3. 写入工具在 P2 前不注册；即使未来注册，也必须先有计划、指纹、确认和回读。
-4. 远程接入遵守现有隧道策略，不新增监听面。
+### 通用机器可读入口
 
-当前仓库**没有** `mcp_server.py`；不要按不存在的文件配置客户端。本节只是接口边界说明。
+```powershell
+python -X utf8 tools/ai_maintenance/cli.py version
+python -X utf8 tools/ai_maintenance/cli.py tools list --json
+python -X utf8 tools/ai_maintenance/cli.py tools show author.profile.update
+python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.read --input-json '{"authorId": "<authorId>"}'
+python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.prepare --input-file plan-input.json
+```
 
-## 本切片明确未实现（planned）
+`tool call` 成功输出 `{"tool","toolVersion","status":"ok","result":...}`；写入工具
+的结果含 `planFingerprint`/`idempotencyKey`/`steps`/`readback`。`--input-json -`
+或 `--input-file -` 从 stdin 读取。
 
-- 任何写入：作者档案 PUT、删除、改名、改挂、合并、TXT 导入/重建、标签写入。
-- 作者清理 `prepare/apply`、备份导出/导入、手机结果包与后台 worker、两代分代目录。
-- 研究结论写回、证据目录管理、sidecar 安装/托管；Lens 必须另行部署本机 sidecar，研究开关由服务端配置决定。
-- 标签查询命令（标签只读且本轮不提供 CLI）、MCP server、Web 任务中心、持久任务队列。
-- 不写入标签；标签保持现行明文存储、FTS5、唯一约束与关联语义。
+### 退出码
+
+| 退出码 | 含义 |
+| --- | --- |
+| 0 | 成功；apply 结果 `status=applied/already_applied`。 |
+| 1 | 远程失败/HTTP 非 2xx、冲突、前置条件变化、回读不一致、apply 返回 partial/failed。 |
+| 2 | 用法/参数/Schema/配置/能力不可用/未确认/未知或禁用工具/planned 工具。 |
+
+错误输出结构化 JSON（`error` 稳定 code、`category`、`recovery`）；HTTP 错误为
+`{status,error:"http_error",body,target}`，`target` 只有 host:port，任何输出不含 token。
+
+## 工具目录
+
+工具完整声明（Schema/权限/超时/错误码/能力核对明细）以 `tools list --json` 为准；
+这里是用途摘要。
+
+| 工具 | 状态 | 说明 |
+| --- | --- | --- |
+| `project.context` | supported | 规则包/版本/工具状态（纯本地）。 |
+| `health.check` | supported | healthz/readyz。 |
+| `library.query` / `asset.query` / `author.query` | supported | 有界分页查询。 |
+| `author.profile.read` / `author.sources.read` | supported | 读档案/来源区。 |
+| `maintenance.inventory` / `maintenance.status` | supported | 只读清点与任务账本查询（不领取/不执行）。 |
+| `research.context` / `research.provider.query` / `research.lens` | supported | 研究网关（服务端默认关闭，Lens 需本机 sidecar）。 |
+| `author.profile.prepare` | supported | 只读生成档案计划（revision、人工字段保护、影响预览）。 |
+| `author.profile.update` | supported（需确认） | 按计划完整 PUT + revision 并回读；409 不覆盖。 |
+| `author.cleanup.prepare` | supported | 只读候选/显式动作清点与计划指纹；零关联不能单条件删除。 |
+| `author.cleanup.apply` | supported（需确认） | 删除/改名/原子合并，逐项回读；失败保留已执行步骤。 |
+| `author.merge` | supported（需确认） | confirm=false 出计划；confirm=true 校验指纹后 POST /authors/merge。 |
+| `asset.authors.prepare` / `asset.authors.apply` | supported（apply 需确认） | 资产作者关联替换；校验库 `capabilities.authorAttach`。 |
+| `media.organize.prepare` / `media.organize.apply` | supported（apply 需确认） | 组图命名规划/校验/执行/回读；算法唯一实现 `media_naming.py`（随本发行物提供），prepare 只读计划、apply 校验计划指纹+前置文件名指纹+并发锁并逐步 move 后回读，服务端自动改名判失败。 |
+| `backup.export` | planned | 大响应/落盘摘要/预算未实现，不假装执行。 |
+| `device.apply.prepare/submit/status` | planned | 服务端结果包 API 已有，Android Worker/配对未实现。 |
+
+## 计划与受控写入
+
+固定流程：**查询现状 → 生成计划 → 校验前置 revision/版本/授权 → 确认 →
+正式 API 执行 → 回读 → 结构化报告**。
+
+```powershell
+# 1) prepare：只读生成计划（含 fingerprint/idempotencyKey/影响/前置摘要）
+python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.prepare \
+  --input-json '{"authorId":"<id>","changes":{"homepageUrl":"https://example.com/a","status":"candidate"}}'
+
+# 2) 人工核对 plan（protectedFields、changes、impact、expectedReadback）
+
+# 3) update：把上一步返回的 plan 原样放进 apply 输入，并 confirm=true
+python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --input-file apply-input.json
+```
+
+- 计划不含生成时刻，相同现状与输入生成相同指纹；apply 重新计算并比对指纹与版本，
+  伪造/过期计划直接拒绝（`PLAN_FINGERPRINT_MISMATCH`/`PLAN_VERSION_MISMATCH`）。
+- 人工已填字段默认列入 `protectedFields` 不写入；确实要覆盖时显式
+  `allowProtectedOverwrite=true`。服务端无法区分「人工清空」与「从未填写」，
+  空值补填需证据判断。
+- apply 先重新读取现状（profile revision、作者快照、资产作者集合、目录文件名摘要），
+  变化即 `CONFLICT`/`PRECONDITION_FAILED`，不静默覆盖、不盲目重试。
+- 删除/合并不可撤销；执行前导出 v2 备份，失败时保留已执行步骤与回读结果。
+
+## 安全边界
+
+- 只读工具绝不写；写工具全部走正式 `/api/v1`，禁止直连 SQLite/TXT、绕过领域服务
+  或客户端拼事务。
+- token 只来自 `QIMENG_API_TOKEN`；CLI/MCP 参数中不允许出现 token，输出/错误/日志
+  不回显 token（上游错误体也按 token 兜底脱敏）。
+- 未确认计划不得执行；`QIMENG_AI_READONLY=1` 或 `rules.json` `toolConfig.readOnlyMode`
+  可在本地一刀关闭全部副作用工具。
+- 8420 真库禁止测试写入；测试只用临时目录、合成数据与 127.0.0.1 stub。
+- 本机沙箱若限制系统临时目录/目录权限，测试临时目录放在被忽略的
+  `build/ai-maintenance/test-temp/`。
+
+## MCP stdio 适配器
+
+`mcp_server.py` 以 JSON-RPC 2.0 over stdio 暴露同一注册表：
+
+- 方法：`initialize`、`notifications/initialized`、`ping`、`tools/list`、
+  `tools/call`、`notifications/cancelled`（尽力取消）；未知方法 `-32601`，
+  未知工具/非法参数 `-32602`，超时 `-32001`，取消 `-32800`。
+- `tools/list` 的 `name/description/inputSchema` 与 CLI/注册表完全一致；
+  `tools/call` 返回 `content[0].text`（结构化 JSON 文本）+ `structuredContent` +
+  `isError`，业务失败（如未确认/planned/工具错误）以 `isError=true` 返回，
+  协议错误以 JSON-RPC error 返回。
+- 不注册任意 shell/Python/文件执行工具；不新增写入通道；写工具仍走计划/确认/
+  执行/回读。
+- token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
+
+### MCP 客户端配置示例（占位符，不含真实 token）
+
+```json
+{
+  "mcpServers": {
+    "qimeng-ai": {
+      "command": "python",
+      "args": ["-X", "utf8", "tools/ai_maintenance/mcp_server.py"],
+      "env": {
+        "QIMENG_API_BASE": "http://127.0.0.1:8420",
+        "QIMENG_API_TOKEN": "<admin-token>"
+      }
+    }
+  }
+}
+```
+
+**验证状态**：已在协议层用两个独立合成客户端（完整 stdio 帧序列 / 直接逐条
+JSON-RPC）验证 initialize、tools/list、tools/call、ping、错误、超时、取消与脱敏；
+Codex/Claude 等真实 AI 客户端接入尚未实测。远程接入遵守既有隧道策略，不新增监听面。
 
 ## 测试与门禁
 
 ```powershell
-python -m unittest discover -s tools -p 'test_ai_maintenance.py'
+python -m unittest discover -s tools -p 'test_ai_*.py'
+python -m unittest discover -s tools -p 'test_import_creator_profiles.py'
 python -X utf8 tools/check_docs.py
-python -X utf8 tools/check_privacy.py --mode worktree
 ```
 
-测试只使用临时目录和 `127.0.0.1` 随机端口的 `http.server` stub，合成作者/URL/token/图片；不请求真实 8420、不访问外网、不读写真实库。规则包测试覆盖必需键、指纹正确性、同字节稳定性、OpenAPI 变化导致指纹变化、未知端点降级与研究 cli 映射；CLI 测试覆盖 context、缺配置退出码 2、health/libraries 的 URL 与 Authorization、assets 参数与 --page 跟随 cursor（不发送 page）、authors 本地分页、HTTP 错误 body、超时/网络分类、重定向拒绝与未知参数拒绝；研究命令另测 context/provider/lens 的成功摘要与 --json、POST 路径与 Bearer、JSON 请求体、服务端 400/503 透传、token 脱敏、multipart 字段/文件名与本地文件预检（扩展名、空文件、20MiB 上限、缺失文件）。
+测试覆盖：分块解析行为（含描述块标量跳过）、合成 OpenAPI 变更只让相关工具降级、
+版本/指纹稳定、工具列举/禁用/只读模式、输入 Schema 非法、计划指纹与版本校验、
+人工字段保护、409 传播、清理多信号候选、原子合并指纹确认、资产作者关联、旧 CLI
+合同、旧脚本转发统一实现、MCP 两客户端协议与脱敏。全部使用合成数据与回环 stub。
 
-## 与权威文档的关系
+## 本切片明确未实现（planned）
 
-- 协议字段/路径：以 [OpenAPI](../../api/openapi.yaml) 为准；规则包只读取，不修改。
-- 字段上限/核验规则：以 [任务书](../../docs/AI_MAINTENANCE_TASKBOOK.md) 第 5.1 节和 [作者 API 说明](../../docs/api/authors.md) 为准；`rules.json` 是其机器可读摘要。
-- 权限、凭据与跨端边界：以 [任务书](../../docs/AI_MAINTENANCE_TASKBOOK.md) 第 6 节、[ADR-0052](../../docs/adr/0052-外部AI维护需求修订.md) 和[安全专题](../../docs/SECURITY.md)为准。
-- 规则包随发行物自包含交付；本页只解释用法与排障，不替代协议正文。
+- `backup.export`：大响应、落盘摘要与预算流程未实现。
+- `device.apply.*`：服务端结果包 API 已存在，Android Worker/配对/真机后台同步未实现。
+- `media.organize.*` 已随本发行物提供 `media_naming.py` 命名引擎（组图作品编号/页码、
+  计划指纹、并发锁、回读判定）；工具核心不复制第二套命名算法。
+- 标签写入、任意 SQL/文件/shell 执行、通用插件市场、远程 HTTP AI API。

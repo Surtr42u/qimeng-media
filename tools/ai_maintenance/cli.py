@@ -1,250 +1,52 @@
-"""绮梦影库 AI 维护只读查询 CLI（标准库实现）。
+"""绮梦影库 AI 工具平台统一 CLI（标准库实现）。
 
-只读命令：context/health/libraries/assets/authors/author-profile/author-sources，
-以及研究核验 research context/provider/lens；不实现任何写入。
-QIMENG_API_TOKEN 只从环境变量读取，不打印、不落盘。
+两层入口共用同一注册表与 dispatch（ADR-0056 §2/§7）：
+- 兼容层：既有只读子命令（context/health/libraries/assets/authors/
+  author-profile/author-sources/research）保持原有参数、JSON 输出与退出码；
+  内部改为通过 execution.execute_tool 调用注册表工具（skip_capability，保持旧行为）；
+- 通用层：version、tools list [--json]、tools show <id>、
+  tool call <id> --input-json|--input-file；与未来 MCP 适配器共用注册表。
+
+token 只从 QIMENG_API_TOKEN 环境变量读取，不打印、不落盘、不进日志；
+错误输出只有固定类别、host:port 与脱敏后的上游 body。
 """
 from __future__ import annotations
 
 import argparse
-import http.client
-import ipaddress
 import json
 import os
-import socket
 import sys
-from urllib import error, parse, request
 
-try:
-    from . import rulepack
-except ImportError:  # 直接运行 tools/ai_maintenance/cli.py
-    import rulepack
+if __package__ in (None, ""):  # 支持 python tools/ai_maintenance/cli.py 直接运行
+    from pathlib import Path
 
-REQUEST_TIMEOUT_SECONDS = 20.0
-MAX_RESPONSE_BYTES = 2 << 20
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    __package__ = "ai_maintenance"
+
+from . import client as http_client
+from . import errors, execution, registry, rulepack, schema
+from .client import (ApiClient, ConfigError, HTTPStatusError, LENS_CONTENT_TYPES,  # noqa: F401
+                     LENS_TIMEOUT_SECONDS, MAX_RESPONSE_BYTES, NetworkError, NoRedirect,
+                     REQUEST_TIMEOUT_SECONDS, ResponseError, TOKEN_MAX_LENGTH,
+                     read_config, target_label, validate_base_url)
+
 DEFAULT_AUTHOR_PAGE_SIZE = 50
 MAX_AUTHOR_PAGE_SIZE = 1000
 ASSET_LIMIT_MAX = 200
 ASSET_DEFAULT_LIMIT = 60
 MAX_ASSET_PAGE = 50
-TOKEN_MAX_LENGTH = 8192
 MAX_LENS_BYTES = 20 << 20
-LENS_TIMEOUT_SECONDS = 150.0
-LENS_CONTENT_TYPES = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-}
 
-
-class ConfigError(Exception):
-    """环境配置缺失或非法；消息只含变量名，不含值。"""
+RESULT_FAILURE_STATUSES = ("partial", "failed")
 
 
 class UsageError(Exception):
-    """命令行参数之间的约束错误。"""
+    """命令行参数之间的约束错误（兼容层退出码 2）。"""
 
 
-class HTTPStatusError(Exception):
-    def __init__(self, status: int, body):
-        super().__init__(f"HTTP {status}")
-        self.status = status
-        self.body = body
-
-
-class NetworkError(Exception):
-    def __init__(self, kind: str):
-        super().__init__(kind)
-        self.kind = kind
-
-
-class ResponseError(Exception):
-    def __init__(self, kind: str):
-        super().__init__(kind)
-        self.kind = kind
-
-
-class NoRedirect(request.HTTPRedirectHandler):
-    """拒绝重定向，避免把 Bearer token 带到其他主机。"""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
-def _build_opener(scheme: str):
-    """HTTP 目标不创建 HTTPS 上下文；避免无关的证书/SSL 环境影响只读查询。"""
-    if scheme == "https":
-        return request.build_opener(request.ProxyHandler({}), NoRedirect())
-    opener = request.OpenerDirector()
-    for handler in (
-        request.ProxyHandler({}),
-        request.HTTPHandler(),
-        NoRedirect(),
-        request.HTTPErrorProcessor(),
-        request.HTTPDefaultErrorHandler(),
-    ):
-        opener.add_handler(handler)
-    return opener
-
-
-def validate_base_url(value: str) -> str:
-    """只接受 http(s) origin；http 仅限回环/私有地址。"""
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError("QIMENG_API_BASE 未设置")
-    raw = value.strip()
-    try:
-        parts = parse.urlsplit(raw)
-    except ValueError:
-        raise ConfigError("QIMENG_API_BASE 不是合法 URL") from None
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise ConfigError("QIMENG_API_BASE 必须是 http(s) origin，如 http://127.0.0.1:8420")
-    if parts.username is not None or parts.password is not None:
-        raise ConfigError("QIMENG_API_BASE 不能包含用户名或口令")
-    if parts.query or parts.fragment or parts.path not in ("", "/"):
-        raise ConfigError("QIMENG_API_BASE 只能是 origin，不能带子路径、查询或片段")
-    try:
-        _ = parts.port
-    except ValueError:
-        raise ConfigError("QIMENG_API_BASE 端口非法") from None
-
-    host = (parts.hostname or "").lower()
-    if parts.scheme == "http":
-        try:
-            address = ipaddress.ip_address(host)
-            trusted = address.is_loopback or address.is_private
-        except ValueError:
-            trusted = host == "localhost" or host.endswith(".localhost")
-        if not trusted:
-            raise ConfigError("http 仅允许回环或私有地址；远程请用 https 或既有隧道")
-    return parse.urlunsplit((parts.scheme, parts.netloc, "", "", "")).rstrip("/")
-
-
-def target_label(base: str) -> str:
-    """返回 host:port；默认端口显式补全，绝不包含凭据。"""
-    parts = parse.urlsplit(base)
-    host = parts.hostname or ""
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-    port = parts.port
-    if port is None:
-        port = 443 if parts.scheme == "https" else 80
-    return f"{host}:{port}"
-
-
-def read_config() -> tuple[str, str]:
-    base = os.environ.get("QIMENG_API_BASE", "")
-    token = os.environ.get("QIMENG_API_TOKEN", "")
-    missing = [name for name, value in (("QIMENG_API_BASE", base), ("QIMENG_API_TOKEN", token)) if not value]
-    if missing:
-        raise ConfigError("缺少环境变量：" + ", ".join(missing))
-    base = validate_base_url(base)
-    if len(token) > TOKEN_MAX_LENGTH or any(ord(ch) < 32 for ch in token):
-        raise ConfigError("QIMENG_API_TOKEN 非法：含控制字符或过长")
-    if token != token.strip():
-        raise ConfigError("QIMENG_API_TOKEN 首尾不能有空白")
-    return base, token
-
-
-def _read_http_error(exc: error.HTTPError) -> bytes:
-    try:
-        raw = exc.read(MAX_RESPONSE_BYTES + 1)
-    except OSError:
-        raw = b""
-    finally:
-        try:
-            exc.close()
-        except OSError:
-            pass
-    return raw[:MAX_RESPONSE_BYTES]
-
-
-def _decode_body(raw: bytes):
-    if not raw:
-        return ""
-    try:
-        return json.loads(raw.decode("utf-8"))
-    except (UnicodeError, ValueError):
-        return raw.decode("utf-8", "replace")
-
-
-def _redact(value, secret: str):
-    """兜底脱敏：即使上游错误体意外回显 token，也不输出到终端。"""
-    if not secret:
-        return value
-    if isinstance(value, str):
-        return value.replace(secret, "<redacted>")
-    if isinstance(value, list):
-        return [_redact(item, secret) for item in value]
-    if isinstance(value, dict):
-        return {key: _redact(item, secret) for key, item in value.items()}
-    return value
-
-
-class ApiClient:
-    def __init__(self, base: str, token: str, timeout: float = REQUEST_TIMEOUT_SECONDS, opener=None):
-        self.base = validate_base_url(base)
-        self.token = token
-        self.timeout = timeout
-        self.target = target_label(self.base)
-        self.opener = opener or _build_opener(parse.urlsplit(self.base).scheme)
-
-    def _headers(self) -> dict:
-        return {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
-
-    def _send(self, req, timeout: float | None = None):
-        try:
-            with self.opener.open(req, timeout=self.timeout if timeout is None else timeout) as response:
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
-        except error.HTTPError as exc:
-            body = _redact(_decode_body(_read_http_error(exc)), self.token)
-            raise HTTPStatusError(exc.code, body) from None
-        except (socket.timeout, TimeoutError):
-            raise NetworkError("timeout") from None
-        except error.URLError as exc:
-            if isinstance(exc.reason, (socket.timeout, TimeoutError)):
-                raise NetworkError("timeout") from None
-            raise NetworkError("network_error") from None
-        except (OSError, http.client.HTTPException):
-            raise NetworkError("network_error") from None
-
-        if len(raw) > MAX_RESPONSE_BYTES:
-            raise ResponseError("response_too_large")
-        if not raw:
-            return None
-        try:
-            return _redact(json.loads(raw.decode("utf-8")), self.token)
-        except (UnicodeError, ValueError):
-            raise ResponseError("invalid_json_response") from None
-
-    def get(self, path: str, query: dict | None = None):
-        if not path.startswith("/api/v1/"):
-            raise ValueError("path must start with /api/v1/")
-        url = self.base + path
-        if query:
-            clean = {key: value for key, value in query.items() if value is not None}
-            if clean:
-                url += "?" + parse.urlencode(clean, doseq=True)
-        req = request.Request(url, method="GET", headers=self._headers())
-        return self._send(req)
-
-    def post(self, path: str, json_body=None, data: bytes | None = None,
-             content_type: str | None = None, timeout: float | None = None):
-        """POST JSON 或已编码的请求体；timeout 只用于需要长等待的命令（Lens）。"""
-        if not path.startswith("/api/v1/"):
-            raise ValueError("path must start with /api/v1/")
-        headers = self._headers()
-        if json_body is not None:
-            body = json.dumps(json_body, ensure_ascii=False).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        elif data is not None:
-            body = data
-            headers["Content-Type"] = content_type or "application/octet-stream"
-        else:
-            body = b""
-        req = request.Request(self.base + path, data=body, method="POST", headers=headers)
-        return self._send(req, timeout)
-
+# --------------------------------------------------------------------------- #
+# 参数解析
+# --------------------------------------------------------------------------- #
 
 def build_parser() -> argparse.ArgumentParser:
     json_parent = argparse.ArgumentParser(add_help=False)
@@ -256,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser = argparse.ArgumentParser(
         prog="qimeng-ai-maintenance",
-        description="绮梦影库外部 AI 维护只读查询 CLI；写入能力未实现。",
+        description="绮梦影库 AI 工具平台 CLI：只读查询、工具发现、计划与受控写入。",
     )
     parser.add_argument("--json", action="store_true", help="输出原始 JSON（研究命令默认人读摘要）")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -266,6 +68,29 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--out", metavar="PATH", help="同时把规则包 JSON 写入文件")
     context.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
     context.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
+
+    version = sub.add_parser("version", help="输出平台/工具契约/规则包版本与 OpenAPI 指纹（纯本地）", parents=[json_parent])
+    version.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
+    version.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
+
+    tools = sub.add_parser("tools", help="工具注册表：list / show（纯本地）")
+    tools_sub = tools.add_subparsers(dest="tools_command", required=True)
+    tools_list = tools_sub.add_parser("list", help="列出工具、状态、能力核对与 Schema", parents=[json_parent])
+    tools_list.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
+    tools_list.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
+    tools_show = tools_sub.add_parser("show", help="查看单个工具的完整声明", parents=[json_parent])
+    tools_show.add_argument("tool_id", metavar="TOOL_ID")
+    tools_show.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
+    tools_show.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
+
+    tool = sub.add_parser("tool", help="通用工具调用（机器可读入口）")
+    tool_sub = tool.add_subparsers(dest="tool_command", required=True)
+    tool_call = tool_sub.add_parser("call", help="调用工具；输入必须是 JSON 对象", parents=[json_parent])
+    tool_call.add_argument("tool_id", metavar="TOOL_ID")
+    tool_call.add_argument("--input-json", metavar="JSON", help="JSON 对象；传 - 从 stdin 读取")
+    tool_call.add_argument("--input-file", metavar="PATH", help="从文件读取 JSON 对象（- 表示 stdin）")
+    tool_call.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
+    tool_call.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
 
     health = sub.add_parser("health", help="GET /api/v1/healthz 或 /api/v1/readyz", parents=[json_parent])
     health.add_argument("--ready", action="store_true", help="使用 /api/v1/readyz")
@@ -327,6 +152,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# --------------------------------------------------------------------------- #
+# 兼容层：旧参数 → 工具 payload
+# --------------------------------------------------------------------------- #
+
 def _author_id(args) -> str:
     positional = getattr(args, "author_id", None)
     option = getattr(args, "author_id_option", None)
@@ -341,138 +170,47 @@ def _author_id(args) -> str:
     return value
 
 
-def _slice_authors(data, page, size):
-    if page is None and size is None:
-        return data
-    page = 1 if page is None else page
-    size = DEFAULT_AUTHOR_PAGE_SIZE if size is None else size
-    if page < 1:
-        raise UsageError("--page 必须 >= 1")
-    if size < 1 or size > MAX_AUTHOR_PAGE_SIZE:
-        raise UsageError(f"--size 必须在 1..{MAX_AUTHOR_PAGE_SIZE}")
-    if not isinstance(data, list):
-        raise ResponseError("invalid_json_response")
-    start = (page - 1) * size
-    return data[start:start + size]
-
-
-def _research_provider_name(args) -> str:
-    value = args.provider.strip()
-    if not value:
-        raise UsageError("--provider 不能为空")
-    if len(value) > 64 or any(ord(ch) < 33 or ord(ch) > 126 for ch in value):
-        raise UsageError("--provider 只能使用 1..64 个可打印 ASCII 字符")
-    return value
-
-
-def _safe_filename(name: str) -> str:
-    """multipart 头部的文件名只保留 ASCII 安全字符，避免 CR/LF 注入。"""
-    cleaned = "".join(ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in name)
-    cleaned = cleaned.strip("._") or "image"
-    return cleaned[:120]
-
-
-def _lens_multipart(file_path: str) -> tuple[bytes, str]:
-    """本地预检扩展名与 20MiB 上限后编码 multipart；不把图片内容写进错误或摘要。"""
-    if not file_path:
-        raise UsageError("缺少 --file")
-    name = os.path.basename(file_path) or "image"
-    content_type = LENS_CONTENT_TYPES.get(os.path.splitext(name)[1].lower())
-    if content_type is None:
-        raise UsageError("--file 仅支持 JPEG/PNG/WebP：扩展名须为 .jpg/.jpeg/.png/.webp")
-    try:
-        size = os.path.getsize(file_path)
-    except OSError:
-        raise UsageError("--file 无法读取：文件不存在或不可访问") from None
-    if size == 0:
-        raise UsageError("--file 是空文件")
-    if size > MAX_LENS_BYTES:
-        raise UsageError("--file 超过 20MiB 上限")
-    try:
-        with open(file_path, "rb") as handle:
-            payload = handle.read(MAX_LENS_BYTES + 1)
-    except OSError:
-        raise UsageError("--file 无法读取：文件不存在或不可访问") from None
-    if len(payload) > MAX_LENS_BYTES:
-        raise UsageError("--file 超过 20MiB 上限")
-    boundary = "qimeng" + os.urandom(16).hex()
-    head = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="{_safe_filename(name)}"\r\n'
-        f"Content-Type: {content_type}\r\n\r\n"
-    ).encode("utf-8")
-    tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
-    return head + payload + tail, "multipart/form-data; boundary=" + boundary
-
-
-def _execute_research(args, client: ApiClient):
-    if args.research_command == "context":
-        return client.get("/api/v1/research/context")
-    if args.research_command == "provider":
-        query = {"operation": args.operation, "target": args.target}
-        if args.limit is not None:
-            query["options"] = {"limit": args.limit}
-        provider = _research_provider_name(args)
-        return client.post(
-            "/api/v1/research/providers/" + parse.quote(provider, safe="") + "/query",
-            json_body=query,
-        )
-    if args.research_command == "lens":
-        body, content_type = _lens_multipart(args.file)
-        return client.post(
-            "/api/v1/research/lens",
-            data=body,
-            content_type=content_type,
-            timeout=LENS_TIMEOUT_SECONDS,
-        )
-    raise UsageError("未知研究命令")
-
-
-def _execute(args, client: ApiClient):
+def _legacy_tool_call(args) -> tuple[str, dict]:
     if args.command == "health":
-        return client.get("/api/v1/readyz" if args.ready else "/api/v1/healthz")
+        return "health.check", {"ready": bool(args.ready)}
     if args.command == "libraries":
-        return client.get("/api/v1/libraries")
+        return "library.query", {}
     if args.command == "assets":
         if args.limit is not None and not 1 <= args.limit <= ASSET_LIMIT_MAX:
             raise UsageError(f"--limit/--size 必须在 1..{ASSET_LIMIT_MAX}")
-        filters = {
+        if args.page is not None and args.cursor:
+            raise UsageError("--page 与 --cursor 不能同时使用")
+        if args.page is not None and not 1 <= args.page <= MAX_ASSET_PAGE:
+            raise UsageError(f"--page 必须在 1..{MAX_ASSET_PAGE}")
+        payload = {
+            "limit": args.limit,
+            "cursor": args.cursor,
             "q": args.q,
             "libraryId": args.library_id,
             "mediaType": args.media_type,
             "sort": args.sort,
             "order": args.order,
+            "page": args.page,
         }
-        if args.page is None:
-            query = dict(filters, limit=args.limit, cursor=args.cursor)
-            return client.get("/api/v1/assets", query)
-        if args.cursor:
-            raise UsageError("--page 与 --cursor 不能同时使用")
-        if not 1 <= args.page <= MAX_ASSET_PAGE:
-            raise UsageError(f"--page 必须在 1..{MAX_ASSET_PAGE}")
-        limit = args.limit if args.limit is not None else ASSET_DEFAULT_LIMIT
-        cursor = None
-        for _ in range(args.page - 1):
-            current = client.get("/api/v1/assets", dict(filters, limit=limit, cursor=cursor))
-            if not isinstance(current, dict):
-                raise ResponseError("invalid_json_response")
-            next_cursor = current.get("nextCursor")
-            if not next_cursor:
-                empty = {"items": [], "nextCursor": None}
-                if "totalMatched" in current:
-                    empty["totalMatched"] = current["totalMatched"]
-                return empty
-            if not isinstance(next_cursor, str):
-                raise ResponseError("invalid_json_response")
-            cursor = next_cursor
-        return client.get("/api/v1/assets", dict(filters, limit=limit, cursor=cursor))
+        return "asset.query", {key: value for key, value in payload.items() if value is not None}
     if args.command == "authors":
-        return _slice_authors(client.get("/api/v1/authors"), args.page, args.size)
-    if args.command in ("author-profile", "author-sources"):
-        suffix = "profile" if args.command == "author-profile" else "sources"
-        return client.get("/api/v1/authors/" + parse.quote(_author_id(args), safe="") + "/" + suffix)
+        payload = {"page": args.page, "size": args.size}
+        return "author.query", {key: value for key, value in payload.items() if value is not None}
+    if args.command == "author-profile":
+        return "author.profile.read", {"authorId": _author_id(args)}
+    if args.command == "author-sources":
+        return "author.sources.read", {"authorId": _author_id(args)}
     if args.command == "research":
-        return _execute_research(args, client)
+        if args.research_command == "context":
+            return "research.context", {}
+        if args.research_command == "provider":
+            payload = {"provider": args.provider, "operation": args.operation, "target": args.target}
+            if args.limit is not None:
+                payload["limit"] = args.limit
+            return "research.provider.query", payload
+        if args.research_command == "lens":
+            return "research.lens", {"file": args.file}
+        raise UsageError("未知研究命令")
     raise UsageError("未知命令")
 
 
@@ -582,6 +320,86 @@ def _render_research_summary(command: str, data) -> str:
     raise ResponseError("invalid_json_response")
 
 
+# --------------------------------------------------------------------------- #
+# 配置与输出辅助
+# --------------------------------------------------------------------------- #
+
+def _runtime_config(args, env):
+    merged = dict(env)
+    if getattr(args, "openapi", None):
+        merged[execution.OPENAPI_ENV] = args.openapi
+    if getattr(args, "rules", None):
+        merged[execution.RULES_ENV] = args.rules
+    return execution.load_config(merged)
+
+
+def _print_json(value, stream) -> None:
+    stream.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+def _tool_envelope(spec, result) -> dict:
+    return {
+        "tool": spec.id,
+        "toolVersion": spec.version,
+        "status": "ok",
+        "result": result,
+    }
+
+
+def _human_tool_list(listing: dict) -> str:
+    lines = [
+        f"平台版本 {listing.get('platformVersion')}；工具契约 {listing.get('toolContractVersion')}；"
+        f"规则包 {listing.get('rulepackVersion')}；工具 {len(listing.get('tools') or [])} 个",
+    ]
+    if listing.get("readOnlyMode"):
+        lines.append("只读模式开启：全部有副作用工具已禁用。")
+    for tool in listing.get("tools") or []:
+        flags = []
+        if tool.get("readOnly"):
+            flags.append("只读")
+        if tool.get("sideEffects"):
+            flags.append("有副作用")
+        if tool.get("requiresConfirmation"):
+            flags.append("需确认")
+        if not tool.get("enabled", True):
+            flags.append("已禁用")
+        reason = f"；{tool['reason']}" if tool.get("reason") else ""
+        lines.append(f"- {tool['id']} [{tool['status']}] {'/'.join(flags)}{reason}")
+    return "\n".join(lines) + "\n"
+
+
+def _read_stdin_text() -> str:
+    return sys.stdin.read()
+
+
+def _tool_payload(args) -> dict:
+    provided = [value for value in (args.input_json, args.input_file) if value is not None]
+    if len(provided) != 1:
+        raise UsageError("--input-json 与 --input-file 必须且只能提供一个")
+    if args.input_json is not None:
+        raw = _read_stdin_text() if args.input_json == "-" else args.input_json
+    else:
+        try:
+            if args.input_file == "-":
+                raw = _read_stdin_text()
+            else:
+                with open(args.input_file, "r", encoding="utf-8") as handle:
+                    raw = handle.read()
+        except OSError:
+            raise UsageError("无法读取 --input-file") from None
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        raise UsageError("输入不是合法 JSON") from None
+    if not isinstance(payload, dict):
+        raise UsageError("工具输入必须是 JSON 对象")
+    return payload
+
+
+# --------------------------------------------------------------------------- #
+# 子命令执行
+# --------------------------------------------------------------------------- #
+
 def _run_context(args) -> int:
     pack = rulepack.build_rulepack(openapi_path=args.openapi, rules_path=args.rules)
     if args.out:
@@ -593,26 +411,83 @@ def _run_context(args) -> int:
     return 0
 
 
-def _print_json(value, stream) -> None:
-    stream.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+def _run_version(args, env) -> int:
+    config = _runtime_config(args, env)
+    _print_json(execution.version_report(config), sys.stdout)
+    return 0
+
+
+def _run_tools(args, env) -> int:
+    config = _runtime_config(args, env)
+    if args.tools_command == "list":
+        listing = execution.tool_listing(config)
+        if getattr(args, "json", False):
+            _print_json(listing, sys.stdout)
+        else:
+            sys.stdout.write(_human_tool_list(listing))
+        return 0
+    spec = registry.get(args.tool_id)
+    if spec is None:
+        raise errors.unknown_tool(args.tool_id)
+    _print_json(registry.tool_summary(spec, config.document()), sys.stdout)
+    return 0
+
+
+def _run_tool_call(args, env) -> int:
+    payload = _tool_payload(args)
+    config = _runtime_config(args, env)
+    spec, result = execution.execute_tool(args.tool_id, payload, env=env, config=config)
+    _print_json(_tool_envelope(spec, result), sys.stdout)
+    if isinstance(result, dict) and result.get("status") in RESULT_FAILURE_STATUSES:
+        return 1
+    return 0
+
+
+def _run_legacy(args, env) -> int:
+    # 兼容旧行为：网络命令先校验目标配置（错误只列变量名）。
+    read_config()
+    tool_id, payload = _legacy_tool_call(args)
+    config = execution.load_config(env)
+    spec, result = execution.execute_tool(tool_id, payload, env=env, config=config,
+                                          skip_capability=True)
+    if args.command == "research" and not getattr(args, "json", False):
+        sys.stdout.write(_render_research_summary(args.research_command, result))
+    else:
+        _print_json(result, sys.stdout)
+    return 0
+
+
+def _legacy_error_payload(exc) -> dict:
+    if exc.code == "INVALID_INPUT":
+        return {"error": "usage_error", "message": exc.message}
+    payload = exc.to_dict()
+    if exc.code in ("NOT_CONFIRMED", "TOOL_DISABLED", "TOOL_NOT_IMPLEMENTED"):
+        payload["error"] = "usage_error" if exc.code != "TOOL_NOT_IMPLEMENTED" else "tool_unavailable"
+    return payload
+
+
+def _error_target() -> str:
+    try:
+        configured_base, _token = read_config()
+    except ConfigError:
+        return "unknown"
+    return target_label(configured_base)
 
 
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    client = None
-    base = ""
     try:
         if args.command == "context":
             return _run_context(args)
-        base, token = read_config()
-        client = ApiClient(base, token)
-        result = _execute(args, client)
-        if args.command == "research" and not args.json:
-            sys.stdout.write(_render_research_summary(args.research_command, result))
-        else:
-            _print_json(result, sys.stdout)
-        return 0
+        env = dict(os.environ)
+        if args.command == "version":
+            return _run_version(args, env)
+        if args.command == "tools":
+            return _run_tools(args, env)
+        if args.command == "tool":
+            return _run_tool_call(args, env)
+        return _run_legacy(args, env)
     except UsageError as exc:
         _print_json({"error": "usage_error", "message": str(exc)}, sys.stderr)
         return 2
@@ -622,17 +497,21 @@ def main(argv=None) -> int:
     except rulepack.RulepackError as exc:
         _print_json({"error": "rulepack_error", "message": str(exc)}, sys.stderr)
         return 2
+    except errors.ToolError as exc:
+        payload = _legacy_error_payload(exc) if args.command in (
+            "health", "libraries", "assets", "authors", "author-profile",
+            "author-sources", "research") else exc.to_dict()
+        _print_json(payload, sys.stderr)
+        return exc.exit_code
     except HTTPStatusError as exc:
-        target = client.target if client else (target_label(base) if base else "unknown")
-        _print_json({"status": exc.status, "error": "http_error", "body": exc.body, "target": target}, sys.stderr)
+        _print_json({"status": exc.status, "error": "http_error", "body": exc.body,
+                     "target": _error_target()}, sys.stderr)
         return 1
     except NetworkError as exc:
-        target = client.target if client else (target_label(base) if base else "unknown")
-        _print_json({"error": exc.kind, "target": target}, sys.stderr)
+        _print_json({"error": exc.kind, "target": _error_target()}, sys.stderr)
         return 1
     except ResponseError as exc:
-        target = client.target if client else (target_label(base) if base else "unknown")
-        _print_json({"error": exc.kind, "target": target}, sys.stderr)
+        _print_json({"error": exc.kind, "target": _error_target()}, sys.stderr)
         return 1
 
 

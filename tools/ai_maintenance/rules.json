@@ -1,52 +1,82 @@
 {
-  "schemaVersion": 1,
-  "rulesVersion": "2026-11-06.3",
+  "schemaVersion": 2,
+  "rulesVersion": "2026-11-07.3",
   "source": {
     "openapi": "api/openapi.yaml",
-    "taskbook": "docs/AI_MAINTENANCE_TASKBOOK.md",
-    "adr": "docs/adr/0052-外部AI维护需求修订.md",
-    "note": "仅用于溯源与排障；规则包运行时自包含，不依赖仓库文档。"
+    "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
+    "adr": "docs/adr/0056-独立AI接入平台架构.md",
+    "legacyTaskbook": "docs/AI_MAINTENANCE_TASKBOOK.md",
+    "note": "现行执行清单以 AI_PLATFORM_TASKBOOK.md 与 ADR-0056 为准；旧任务书仅作历史需求与设计来源。规则包运行时自包含，不依赖仓库文档。"
   },
   "guide": {
-    "title": "绮梦影库 AI 维护规则包（P1 只读）",
-    "summary": "面向外部 AI 的机器可读规则与中文指南。本切片只有规则上下文和只读查询；作者档案、作者清理、备份导入与跨端应用等写入能力一律标记 planned，不得声称已实现。",
+    "title": "绮梦影库 AI 工具平台规则包（R3：查询、计划与受控写入）",
+    "summary": "面向外部 AI 的机器可读规则与中文指南。工具包按显式注册表提供只读查询、研究核验与受控写入（作者档案/清理/合并、资产作者关联、组图命名规划）；所有写入必须先查询现状、生成计划、校验前置版本与指纹、确认后执行并回读。planned 工具（备份导出、设备结果包等）不得假装执行。",
     "sections": [
       {
-        "heading": "先看边界",
+        "heading": "先看边界与版本",
         "points": [
-          "P1 只提供规则上下文与只读查询；本规则包不包含任何可执行写入命令。",
-          "AI 不生成或修改标签，不直连数据库；业务写入只能走正式 API 和领域服务。",
-          "规则包指纹是 api/openapi.yaml 原始字节的 SHA-256；执行前发现指纹变化时，重新获取 context 并复核计划。",
-          "8420 真库禁止测试写入；验证只用隔离实例、临时目录和合成数据。"
+          "版本分离：platformVersion（工具包）、toolContractVersion（工具契约）、rulepackVersion（本规则）、openapiSha256（来源/构建追踪）。openapi 字节变化不自动让全部工具失效，每个工具按自身端点/方法/必需字段独立核对。",
+          "工具状态由能力核对决定：supported/unavailable/incompatible/planned；unavailable/incompatible 的工具在发起网络请求前失败，禁止 AI 猜测旧参数继续执行。",
+          "写入只经正式 API 与领域服务；禁止直连 SQLite/TXT，禁止把多次删除/改挂拼成事务冒充合并。",
+          "所有写入走：查询现状 → 生成计划 → 校验前置 revision/版本/授权 → 确认 → 正式 API 执行 → 回读 → 结构化报告。未确认计划不得执行。",
+          "8420 真库禁止测试写入；验证只用隔离实例、临时目录、127.0.0.1 stub 与合成数据。",
+          "工具注册表可由 rules.json toolConfig.disabled 或 QIMENG_AI_DISABLED_TOOLS 单独禁用；QIMENG_AI_READONLY=1 关闭全部副作用工具。"
+        ]
+      },
+      {
+        "heading": "工具入口与版本查询",
+        "points": [
+          "统一入口：python -X utf8 tools/ai_maintenance/cli.py。保留既有只读子命令（context/health/libraries/assets/authors/author-profile/author-sources/research），新增 version、tools list [--json]、tools show <id>、tool call <id>。",
+          "机器可读调用：tool call <toolId> --input-json '<json>' 或 --input-file <path>；成功输出 {tool,toolVersion,status,result}，写入结果含 planFingerprint/idempotencyKey/steps/readback。",
+          "tools list 输出每个工具的 version/status/checks/permission/readOnly/sideEffects/requiresConfirmation/timeoutSeconds/inputSchema/outputSchema/errorCodes；inputSchema 与 MCP tools/list 完全一致。",
+          "退出码：0 成功；1 远程失败/冲突/前置条件变化/回读不一致；2 用法/配置/Schema/能力/未确认。错误输出为结构化 JSON，不回显 token。",
+          "MCP stdio 适配器使用同一注册表与 dispatch；工具参数中不允许出现 token，凭据只来自 QIMENG_API_BASE/QIMENG_API_TOKEN 环境变量。"
+        ]
+      },
+      {
+        "heading": "计划与受控写入（R3）",
+        "points": [
+          "prepare 工具只读：读取现状、校验字段、生成 plan 与计划指纹，不写业务数据。apply/update 工具只接受 prepare 返回的计划原样传入，并重新校验指纹、toolContractVersion、rulepackVersion 与前置摘要。",
+          "计划包含：目标实例/库/对象、变更字段与旧值/新值、影响数量、证据来源、前置 revision/摘要、计划指纹、幂等键、权限与确认要求、可恢复步骤、预期回读。",
+          "apply 必须 confirm=true；计划指纹不符（PLAN_FINGERPRINT_MISMATCH）或版本过期（PLAN_VERSION_MISMATCH）直接拒绝，不绕过执行。",
+          "apply 先重新读取现状：profile revision 变化 → 409/CONFLICT 重新 prepare；作者快照/资产作者集合/目录文件名摘要变化 → PRECONDITION_FAILED；禁止静默覆盖。",
+          "执行失败立即停止后续动作并保留已执行步骤与回读结果；删除/合并没有撤销端点，执行前应导出 v2 备份。",
+          "写工具状态与权限：author.profile.update（author.profile.write）、author.cleanup.apply/author.merge（author.cleanup，高风险）、asset.authors.apply（asset.authors.write）、media.organize.apply（media.organize，需确认）。"
         ]
       },
       {
         "heading": "只读查询",
         "points": [
-          "context 纯本地，不联网，也不要求 token；health/libraries/assets/authors/author-profile/author-sources 与 research 命令需要 QIMENG_API_BASE 与 QIMENG_API_TOKEN。",
-          "assets 端点使用 cursor + limit；CLI 的 --page 只是按 nextCursor 顺序取页、不会发送 page 参数。authors 端点返回全量数组，--page/--size 只是客户端切片。",
-          "网络命令成功时把上游 JSON 输出到 stdout；research 命令默认输出人读摘要，加全局 --json 输出原始 JSON。HTTP 非 2xx 输出 {status,error,body} 到 stderr 并以非零码退出。",
-          "错误输出只显示目标 host:port，不打印 token；Lens 只在本地读取图片并转发，摘要不打印图片内容。"
+          "context 纯本地，不联网、不要求 token；version/tools list/tools show 也只读本地规则与 OpenAPI。",
+          "网络查询工具：health.check、library.query、asset.query、author.query、author.profile.read、author.sources.read、maintenance.inventory、maintenance.status、research.context/provider.query/lens；需要 QIMENG_API_BASE 与 QIMENG_API_TOKEN。",
+          "assets 使用 cursor+limit；CLI 的 --page 只是按 nextCursor 顺序取页、不发送 page 参数。authors 返回全量数组，page/size 只是客户端切片。",
+          "maintenance.inventory 只做有界清点，输出关联数/档案状态/来源数等信号；零关联、无来源、无档案都只是候选信号，不得单条件删除。",
+          "maintenance.status 只读维护任务账本（GET /maintenance/jobs），不领取/不执行任务；外部 AI 执行器领取协议尚未定稿。",
+          "研究工具默认关闭：research.enabled=false 时 context 仍可读，查询/Lens 返回 503；Lens 需要另行部署本机 loopback sidecar，links 为空不代表识别失败。",
+          "HTTP 非 2xx 输出 {status,error,body,target}；错误只显示目标 host:port，不打印 token。"
         ]
       },
       {
-        "heading": "作者档案写入要点（planned）",
+        "heading": "作者档案写入（prepare/update，需确认）",
         "points": [
-          "先 GET /api/v1/authors/{authorId}/profile 取得 revision，再准备完整 CreatorProfileWrite；409 表示版本已变化，必须重读并核对人工修改，禁止盲目重试覆盖。",
+          "流程：author.profile.prepare 读取 GET profile 与作者身份，校验字段并生成计划；人工已填字段默认列入 protectedFields 不写入，确实需要覆盖时显式 allowProtectedOverwrite=true；author.profile.update 带计划与 confirm=true 执行完整 CreatorProfileWrite + revision，随后回读。",
           "biography 最多 2000 字符；xProfile.biography 最多 1000；xProfile.biographyZh 最多 2000；长度按 Unicode 码点计算。",
           "evidenceUrls 最多 8 条，每条最多 2000 字符；单条不能为空；所有 URL 必须是 HTTPS 公网地址。",
           "status=verified 必须同时有非空 homepageUrl 和至少 1 条 evidenceUrls；研究结果先写 candidate，弱线索不能单独支撑 verified。",
-          "autoRefresh 默认关闭，开启需 verified 且 homepageUrl 非空；trackUpdates 默认关闭，开启需 verified 且 feedUrl 非空。"
+          "autoRefresh 默认关闭，开启需 verified 且 homepageUrl 非空；trackUpdates 默认关闭，开启需 verified 且 feedUrl 非空。",
+          "X 原文与中文译文分开保存：xProfile.url 绑定已核对账号，biographyZh 在账号/原文变化且未提供译文时显式清空，避免错配。",
+          "409 表示 revision 已变化：重新读取并重新 prepare，禁止盲目重试覆盖；人工修改、人工清空字段优先保护（服务端无法区分空值与从未填写，空值补填需证据判断）。"
         ]
       },
       {
-        "heading": "作者清理（planned）",
+        "heading": "作者清理与原子合并（prepare/apply，需确认）",
         "points": [
-          "删除作者是三清：移除全部 TXT 片段块、asset_authors 关联和作者行；媒体与资产保留。执行前必须先出影响数量。",
+          "author.cleanup.prepare 只读：可 inspect authorIds、scan 候选或把显式 actions 生成计划；候选按多信号（零关联、空档案、无来源、不在 TXT）评分，不预设删除阈值。",
+          "删除作者是三清：移除全部 TXT 片段块、asset_authors 关联和作者行；媒体与资产保留。TXT 块数量暂无可直接计数的只读 API，计划只给 txtOrder 存在性与关联数。",
           "改名会原地重写 TXT 别名并迁移身份、关注标记、关联与上传条目；新身份撞其他作者返回 409，本端点不做合并。",
-          "改挂使用 PUT /api/v1/assets/{assetId}/authors；authorIds 与 newAuthorNames 取并集；移除关联会删除作品行；仅 authorAttach=true 的库可用。",
-          "重复作者合并使用专用端点 POST /api/v1/authors/merge：原子、不可撤销，执行前仍须出计划与影响数量，禁止客户端用多次删除/改挂模拟事务性合并。",
-          "搁置作者的判定阈值不预设；先列候选、证据和影响数量，由用户确认后再执行。"
+          "改挂使用 PUT /api/v1/assets/{assetId}/authors（asset.authors.prepare/apply）；authorIds 与 newAuthorNames 取并集；移除关联会删除作品行；仅 authorAttach=true 的库可用。",
+          "重复作者合并使用专用端点 POST /api/v1/authors/merge：原子、不可撤销；author.merge confirm=false 只出计划，confirm=true 校验指纹后执行并回读；禁止客户端用多次删除/改挂模拟事务性合并。",
+          "apply 只执行调用方在计划中显式给出的动作；零关联、无有效档案、长期未维护只是候选证据，不能自动组成删除动作。"
         ]
       },
       {
@@ -62,21 +92,36 @@
         ]
       },
       {
-        "heading": "备份与跨端（planned）",
+        "heading": "组图命名（作品编号与页码分离）",
+        "points": [
+          "核心原则：作品编号按作品递增，组内页码独立；同一组多图只占一个作品编号。",
+          "示例：已有 守望先锋 朱诺 1..10；新到一组四张确认同属一个作品 → 守望先锋 朱诺 11 (1)..(4)；下一部独立作品为 12。禁止把同一组分配成 11、12、13、14。",
+          "顺序固定：先识别作品分组 → 再分配作品编号 → 最后生成组内页码；三步不得合并为按文件逐个编号。",
+          "文件名不规范（浏览器乱码/下载名）时结合来源条目、下载批次、目录与图片内容识别分组；无法确认时输出候选分组等待确认，不得擅自拆分或错误合并。",
+          "组内页码格式 (1)..(n)；作品编号沿用既有分隔与位宽规则；单图作品为独立作品，不占页序号；支持组图与单图混合。",
+          "补图只追加页序号（同 family/workNumber 从当前最大页+1）；缺页保留现状，未确认不得重排整组；改名/移动/重排不得改变作品编号。",
+          "执行前重新读取目标目录现状并校验计划前置指纹；apply 逐步移动/改名后回读实际文件名。服务端同名自动改名（如 基名 (2).ext）必须作为冲突终止并重新规划，不得当作成功。",
+          "仅括号序号（含自动改名产物）不是作品编号；并发/批量必须持锁并在锁内双检现状，防止编号冲突、跳号与重复分配。"
+        ]
+      },
+      {
+        "heading": "备份与跨端（服务端 API 已有，Android Worker/配对未实现）",
         "points": [
           "导入前必须先导出当前实例的完整 v2 备份与摘要；导出保存失败即中止导入。",
           "作者主表 TXT 只含作者身份、作品行与来源区，不含头像、简介和译文；完整资料必须走 v2 导入。",
           "v2 分段合并保持现有语义：事件身份幂等合并、收藏/关注并集、作者档案保留本端并补缺、TXT 按 keep 重建、appPrefs 覆盖。",
-          "手机无前台应用时，只能由 PC 生成结果包；手机在充电与 Wi-Fi 约束下后台拉取，先导出两代备份，再校验版本/指纹/摘要，分段应用并回读。手机不开放入站端口。",
-          "错误指纹、版本不符、摘要错配或结构非法必须在任何写入前拒绝；后段失败保留已提交段，不得宣称整份成功。"
+          "设备结果包服务端 API（/api/v1/device/apply-tasks 登记/领取/段下载/回传/取消）已存在，但 Android Worker、配对/设备身份与真机后台同步未实现；device.apply.* 工具本轮为 planned，不得写成已具备。",
+          "手机流程固定：充电+Wi-Fi 主动拉取 → 先导出本地完整备份（失败即中止）→ 校验指纹/摘要 → 按段应用 → 回读 → 回传 → 清理临时包并保留两代备份。",
+          "维护目录采用当前/上次两个独立文件夹（各含作者资料与完整 v2 备份及独立摘要）：内容变化时当前整代提交为上次再写新当前，相同数据只刷新当前；旧 flat3 三代同目录保留只读兼容与回退。迁移必须先只读核对摘要/可读性再复制生成新布局，未经用户授权不删除旧文件；客户端迁移与真机验收待后续阶段。"
         ]
       },
       {
         "heading": "错误与凭据",
         "points": [
           "401 检查 QIMENG_API_TOKEN 是否设置或失效，不回显 token；404 重新查询对象；409 重读并按冲突类型处理。",
-          "409 profile revision：重新 GET，核对本次字段与人工修改后重提；409 改名冲突：不要自动合并，先出计划；409 TXT_CONFLICT：必须显式选择 keep 或 remove。",
-          "token 只从 QIMENG_API_TOKEN 环境变量读取，不打印、不写日志、不写入输出、规则包、任务记录或结果包。",
+          "409 profile revision：重新 GET，核对本次字段与人工修改后重新 prepare；409 改名冲突：不要自动合并，先出计划；409 TXT_CONFLICT：必须显式选择 keep 或 remove。",
+          "工具错误码（结构化）：INVALID_INPUT、CONFIGURATION_ERROR、UNKNOWN_TOOL、TOOL_DISABLED、TOOL_NOT_IMPLEMENTED、CAPABILITY_UNAVAILABLE/INCOMPATIBLE、NOT_CONFIRMED、PLAN_INVALID/FINGERPRINT_MISMATCH/VERSION_MISMATCH、PRECONDITION_FAILED、CONFLICT、READBACK_MISMATCH、HTTP_ERROR、NETWORK_ERROR、TIMEOUT、RESPONSE_ERROR、INTERNAL_ERROR。",
+          "token 只从 QIMENG_API_TOKEN 环境变量读取，不打印、不写日志、不写入输出、规则包、任务记录或结果包；MCP/CLI 参数中禁止出现 token。",
           "本机可信执行端对 qimeng-data 只读；业务数据写入只经正式 API；不向外部模型导出密钥或令牌。"
         ]
       }
@@ -86,9 +131,9 @@
     "read": {
       "project.context": {
         "status": "supported",
-        "cli": "context",
+        "cli": "context | tools list | version",
         "network": false,
-        "description": "返回本规则包；包含 OpenAPI 路径、字段规则、工作流、错误码与 openapiSha256。"
+        "description": "返回规则包；包含分离版本、OpenAPI 路径/方法、工具声明与状态、字段规则、工作流、错误码与 openapiSha256。"
       },
       "health.check": {
         "status": "supported",
@@ -106,7 +151,15 @@
         "status": "supported",
         "cli": "assets",
         "endpoint": "GET /api/v1/assets",
-        "querySubset": ["limit", "cursor", "q", "libraryId", "mediaType", "sort", "order"],
+        "querySubset": [
+          "limit",
+          "cursor",
+          "q",
+          "libraryId",
+          "mediaType",
+          "sort",
+          "order"
+        ],
         "cliOnlyOptions": {
           "page": "按 nextCursor 顺序取第 N 页（最多 50），不向服务端发送 page 参数；与 --cursor 互斥。"
         }
@@ -151,18 +204,64 @@
       "backup.export": {
         "status": "planned",
         "endpoint": "GET /api/v1/export/qimeng-backup",
-        "description": "本切片未暴露导出命令；跨端应用前仍必须先导出。"
+        "description": "导出 v2 便携备份；本版本工具仍为 planned（大响应/落盘摘要/预算未实现），不得假装执行。"
       },
       "author.cleanup.prepare": {
+        "status": "supported",
+        "cli": "tool call author.cleanup.prepare",
+        "endpoint": "GET /api/v1/authors/{authorId}/profile",
+        "description": "只读清点清理候选/显式动作，输出影响数量与计划指纹；不写业务数据。"
+      },
+      "maintenance.inventory": {
+        "status": "supported",
+        "cli": "tool call maintenance.inventory",
+        "endpoint": "GET /api/v1/authors",
+        "description": "只读有界清点作者/库现状（关联数、档案状态、来源数）；不做删除结论。"
+      },
+      "maintenance.status": {
+        "status": "supported",
+        "cli": "tool call maintenance.status",
+        "endpoint": "GET /api/v1/maintenance/jobs",
+        "description": "只读维护任务账本列表/详情；不领取、不执行任务。"
+      },
+      "author.profile.prepare": {
+        "status": "supported",
+        "cli": "tool call author.profile.prepare",
+        "endpoint": "GET /api/v1/authors/{authorId}/profile",
+        "description": "只读生成档案计划（revision、人工字段保护、字段校验、影响预览）。"
+      },
+      "asset.authors.prepare": {
+        "status": "supported",
+        "cli": "tool call asset.authors.prepare",
+        "endpoint": "GET /api/v1/assets/{assetId}",
+        "description": "只读生成资产作者关联替换计划，校验库 authorAttach 能力。"
+      },
+      "media.organize.prepare": {
         "status": "planned",
-        "description": "目标契约中的只读清点；本切片未提供候选/影响数量命令。"
+        "cli": "tool call media.organize.prepare",
+        "endpoint": "POST /api/v1/assets/{assetId}/move",
+        "description": "组图命名规划（先分组→作品编号→组内页码）；依赖 media_naming 引擎，缺失时工具状态为 planned。"
       }
     },
     "write": {
       "author.profile.update": {
-        "status": "planned",
+        "status": "supported",
+        "cli": "tool call author.profile.update",
         "endpoint": "PUT /api/v1/authors/{authorId}/profile",
-        "description": "完整 CreatorProfileWrite + revision；本切片只读，不执行。"
+        "requestSchema": "CreatorProfileWrite",
+        "requiredFields": [
+          "revision",
+          "nickname",
+          "biography",
+          "avatarUrl",
+          "homepageUrl",
+          "evidenceUrls",
+          "status",
+          "autoRefresh",
+          "feedUrl",
+          "trackUpdates"
+        ],
+        "description": "按已确认计划执行完整 CreatorProfileWrite + revision，回读核对；人工字段默认保护。"
       },
       "author.delete": {
         "status": "planned",
@@ -180,14 +279,21 @@
         "description": "整体替换资产作者关联；可带 newAuthorNames 按名新建。"
       },
       "author.merge": {
-        "status": "planned",
+        "status": "supported",
+        "cli": "tool call author.merge",
         "endpoint": "POST /api/v1/authors/merge",
-        "description": "专用原子合并端点已出现；本切片仍只读，不实现写入。"
+        "requestSchema": "AuthorMergeRequest",
+        "requiredFields": [
+          "sourceAuthorId",
+          "targetAuthorId"
+        ],
+        "description": "原子合并重复作者；confirm=false 出计划，confirm=true 校验指纹后执行并回读，不可撤销。"
       },
       "author.cleanup.apply": {
-        "status": "planned",
-        "endpoint": null,
-        "description": "按已确认计划执行删除、改名、改挂与合并，绑定计划指纹/幂等键并逐项回读。"
+        "status": "supported",
+        "cli": "tool call author.cleanup.apply",
+        "endpoint": "DELETE /api/v1/authors/{authorId}；PUT /api/v1/authors/{authorId}；POST /api/v1/authors/merge",
+        "description": "按已确认计划执行删除/改名/原子合并，逐项回读；失败停止并保留已执行步骤。"
       },
       "backup.import": {
         "status": "planned",
@@ -196,25 +302,59 @@
       },
       "device.apply.prepare": {
         "status": "planned",
-        "endpoint": null,
-        "description": "PC 生成手机结果包与摘要；协议未实现。"
+        "cli": "tool call device.apply.prepare",
+        "endpoint": "POST /api/v1/device/apply-tasks",
+        "description": "设备结果包登记：服务端 API 已有；Android Worker/配对未实现，工具 planned。"
       },
       "device.apply.submit": {
         "status": "planned",
-        "endpoint": null,
-        "description": "手机后台 worker 回传应用结果；协议未实现。"
+        "cli": "tool call device.apply.submit",
+        "endpoint": "POST /api/v1/device/apply-tasks/{id}/result",
+        "description": "设备结果包回传：手机 Worker 未实现，工具 planned。"
       },
       "device.apply.status": {
         "status": "planned",
-        "endpoint": null,
-        "description": "查询登记/领取/导出/应用/回读/失败阶段；协议未实现。"
+        "cli": "tool call device.apply.status",
+        "endpoint": "GET /api/v1/device/apply-tasks/{id}",
+        "description": "结果包状态查询：只读 API 已有，但设备身份/配对未实现，暂不对 AI 开放。"
+      },
+      "asset.authors.apply": {
+        "status": "supported",
+        "cli": "tool call asset.authors.apply",
+        "endpoint": "PUT /api/v1/assets/{assetId}/authors",
+        "requestSchema": "AssetAuthorsReplaceRequest",
+        "requiredFields": [
+          "authorIds"
+        ],
+        "description": "按已确认计划整体替换资产作者关联并回读；移除关联会删除作品行，媒体保留。"
+      },
+      "media.organize.apply": {
+        "status": "planned",
+        "cli": "tool call media.organize.apply",
+        "endpoint": "POST /api/v1/assets/{assetId}/move",
+        "requestSchema": "MoveRequest",
+        "requiredFields": [
+          "targetDir"
+        ],
+        "description": "按已确认命名计划逐步移动/改名并回读；依赖 media_naming 引擎。"
       }
     }
   },
   "fields": {
     "authorProfile": {
       "endpoint": "GET/PUT /api/v1/authors/{authorId}/profile",
-      "requiredForPut": ["revision", "nickname", "biography", "avatarUrl", "homepageUrl", "evidenceUrls", "status", "autoRefresh", "feedUrl", "trackUpdates"],
+      "requiredForPut": [
+        "revision",
+        "nickname",
+        "biography",
+        "avatarUrl",
+        "homepageUrl",
+        "evidenceUrls",
+        "status",
+        "autoRefresh",
+        "feedUrl",
+        "trackUpdates"
+      ],
       "notes": [
         "PUT 是完整字段提交：先 GET 当前资料，按本次明确修改合并，其余分组保持原值。",
         "长度单位是 Unicode 码点（rune），不是 UTF-8 字节。",
@@ -245,7 +385,10 @@
       },
       "xProfile": {
         "type": "object",
-        "required": ["url", "biography"],
+        "required": [
+          "url",
+          "biography"
+        ],
         "notes": "url 为空时 biography 与 biographyZh 必须为空；非空 url 必须是可识别的 X/Twitter 账号主页。",
         "url": {
           "type": "string",
@@ -278,7 +421,11 @@
       },
       "status": {
         "type": "string",
-        "enum": ["empty", "candidate", "verified"],
+        "enum": [
+          "empty",
+          "candidate",
+          "verified"
+        ],
         "rules": {
           "empty": "无公开档案或已清空。",
           "candidate": "研究结果默认写入，供人工审阅；不能开启 autoRefresh 或 trackUpdates。",
@@ -309,7 +456,8 @@
         "type": "boolean",
         "default": false,
         "rules": "默认关闭；开启必须 status=verified 且 feedUrl 非空。"
-      }
+      },
+      "putRequestSchema": "CreatorProfileWrite"
     }
   },
   "authorActions": {
@@ -329,7 +477,12 @@
         "imported_txt_upload_entries 中该作者条目同步清除。",
         "作者行删除，关注标记随行消亡。"
       ],
-      "readback": ["确认作者不存在", "确认关联数为 0", "确认媒体文件仍在", "确认其他作者块未被误改"]
+      "readback": [
+        "确认作者不存在",
+        "确认关联数为 0",
+        "确认媒体文件仍在",
+        "确认其他作者块未被误改"
+      ]
     },
     "rename": {
       "status": "planned",
@@ -342,7 +495,15 @@
         "回读 id 必须等于迁移后的身份，保证块回读 id 与目标作者行一致。",
         "新显示名最多 200 字符；非法名 400；首别名决定 GenerateAuthorID。"
       ],
-      "readback": ["GET /api/v1/authors 核对 id 与 displayName", "GET author sources 核对块仍归属新身份", "核对关注标记与资产关联数"]
+      "readback": [
+        "GET /api/v1/authors 核对 id 与 displayName",
+        "GET author sources 核对块仍归属新身份",
+        "核对关注标记与资产关联数"
+      ],
+      "requestSchema": null,
+      "requiredFields": [
+        "displayName"
+      ]
     },
     "reattach": {
       "status": "planned",
@@ -356,7 +517,15 @@
         "COS 作者不参与该端点。",
         "仅解除业务关联，媒体文件保留；永久删除媒体走独立管理操作。"
       ],
-      "readback": ["GET /api/v1/assets/{assetId} 核对 authors", "核对作者块作品行已增/删", "核对资产本体与文件未变"]
+      "readback": [
+        "GET /api/v1/assets/{assetId} 核对 authors",
+        "核对作者块作品行已增/删",
+        "核对资产本体与文件未变"
+      ],
+      "requestSchema": "AssetAuthorsReplaceRequest",
+      "requiredFields": [
+        "authorIds"
+      ]
     },
     "merge": {
       "status": "planned",
@@ -364,10 +533,26 @@
       "endpoint": "POST /api/v1/authors/merge",
       "summary": "专用端点 POST /api/v1/authors/merge 原子合并重复作者：源身份删除并并入目标身份；不可撤销。本切片仍只读，不执行写入。",
       "requestFields": {
-        "required": ["sourceAuthorId", "targetAuthorId"],
+        "required": [
+          "sourceAuthorId",
+          "targetAuthorId"
+        ],
         "rules": "两个 ID 必须不同且都是存在的常规作者；COS 作者 400 INVALID_PARAM；任一不存在 404；相同 ID 400。"
       },
-      "resultFields": ["sourceAuthorId", "targetAuthorId", "assetsMoved", "associationsDeduped", "worksMerged", "sourcesMerged", "aliasesMerged", "followsMerged", "profileMoved", "sourceProfileDiscarded", "uploadEntriesMoved", "deletedSource"],
+      "resultFields": [
+        "sourceAuthorId",
+        "targetAuthorId",
+        "assetsMoved",
+        "associationsDeduped",
+        "worksMerged",
+        "sourcesMerged",
+        "aliasesMerged",
+        "followsMerged",
+        "profileMoved",
+        "sourceProfileDiscarded",
+        "uploadEntriesMoved",
+        "deletedSource"
+      ],
       "planFields": [
         "保留身份（targetAuthorId/displayName）",
         "删除身份（sourceAuthorId/displayName）",
@@ -382,7 +567,18 @@
         "同一事务任一步失败整体回滚、零副作用；重复调用（源已删）返回 404。",
         "不得把多次 DELETE/PUT 拼成客户端事务冒充合并。"
       ],
-      "readback": ["保留身份存在且资料/关注标记符合计划", "删除身份不再存在", "无孤立 asset_authors 关联", "作品行无重复/丢失", "档案取舍与回读一致"]
+      "readback": [
+        "保留身份存在且资料/关注标记符合计划",
+        "删除身份不再存在",
+        "无孤立 asset_authors 关联",
+        "作品行无重复/丢失",
+        "档案取舍与回读一致"
+      ],
+      "requestSchema": "AuthorMergeRequest",
+      "requiredFields": [
+        "sourceAuthorId",
+        "targetAuthorId"
+      ]
     }
   },
   "tags": {
@@ -403,8 +599,16 @@
     },
     "exportBeforeImport": true,
     "mainTableTxt": {
-      "contains": ["作者身份", "作品行", "来源区"],
-      "doesNotContain": ["头像", "简介", "译文"],
+      "contains": [
+        "作者身份",
+        "作品行",
+        "来源区"
+      ],
+      "doesNotContain": [
+        "头像",
+        "简介",
+        "译文"
+      ],
       "rule": "手机仅靠主表 TXT 无法完成完整资料对齐；完整资料必须走 v2 导入。"
     },
     "segments": [
@@ -420,11 +624,26 @@
       "导入按段提交；后段失败保留已提交段并明确报告。",
       "错误指纹、版本不符、摘要错配、结构非法在任何写入前拒绝。",
       "不得宣称整份成功，也不得用再次合并充当撤销。",
-      "当前装机仍是三代同目录；两代分代目录属于 planned，不得写成已实施。"
+      "维护目录为当前/上次两代独立文件夹（各含作者资料与完整备份及独立摘要）；旧 flat3 三代同目录仅保留只读兼容与回退，不得写成两代已全部安装验收。",
+      "迁移只读核对摘要/可读性后再复制生成新布局；旧文件未经用户授权不删除。"
     ],
     "plannedLayout": {
       "status": "planned",
       "description": "资料维护/当前/{作者资料,备份} 与 资料维护/上次/{作者资料,备份}；每代独立目录与摘要，当前/上次不共用路径。"
+    },
+    "layout": {
+      "status": "implemented-server-mirror-path-convention",
+      "semantics": "当前/上次两代独立文件夹，各含作者资料与完整 v2 备份及独立摘要；当前与上次不共用路径。",
+      "current": "资料维护/当前/{作者资料,备份}",
+      "previous": "资料维护/上次/{作者资料,备份}",
+      "rotation": "内容变化时先把当前整代提交为上次，再写新当前；相同数据重导出只刷新当前，不挤掉上次。",
+      "legacyFlat3": "旧 flat3 三代同目录布局保留只读兼容与回退路径；不得删除或覆盖来历不明的历史文件。",
+      "migration": "迁移必须先只读核对摘要与可读性，再复制生成新布局；上上次只列入可清理清单，未经用户授权不删除。",
+      "rollback": "切换前保留旧文件与旧配置；回滚=恢复配置与客户端版本，数据不丢。"
+    },
+    "currentInstalledLayout": {
+      "status": "legacy-flat3-compatible",
+      "note": "服务端镜像已按 path 目录命名约定支持两代布局并保留旧 flat3 回退；客户端（Web/Android）迁移与真机验收仍待后续阶段，不得写成用户设备已完成升级。"
     }
   },
   "errors": {
@@ -436,40 +655,281 @@
       "response_too_large": "响应超过 CLI 上限：缩小查询范围或改用分页。"
     },
     "codes": [
-      {"code": "INVALID_PARAM", "http": 400, "meaning": "参数或字段校验失败", "action": "按 message 修正载荷；不要盲目重试。"},
-      {"code": "UNAUTHORIZED", "http": 401, "meaning": "未认证或 token 失效", "action": "检查 QIMENG_API_TOKEN 是否设置/有效；不回显 token。"},
-      {"code": "NOT_FOUND", "http": 404, "meaning": "作者、资产或资源不存在", "action": "重新查询对象；不要静默重建或覆盖。"},
-      {"code": "CONFLICT", "http": 409, "meaning": "通用冲突（revision、身份、库根等）", "action": "重读当前状态，按冲突类型处理；不要盲目覆盖。"},
-      {"code": "TXT_CONFLICT", "http": 409, "meaning": "同文件名重导入会丢弃上传写入条目", "action": "先列 authors 缺失项，显式选择 conflictResolution=keep 或 remove。"},
-      {"code": "PATH_ESCAPE", "http": [400, 403], "meaning": "路径越出库根或非法路径", "action": "停止；修正为库内相对路径。"},
-      {"code": "TOO_LARGE", "http": 413, "meaning": "请求或文件超过声明上限", "action": "缩小载荷或改用受支持的分段/上限内输入。"},
-      {"code": "INVALID_TYPE", "http": 400, "meaning": "媒体类型或字段类型不支持", "action": "核对协议枚举与文件真实类型。"},
-      {"code": "UPLOAD_ID_CONFLICT", "http": 409, "meaning": "上传任务 ID 已用于不同目标/名称/大小/源时间/通道", "action": "保留完成事实并查询；不要自动重传覆盖。"},
-      {"code": "UPLOAD_TOO_LARGE", "http": [400, 413], "meaning": "累计尺寸或单次分片超限", "action": "核对声明大小与分片预算。"},
-      {"code": "UPLOAD_ASSET_GONE", "http": 410, "meaning": "任务已完成但资产已删除", "action": "停止自动重传；由用户决定。"},
-      {"code": "UPLOAD_CAPACITY", "http": 429, "meaning": "在途会话或暂存预算达到上限", "action": "等待并降低并发。"},
-      {"code": "STORAGE_UNAVAILABLE", "http": [503, 507], "meaning": "目录不可访问或剩余空间不足（探针/上传路径）", "action": "停止写入；检查存储后重试。"},
-      {"code": "RATE_LIMITED", "http": 429, "meaning": "auth 端点进程内限速", "action": "退避后重试。"}
+      {
+        "code": "INVALID_PARAM",
+        "http": 400,
+        "meaning": "参数或字段校验失败",
+        "action": "按 message 修正载荷；不要盲目重试。"
+      },
+      {
+        "code": "UNAUTHORIZED",
+        "http": 401,
+        "meaning": "未认证或 token 失效",
+        "action": "检查 QIMENG_API_TOKEN 是否设置/有效；不回显 token。"
+      },
+      {
+        "code": "NOT_FOUND",
+        "http": 404,
+        "meaning": "作者、资产或资源不存在",
+        "action": "重新查询对象；不要静默重建或覆盖。"
+      },
+      {
+        "code": "CONFLICT",
+        "http": 409,
+        "meaning": "通用冲突（revision、身份、库根等）",
+        "action": "重读当前状态，按冲突类型处理；不要盲目覆盖。"
+      },
+      {
+        "code": "TXT_CONFLICT",
+        "http": 409,
+        "meaning": "同文件名重导入会丢弃上传写入条目",
+        "action": "先列 authors 缺失项，显式选择 conflictResolution=keep 或 remove。"
+      },
+      {
+        "code": "PATH_ESCAPE",
+        "http": [
+          400,
+          403
+        ],
+        "meaning": "路径越出库根或非法路径",
+        "action": "停止；修正为库内相对路径。"
+      },
+      {
+        "code": "TOO_LARGE",
+        "http": 413,
+        "meaning": "请求或文件超过声明上限",
+        "action": "缩小载荷或改用受支持的分段/上限内输入。"
+      },
+      {
+        "code": "INVALID_TYPE",
+        "http": 400,
+        "meaning": "媒体类型或字段类型不支持",
+        "action": "核对协议枚举与文件真实类型。"
+      },
+      {
+        "code": "UPLOAD_ID_CONFLICT",
+        "http": 409,
+        "meaning": "上传任务 ID 已用于不同目标/名称/大小/源时间/通道",
+        "action": "保留完成事实并查询；不要自动重传覆盖。"
+      },
+      {
+        "code": "UPLOAD_TOO_LARGE",
+        "http": [
+          400,
+          413
+        ],
+        "meaning": "累计尺寸或单次分片超限",
+        "action": "核对声明大小与分片预算。"
+      },
+      {
+        "code": "UPLOAD_ASSET_GONE",
+        "http": 410,
+        "meaning": "任务已完成但资产已删除",
+        "action": "停止自动重传；由用户决定。"
+      },
+      {
+        "code": "UPLOAD_CAPACITY",
+        "http": 429,
+        "meaning": "在途会话或暂存预算达到上限",
+        "action": "等待并降低并发。"
+      },
+      {
+        "code": "STORAGE_UNAVAILABLE",
+        "http": [
+          503,
+          507
+        ],
+        "meaning": "目录不可访问或剩余空间不足（探针/上传路径）",
+        "action": "停止写入；检查存储后重试。"
+      },
+      {
+        "code": "RATE_LIMITED",
+        "http": 429,
+        "meaning": "auth 端点进程内限速",
+        "action": "退避后重试。"
+      }
     ],
     "conflicts": [
-      {"http": 409, "type": "profile-revision", "handling": "重新 GET profile，核对本次字段与人工修改，使用新 revision 重提；不要盲目重试。"},
-      {"http": 409, "type": "rename-identity", "handling": "新身份命中其他作者；本端点不合并。先出合并/保留计划，走专用合并端点或由用户确认。"},
-      {"http": 409, "type": "txt-conflict", "handling": "读取 TxtImportConflict.authors；显式 keep 或 remove，不要静默丢弃。"},
-      {"http": 409, "type": "library-root", "handling": "该根路径已注册；复用既有库或换路径，不要重复创建。"}
+      {
+        "http": 409,
+        "type": "profile-revision",
+        "handling": "重新 GET profile，核对本次字段与人工修改，使用新 revision 重提；不要盲目重试。"
+      },
+      {
+        "http": 409,
+        "type": "rename-identity",
+        "handling": "新身份命中其他作者；本端点不合并。先出合并/保留计划，走专用合并端点或由用户确认。"
+      },
+      {
+        "http": 409,
+        "type": "txt-conflict",
+        "handling": "读取 TxtImportConflict.authors；显式 keep 或 remove，不要静默丢弃。"
+      },
+      {
+        "http": 409,
+        "type": "library-root",
+        "handling": "该根路径已注册；复用既有库或换路径，不要重复创建。"
+      }
+    ],
+    "toolCodes": [
+      {
+        "code": "INVALID_INPUT",
+        "category": "usage",
+        "exitCode": 2,
+        "recovery": "按 message/details 修正输入。"
+      },
+      {
+        "code": "CONFIGURATION_ERROR",
+        "category": "config",
+        "exitCode": 2,
+        "recovery": "检查 QIMENG_API_BASE / QIMENG_API_TOKEN，不回显 token。"
+      },
+      {
+        "code": "UNKNOWN_TOOL",
+        "category": "usage",
+        "exitCode": 2,
+        "recovery": "tools list --json 查看已注册工具。"
+      },
+      {
+        "code": "TOOL_DISABLED",
+        "category": "permission",
+        "exitCode": 2,
+        "recovery": "检查 toolConfig.disabled / QIMENG_AI_DISABLED_TOOLS / QIMENG_AI_READONLY。"
+      },
+      {
+        "code": "TOOL_NOT_IMPLEMENTED",
+        "category": "capability",
+        "exitCode": 2,
+        "recovery": "planned 工具不得假装执行。"
+      },
+      {
+        "code": "CAPABILITY_UNAVAILABLE",
+        "category": "capability",
+        "exitCode": 2,
+        "recovery": "端点不存在：升级目标实例或工具包。"
+      },
+      {
+        "code": "CAPABILITY_INCOMPATIBLE",
+        "category": "capability",
+        "exitCode": 2,
+        "recovery": "端点/方法/字段契约变化：核对 OpenAPI 与工具契约版本。"
+      },
+      {
+        "code": "NOT_CONFIRMED",
+        "category": "permission",
+        "exitCode": 2,
+        "recovery": "先 prepare 并人工确认，再带 confirm=true 与计划指纹。"
+      },
+      {
+        "code": "PLAN_INVALID",
+        "category": "plan",
+        "exitCode": 2,
+        "recovery": "重新 prepare，不手工拼造计划。"
+      },
+      {
+        "code": "PLAN_FINGERPRINT_MISMATCH",
+        "category": "plan",
+        "exitCode": 1,
+        "recovery": "计划过期/被修改：重新 prepare。"
+      },
+      {
+        "code": "PLAN_VERSION_MISMATCH",
+        "category": "plan",
+        "exitCode": 1,
+        "recovery": "工具契约/规则版本已变：用当前工具包重新 prepare。"
+      },
+      {
+        "code": "PRECONDITION_FAILED",
+        "category": "conflict",
+        "exitCode": 1,
+        "recovery": "重新读取现状并 prepare；不覆盖。"
+      },
+      {
+        "code": "CONFLICT",
+        "category": "conflict",
+        "exitCode": 1,
+        "recovery": "409 不静默覆盖：重读、重新计划。"
+      },
+      {
+        "code": "READBACK_MISMATCH",
+        "category": "verification",
+        "exitCode": 1,
+        "recovery": "停止写入，核对回读差异并交人工。"
+      },
+      {
+        "code": "HTTP_ERROR",
+        "category": "remote",
+        "exitCode": 1,
+        "recovery": "按 status/body.code 处理。"
+      },
+      {
+        "code": "NETWORK_ERROR",
+        "category": "remote",
+        "exitCode": 1,
+        "recovery": "检查 host:port/隧道；不重复提交写操作。"
+      },
+      {
+        "code": "TIMEOUT",
+        "category": "remote",
+        "exitCode": 1,
+        "recovery": "稍后重试并先回读。"
+      },
+      {
+        "code": "RESPONSE_ERROR",
+        "category": "remote",
+        "exitCode": 1,
+        "recovery": "非 JSON/超限：缩小范围或排查服务。"
+      },
+      {
+        "code": "INTERNAL_ERROR",
+        "category": "internal",
+        "exitCode": 1,
+        "recovery": "工具缺陷；保留输入与详情。"
+      }
     ]
   },
   "workflows": [
     {
       "id": "author-profile-fill",
-      "title": "补一个作者档案：先读现状，再准备完整载荷，保存后回读（写入 planned）",
-      "status": "read-steps-supported; write-steps-planned",
+      "title": "补一个作者档案：先读现状，再 prepare 计划，确认后 update 并回读",
+      "status": "prepare-supported; update-supported; readback-supported",
       "steps": [
-        {"step": 1, "action": "获取规则上下文", "command": "python -X utf8 tools/ai_maintenance/cli.py context", "status": "supported"},
-        {"step": 2, "action": "按名称或 ID 查作者，确认复用既有 authorId", "command": "python -X utf8 tools/ai_maintenance/cli.py authors --page 1 --size 100", "status": "supported"},
-        {"step": 3, "action": "读取当前档案与 revision，记录人工已填字段", "command": "python -X utf8 tools/ai_maintenance/cli.py author-profile --author-id <authorId>", "status": "supported"},
-        {"step": 4, "action": "准备完整 CreatorProfileWrite：保留未修改分组，只合并本次明确修改；研究结果先 candidate", "status": "planned"},
-        {"step": 5, "action": "PUT /api/v1/authors/{authorId}/profile，携带当前 revision", "status": "planned"},
-        {"step": 6, "action": "回读 profile，核对 revision 增加、字段值与人工字段未被覆盖", "command": "python -X utf8 tools/ai_maintenance/cli.py author-profile --author-id <authorId>", "status": "supported"}
+        {
+          "step": 1,
+          "action": "获取规则上下文/版本/工具状态",
+          "command": "python -X utf8 tools/ai_maintenance/cli.py context",
+          "status": "supported"
+        },
+        {
+          "step": 2,
+          "action": "按名称或 ID 查作者，确认复用既有 authorId",
+          "command": "tool call author.query --input-json <json>",
+          "status": "supported"
+        },
+        {
+          "step": 3,
+          "action": "读取当前档案与 revision，记录人工已填字段",
+          "command": "tool call author.profile.read --input-json <json>",
+          "status": "supported"
+        },
+        {
+          "step": 4,
+          "action": "author.profile.prepare 生成完整字段计划（研究结果先 candidate）",
+          "command": "tool call author.profile.prepare --input-file <plan-input.json>",
+          "status": "supported"
+        },
+        {
+          "step": 5,
+          "action": "人工核对计划后 author.profile.update 带 confirm=true 与计划执行",
+          "command": "tool call author.profile.update --input-file <apply-input.json>",
+          "status": "supported"
+        },
+        {
+          "step": 6,
+          "action": "回读 profile，核对 revision 增加、字段值与人工字段未被覆盖",
+          "command": "tool call author.profile.read --input-json <json>",
+          "status": "supported"
+        }
       ],
       "notes": [
         "409 时重读并重新核对，不要盲目重试。",
@@ -479,15 +939,45 @@
     },
     {
       "id": "author-cleanup-plan",
-      "title": "搁置作者清理：候选、影响数量、计划确认、执行与回读（执行 planned）",
-      "status": "prepare-planned; apply-planned; read-queries-supported",
+      "title": "搁置作者清理：候选/影响数量 → 计划确认 → apply → 逐项回读",
+      "status": "prepare-supported; apply-supported; read-queries-supported",
       "steps": [
-        {"step": 1, "action": "获取规则上下文", "command": "python -X utf8 tools/ai_maintenance/cli.py context", "status": "supported"},
-        {"step": 2, "action": "查作者列表与每个候选的档案/来源/文件数", "command": "python -X utf8 tools/ai_maintenance/cli.py authors --page 1 --size 200", "status": "supported"},
-        {"step": 3, "action": "输出候选、证据、影响数量（TXT 块、作品行、关联、档案、关注）与建议动作；不预设搁置阈值", "status": "planned"},
-        {"step": 4, "action": "用户确认计划并绑定计划指纹/幂等键", "status": "planned"},
-        {"step": 5, "action": "执行删除三清/改名迁移/改挂/合并；合并只用专用端点，禁止客户端拼事务", "status": "planned"},
-        {"step": 6, "action": "逐项回读：作者、关联、作品行、档案、关注标记与媒体文件", "status": "supported"}
+        {
+          "step": 1,
+          "action": "获取规则上下文与工具状态",
+          "command": "python -X utf8 tools/ai_maintenance/cli.py context",
+          "status": "supported"
+        },
+        {
+          "step": 2,
+          "action": "maintenance.inventory 有界清点或 author.cleanup.prepare scan 候选",
+          "command": "tool call author.cleanup.prepare --input-json <json>",
+          "status": "supported"
+        },
+        {
+          "step": 3,
+          "action": "对候选逐项核对证据与影响数量；零关联不能单条件删除",
+          "command": "tool call author.cleanup.prepare --input-json <json>",
+          "status": "supported"
+        },
+        {
+          "step": 4,
+          "action": "把显式 actions 交给 prepare 生成带指纹的计划，用户确认",
+          "command": "tool call author.cleanup.prepare --input-file <actions.json>",
+          "status": "supported"
+        },
+        {
+          "step": 5,
+          "action": "author.cleanup.apply 带计划与 confirm=true 执行；合并只用专用端点",
+          "command": "tool call author.cleanup.apply --input-file <apply-input.json>",
+          "status": "supported"
+        },
+        {
+          "step": 6,
+          "action": "逐项回读作者/关联/作品行/档案/关注标记与媒体文件；失败保留已执行步骤",
+          "command": "tool call author.query",
+          "status": "supported"
+        }
       ],
       "notes": [
         "零关联、无有效档案、长期未维护只是候选证据，不是自动删除阈值。",
@@ -500,11 +990,35 @@
       "title": "作者/作品核验：先用 context 确认启停与预算，再按 provider 矩阵取平台字段，最后才考虑 Lens 反查",
       "status": "api-supported; lens-requires-local-sidecar",
       "steps": [
-        {"step": 1, "action": "读研究上下文，确认 enabled、provider 矩阵与 Lens 预算；关闭时不要调用查询/Lens", "command": "python -X utf8 tools/ai_maintenance/cli.py research context", "status": "supported"},
-        {"step": 2, "action": "按已知账号/作品 ID 走平台 provider（fxtwitter/pixiv/yandere/e621/steam）取平台字段作为证据", "command": "python -X utf8 tools/ai_maintenance/cli.py research provider --provider <provider> --operation <operation> --target <target>", "status": "supported"},
-        {"step": 3, "action": "目标未知时用 bing/wayback 取线索（只作指向，不单独支撑 verified）", "command": "python -X utf8 tools/ai_maintenance/cli.py research provider --provider bing --operation search --target <搜索词>", "status": "supported"},
-        {"step": 4, "action": "仅在已部署本机 sidecar 时用 Lens 反查图片；接受 links 为空与单帧 17–40s 的排队成本", "command": "python -X utf8 tools/ai_maintenance/cli.py research lens --file <本地图片>", "status": "requires-local-sidecar"},
-        {"step": 5, "action": "把核验结果按作者档案候选口径保存（先 candidate），人工审核后再 verified；不要直接把研究结论写库", "status": "planned"}
+        {
+          "step": 1,
+          "action": "读研究上下文，确认 enabled、provider 矩阵与 Lens 预算；关闭时不要调用查询/Lens",
+          "command": "python -X utf8 tools/ai_maintenance/cli.py research context",
+          "status": "supported"
+        },
+        {
+          "step": 2,
+          "action": "按已知账号/作品 ID 走平台 provider（fxtwitter/pixiv/yandere/e621/steam）取平台字段作为证据",
+          "command": "python -X utf8 tools/ai_maintenance/cli.py research provider --provider <provider> --operation <operation> --target <target>",
+          "status": "supported"
+        },
+        {
+          "step": 3,
+          "action": "目标未知时用 bing/wayback 取线索（只作指向，不单独支撑 verified）",
+          "command": "python -X utf8 tools/ai_maintenance/cli.py research provider --provider bing --operation search --target <搜索词>",
+          "status": "supported"
+        },
+        {
+          "step": 4,
+          "action": "仅在已部署本机 sidecar 时用 Lens 反查图片；接受 links 为空与单帧 17–40s 的排队成本",
+          "command": "python -X utf8 tools/ai_maintenance/cli.py research lens --file <本地图片>",
+          "status": "requires-local-sidecar"
+        },
+        {
+          "step": 5,
+          "action": "把核验结果按作者档案候选口径保存（先 candidate），人工审核后再 verified；不要直接把研究结论写库",
+          "status": "planned"
+        }
       ],
       "notes": [
         "provider 查询返回 200 时读 status：ok/not_found/blocked/rate_limited/provider_unavailable；只有 ok 的平台字段可作为证据。",
@@ -518,18 +1032,95 @@
       "title": "手机无前台应用：只能由 PC 生成结果包，手机后台拉取并应用（全部 planned）",
       "status": "planned",
       "steps": [
-        {"step": 1, "action": "PC 生成结果包：协议/规则版本指纹、目标实例、段清单、主表 TXT、完整 v2 备份摘要与期望回读指标", "status": "planned"},
-        {"step": 2, "action": "手机 worker 在充电 + Wi-Fi 约束满足后主动拉取；不要求打开 App 前台，不接 USB", "status": "planned"},
-        {"step": 3, "action": "自动先导出当前实例两代备份与摘要；保存失败立即中止，不应用任何段", "status": "planned"},
-        {"step": 4, "action": "校验版本、指纹、段摘要与目标实例；不匹配进入 waiting_authorization 或失败项", "status": "planned"},
-        {"step": 5, "action": "分段应用：主表 TXT 只含作者/作品/来源，按 keep 重建；头像/简介/译文必须走 v2 导入", "status": "planned"},
-        {"step": 6, "action": "回读作者数、关联数、标签数、事件数与文件摘要；失败保留可恢复状态与已应用段", "status": "planned"},
-        {"step": 7, "action": "查询 device.apply.status；waiting_authorization 与 waiting_device 可恢复，重试按幂等键判定", "status": "planned"}
+        {
+          "step": 1,
+          "action": "PC 生成结果包：协议/规则版本指纹、目标实例、段清单、主表 TXT、完整 v2 备份摘要与期望回读指标",
+          "status": "planned"
+        },
+        {
+          "step": 2,
+          "action": "手机 worker 在充电 + Wi-Fi 约束满足后主动拉取；不要求打开 App 前台，不接 USB",
+          "status": "planned"
+        },
+        {
+          "step": 3,
+          "action": "自动先导出当前实例两代备份与摘要；保存失败立即中止，不应用任何段",
+          "status": "planned"
+        },
+        {
+          "step": 4,
+          "action": "校验版本、指纹、段摘要与目标实例；不匹配进入 waiting_authorization 或失败项",
+          "status": "planned"
+        },
+        {
+          "step": 5,
+          "action": "分段应用：主表 TXT 只含作者/作品/来源，按 keep 重建；头像/简介/译文必须走 v2 导入",
+          "status": "planned"
+        },
+        {
+          "step": 6,
+          "action": "回读作者数、关联数、标签数、事件数与文件摘要；失败保留可恢复状态与已应用段",
+          "status": "planned"
+        },
+        {
+          "step": 7,
+          "action": "查询 device.apply.status；waiting_authorization 与 waiting_device 可恢复，重试按幂等键判定",
+          "status": "planned"
+        }
       ],
       "notes": [
         "PC 不连接手机，手机不开放入站端口，不新增监听面。",
-        "本轮 P1 只交付规则包与只读 CLI；结果包、后台 worker、两代目录和 v2 分段应用均未实现。",
-        "不得把当前三代同目录写成两代已实施。"
+        "服务端结果包 API（/api/v1/device/apply-tasks）已存在；Android Worker、配对与真机后台同步未实现，device.apply.* 工具本轮为 planned。",
+        "两代分代目录本轮由服务端镜像按路径约定推导，客户端迁移与真机验收待后续阶段；不得写成已具备。"
+      ]
+    },
+    {
+      "id": "media-organize-naming",
+      "title": "组图命名：先分组 → 每组一个作品编号 → 组内 (1)..(n) 页码 → 确认 → 移动 → 回读",
+      "status": "prepare-tool-dependent; apply-tool-dependent; engine-required",
+      "steps": [
+        {
+          "step": 1,
+          "action": "读取目标目录现状（有界翻页 GET /assets）与既有命名",
+          "command": "tool call asset.query --input-json <json>",
+          "status": "supported"
+        },
+        {
+          "step": 2,
+          "action": "整理候选分组（family/files/confidence/evidence/order），不能确认时先输出候选等待确认",
+          "command": "人工或上游研究提供 groups",
+          "status": "required"
+        },
+        {
+          "step": 3,
+          "action": "media.organize.prepare 生成计划：每组一个作品编号、组内页码、预览与指纹",
+          "command": "tool call media.organize.prepare --input-file <groups.json>",
+          "status": "tool-dependent"
+        },
+        {
+          "step": 4,
+          "action": "人工确认计划（needs_confirmation 时必须确认）",
+          "command": "核对 preview/changes/impact",
+          "status": "required"
+        },
+        {
+          "step": 5,
+          "action": "media.organize.apply 带 confirm=true 执行；锁内双检、逐步 move",
+          "command": "tool call media.organize.apply --input-file <apply-input.json>",
+          "status": "tool-dependent"
+        },
+        {
+          "step": 6,
+          "action": "回读目录文件名全集；自动改名/缺文件/多余文件即失败并重新规划",
+          "command": "tool call asset.query 复核",
+          "status": "supported"
+        }
+      ],
+      "notes": [
+        "作品编号与组内页码分离；同一组只占一个作品编号，禁止分配成 11、12、13、14。",
+        "补图只追加页序号；缺页保留现状；改名/移动/重排不改变作品编号。",
+        "仅括号序号不是作品编号；服务端自动改名视为冲突终止。",
+        "命名算法唯一实现在 media_naming.py；未安装时工具状态为 planned。"
       ]
     }
   ],
@@ -560,6 +1151,88 @@
       "不向外部模型导出密钥、令牌、真实媒体或含个人信息的任务记录。",
       "任务记录、结果包与日志使用合成 ID/占位符；真实凭据只放忽略的本地配置。",
       "标签只读；AI 不写标签，不做标签隐私增强或密钥迁移。"
+    ],
+    "toolPermissions": {
+      "read": "只读查询，不写业务数据。",
+      "research": "研究辅助；默认关闭，不伪造证据。",
+      "author.profile.write": "作者资料写入；必须 prepare + confirm + 回读。",
+      "author.cleanup": "作者删除/改名/合并；高风险，不可撤销动作需确认。",
+      "asset.authors.write": "资产作者关联写入；移除关联会删作品行。",
+      "media.organize": "混合媒体命名/移动；必须计划、确认、锁与回读。",
+      "admin.maintenance": "管理员维护（备份/设备结果包等）；当前版本不向 AI 开放写入。"
+    },
+    "adminTools": [
+      "backup.export、device.apply.prepare/submit/status 本轮为 planned；管理员专用能力不默认对 AI 开放。",
+      "数据库审计、迁移、备份恢复、环境诊断保持独立管理员工具，不进入 AI 工具注册表。"
+    ]
+  },
+  "rulepackVersion": "2026-11-07.3",
+  "platform": {
+    "platformVersion": "1.0.0",
+    "toolContractVersion": "1.0.0",
+    "planVersion": "1.0",
+    "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
+  },
+  "toolConfig": {
+    "disabled": [],
+    "readOnlyMode": false,
+    "notes": [
+      "单独禁用工具：把 tool ID 加入 disabled，或设置 QIMENG_AI_DISABLED_TOOLS（逗号分隔）。",
+      "只读模式：readOnlyMode=true 或 QIMENG_AI_READONLY=1 时，全部有副作用工具在发起请求前被拒绝。",
+      "禁用/只读模式是本地执行器策略；不改变服务端鉴权，也不能替代计划与确认流程。"
+    ]
+  },
+  "mediaNaming": {
+    "version": "2026-11-07.1",
+    "principles": [
+      "作品编号按作品递增，组内页码独立；同一组多图只占一个作品编号。",
+      "顺序固定：识别分组 → 分配作品编号 → 生成组内页码；不得按文件逐个编号。",
+      "无法确认分组时输出候选分组等待确认，不得擅自拆分或错误合并。"
+    ],
+    "workNumber": {
+      "scope": "per-work",
+      "increment": "next = 同 family 现有最大作品编号 + 1，跳过已占编号，不回收空号",
+      "example": "已有 守望先锋 朱诺 1..10；新组四张 → 11 (1)..(4)；下一部独立作品为 12",
+      "style": "沿用基名后的既有分隔与位宽规则（如 名 01 → 名 02）",
+      "singleImage": "单图作品=独立作品编号，不带页序号；组图与单图混合时按作品分别编号"
+    },
+    "groupPage": {
+      "format": "(1)..(n)",
+      "scope": "组内页码从 1 开始独立递增，不改变作品编号",
+      "append": "补图：同 family/workNumber 从当前最大页+1 追加页序号",
+      "missingPages": "缺页保留现状，未确认不得重排整组",
+      "renameMoveReorder": "改名/移动/重排不得改变整组作品编号"
+    },
+    "grouping": {
+      "signals": [
+        "来源条目",
+        "下载批次",
+        "目录",
+        "图片内容",
+        "既有文件名族",
+        "显式 order"
+      ],
+      "irregularNames": "乱码/浏览器下载名不得作为分组或编号依据，但必须计入现状清单做冲突检测",
+      "confidence": "低于阈值或未确认时 status=needs_confirmation，仍输出 changes/preview 供人工确认",
+      "legacyParen": "仅括号序号（如 基名 (2).ext，含服务端自动改名产物）是旧序号语义，不是作品编号"
+    },
+    "preconditions": [
+      "apply 前重新读取目标目录现状（有界翻页 GET /assets），比对计划前置指纹",
+      "planFingerprint 被修改或前置文件清单变化时拒绝执行（stale_precondition / plan_fingerprint_mismatch）",
+      "并发/批量必须持实例+库+family 锁，并在锁内双检现状"
+    ],
+    "conflictPolicy": "服务端同名自动改名（基名 (2).ext）视为冲突终止并重新规划，不得当作命名成功",
+    "readback": "执行后重新读取目录文件名全集，与计划预期比对；missing/unexpected/autoRenamed 任一非空即失败",
+    "forbidden": [
+      "按图片文件数量递增作品编号",
+      "把同一组图拆分为多个作品编号（11、12、13、14）",
+      "未确认时重排整组或改变作品编号",
+      "把乱码原文件名或自动改名结果当作规范命名成功",
+      "只在提示词/工具描述中要求注意，而不在执行环节强制校验"
+    ],
+    "tools": [
+      "media.organize.prepare",
+      "media.organize.apply"
     ]
   }
 }
