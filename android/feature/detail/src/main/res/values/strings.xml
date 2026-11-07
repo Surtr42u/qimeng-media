@@ -146,4 +146,7 @@
     <string name="asset_edit_discard_desc">离开将丢失本次文件名、作者与来源编辑，确定离开吗？</string>
     <string name="asset_edit_discard_confirm">放弃修改离开</string>
     <string name="asset_edit_discard_cancel">继续编辑</string>
+    <!-- 详情信息弹窗：完整文件名复制（2026-11-07 搜索文件名需求） -->
+    <string name="detail_info_copy_filename">复制文件名</string>
+    <string name="detail_info_filename_copied">已复制文件名</string>
 </resources>

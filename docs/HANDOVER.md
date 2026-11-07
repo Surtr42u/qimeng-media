@@ -106,7 +106,7 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 | R4 | `tools/ai_maintenance/mcp_server.py` stdio MCP 适配器：JSON-RPC 2.0 子集（initialize/notifications/ping/tools.list/tools.call/取消与超时），与 CLI 共用同一 dispatch 与工具 Schema；协议层用两个独立合成客户端验证；**真实 AI 客户端（Codex/Claude 等）接入未实测**，README 已如实说明 |
 | R5 | `server/internal/maintenance` Go worker：按注册 handler 的 kind 领取、租约 TTL+心跳、有界并发、逐步骤记录、暂停/取消后停止并保留已提交步骤、租约过期/重启后从已完成步骤续跑不重复副作用、panic 兜底、`backup_export` 内置 handler（复用 `backup.Manager`）与工件记录；同幂等键不同载荷指纹返回 409；由 `cmd/qimeng` 组合根以 `safego.Go` 启动，参数为具名配置/`QIMENG_*`；无 handler 的 kind 保持 queued 供未来外部 AI 执行器，未开放 HTTP 领取端点 |
 | R7 | 两代备份布局：`server/internal/authorattach` 作者镜像在 `path` 祖先目录为 `当前`/`current` 时按同根兄弟 `上次`/`previous` 推导上一代，两代独立摘要、先提交当前再写新当前、相同数据不轮换、上次代摘要不符/不可读拒覆盖、旧 flat3 行为不变；`tools/migrate_backup_layout.py` 默认只读核对、`--apply` 复制生成两代、绝不删除；Web `maintenance-folder.ts` 与 Android `MaintenanceFolderRepository` 同约定两代轮换并保留旧布局只读兼容；文档见 [作者镜像两代分代目录](api/authors.md#作者总表镜像的两代分代目录2026-11-07) |
-| 追加需求 | 组图命名与作品编号（§6.6）：Go 命名解析纯函数（`server/internal/filing/workname.go`）区分主作品编号与组内页码、`/assets/name-suggestions` 对组图页建议下一作品编号；AI 工具层 `media_naming.py` 规划/校验/回读引擎与 `media.organize.prepare/apply` 适配（计划确认后才执行，自动改名判失败）；搜索语义与文件名显示（§6.7）：共享 Go 谓词 `qimeng_search_token`（数字按独立数字段、组图页码 `(n)` 定位、列表/计数/分面同口径），Web/Android 搜索结果文件名与详情完整名/复制修订 |
+| 追加需求 | 组图命名与作品编号（§6.6）：Go 命名解析纯函数（`server/internal/filing/workname.go`）区分主作品编号与组内页码、`/assets/name-suggestions` 对组图页建议下一作品编号；AI 工具层 `media_naming.py` 规划/校验/回读引擎与 `media.organize.prepare/apply` 适配（计划确认后才执行，自动改名判失败）；搜索语义与文件名显示（§6.7）：共享 Go 谓词 `qimeng_search_token`（数字按独立数字段、组图页码 `(n)` 定位、列表/计数/分面同口径），Web 搜索结果完整文件名/换词加载态/详情复制与 Android 搜索缩略图下短名/详情完整名+复制（Lead 直接实现并补 JVM 单测）同批交付 |
 
 ### 9.2 本机验证与云端 CI
 

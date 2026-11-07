@@ -368,7 +368,7 @@ AI 模型不直接持有 Go 管理员 Token。AI 模型不直接获取任意 she
 | R0 | 复核 HEAD、脚本、接口及任务书，冻结目标架构 | 已完成：审计落 [AI 接入平台 R0 审计](AI_PLATFORM_AUDIT.md)，架构落 [ADR-0056](adr/0056-独立AI接入平台架构.md) |
 | R1 | 独立 AI 工具核心与统一脚本整理 | 已完成源码：`tools/ai_maintenance/` 统一核心（client/registry/plans/execution/schema/versions），旧 `import_creator_profiles.py` 转发统一实现 |
 | R2 | 工具注册、规则版本及 API 兼容机制 | 已完成源码：25 个显式注册工具（supported/planned 如实）、分离版本、分块能力核对（端点+方法+必需字段） |
-| R3 | 统一查询、计划与受控写入 | 已完成源码：作者链 prepare/update、cleanup prepare/apply、merge、asset.authors prepare/apply 与计划指纹/确认/回读；组图命名规划引擎待最终联调 |
+| R3 | 统一查询、计划与受控写入 | 已完成源码：作者链 prepare/update、cleanup prepare/apply、merge、asset.authors prepare/apply 与计划指纹/确认/回读；组图命名规划引擎与 media.organize.prepare/apply 已联调（引擎 v1.0.0、锁内双检、回读判自动改名） |
 | R4 | CLI/MCP 双入口接入和多 AI 验证 | CLI 已完成并兼容旧子命令；stdio MCP 适配器已完成并用两个合成客户端验证协议；真实 AI 客户端接入实测未做 |
 | R5 | 复用既有维护账本，实现可靠 Worker | 已完成源码：Go worker（租约/心跳/逐步记录/暂停取消恢复/重启续跑/按 kind 领取/backup_export handler）、同幂等键不同载荷 409 |
 | R6 | 手机结果包、配对、Android Worker | 服务端结果包 API 已有；配对/设备身份/Android 后台 Worker 仍未实现，本轮未做 |
