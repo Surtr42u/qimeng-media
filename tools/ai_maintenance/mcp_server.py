@@ -13,6 +13,9 @@
 - tools/call：dispatch 到注册表；结果以 content[0].text（结构化 JSON 文本）
   + structuredContent + isError 返回；工具调用有超时（默认 120s，可用
   QIMENG_AI_MCP_TIMEOUT 覆盖）并尽力响应 notifications/cancelled；
+- 收到 tools/call 后由独立线程执行，主循环继续读取 stdin，因此调用期间仍能
+  及时处理取消/初始化等通知；有副作用工具被取消时不提前返回（避免“已取消”
+  与实际继续写入的不确定状态），只读工具可立即返回 -32800；
 - 其他方法：-32601 Method not found；非法参数/未知工具：-32602。
 """
 from __future__ import annotations
@@ -100,6 +103,18 @@ class McpServer:
             else self.env.get("QIMENG_AI_MCP_TIMEOUT", DEFAULT_CALL_TIMEOUT_SECONDS))
         self.config = None
         self._initialized = False
+        # 写 stdout 与工具执行线程分离：调用期间主循环仍可处理取消通知。
+        self._write_lock = threading.Lock()
+        self._pending_calls: list[threading.Thread] = []
+        # 并发上限：主循环异步化后可能同时堆积多个 tools/call；默认 4，可用
+        # QIMENG_AI_MCP_MAX_CONCURRENCY 调整。有副作用工具串行执行，避免两个
+        # 写计划同时通过前置校验后并发落盘。
+        try:
+            max_concurrency = int(self.env.get("QIMENG_AI_MCP_MAX_CONCURRENCY", "4"))
+        except ValueError:
+            max_concurrency = 4
+        self._call_slots = threading.Semaphore(max(1, min(max_concurrency, 32)))
+        self._write_tool_lock = threading.Lock()
 
     # ---- 协议无关的辅助 ---------------------------------------------------- #
 
@@ -158,7 +173,8 @@ class McpServer:
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": (
                 "绮梦影库 AI 工具平台。工具较多时先调用 platform.catalog 取精简领域目录（无 Schema），"
-                "再用 platform.tool.describe 按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节；"
+                "再用 platform.tool.describe 按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节，"
+                "需要工作流模板时用 platform.playbook（可选模板，不是唯一路径）；"
                 "tools/list 仍保留完整工具清单供标准客户端使用。写入工具必须先 prepare 计划、人工确认后"
                 "带 confirm=true 与计划指纹调用 apply。看见工具不代表有权执行（权限由可信执行端强制）；"
                 "不得声称执行了 planned/已禁用工具；不得在参数中放 token。"
@@ -177,6 +193,7 @@ class McpServer:
         if not isinstance(arguments, dict):
             return _error_response(request_id, INVALID_PARAMS, "arguments 必须是对象")
         if request_id in cancelled:
+            cancelled.discard(request_id)
             return _error_response(request_id, CALL_CANCELLED, "Request cancelled")
         spec = registry.get(name)
         if spec is None:
@@ -186,7 +203,13 @@ class McpServer:
 
         def worker():
             try:
-                outcome.put(("ok", self._execute(name, arguments)))
+                if spec.side_effects or not spec.read_only:
+                    # 有副作用工具全局串行：异步 dispatch 后不允许两个写计划
+                    # 同时执行（客户端并发/多标签页场景）。
+                    with self._write_tool_lock:
+                        outcome.put(("ok", self._execute(name, arguments)))
+                else:
+                    outcome.put(("ok", self._execute(name, arguments)))
             except errors.ToolError as exc:
                 outcome.put(("tool_error", exc))
             except Exception as exc:  # noqa: BLE001
@@ -195,18 +218,29 @@ class McpServer:
         thread = threading.Thread(target=worker, daemon=True, name="mcp-tool-call")
         thread.start()
         deadline = time.monotonic() + self.timeout_seconds
+        cancel_noted = False
         while True:
             try:
                 kind, payload = outcome.get(timeout=0.05)
                 break
             except queue.Empty:
                 if request_id in cancelled:
+                    if spec.side_effects or not spec.read_only:
+                        # 有副作用：不提前返回。客户端已发取消，但无法安全中断已开始
+                        # 的写入；返回“已取消”会让调用方误以为没执行。这里等真实结果，
+                        # 由调用方按幂等键/回读处理重复提交风险。
+                        if not cancel_noted:
+                            _log("cancel ignored for side-effect tool: " + name)
+                            cancel_noted = True
+                        continue
                     return _error_response(request_id, CALL_CANCELLED, "Request cancelled")
                 if time.monotonic() >= deadline:
                     _log("tool call timeout: " + name)
                     return _error_response(request_id, CALL_TIMEOUT,
                                            "Tool call timed out: " + name)
         thread.join(timeout=0.1)
+        # 完成后清掉取消标记：避免客户端复用 request id 时把新请求误判为已取消。
+        cancelled.discard(request_id)
         if kind == "tool_error":
             return _result_response(request_id, _tool_error_result(payload))
         if kind == "error":
@@ -233,6 +267,24 @@ class McpServer:
 
     def serve_forever(self) -> int:
         cancelled: set = set()
+
+        def dispatch(message: dict, needs_slot: bool) -> None:
+            if needs_slot:
+                self._call_slots.acquire()
+            try:
+                try:
+                    response = self.handle_message(message, cancelled)
+                except Exception as exc:  # noqa: BLE001 - 线程内兜底，不让进程静默退出
+                    _log("dispatch error: " + type(exc).__name__)
+                    response = _error_response(
+                        message.get("id") if isinstance(message, dict) else None,
+                        INTERNAL_ERROR, "Internal error")
+                if response is not None:
+                    self._write(response)
+            finally:
+                if needs_slot:
+                    self._call_slots.release()
+
         for line in self.stdin:
             line = line.strip()
             if not line:
@@ -242,14 +294,30 @@ class McpServer:
             except ValueError:
                 self._write(_error_response(None, PARSE_ERROR, "Parse error"))
                 continue
-            response = self.handle_message(message, cancelled)
-            if response is not None:
-                self._write(response)
+            is_async = (isinstance(message, dict)
+                        and message.get("method") == "tools/call"
+                        and "id" in message)
+            if is_async:
+                # 工具调用独立线程执行，主循环不阻塞；notifications/cancelled 等
+                # 通知在调用进行中即可被读取并写入共享 cancelled 集合。
+                thread = threading.Thread(target=dispatch, args=(message, True),
+                                          daemon=True, name="mcp-call-dispatch")
+                thread.start()
+                self._pending_calls.append(thread)
+                self._pending_calls = [item for item in self._pending_calls if item.is_alive()]
+            else:
+                dispatch(message, False)
+        # stdin 结束：给仍在执行的调用留出收尾/写出响应的机会（不无限等待）。
+        deadline = time.monotonic() + max(1.0, self.timeout_seconds)
+        for thread in self._pending_calls:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
         return 0
 
     def _write(self, payload: dict) -> None:
-        self.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        self.stdout.flush()
+        serialized = json.dumps(payload, ensure_ascii=False)
+        with self._write_lock:
+            self.stdout.write(serialized + "\n")
+            self.stdout.flush()
 
 
 def _tool_error_result(exc: errors.ToolError) -> dict:

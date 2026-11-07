@@ -98,6 +98,13 @@ def build_parser() -> argparse.ArgumentParser:
     catalog.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
     catalog.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
 
+    playbook = sub.add_parser(
+        "playbook", help="工作流模板（可选）：列目录或按名称按需读取，不加载完整规则包", parents=[json_parent])
+    playbook.add_argument("--name", metavar="NAME", help="playbook 名称，如 author.profile")
+    playbook.add_argument("--domain", metavar="DOMAIN", help="按领域筛选")
+    playbook.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
+    playbook.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
+
     tool = sub.add_parser("tool", help="通用工具调用（机器可读入口）")
     tool_sub = tool.add_subparsers(dest="tool_command", required=True)
     tool_call = tool_sub.add_parser("call", help="调用工具；输入必须是 JSON 对象", parents=[json_parent])
@@ -483,6 +490,18 @@ def _run_catalog(args, env) -> int:
     return 0
 
 
+def _run_playbook(args, env) -> int:
+    config = _runtime_config(args, env)
+    payload = {}
+    if getattr(args, "name", None):
+        payload["name"] = args.name
+    if getattr(args, "domain", None):
+        payload["domain"] = args.domain
+    _, result = execution.execute_tool("platform.playbook", payload, config=config)
+    _print_json(result, sys.stdout)
+    return 0
+
+
 def _run_tools(args, env) -> int:
     config = _runtime_config(args, env)
     if args.tools_command == "list":
@@ -561,6 +580,8 @@ def main(argv=None) -> int:
             return _run_version(args, env)
         if args.command == "catalog":
             return _run_catalog(args, env)
+        if args.command == "playbook":
+            return _run_playbook(args, env)
         if args.command == "tools":
             return _run_tools(args, env)
         if args.command == "tool":

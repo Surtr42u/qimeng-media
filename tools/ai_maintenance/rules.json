@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-07.5",
+  "rulesVersion": "2026-11-07.6",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1173,7 +1173,7 @@
       "数据库审计、迁移、备份恢复、环境诊断保持独立管理员工具，不进入 AI 工具注册表。"
     ]
   },
-  "rulepackVersion": "2026-11-07.5",
+  "rulepackVersion": "2026-11-07.6",
   "platform": {
     "platformVersion": "1.0.0",
     "toolContractVersion": "1.0.0",
@@ -1275,5 +1275,76 @@
       "skillsVsPermission": "catalog 可见不等于有权执行：权限检查在 execute_tool 内先于 Schema/计划执行，MCP/CLI 共用同一检查。"
     },
     "examples": "示例随 platform.tool.describe 按需返回（registry.TOOL_EXAMPLES），不进入默认 tools list。"
+  },
+  "playbooks": {
+    "author.profile": {
+      "domain": "author",
+      "title": "补全作者资料（简介/头像/主页/双语）",
+      "whenToUse": "需要为已有作者补全或校正公开资料、研究证据与双语简介时；先读取现状再计划。",
+      "risk": "normal",
+      "baseTools": ["project.context", "author.query", "author.profile.read", "research.context", "author.profile.prepare", "author.profile.update"],
+      "steps": [
+        {"action": "读取规则与现状", "tool": "project.context", "note": "按需 author.profile.read；不要一次加载完整规则包"},
+        {"action": "研究公开来源", "tool": "research.context", "note": "服务端默认关闭；无来源时不得编造证据"},
+        {"action": "生成计划", "tool": "author.profile.prepare", "note": "人工已填字段默认受保护；计划包含 revision 与 expectedReadback"},
+        {"action": "人工核对后执行", "tool": "author.profile.update", "note": "confirm=true + 计划原样传入；409 不覆盖，重新读取再计划"},
+        {"action": "回读核对", "tool": "author.profile.read", "note": "确认写入字段与证据一致；失败停止并保留步骤记录"}
+      ],
+      "guardrails": ["不得伪造 avatarUrl/homepageUrl/evidenceUrls", "不覆盖用户人工填写字段", "author.profile.update 需确认"]
+    },
+    "media.organize": {
+      "domain": "media",
+      "title": "混合媒体组图命名整理",
+      "whenToUse": "需要把乱码/下载名图片整理为“作品名 作品编号 (页序号)”时；先按 family 分组并确认。",
+      "risk": "normal",
+      "baseTools": ["maintenance.inventory", "media.organize.prepare", "media.organize.apply"],
+      "steps": [
+        {"action": "读取目标目录现状", "tool": "media.organize.prepare", "note": "groups 显式给出 family/files/confidence；乱码不得作为分组依据"},
+        {"action": "人工核对计划", "note": "核对作品编号（一组一个）、页序号 1..n、冲突/缺页/补图预览"},
+        {"action": "执行并回读", "tool": "media.organize.apply", "note": "confirm=true + 计划原样；锁内双检、逐步 move、回读发现自动改名/缺失/多余即失败"}
+      ],
+      "guardrails": ["不得按图片数量递增作品编号", "不得把同一组拆成多个作品编号", "未确认不重排整组", "回读失败停止并交人工"]
+    },
+    "author.cleanup": {
+      "domain": "author",
+      "title": "作者清理（删除/改名/原子合并）",
+      "whenToUse": "确认零关联或用户明确要求删除/改名/合并时；高风险、不可撤销，需要显式 actions 与单独授权。",
+      "risk": "high",
+      "baseTools": ["author.query", "author.cleanup.prepare", "author.cleanup.apply", "author.merge", "backup.export"],
+      "steps": [
+        {"action": "导出备份", "note": "执行不可逆动作前先导出 v2 备份（backup.export 在未实现前用既有管理员备份流程）"},
+        {"action": "清点候选与前置快照", "tool": "author.cleanup.prepare", "note": "actions 必须显式；零关联/无来源只是信号，不能单条件删除"},
+        {"action": "人工核对影响", "note": "核对涉及作者、关联数量、媒体保留与合并方向；高风险操作需单独授权"},
+        {"action": "执行并逐项回读", "tool": "author.cleanup.apply", "note": "失败立即停止并保留已执行步骤；合并优先用原子端点 author.merge"}
+      ],
+      "guardrails": ["删除只解除业务关联，媒体文件保留", "禁止零关联单条件批量删除", "不可逆动作需备份与明确确认"]
+    },
+    "maintenance.jobs": {
+      "domain": "maintenance",
+      "title": "长任务复用维护账本",
+      "whenToUse": "需要后台执行研究/清理/备份等长任务时；复用 Go 维护任务账本与 Worker，不建第二套任务系统。",
+      "risk": "normal",
+      "baseTools": ["maintenance.inventory", "maintenance.status", "project.context"],
+      "steps": [
+        {"action": "查询账本与清点", "tool": "maintenance.status", "note": "只读查询任务状态/步骤/工件；不领取/不执行"},
+        {"action": "创建任务（如已开放）", "note": "使用 Go 账本的创建端点；AI 工具层当前不直接创建"},
+        {"action": "跟踪与核对", "tool": "maintenance.status", "note": "按任务 id 查询；失败/暂停由账本状态判断，不凭空假设完成"}
+      ],
+      "guardrails": ["不建立第二套任务状态", "不假装执行 planned 工具", "写操作仍走对应业务 API 与回读"]
+    },
+    "backup.rotate": {
+      "domain": "backup",
+      "title": "两代备份轮换与恢复",
+      "whenToUse": "需要导出/核对当前代与上次代备份、或从两代目录恢复时；旧 flat3 只读兼容，不删除。",
+      "risk": "high",
+      "baseTools": ["maintenance.inventory", "backup.export"],
+      "steps": [
+        {"action": "确认当前/上次两代目录", "note": "当前代写入前核对摘要；上次代保留上一代完整副本"},
+        {"action": "导出新备份", "tool": "backup.export", "note": "当前为 planned（大响应/落盘摘要未实现），暂用既有管理员备份流程"},
+        {"action": "轮换与校验", "note": "内容变化才轮换；摘要与正文分开校验；中断后下次写入自愈"},
+        {"action": "恢复入口", "note": "当前/上次可恢复；旧 flat3 只读兼容，不自动删除"}
+      ],
+      "guardrails": ["不覆盖不可读/摘要不符的上次代", "不删除旧 flat3 现场", "恢复前人工确认目标代"]
+    }
   }
 }

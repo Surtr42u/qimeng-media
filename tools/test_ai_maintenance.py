@@ -120,7 +120,7 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(hashlib.sha256(raw).hexdigest(), pack["openapiSha256"])
         self.assertEqual("1.0.0", pack["platformVersion"])
         self.assertEqual("1.0.0", pack["toolContractVersion"])
-        self.assertEqual("2026-11-07.5", pack["rulepackVersion"])
+        self.assertEqual("2026-11-07.6", pack["rulepackVersion"])
         self.assertEqual(pack["rulepackVersion"], pack["rulesVersion"])
         for known in (
             "/api/v1/healthz",

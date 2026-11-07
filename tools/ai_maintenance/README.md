@@ -134,11 +134,14 @@ python -X utf8 tools/ai_maintenance/cli.py tools show author.profile.prepare
 
 # 3) 按需读取规则节，不加载完整 rules.json
 python -X utf8 tools/ai_maintenance/cli.py tool call platform.rules --input-json '{"sections":["mediaNaming","permissions"]}'
+
+# 4) 按需读取工作流模板（可选模板，不是唯一路径）
+python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 ```
 
 - 领域：author/media/research/backup/device/maintenance/system；目录按领域分组并给
   tools 扁平列表，toolCount/domains 由注册表实时计算。
-- 元工具 platform.catalog / platform.tool.describe / platform.rules 与业务工具同一
+- 元工具 platform.catalog / platform.tool.describe / platform.rules / platform.playbook 与业务工具同一
   dispatch、同一权限与禁用检查；MCP tools/list 仍返回完整工具清单（标准协议兼容），
   客户端也可调用元工具做分类发现；descriptor 的 _meta.domain 便于客户端分组。
 - 惰性加载：注册表只保有 module:handler 引用，目录/状态计算不导入实现模块；首次
@@ -181,7 +184,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call platform.rules --input-json
 | `media.organize.prepare` / `media.organize.apply` | supported（apply 需确认） | 组图命名规划/校验/执行/回读；算法唯一实现 `media_naming.py`（随本发行物提供），prepare 只读计划、apply 校验计划指纹+前置文件名指纹+并发锁并逐步 move 后回读，服务端自动改名判失败。 |
 | `backup.export` | planned | 大响应/落盘摘要/预算未实现，不假装执行。 |
 | `device.apply.prepare/submit/status` | planned | 服务端结果包 API 已有，Android Worker/配对未实现。 |
-| `platform.catalog` / `platform.tool.describe` / `platform.rules` | supported | 精简领域目录、按需工具 Schema/示例/规则摘录（纯本地、只读；不写业务数据）。 |
+| `platform.catalog` / `platform.tool.describe` / `platform.rules` / `platform.playbook` | supported | 精简领域目录、按需工具 Schema/示例/规则摘录、可选工作流模板（纯本地、只读；不写业务数据）。 |
 
 ## 计划与受控写入
 
@@ -245,7 +248,8 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
 - 工具分类发现：标准 `tools/list` 仍返回全部工具与 `inputSchema`；工具较多时客户端可先
   调用 `platform.catalog`（精简领域目录），再 `platform.tool.describe` 取单个工具 Schema/
-  示例，用 `platform.rules` 按需读规则节；descriptor 附带 `_meta.domain` 便于分组展示。
+  示例，用 `platform.rules` 按需读规则节、`platform.playbook` 读可选模板；descriptor 附带
+  `_meta.domain` 便于分组展示。MCP 调用独立线程执行、有副作用工具串行，调用期间仍处理取消通知。
 - `initialize` 的 instructions 已提示“先 catalog 后 describe”的发现顺序与权限边界。
 
 ### MCP 客户端配置示例（占位符，不含真实 token）
@@ -269,6 +273,11 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 JSON-RPC）验证 initialize、tools/list、tools/call、ping、错误、超时、取消与脱敏；
 Codex/Claude 等真实 AI 客户端接入尚未实测。远程接入遵守既有隧道策略，不新增监听面。
 
+## 独立部署与升级
+
+AI 平台以 CLI 与 MCP stdio 两种进程形态独立运行，不监听网络端口；配置、版本兼容、升级与运行边界见
+[独立 AI 平台：部署、升级与运行边界](../../docs/AI_PLATFORM_OPERATIONS.md)。新增/废弃工具只改本包与规则，不需要三端发版。
+
 ## 测试与门禁
 
 ```powershell
@@ -282,7 +291,7 @@ python -X utf8 tools/check_docs.py
 人工字段保护、409 传播、清理多信号候选、原子合并指纹确认、资产作者关联、旧 CLI
 合同、旧脚本转发统一实现、MCP 两客户端协议与脱敏、media.organize 端到端
 （11 (1)..(4) 作品编号/页码、锁内执行、回读失败与篡改计划拒绝），以及扩展性回归
-（精简目录不含 Schema 且显著小于完整清单、120 个合成工具仍有界、按需 describe/rules、
+（精简目录不含 Schema 且显著小于完整清单、120 个合成工具仍有界、按需 describe/rules/playbook、
 惰性模块加载与缺失模块降级、废弃/禁用工具、权限与发现分离、规则版本变化、24 路并发、
 CLI/MCP 目录与完整 tools list 一致）。全部使用合成数据与回环 stub；命名引擎自身另跑
 `python -m unittest test_media_naming`。当前 tools 全套 205 项通过。

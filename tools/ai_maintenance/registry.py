@@ -645,6 +645,17 @@ TOOLS: tuple[ToolSpec, ...] = (
                        "properties": {"tool": {"type": "object"}}},
     ),
     ToolSpec(
+        id="platform.playbook", version="1.0.0", kind="context",
+        description="按需读取操作提示词/业务规范/工作流模板（playbook）：列目录或取单个，不加载完整规则包；模板不是强制路径。",
+        handler_ref="ai_maintenance.catalog:platform_playbook", network=False, permission="read",
+        input_schema=_schema({
+            "name": _string("playbook 名称（省略时按领域列目录）", 1, 120),
+            "domain": _string("按领域筛选：author/media/research/backup/device/maintenance/system"),
+        }),
+        output_schema={"type": "object", "additionalProperties": True,
+                       "properties": {"playbooks": {"type": "array"}, "playbook": {"type": "object"}}},
+    ),
+    ToolSpec(
         id="platform.rules", version="1.0.0", kind="context",
         description="按需读取规则节（如 mediaNaming/authorActions/fields/permissions），不加载完整 rules.json。",
         handler_ref="ai_maintenance.catalog:platform_rules", network=False, permission="read",
@@ -719,6 +730,8 @@ TOOL_EXAMPLES: dict = {
     "platform.catalog": ({"domain": "author"},),
     "platform.tool.describe": ({"toolId": "author.profile.prepare"},),
     "platform.rules": ({"sections": ["mediaNaming", "permissions"]},),
+    "platform.playbook": ({"name": "media.organize"},),
+    "platform.playbook.list": ({"domain": "author"},),
 }
 
 # 工具与规则节引用：按需描述时只摘录相关规则，避免整包加载进上下文。

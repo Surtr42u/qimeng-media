@@ -89,7 +89,11 @@ class McpProtocolTest(unittest.TestCase):
             {"jsonrpc": "2.0", "id": 4, "method": "ping"},
         ])
         self.assertEqual(4, len(responses))
-        initialize, listing, call, ping = responses
+        # tools/call 在独立线程执行，响应允许与 ping 乱序（JSON-RPC 以 id 匹配）；
+        # 这里按 id 取响应，不依赖到达顺序。
+        by_id = {response["id"]: response for response in responses}
+        self.assertEqual({1, 2, 3, 4}, set(by_id))
+        initialize, listing, call, ping = (by_id[1], by_id[2], by_id[3], by_id[4])
         self.assertEqual("2024-11-05", initialize["result"]["protocolVersion"])
         self.assertEqual("qimeng-ai-toolkit", initialize["result"]["serverInfo"]["name"])
         self.assertIn("tools", initialize["result"]["capabilities"])
@@ -195,6 +199,102 @@ class McpProtocolTest(unittest.TestCase):
         cancelled.add(7)
         thread.join(timeout=3)
         self.assertEqual(mcp_server.CALL_CANCELLED, result["error"]["code"])
+
+    def test_stdio_processes_cancellation_while_call_in_flight(self):
+        def slow_execute(tool_id, payload):
+            time.sleep(0.5)
+            return registry.get(tool_id), {"ok": True}
+
+        class TimedStdin:
+            def __init__(self, lines, delay):
+                self.lines = lines
+                self.delay = delay
+
+            def __iter__(self):
+                for line in self.lines:
+                    time.sleep(self.delay)
+                    yield line
+
+        stdout = io.StringIO()
+        stdin = TimedStdin([
+            json.dumps({"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+                        "params": {"name": "project.context", "arguments": {}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                        "params": {"requestId": 7}}) + "\n",
+        ], delay=0.05)
+        server = mcp_server.McpServer(stdin=stdin, stdout=stdout, env=self.env(),
+                                      execute=slow_execute, timeout_seconds=2)
+        started = time.monotonic()
+        server.serve_forever()
+        elapsed = time.monotonic() - started
+        responses = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertEqual(1, len(responses))
+        self.assertEqual(mcp_server.CALL_CANCELLED, responses[0]["error"]["code"])
+        # 取消通知在 0.5s 的调用结束前就被处理（否则要等满调用耗时）
+        self.assertLess(elapsed, 0.4)
+
+    def test_side_effect_tool_cancellation_waits_for_real_result(self):
+        def slow_execute(tool_id, payload):
+            time.sleep(0.25)
+            return registry.get(tool_id), {"status": "applied"}
+
+        class TimedStdin:
+            def __init__(self, lines, delay):
+                self.lines = lines
+                self.delay = delay
+
+            def __iter__(self):
+                for line in self.lines:
+                    time.sleep(self.delay)
+                    yield line
+
+        stdout = io.StringIO()
+        stdin = TimedStdin([
+            json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/call",
+                        "params": {"name": "media.organize.apply", "arguments": {}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                        "params": {"requestId": 8}}) + "\n",
+        ], delay=0.03)
+        server = mcp_server.McpServer(stdin=stdin, stdout=stdout, env=self.env(),
+                                      execute=slow_execute, timeout_seconds=2)
+        started = time.monotonic()
+        server.serve_forever()
+        elapsed = time.monotonic() - started
+        responses = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertEqual(1, len(responses))
+        # 有副作用工具不提前返回“已取消”，而是等待真实结果（避免调用方误以为未执行）
+        self.assertNotIn("error", responses[0])
+        self.assertEqual("ok", responses[0]["result"]["structuredContent"]["status"])
+        self.assertGreaterEqual(elapsed, 0.2)
+
+    def test_side_effect_tool_calls_are_serialized(self):
+        guard = threading.Lock()
+        state = {"active": 0, "max": 0}
+
+        def slow_execute(tool_id, payload):
+            with guard:
+                state["active"] += 1
+                state["max"] = max(state["max"], state["active"])
+            time.sleep(0.15)
+            with guard:
+                state["active"] -= 1
+            return registry.get(tool_id), {"status": "applied"}
+
+        stdout = io.StringIO()
+        stdin = io.StringIO(
+            json.dumps({"jsonrpc": "2.0", "id": 11, "method": "tools/call",
+                        "params": {"name": "media.organize.apply", "arguments": {}}}) + "\n" +
+            json.dumps({"jsonrpc": "2.0", "id": 12, "method": "tools/call",
+                        "params": {"name": "media.organize.apply", "arguments": {}}}) + "\n")
+        server = mcp_server.McpServer(stdin=stdin, stdout=stdout, env=self.env(),
+                                      execute=slow_execute, timeout_seconds=5)
+        server.serve_forever()
+        responses = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertEqual(2, len(responses))
+        for response in responses:
+            self.assertEqual("ok", response["result"]["structuredContent"]["status"])
+        # 两个有副作用调用不能重叠执行（写工具全局串行）
+        self.assertEqual(1, state["max"])
 
     def test_same_dispatch_as_cli(self):
         StubHandler.routes["/api/v1/healthz"] = (200, {"status": "alive"})

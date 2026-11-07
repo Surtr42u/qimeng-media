@@ -111,6 +111,50 @@ class CatalogDiscoveryTest(unittest.TestCase):
             execution.execute_tool("platform.tool.describe", {"toolId": "no.such"}, config=config)
         self.assertEqual("UNKNOWN_TOOL", raised.exception.code)
 
+    def test_playbook_list_get_and_unknown(self):
+        config = local_config()
+        _, listed = execution.execute_tool("platform.playbook", {}, config=config)
+        names = [row["name"] for row in listed["playbooks"]]
+        self.assertIn("media.organize", names)
+        self.assertIn("author.profile", names)
+        for row in listed["playbooks"]:
+            self.assertIn("baseTools", row)
+            self.assertIn("whenToUse", row)
+        _, by_domain = execution.execute_tool("platform.playbook", {"domain": "author"}, config=config)
+        for row in by_domain["playbooks"]:
+            self.assertEqual("author", row["domain"])
+        _, single = execution.execute_tool("platform.playbook", {"name": "media.organize"}, config=config)
+        playbook = single["playbook"]
+        self.assertEqual("media.organize", playbook["name"])
+        self.assertTrue(playbook["steps"])
+        self.assertTrue(playbook["guardrails"])
+        with self.assertRaises(errors.ToolError) as raised:
+            execution.execute_tool("platform.playbook", {"name": "no.such.playbook"}, config=config)
+        self.assertEqual("INVALID_INPUT", raised.exception.code)
+        with self.assertRaises(errors.ToolError) as raised:
+            execution.execute_tool("platform.playbook", {"domain": "no.such.domain"}, config=config)
+        self.assertEqual("INVALID_INPUT", raised.exception.code)
+
+    def test_playbook_base_tools_reference_registered_tools(self):
+        config = local_config()
+        _, listed = execution.execute_tool("platform.playbook", {}, config=config)
+        for row in listed["playbooks"]:
+            for tool_id in row["baseTools"]:
+                self.assertIsNotNone(registry.get(tool_id), f"{row['name']} 引用了未知工具 {tool_id}")
+
+    def test_playbook_cli_lists_and_reads(self):
+        status, stdout, stderr = run_cli(["playbook", "--json"])
+        self.assertEqual(0, status, stderr)
+        self.assertIn("playbooks", json.loads(stdout))
+        status, stdout, stderr = run_cli(["playbook", "--name", "author.profile", "--json"])
+        self.assertEqual(0, status, stderr)
+        self.assertEqual("author.profile", json.loads(stdout)["playbook"]["name"])
+
+    def test_catalog_advertises_playbook_discovery(self):
+        config = local_config()
+        _, catalog = execution.execute_tool("platform.catalog", {}, config=config)
+        self.assertEqual("platform.playbook", catalog["discovery"]["playbook"])
+
     def test_rules_on_demand(self):
         config = local_config()
         _, payload = execution.execute_tool("platform.rules", {"domain": "media"}, config=config)
