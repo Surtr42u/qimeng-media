@@ -77,21 +77,42 @@ WHERE id = ?
   AND status NOT IN ('completed', 'partial', 'failed', 'cancelled');
 
 -- name: ListClaimableMaintenanceJobs :many
+-- Claim scan for the in-process worker: restrict to the kind the caller has a
+-- registered handler for (unregistered kinds must stay queued for external
+-- executors), and include in-flight states whose lease expired so a crashed or
+-- restarted worker can take the job back over and resume from completed steps.
+-- waiting_*/paused/terminal states are deliberately excluded: only external
+-- evidence or the public pause/resume endpoints re-queue them.
 SELECT * FROM maintenance_jobs
-WHERE status = 'queued'
+WHERE kind = sqlc.arg(kind)
+  AND status IN ('queued', 'inventory', 'research', 'planned', 'applying', 'verifying')
   AND (lease_until IS NULL OR lease_until < sqlc.arg(now))
 ORDER BY created_at ASC, id ASC
 LIMIT 1;
 
 -- name: ClaimMaintenanceJob :execrows
+-- Same status list as ListClaimableMaintenanceJobs (keep the two in sync):
+-- taking over an expired in-flight job preserves its status so the worker can
+-- continue the pipeline instead of restarting side effects.
 UPDATE maintenance_jobs
 SET lease_owner = ?,
     lease_until = ?,
     started_at = COALESCE(started_at, ?),
     updated_at = ?
 WHERE id = ?
-  AND status = 'queued'
+  AND status IN ('queued', 'inventory', 'research', 'planned', 'applying', 'verifying')
   AND (lease_until IS NULL OR lease_until < ?);
+
+-- name: AdvanceMaintenanceJobStatus :execrows
+-- Worker-facing pipeline advance. The previous status is part of the WHERE
+-- clause so a concurrent pause/resume/cancel (or a second worker) cannot be
+-- overwritten; lease_owner proves the caller still holds the job.
+UPDATE maintenance_jobs
+SET status = ?,
+    updated_at = ?
+WHERE id = ?
+  AND lease_owner = ?
+  AND status = ?;
 
 -- name: HeartbeatMaintenanceJob :execrows
 UPDATE maintenance_jobs

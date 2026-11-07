@@ -10,6 +10,40 @@ import (
 	"database/sql"
 )
 
+const advanceMaintenanceJobStatus = `-- name: AdvanceMaintenanceJobStatus :execrows
+UPDATE maintenance_jobs
+SET status = ?,
+    updated_at = ?
+WHERE id = ?
+  AND lease_owner = ?
+  AND status = ?
+`
+
+type AdvanceMaintenanceJobStatusParams struct {
+	Status     string
+	UpdatedAt  string
+	ID         string
+	LeaseOwner sql.NullString
+	Status_2   string
+}
+
+// Worker-facing pipeline advance. The previous status is part of the WHERE
+// clause so a concurrent pause/resume/cancel (or a second worker) cannot be
+// overwritten; lease_owner proves the caller still holds the job.
+func (q *Queries) AdvanceMaintenanceJobStatus(ctx context.Context, arg AdvanceMaintenanceJobStatusParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, advanceMaintenanceJobStatus,
+		arg.Status,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.LeaseOwner,
+		arg.Status_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const cancelMaintenanceJob = `-- name: CancelMaintenanceJob :execrows
 UPDATE maintenance_jobs
 SET status = 'cancelled',
@@ -42,7 +76,7 @@ SET lease_owner = ?,
     started_at = COALESCE(started_at, ?),
     updated_at = ?
 WHERE id = ?
-  AND status = 'queued'
+  AND status IN ('queued', 'inventory', 'research', 'planned', 'applying', 'verifying')
   AND (lease_until IS NULL OR lease_until < ?)
 `
 
@@ -55,6 +89,9 @@ type ClaimMaintenanceJobParams struct {
 	LeaseUntil_2 sql.NullString
 }
 
+// Same status list as ListClaimableMaintenanceJobs (keep the two in sync):
+// taking over an expired in-flight job preserves its status so the worker can
+// continue the pipeline instead of restarting side effects.
 func (q *Queries) ClaimMaintenanceJob(ctx context.Context, arg ClaimMaintenanceJobParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, claimMaintenanceJob,
 		arg.LeaseOwner,
@@ -308,14 +345,26 @@ func (q *Queries) InsertMaintenanceArtifact(ctx context.Context, arg InsertMaint
 
 const listClaimableMaintenanceJobs = `-- name: ListClaimableMaintenanceJobs :many
 SELECT id, kind, status, library_id, payload_json, input_fingerprint, rules_version, authorization_scope, budget_json, idempotency_key, lease_owner, lease_until, created_at, updated_at, started_at, finished_at, error_code, error_message FROM maintenance_jobs
-WHERE status = 'queued'
-  AND (lease_until IS NULL OR lease_until < ?1)
+WHERE kind = ?1
+  AND status IN ('queued', 'inventory', 'research', 'planned', 'applying', 'verifying')
+  AND (lease_until IS NULL OR lease_until < ?2)
 ORDER BY created_at ASC, id ASC
 LIMIT 1
 `
 
-func (q *Queries) ListClaimableMaintenanceJobs(ctx context.Context, now sql.NullString) ([]MaintenanceJob, error) {
-	rows, err := q.db.QueryContext(ctx, listClaimableMaintenanceJobs, now)
+type ListClaimableMaintenanceJobsParams struct {
+	Kind string
+	Now  sql.NullString
+}
+
+// Claim scan for the in-process worker: restrict to the kind the caller has a
+// registered handler for (unregistered kinds must stay queued for external
+// executors), and include in-flight states whose lease expired so a crashed or
+// restarted worker can take the job back over and resume from completed steps.
+// waiting_*/paused/terminal states are deliberately excluded: only external
+// evidence or the public pause/resume endpoints re-queue them.
+func (q *Queries) ListClaimableMaintenanceJobs(ctx context.Context, arg ListClaimableMaintenanceJobsParams) ([]MaintenanceJob, error) {
+	rows, err := q.db.QueryContext(ctx, listClaimableMaintenanceJobs, arg.Kind, arg.Now)
 	if err != nil {
 		return nil, err
 	}

@@ -347,7 +347,7 @@ func TestLeaseClaimHeartbeatComplete(t *testing.T) {
 	ctx := context.Background()
 	job := mustCreate(t, svc, "lease-1")
 
-	claimed, ok, err := svc.Claim(ctx, "worker-a", time.Minute)
+	claimed, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-a", time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("Claim 失败: ok=%v err=%v", ok, err)
 	}
@@ -382,11 +382,11 @@ func TestLeaseClaimHeartbeatComplete(t *testing.T) {
 
 	// 租约过期后可被另一 worker 接管。
 	second := mustCreate(t, svc, "lease-2")
-	if _, ok, err := svc.Claim(ctx, "worker-a", time.Second); err != nil || !ok {
+	if _, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-a", time.Second); err != nil || !ok {
 		t.Fatalf("第二次 Claim 失败: ok=%v err=%v", ok, err)
 	}
 	clock.Advance(2 * time.Second)
-	reclaimed, ok, err := svc.Claim(ctx, "worker-b", time.Minute)
+	reclaimed, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-b", time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("过期接管失败: ok=%v err=%v", ok, err)
 	}
@@ -493,7 +493,7 @@ func TestTerminalIsImmutableAfterComplete(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
 	job := mustCreate(t, svc, "terminal-1")
-	if _, ok, err := svc.Claim(ctx, "worker-a", time.Minute); err != nil || !ok {
+	if _, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-a", time.Minute); err != nil || !ok {
 		t.Fatalf("Claim 失败: ok=%v err=%v", ok, err)
 	}
 	done, err := svc.Complete(ctx, job.Job.ID, "worker-a", StatusFailed, "SYNTHETIC", "synthetic failure")
@@ -534,5 +534,157 @@ func TestTransactionDoesNotPartiallyApplyIllegalTransition(t *testing.T) {
 	}
 	if after.Job.Status != before.Job.Status || !after.Job.UpdatedAt.Equal(before.Job.UpdatedAt) {
 		t.Fatalf("非法迁移改动了任务: before=%+v after=%+v", before.Job, after.Job)
+	}
+}
+
+// TestCreateIdempotencyConflict 覆盖幂等冲突保护：同键同语义输入仍是合法
+// 重放（200，created=false）；同键不同 kind/载荷/预算返回 ErrStateConflict
+// （HTTP 409），不会把另一笔任务当成成功重放，也不产生第二行。
+func TestCreateIdempotencyConflict(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
+	base := CreateInput{
+		Kind:           KindAssetResearch,
+		LibraryID:      "lib-test",
+		Payload:        json.RawMessage(`{"query":"synthetic","limit":3}`),
+		IdempotencyKey: "conflict-1",
+		RulesVersion:   "2026-11-07.1",
+		Budget:         json.RawMessage(`{"maxSteps":5}`),
+	}
+	first, created, err := svc.Create(ctx, base)
+	if err != nil || !created {
+		t.Fatalf("首次创建失败: created=%v err=%v", created, err)
+	}
+
+	// 键序不同但归一化后语义相同：指纹一致，保持既有重放语义。
+	reordered := base
+	reordered.Payload = json.RawMessage(`{"limit":3,"query":"synthetic"}`)
+	replay, created, err := svc.Create(ctx, reordered)
+	if err != nil || created {
+		t.Fatalf("同语义重放应返回既有任务: created=%v err=%v", created, err)
+	}
+	if replay.Job.ID != first.Job.ID {
+		t.Fatalf("同语义重放返回了不同任务: %s != %s", replay.Job.ID, first.Job.ID)
+	}
+
+	conflicts := []struct {
+		name string
+		in   CreateInput
+	}{
+		{"载荷不同", func() CreateInput {
+			in := base
+			in.Payload = json.RawMessage(`{"query":"other"}`)
+			return in
+		}()},
+		{"kind 不同", func() CreateInput {
+			in := base
+			in.Kind = KindAuthorCleanup
+			return in
+		}()},
+		{"预算不同", func() CreateInput {
+			in := base
+			in.Budget = json.RawMessage(`{"maxSteps":99}`)
+			return in
+		}()},
+		{"库不同", func() CreateInput {
+			in := base
+			in.LibraryID = "lib-other"
+			return in
+		}()},
+	}
+	for _, tc := range conflicts {
+		detail, created, err := svc.Create(ctx, tc.in)
+		if !errors.Is(err, ErrStateConflict) {
+			t.Fatalf("%s 期望 ErrStateConflict，得到 err=%v", tc.name, err)
+		}
+		if created || detail.Job.ID != "" {
+			t.Fatalf("%s 冲突时不应返回任务/新建: created=%v detail=%+v", tc.name, created, detail.Job)
+		}
+	}
+	list, err := svc.List(ctx, ListOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("列表失败: %v", err)
+	}
+	if len(list.Items) != 1 {
+		t.Fatalf("冲突后任务数 = %d，期望 1", len(list.Items))
+	}
+}
+
+// TestClaimFiltersByKind 覆盖按 kind 领取：只领取指定 kind 的最旧任务，其他
+// kind 保持 queued（worker 只消费已注册 handler 的 kind 的基础原语语义）。
+func TestClaimFiltersByKind(t *testing.T) {
+	svc, clock := newTestService(t)
+	ctx := context.Background()
+	research := mustCreate(t, svc, "claim-kind-research")
+	clock.Advance(time.Second)
+	backup, created, err := svc.Create(ctx, CreateInput{
+		Kind: KindBackupExport, IdempotencyKey: "claim-kind-backup",
+	})
+	if err != nil || !created {
+		t.Fatalf("创建 backup_export 任务失败: created=%v err=%v", created, err)
+	}
+
+	claimed, ok, err := svc.Claim(ctx, KindBackupExport, "worker-kind", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("按 kind 领取失败: ok=%v err=%v", ok, err)
+	}
+	if claimed.Job.ID != backup.Job.ID {
+		t.Fatalf("按 kind 领取到了错误任务: %s != %s", claimed.Job.ID, backup.Job.ID)
+	}
+	stillQueued, err := svc.Get(ctx, research.Job.ID)
+	if err != nil {
+		t.Fatalf("回读 research 任务失败: %v", err)
+	}
+	if stillQueued.Job.Status != StatusQueued {
+		t.Fatalf("未指定 kind 的 queued 任务被领取: status=%s", stillQueued.Job.Status)
+	}
+
+	claimedResearch, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-kind", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("领取 research 任务失败: ok=%v err=%v", ok, err)
+	}
+	if claimedResearch.Job.ID != research.Job.ID {
+		t.Fatalf("领取 research 任务 ID 不符: %s != %s", claimedResearch.Job.ID, research.Job.ID)
+	}
+	if _, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-kind", time.Minute); err != nil || ok {
+		t.Fatalf("租约未过期不应重复领取: ok=%v err=%v", ok, err)
+	}
+}
+
+// TestAdvanceStatusLeaseAndTransitions 覆盖内部状态推进方法：无租约/非持有者
+// ErrLeaseLost，非法迁移 ErrStateConflict，同状态幂等，暂停后不得再推进。
+func TestAdvanceStatusLeaseAndTransitions(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
+	job := mustCreate(t, svc, "advance-status")
+	if _, err := svc.AdvanceStatus(ctx, job.Job.ID, "worker-a", StatusInventory); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("无租约推进期望 ErrLeaseLost，得到 %v", err)
+	}
+	if _, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-a", time.Minute); err != nil || !ok {
+		t.Fatalf("Claim 失败: ok=%v err=%v", ok, err)
+	}
+	if _, err := svc.AdvanceStatus(ctx, job.Job.ID, "worker-b", StatusInventory); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("非持有者推进期望 ErrLeaseLost，得到 %v", err)
+	}
+	advanced, err := svc.AdvanceStatus(ctx, job.Job.ID, "worker-a", StatusInventory)
+	if err != nil || advanced.Job.Status != StatusInventory {
+		t.Fatalf("queued -> inventory 失败: status=%s err=%v", advanced.Job.Status, err)
+	}
+	if _, err := svc.AdvanceStatus(ctx, job.Job.ID, "worker-a", StatusCompleted); !errors.Is(err, ErrStateConflict) {
+		t.Fatalf("inventory -> completed 期望 ErrStateConflict，得到 %v", err)
+	}
+	same, err := svc.AdvanceStatus(ctx, job.Job.ID, "worker-a", StatusInventory)
+	if err != nil || same.Job.Status != StatusInventory {
+		t.Fatalf("同状态推进应为幂等 no-op: status=%s err=%v", same.Job.Status, err)
+	}
+	applying, err := svc.AdvanceStatus(ctx, job.Job.ID, "worker-a", StatusApplying)
+	if err != nil || applying.Job.Status != StatusApplying {
+		t.Fatalf("inventory -> applying 失败: status=%s err=%v", applying.Job.Status, err)
+	}
+	if _, err := svc.Pause(ctx, job.Job.ID); err != nil {
+		t.Fatalf("暂停失败: %v", err)
+	}
+	if _, err := svc.AdvanceStatus(ctx, job.Job.ID, "worker-a", StatusVerifying); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("暂停后推进期望 ErrLeaseLost，得到 %v", err)
 	}
 }

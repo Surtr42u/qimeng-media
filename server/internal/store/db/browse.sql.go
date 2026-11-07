@@ -104,7 +104,7 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+              AND qimeng_search_token(f.all_text, qk.value) = 1)))
     AND (?23 IS NULL
          OR a.rel_path = CASE
              WHEN ?23 = '' THEN a.file_name
@@ -323,7 +323,7 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+              AND qimeng_search_token(f.all_text, qk.value) = 1)))
     -- directory filter -- keep in sync with the two list queries above
     -- (same AND clause; see the DESC variant's comment for semantics).
     AND (?22 IS NULL
@@ -723,7 +723,7 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+              AND qimeng_search_token(f.all_text, qk.value) = 1)))
     -- directory filter -- keep in sync with the DESC variant above
     -- (same AND clause; see its comment for semantics).
     AND (?23 IS NULL
@@ -1012,12 +1012,20 @@ WHERE
         END))
     -- Full-text search (DOMAIN_RULES 3): q is split on spaces by the
     -- caller (internal/search) into a JSON array; keywords are
-    -- AND-combined and each one must substring-match at least one
-    -- dimension (file/folder/tags/author/characters/source). instr +
-    -- lower is a literal substring match: LIKE wildcards %/_ in user
-    -- input have no magic meaning, and ASCII case is folded by lower().
+    -- AND-combined and each one must match at least one dimension
+    -- (file/folder/tags/author/characters/source) through the shared
+    -- qimeng_search_token(all_text, token)=1 scalar function
+    -- (internal/store/searchtoken; same function for list/count/facets):
+    --   - literal keywords keep the old ASCII-folded substring semantics
+    --     (LIKE wildcards %/_ in user input have no magic meaning);
+    --   - all-digit keywords match a STANDALONE digit run (no ASCII digit
+    --     immediately before/after), so "11" no longer hits 110/2011/1080;
+    --   - a bare number does NOT match a group-page number right after an
+    --     opening bracket of any style -- bracketed tokens own that form;
+    --   - bracketed page tokens like (2) match the group-page number,
+    --     accepting ASCII/full-width bracket variants on either side.
     -- assets_fts is maintained by triggers (migrations/0002_search_fts);
-    -- the trigram index currently only backs fast terms -- the instr
+    -- the trigram index currently only backs fast terms -- the function
     -- scan is bounded by library size, measured ~100ms @ 30k rows
     -- (2026-08-29); revisit with MATCH if profiling says so.
     AND (?22 IS NULL OR NOT EXISTS (
@@ -1025,7 +1033,7 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+              AND qimeng_search_token(f.all_text, qk.value) = 1)))
     -- directory filter (openapi GET /assets directory param; file-manager
     -- directory-tree "file rows"): exact match on the library-relative
     -- dir, DIRECT children only (no recursion). rel_path is rebuilt from

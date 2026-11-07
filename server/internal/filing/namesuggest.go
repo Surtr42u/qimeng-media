@@ -12,7 +12,9 @@ package filing
 //   4. 多角色多样性轮转：按主体角色聚类轮转调度，杜绝单一大热度角色（如玛丽卡多个
 //      子系列）霸占全部槽位，确保库内不同角色（菈妮、梅琳娜、瑟濂等）均能优先曝光；
 //   5. 无序号族智能推荐：若某角色仅有单文件/无序号文件，自动推荐「规范基名 2」及基名；
-//   6. 容量扩容：上限扩容至 8 条（与 api/openapi.yaml NameSuggestions 双写同步）。
+//   6. 容量扩容：上限扩容至 8 条（与 api/openapi.yaml NameSuggestions 双写同步）；
+//   7. 组图页语义：含组内页码的文件（{基名} {作品编号} ({页码})）与独立作品
+//      共享同一作品编号占用，建议下一作品编号而非下一页码（workname.go）。
 
 import (
 	"fmt"
@@ -82,7 +84,7 @@ func SuggestSeriesNames(names []string, q string, extraQueries ...string) []stri
 			continue
 		}
 
-		suffix, numbered := parseSeriesSuffix(base)
+		suffix, numbered := parseSuggestSuffix(base)
 		famKey := norm
 		rawPrefix := normNameBase(base)
 		if numbered {

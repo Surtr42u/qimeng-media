@@ -100,6 +100,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Detail, bool, err
 	q := s.q.WithTx(tx)
 	existing, err := q.GetMaintenanceJobByIdempotencyKey(ctx, key)
 	if err == nil {
+		// 幂等冲突保护（任务书 §8.3）：同一幂等键只对应同一语义请求。
+		// 指纹相同才保留既有重放语义（200，created=false）；kind/库/载荷/
+		// 规则版本/预算任一不同都说明调用方误用了旧键，必须 409 而不是悄悄
+		// 返回另一笔任务的成功响应。
+		if existing.InputFingerprint != fingerprint {
+			return Detail{}, false, fmt.Errorf("%w: 幂等键已被不同输入使用", ErrStateConflict)
+		}
 		// Replay: release the write transaction before loading the detail on a
 		// separate connection (the store uses _txlock=immediate).
 		s.rollback(tx)
@@ -136,6 +143,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Detail, bool, err
 		s.rollback(tx)
 		winner, getErr := s.q.GetMaintenanceJobByIdempotencyKey(ctx, key)
 		if getErr == nil {
+			// 并发竞争同样要过指纹比较，不能把不同载荷的请求当成重放。
+			if winner.InputFingerprint != fingerprint {
+				return Detail{}, false, fmt.Errorf("%w: 幂等键已被不同输入使用", ErrStateConflict)
+			}
 			detail, detailErr := s.Get(ctx, winner.ID)
 			return detail, false, detailErr
 		}

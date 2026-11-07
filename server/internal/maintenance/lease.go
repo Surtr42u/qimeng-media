@@ -11,10 +11,18 @@ import (
 	"qimeng-media/server/internal/store/db"
 )
 
-// Claim atomically leases the oldest queued job whose lease is absent or
-// expired. It is an internal worker primitive: this slice exposes no HTTP
-// claim endpoint. ok=false means there was nothing to claim.
-func (s *Service) Claim(ctx context.Context, owner string, ttl time.Duration) (Detail, bool, error) {
+// Claim atomically leases the oldest claimable job of kind whose lease is
+// absent or expired. It is an internal worker primitive: this package exposes
+// no HTTP claim endpoint. ok=false means there was nothing to claim.
+//
+// Reclaiming an in-flight status (inventory/research/planned/applying/
+// verifying) whose lease expired is how a restarted worker takes a job back
+// over; the worker skips already-completed steps so no side effect repeats.
+func (s *Service) Claim(ctx context.Context, kind Kind, owner string, ttl time.Duration) (Detail, bool, error) {
+	kind = Kind(strings.TrimSpace(string(kind)))
+	if !kind.Valid() {
+		return Detail{}, false, fmt.Errorf("%w: kind 不合法", ErrInvalidInput)
+	}
 	owner = strings.TrimSpace(owner)
 	if owner == "" || !checkRunes(owner, MaxLeaseOwnerRunes) || ttl <= 0 {
 		return Detail{}, false, fmt.Errorf("%w: 租约 owner/ttl 不合法", ErrInvalidInput)
@@ -28,7 +36,10 @@ func (s *Service) Claim(ctx context.Context, owner string, ttl time.Duration) (D
 	}
 	defer s.rollback(tx)
 	q := s.q.WithTx(tx)
-	rows, err := q.ListClaimableMaintenanceJobs(ctx, sql.NullString{String: nowText, Valid: true})
+	rows, err := q.ListClaimableMaintenanceJobs(ctx, db.ListClaimableMaintenanceJobsParams{
+		Kind: string(kind),
+		Now:  sql.NullString{String: nowText, Valid: true},
+	})
 	if err != nil {
 		return Detail{}, false, err
 	}
@@ -126,6 +137,66 @@ func (s *Service) Complete(ctx context.Context, id, owner string, status Status,
 	}
 	if affected == 0 {
 		return Detail{}, ErrLeaseLost
+	}
+	return s.Get(ctx, id)
+}
+
+// AdvanceStatus is the worker-facing pipeline advance: it moves a job owned by
+// owner to next, validating the worker-facing state machine (state.go) and the
+// lease owner in the same transaction/UPDATE. A same-state call is a no-op,
+// which lets a recovered worker re-enter the pipeline at whatever stage the
+// ledger recorded. It is an internal primitive with no HTTP endpoint; the
+// public pause/resume/cancel transitions stay in service.go.
+func (s *Service) AdvanceStatus(ctx context.Context, id, owner string, next Status) (Detail, error) {
+	id, err := normalizeID(id)
+	if err != nil {
+		return Detail{}, err
+	}
+	owner = strings.TrimSpace(owner)
+	if owner == "" || !checkRunes(owner, MaxLeaseOwnerRunes) {
+		return Detail{}, fmt.Errorf("%w: 租约 owner 不合法", ErrInvalidInput)
+	}
+	if !next.Valid() {
+		return Detail{}, fmt.Errorf("%w: 目标状态不合法", ErrInvalidInput)
+	}
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return Detail{}, err
+	}
+	defer s.rollback(tx)
+	q := s.q.WithTx(tx)
+	row, err := getJobTx(ctx, q, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	if !row.LeaseOwner.Valid || row.LeaseOwner.String != owner {
+		return Detail{}, ErrLeaseLost
+	}
+	if Status(row.Status) == next {
+		// 状态已到位：释放读事务后再回读（store 用 _txlock=immediate）。
+		s.rollback(tx)
+		return s.Get(ctx, id)
+	}
+	if !Status(row.Status).CanTransitionTo(next) {
+		return Detail{}, ErrStateConflict
+	}
+	now := s.now().UTC()
+	affected, err := q.AdvanceMaintenanceJobStatus(ctx, db.AdvanceMaintenanceJobStatusParams{
+		Status:     string(next),
+		UpdatedAt:  store.FormatTimestamp(now),
+		ID:         id,
+		LeaseOwner: sql.NullString{String: owner, Valid: true},
+		Status_2:   row.Status,
+	})
+	if err != nil {
+		return Detail{}, err
+	}
+	if affected == 0 {
+		// 读后写之间被暂停/取消或另一 worker 接管：当前持有者已无权推进。
+		return Detail{}, ErrLeaseLost
+	}
+	if err := tx.Commit(); err != nil {
+		return Detail{}, err
 	}
 	return s.Get(ctx, id)
 }
