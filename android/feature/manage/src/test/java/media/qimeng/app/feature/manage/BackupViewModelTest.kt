@@ -74,7 +74,7 @@ class BackupViewModelTest {
         repository: FakeBackupRepository = FakeBackupRepository(),
         queue: ViewEventQueue = ViewEventQueue(FakeEventDao(), FakeEventSender(fail = false), clock = FixedEventClock),
         prefs: BackupAutoPrefsRepository = FakeBackupAutoPrefs(),
-        dirAccess: FakeBackupDirAccess = FakeBackupDirAccess(),
+        dirAccess: BackupDirAccess = FakeBackupDirAccess(),
     ) = Pair(
         BackupViewModel(
             backupRepository = repository,
@@ -168,6 +168,31 @@ class BackupViewModelTest {
         assertEquals("备份目录还没有备份文件，请先在源端导出", viewModel.uiState.value.errorMessage)
         assertTrue(repository.importCalls.isEmpty())
         assertNull(viewModel.uiState.value.pendingImport)
+    }
+
+    @Test
+    fun `历史恢复槽缺失按上次代提示且不出网`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 两代布局历史槽由维护仓库跨目录解析；这里锁定「没有此份」时的专用文案与零出网。
+        val dir = object : BackupDirAccess {
+            override suspend fun fileStatus(dirUri: String, kind: BackupFileKind): BackupFileStatus? = null
+            override suspend fun readBytes(dirUri: String, kind: BackupFileKind): ByteArray? = null
+            override suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind): Long? = null
+        }
+        val (viewModel, repository) = newViewModel(dirAccess = dir)
+        viewModel.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+
+        viewModel.importFromBackupDir(BackupFileKind.PREVIOUS)
+        advanceUntilIdle()
+        assertEquals("还没有上次备份文件（两代布局保留当前/上次两代）", viewModel.uiState.value.errorMessage)
+        viewModel.importFromBackupDir(BackupFileKind.OLDER)
+        advanceUntilIdle()
+        assertEquals(
+            "还没有上上次备份文件（旧三代布局的「（上上次）」可只读恢复）",
+            viewModel.uiState.value.errorMessage,
+        )
+        assertNull(viewModel.uiState.value.pendingImport)
+        assertTrue(repository.importCalls.isEmpty())
     }
 
     @Test

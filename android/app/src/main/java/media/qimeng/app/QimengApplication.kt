@@ -73,6 +73,10 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
     @Inject
     lateinit var scanChargeRegistrar: media.qimeng.app.ScanChargeRegistrar
 
+    /** 设备结果包后台领取接线（task-17）：设置/登录地址驱动 WorkManager 周期同步 */
+    @Inject
+    lateinit var deviceApplyBootstrapper: media.qimeng.app.core.data.device.DeviceApplyBootstrapper
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -86,6 +90,7 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
         cachePoolBinder.onAppCreate()
         serverEventConsumer.onAppCreate()
         scanChargeRegistrar.onAppCreate(this)
+        deviceApplyBootstrapper.onAppCreate()
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = imageLoader

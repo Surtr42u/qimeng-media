@@ -13,6 +13,11 @@ import (
 	// 向 database/sql 注册 "sqlite" 驱动名。
 	_ "modernc.org/sqlite"
 
+	// 全文搜索 q 谓词的自定义 SQL 函数（browse/facets 查询用）必须在任何
+	// 连接打开前注册：modernc 驱动按连接初始化函数表，blank import 触发
+	// searchtoken.init。缺少它会令所有带 q 的查询报 no such function。
+	_ "qimeng-media/server/internal/store/searchtoken"
+
 	"qimeng-media/server/migrations"
 )
 

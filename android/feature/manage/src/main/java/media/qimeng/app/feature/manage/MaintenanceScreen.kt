@@ -123,7 +123,7 @@ fun MaintenanceScreen(
             }
         } else {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("备份恢复", "作者主表", "原件归档").forEachIndexed { index, title ->
+                listOf("备份恢复", "作者主表", "原件归档", "设备领取").forEachIndexed { index, title ->
                     FilterChip(selected = tab == index, enabled = !blocked, onClick = { tab = index },
                         modifier = Modifier.weight(1f).heightIn(min = 44.dp), shape = RoundedCornerShape(14.dp),
                         label = { Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 1) })
@@ -135,7 +135,7 @@ fun MaintenanceScreen(
                     onPickUnifiedRoot = viewModel::browse, externalBusy = state.busy)
                 1 -> AuthorTxtImportScreen(onBack, modifier = Modifier.weight(1f), embedded = true, viewModel = authors,
                     externalBusy = state.busy, documents = state.documents, onImportDocument = viewModel::prepareDocument)
-                else -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                2 -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     QimengSettingsCard {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -161,6 +161,7 @@ fun MaintenanceScreen(
                         }
                     }
                 }
+                else -> DeviceApplyScreen(Modifier.weight(1f))
             }
         }
     }

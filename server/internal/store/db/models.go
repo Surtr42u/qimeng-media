@@ -8,6 +8,29 @@ import (
 	"database/sql"
 )
 
+type AiAudit struct {
+	ID         int64
+	ClientID   string
+	Method     string
+	Path       string
+	Action     string
+	StatusCode int64
+	RequestID  string
+	CreatedAt  string
+}
+
+type AiClient struct {
+	ID            string
+	Label         string
+	TokenHash     string
+	ScopesJson    string
+	DeviceIdsJson string
+	CreatedAt     string
+	ExpiresAt     sql.NullString
+	RevokedAt     sql.NullString
+	LastUsedAt    sql.NullString
+}
+
 type Asset struct {
 	AssetID             string
 	LibraryID           string

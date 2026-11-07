@@ -12,6 +12,7 @@ import { useProgress, useTimelineTags } from '@/hooks/use-progress'
 import VideoPlayer from '@/components/media/video-player'
 import ImageViewer from '@/components/media/image-viewer'
 import { PRELOAD_AROUND } from '@/lib/image-viewer-math'
+import { AssetFileName } from '@/components/detail/AssetFileName'
 import { AuthorCard } from '@/components/detail/AuthorCard'
 import { AssetTagRow } from '@/components/detail/AssetTagRow'
 import { FileOpsButton } from '@/components/detail/FileOpsButton'
@@ -267,6 +268,7 @@ export default function AssetDetailPage() {
             </div>
           ) : null}
           <h1 className="detail-title">{d.cosWork ?? d.fileName}</h1>
+          <AssetFileName fileName={d.fileName} />
           <p className="detail-meta">
             <span>浏览 {formatCount(d.viewCount)}</span>
             <span>播放 {formatCount(d.playCount)}</span>

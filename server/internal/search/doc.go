@@ -4,7 +4,8 @@
 // 万级数据下全表扫描的代价不可控（对照扫描的其它聚合筛选，见
 // docs/DOMAIN_RULES §3）。trigram 分词（migrations/0002_search_fts）使
 // 中文任意子串可检索，这一选择 2026-08-29 在 SQLite 3.53.3 实测通过
-// （MATCH 不支持 2 字短词，查询侧因此统一用 instr 子串语义，见
+// （MATCH 不支持 2 字短词，查询侧因此统一用共享标量函数
+// qimeng_search_token 做子串/编号匹配，见 internal/store/searchtoken 与
 // internal/store/queries/browse.sql 的 q_json 谓词注释）。
 //
 // 边界（见 docs/ARCHITECTURE.md §5）：

@@ -64,7 +64,7 @@ internal fun ImportExportCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                 Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(if (rolling) "最新备份 · 自动保留三代" else "手动备份", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (rolling) "最新备份 · 自动保留当前/上次两代" else "手动备份", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(when {
                         !dirSet -> "先设置维护目录"
                         fileStatus == null -> "还没有保存备份"
@@ -131,10 +131,10 @@ internal fun AutoBackupCard(
 internal fun BackupRuleNotes() {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(
-            "导入前保存本机资料并纳入三代轮换，保存失败会停止恢复。",
+            "导入前保存本机资料并纳入两代轮换，保存失败会停止恢复。",
             "浏览记录按事件身份合并，同一备份重复导入不会翻倍。",
             "先同步媒体并扫描，再检查匹配率和迁移提示。",
-            "统一目录备份附完整性摘要，手动与自动合计保留最新、上次、上上次。",
+            "统一目录备份附完整性摘要：当前代与上次代各一份；旧三代目录里的（上次）/（上上次）文件保留，仍可只读恢复。",
         ).forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }

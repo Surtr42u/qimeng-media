@@ -126,6 +126,7 @@
 | 指标/探针 | OBSERVABILITY 对应节 |
 | 模块/依赖方向/职责 | 模块 README、ARCHITECTURE §5；普通内部文件拆分不强制改总纲 |
 | 能力状态/缺口 | CAPABILITY_MAP 对应域；当前事项/验证变化再改 HANDOVER |
+| AI 工具契约/工具清单/规则版本 | `tools/ai_maintenance/README.md`、`docs/AI_PLATFORM_TASKBOOK.md`、ADR-0056；实现阶段状态同步 HANDOVER/CAPABILITY_MAP |
 | 重大决策/技术选型 | 新 ADR + INDEX + 现行规范；禁止只追加覆盖句 |
 | UI 行为/视觉/跨端契约 | GUIDE_UI/模块 README 对应范围 |
 | 里程碑结论 | PROJECT_PLAN；旧验收不作新设备/版本的证据 |
