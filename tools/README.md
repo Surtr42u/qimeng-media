@@ -116,4 +116,6 @@ Web 云端浏览器检查将合成作者管理场景的窄屏/桌面截图与失
 
 AI 工具平台（显式工具注册表、规则包、统一 CLI、计划与受控写入、stdio MCP 适配器）见 [ai_maintenance/README.md](ai_maintenance/README.md)。旧脚本 [import_creator_profiles.py](import_creator_profiles.py) 已转发到统一实现，仅保留兼容入口。
 
+组图命名（作品编号按作品递增、组内页码独立）的唯一实现是 [ai_maintenance/media_naming.py](ai_maintenance/media_naming.py) 纯规划/校验引擎（计划指纹、并发锁、回读报告；测试 [test_media_naming.py](test_media_naming.py)）；工具层 media.organize.prepare/apply 只做适配、加锁执行与回读，不复制第二套命名算法。
+
 研究用途的 Google Lens/Google 文本搜索 sidecar（loopback + token，仅 PC/NAS，默认不启用，嵌入式/移动端禁用）见 [research_sidecar/README.md](research_sidecar/README.md)。

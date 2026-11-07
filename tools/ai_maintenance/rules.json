@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-07.3",
+  "rulesVersion": "2026-11-07.4",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -101,7 +101,8 @@
           "组内页码格式 (1)..(n)；作品编号沿用既有分隔与位宽规则；单图作品为独立作品，不占页序号；支持组图与单图混合。",
           "补图只追加页序号（同 family/workNumber 从当前最大页+1）；缺页保留现状，未确认不得重排整组；改名/移动/重排不得改变作品编号。",
           "执行前重新读取目标目录现状并校验计划前置指纹；apply 逐步移动/改名后回读实际文件名。服务端同名自动改名（如 基名 (2).ext）必须作为冲突终止并重新规划，不得当作成功。",
-          "仅括号序号（含自动改名产物）不是作品编号；并发/批量必须持锁并在锁内双检现状，防止编号冲突、跳号与重复分配。"
+          "仅括号序号（含自动改名产物）不是作品编号；并发/批量必须持锁并在锁内双检现状，防止编号冲突、跳号与重复分配。",
+          "命名算法唯一实现在 media_naming.py（ENGINE_VERSION=1.0.0，已安装）；apply 必须在实例+库级锁内双检现状并回读，锁超时/失效即冲突终止；引擎缺失或发布物未安装时工具状态动态降级 planned。"
         ]
       },
       {
@@ -237,10 +238,12 @@
         "description": "只读生成资产作者关联替换计划，校验库 authorAttach 能力。"
       },
       "media.organize.prepare": {
-        "status": "planned",
+        "status": "supported",
         "cli": "tool call media.organize.prepare",
         "endpoint": "POST /api/v1/assets/{assetId}/move",
-        "description": "组图命名规划（先分组→作品编号→组内页码）；依赖 media_naming 引擎，缺失时工具状态为 planned。"
+        "description": "组图命名规划（先分组→作品编号→组内页码）；引擎已安装 v1.0.0，缺失/未发布时工具状态动态降级 planned。",
+        "engineVersion": "1.0.0",
+        "engineModule": "tools/ai_maintenance/media_naming.py"
       }
     },
     "write": {
@@ -329,14 +332,17 @@
         "description": "按已确认计划整体替换资产作者关联并回读；移除关联会删除作品行，媒体保留。"
       },
       "media.organize.apply": {
-        "status": "planned",
+        "status": "supported",
         "cli": "tool call media.organize.apply",
         "endpoint": "POST /api/v1/assets/{assetId}/move",
         "requestSchema": "MoveRequest",
         "requiredFields": [
           "targetDir"
         ],
-        "description": "按已确认命名计划逐步移动/改名并回读；依赖 media_naming 引擎。"
+        "description": "按已确认命名计划加锁逐步移动/改名并回读；引擎已安装 v1.0.0，服务端自动改名视为失败。",
+        "engineVersion": "1.0.0",
+        "engineModule": "tools/ai_maintenance/media_naming.py",
+        "locking": "apply 在目标实例+库级 SerializedLocks 内重新取现状、双检计划、逐步移动并回读；锁超时/失效即冲突终止。"
       }
     }
   },
@@ -1077,7 +1083,7 @@
     {
       "id": "media-organize-naming",
       "title": "组图命名：先分组 → 每组一个作品编号 → 组内 (1)..(n) 页码 → 确认 → 移动 → 回读",
-      "status": "prepare-tool-dependent; apply-tool-dependent; engine-required",
+      "status": "prepare-supported; apply-supported; engine-required; locking-required",
       "steps": [
         {
           "step": 1,
@@ -1095,7 +1101,7 @@
           "step": 3,
           "action": "media.organize.prepare 生成计划：每组一个作品编号、组内页码、预览与指纹",
           "command": "tool call media.organize.prepare --input-file <groups.json>",
-          "status": "tool-dependent"
+          "status": "supported"
         },
         {
           "step": 4,
@@ -1107,7 +1113,7 @@
           "step": 5,
           "action": "media.organize.apply 带 confirm=true 执行；锁内双检、逐步 move",
           "command": "tool call media.organize.apply --input-file <apply-input.json>",
-          "status": "tool-dependent"
+          "status": "supported"
         },
         {
           "step": 6,
@@ -1120,7 +1126,8 @@
         "作品编号与组内页码分离；同一组只占一个作品编号，禁止分配成 11、12、13、14。",
         "补图只追加页序号；缺页保留现状；改名/移动/重排不改变作品编号。",
         "仅括号序号不是作品编号；服务端自动改名视为冲突终止。",
-        "命名算法唯一实现在 media_naming.py；未安装时工具状态为 planned。"
+        "命名算法唯一实现在 media_naming.py v1.0.0；工具核心不复制第二套算法。",
+        "apply 在实例+库级 SerializedLocks 内重新取现状、双检计划、逐步 move 并回读；锁超时/失效按冲突终止，不自动删除 stale 锁。"
       ]
     }
   ],
@@ -1166,7 +1173,7 @@
       "数据库审计、迁移、备份恢复、环境诊断保持独立管理员工具，不进入 AI 工具注册表。"
     ]
   },
-  "rulepackVersion": "2026-11-07.3",
+  "rulepackVersion": "2026-11-07.4",
   "platform": {
     "platformVersion": "1.0.0",
     "toolContractVersion": "1.0.0",
@@ -1233,6 +1240,13 @@
     "tools": [
       "media.organize.prepare",
       "media.organize.apply"
-    ]
+    ],
+    "engineVersion": "1.0.0",
+    "engineModule": "tools/ai_maintenance/media_naming.py",
+    "locking": {
+      "scope": "instance+library（SerializedLocks；锁文件只写 pid/时间/引擎版本）",
+      "usage": "apply：取现状→校验→加锁→锁内重新取现状并双检→逐步 move→回读；锁只保护一次 apply，不跨请求。",
+      "failure": "lock_timeout/lock_stale 均按冲突终止，不自动删除 stale 锁文件；锁目录可用 QIMENG_AI_LOCK_DIR 覆盖。"
+    }
   }
 }

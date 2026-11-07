@@ -26,7 +26,8 @@ RULES = ROOT / "tools" / "ai_maintenance" / "rules.json"
 SYNTHETIC_TOKEN = "-".join(("synthetic", "test", "credential"))
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"synthetic-image-marker"
 
-_TEMP_ROOT = Path(__file__).resolve().parents[1] / "build" / "ai-maintenance" / "test-temp"
+_TEMP_ROOT = (Path(__file__).resolve().parents[1]
+              / "tools" / "ai_maintenance" / ".test-temp")
 try:
     _TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 except OSError:
@@ -119,7 +120,7 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(hashlib.sha256(raw).hexdigest(), pack["openapiSha256"])
         self.assertEqual("1.0.0", pack["platformVersion"])
         self.assertEqual("1.0.0", pack["toolContractVersion"])
-        self.assertEqual("2026-11-07.3", pack["rulepackVersion"])
+        self.assertEqual("2026-11-07.4", pack["rulepackVersion"])
         self.assertEqual(pack["rulepackVersion"], pack["rulesVersion"])
         for known in (
             "/api/v1/healthz",

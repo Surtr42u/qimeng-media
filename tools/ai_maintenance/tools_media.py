@@ -112,9 +112,22 @@ def _list_library_files(ctx: ToolContext, library_id: str, directory: str) -> di
         f"目录资产超过 {MAX_LIST_PAGES * ASSET_PAGE_LIMIT} 个，超出命名规划上限；请缩小目录后再试")
 
 
-def _naming_error(module, exc: Exception) -> Exception:
+def _naming_error(module, exc: Exception):
     """把引擎 NamingError 映射为工具错误码，保留 code 供自动化判断。"""
     code = getattr(exc, "code", "") or "engine_error"
+    message = str(exc)
+    details = {"code": code}
+    if code == "lock_timeout":
+        return errors.ToolError(
+            "CONFLICT", message, category="conflict", exit_code=1,
+            recovery=("另一批次可能正在对该库执行命名；稍后重试。锁目录不可写时可设 "
+                      "QIMENG_AI_LOCK_DIR 指向可写目录；stale 锁需人工确认后清理，工具不自动删除。"),
+            details=details)
+    if code == "lock_stale":
+        return errors.ToolError(
+            "CONFLICT", message, category="conflict", exit_code=1,
+            recovery="锁文件超过失效时限：人工确认没有进程持有后清理锁文件，再重新 prepare/apply。",
+            details=details)
     mapping = {
         "invalid_request": errors.invalid_input,
         "duplicate_source": errors.invalid_input,
@@ -128,18 +141,25 @@ def _naming_error(module, exc: Exception) -> Exception:
         "work_number_conflict": errors.precondition_failed,
         "work_number_gap": errors.precondition_failed,
         "readback_mismatch": errors.readback_mismatch,
-        "lock_timeout": errors.conflict,
-        "lock_stale": errors.conflict,
     }
     factory = mapping.get(code)
-    message = str(exc)
     if factory is errors.plan_fingerprint_mismatch:
         return factory("plan", "plan")
     if factory is errors.not_confirmed:
         return factory("media.organize.apply")
     if factory is not None:
-        return factory(message, {"code": code})
-    return errors.internal_error("命名引擎错误：" + message, {"code": code})
+        return factory(message, details)
+    return errors.internal_error("命名引擎错误：" + message, details)
+
+
+def _engine_call(module, label: str, call):
+    """调用引擎函数并把 NamingError 映射为工具错误；其他异常按内部缺陷处理。"""
+    try:
+        return call()
+    except Exception as exc:  # noqa: BLE001
+        if getattr(exc, "code", None):
+            raise _naming_error(module, exc) from None
+        raise errors.internal_error(label + "失败") from exc
 
 
 def media_organize_prepare(ctx: ToolContext, payload: dict) -> dict:
@@ -157,18 +177,15 @@ def media_organize_prepare(ctx: ToolContext, payload: dict) -> dict:
             if isinstance(item, dict) and item.get("id") == library_id:
                 library = item
                 break
-    try:
-        plan = module.prepare_plan(
+    plan = _engine_call(
+        module, "命名引擎 prepare_plan",
+        lambda: module.prepare_plan(
             groups,
             sorted(current_files),
             instance=ctx.target,
             library={"id": library_id, "name": (library or {}).get("name")},
             directory=directory,
-        )
-    except Exception as exc:  # noqa: BLE001 - 引擎错误码统一映射
-        if getattr(exc, "code", None):
-            raise _naming_error(module, exc) from None
-        raise errors.internal_error("命名引擎 prepare 失败") from exc
+        ))
     if not isinstance(plan, dict):
         raise errors.internal_error("命名引擎返回的计划不是对象")
     return {"plan": plan, "diagnostics": {
@@ -201,30 +218,31 @@ def media_organize_apply(ctx: ToolContext, payload: dict) -> dict:
     if payload.get("confirm") is not True:
         raise errors.not_confirmed("media.organize.apply")
     target = plan.get("target") if isinstance(plan.get("target"), dict) else {}
-    library_id = _library_id({"libraryId": target.get("library") if isinstance(target.get("library"), str)
-                              else (target.get("library") or {}).get("id") if isinstance(target.get("library"), dict)
-                              else None})
+    library_value = target.get("library")
+    if isinstance(library_value, dict):
+        library_id = _library_id({"libraryId": library_value.get("id")})
+    else:
+        library_id = _library_id({"libraryId": library_value})
     directory = _directory({"directory": target.get("directory", "")})
+    if not isinstance(plan.get("planFingerprint"), str) or not plan.get("planFingerprint"):
+        raise errors.plan_invalid("plan 缺少 planFingerprint，必须由 prepare 生成")
     # 并发约束（任务书 §6.6 第 5 条）：同一目标实例+库的 apply 串行化，
     # 防止两批并发各自通过前置校验后分配出重复/跳号的作品编号。锁只保护
-    # “取现状→校验→逐步移动→回读”，不跨请求持锁；锁目录可由
+    # “锁内取现状→校验→逐步移动→回读”，不跨请求持锁；锁目录可由
     # QIMENG_AI_LOCK_DIR 覆盖（默认系统临时目录下的 qimeng-ai-media-locks）。
     lock_dir = _resolve_lock_dir(ctx)
+    library_payload = {"id": library_id}
+    if isinstance(library_value, dict) and isinstance(library_value.get("name"), str):
+        library_payload["name"] = library_value["name"]
+    locks = _engine_call(module, "命名引擎并发锁初始化",
+                        lambda: module.SerializedLocks(lock_dir, ctx.target, library_payload))
+    _engine_call(module, "命名引擎并发锁获取", locks.acquire)
     try:
-        locks = module.SerializedLocks(lock_dir, ctx.target, {"id": library_id})
-        locks.acquire()
-    except Exception as exc:  # noqa: BLE001
-        if getattr(exc, "code", None):
-            raise _naming_error(module, exc) from None
-        raise errors.internal_error("命名引擎并发锁初始化失败") from exc
-    try:
+        # 锁内重新取现状并校验（双检）：等待锁期间目录可能已被其他批次改变。
         current_files = _list_library_files(ctx, library_id, directory)
-        try:
-            validation = module.validate_plan(plan, sorted(current_files), confirmed=True)
-        except Exception as exc:  # noqa: BLE001
-            if getattr(exc, "code", None):
-                raise _naming_error(module, exc) from None
-            raise errors.internal_error("命名引擎 validate_plan 失败") from exc
+        validation = _engine_call(
+            module, "命名引擎 validate_plan",
+            lambda: module.validate_plan(plan, sorted(current_files), confirmed=True))
         if not isinstance(validation, dict):
             raise errors.internal_error("命名引擎 validate_plan 返回非法结构")
         if not validation.get("ok"):
@@ -232,64 +250,77 @@ def media_organize_apply(ctx: ToolContext, payload: dict) -> dict:
             codes = {item.get("code") for item in details if isinstance(item, dict)}
             if "needs_confirmation" in codes:
                 raise errors.not_confirmed("media.organize.apply")
+            if "plan_fingerprint_mismatch" in codes:
+                raise errors.ToolError(
+                    "PLAN_FINGERPRINT_MISMATCH",
+                    "命名计划指纹不一致：计划内容已被修改，必须重新 prepare",
+                    category="plan", exit_code=1,
+                    recovery="重新调用 media.organize.prepare 生成新计划；禁止修改计划后执行。",
+                    details=details)
+            if "stale_precondition" in codes:
+                raise errors.precondition_failed(
+                    "目标目录现状在 prepare 后已变化，必须重新规划", details=details)
             raise errors.precondition_failed("命名计划校验失败，必须重新规划", details=details)
-        try:
-            steps = module.plan_steps(plan)
-        except Exception as exc:  # noqa: BLE001
-            if getattr(exc, "code", None):
-                raise _naming_error(module, exc) from None
-            raise errors.internal_error("命名引擎 plan_steps 失败") from exc
+        steps = _engine_call(module, "命名引擎 plan_steps", lambda: module.plan_steps(plan))
         executed: list[dict] = []
         total = len(steps)
+        failure: tuple[str, str] | None = None
         for step in steps:
             name = step.get("sourceName")
             asset_id = step.get("assetId") or current_files.get(name)
             if not isinstance(asset_id, str):
                 executed.append({"index": step.get("index"), "status": "failed",
                                  "error": "unknown_source", "sourceName": name})
-                return _media_result(plan, executed, total, current_files, ctx, library_id, directory,
-                                     "failed", "无法按文件名解析 assetId；请重新规划。")
+                failure = ("failed", "无法按文件名解析 assetId；请重新规划。")
+                break
+            body = step.get("body") if isinstance(step.get("body"), dict) else {
+                "targetDir": step.get("targetDir") or directory,
+                "newName": step.get("targetName"),
+            }
             try:
                 ctx.client.post("/api/v1/assets/" + parse.quote(asset_id, safe="") + "/move",
-                                json_body={"targetDir": step.get("targetDir") or directory,
-                                           "newName": step.get("targetName")})
+                                json_body=body)
             except http_client.HTTPStatusError as exc:
                 executed.append({"index": step.get("index"), "assetId": asset_id,
                                  "sourceName": name, "targetName": step.get("targetName"),
                                  "status": "failed", "httpStatus": exc.status, "error": exc.body})
-                return _media_result(plan, executed, total, current_files, ctx, library_id, directory,
-                                     "partial" if executed[:-1] else "failed",
-                                     "服务端拒绝（HTTP 错误）；停止后续移动并保留已执行步骤。")
+                committed = sum(1 for item in executed if item.get("status") == "committed")
+                failure = ("partial" if committed else "failed",
+                           "服务端拒绝（HTTP 错误）；停止后续移动并保留已执行步骤。")
+                break
             executed.append({"index": step.get("index"), "assetId": asset_id,
                              "sourceName": name, "targetName": step.get("targetName"),
                              "status": "committed"})
-        return _media_result(plan, executed, total, current_files, ctx, library_id, directory,
-                             "applied", "全部移动已提交，开始回读。", final=True)
-    finally:
-        locks.release()
-
-
-def _media_result(plan, executed, total, before_files, ctx, library_id, directory,
-                  status, message, final=False) -> dict:
-    module = _require_engine()
-    after_files = _list_library_files(ctx, library_id, directory) if final else None
-    report = None
-    if final and hasattr(module, "readback_report") and after_files is not None:
+        # 无论成败都尝试回读（失败诊断也保留实际文件名），回读不可用不掩盖失败步骤。
+        report = None
         try:
-            report = module.readback_report(plan, sorted(after_files),
-                                            committed_steps=executed)
-        except Exception as exc:  # noqa: BLE001
-            raise errors.internal_error("命名引擎 readback_report 失败") from exc
-        if isinstance(report, dict) and not report.get("ok", True):
+            after_files = _list_library_files(ctx, library_id, directory)
+            report = _engine_call(
+                module, "命名引擎 readback_report",
+                lambda: module.readback_report(plan, sorted(after_files),
+                                               committed_steps=executed))
+        except errors.ToolError:
+            if failure is None:
+                raise
+        if failure is not None:
+            status, message = failure
+            if isinstance(report, dict):
+                message += " 回读：" + ("一致" if report.get("ok") else "不一致（见 readback）")
+        elif isinstance(report, dict) and not report.get("ok", True):
             status = "failed"
             message = "回读不一致（含服务端自动改名/缺文件/多余文件）；按冲突终止处理。"
-    return {
-        "status": status,
-        "tool": "media.organize.apply",
-        "planFingerprint": (plan or {}).get("planFingerprint"),
-        "idempotencyKey": (plan or {}).get("idempotencyKey"),
-        "executedSteps": executed,
-        "stepCount": total,
-        "readback": report,
-        "summary": message,
-    }
+        else:
+            status = "applied"
+            message = "全部移动已提交，回读一致。"
+        return {
+            "status": status,
+            "tool": "media.organize.apply",
+            "planFingerprint": plan.get("planFingerprint"),
+            "idempotencyKey": plan.get("idempotencyKey"),
+            "executedSteps": executed,
+            "stepCount": total,
+            "readback": report,
+            "summary": message,
+        }
+    finally:
+        locks.release()

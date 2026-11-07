@@ -9,7 +9,8 @@ import tempfile
 from pathlib import Path
 import unittest
 
-_TEMP_ROOT = Path(__file__).resolve().parents[1] / "build" / "ai-maintenance" / "test-temp"
+_TEMP_ROOT = (Path(__file__).resolve().parents[1]
+              / "tools" / "ai_maintenance" / ".test-temp")
 try:
     _TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 except OSError:

@@ -18,14 +18,15 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib import parse
 
-from ai_maintenance import cli, errors, execution, openapi, plans, registry, rulepack, schema
+from ai_maintenance import (cli, errors, execution, openapi, plans, registry, rulepack,
+                           schema, tools_media)
 
 ROOT = Path(__file__).resolve().parents[1]
 OPENAPI = ROOT / "api" / "openapi.yaml"
 RULES = ROOT / "tools" / "ai_maintenance" / "rules.json"
 TOKEN = "-".join(("synthetic", "toolkit", "credential"))
 
-_TEMP_ROOT = ROOT / "build" / "ai-maintenance" / "test-temp"
+_TEMP_ROOT = ROOT / "tools" / "ai_maintenance" / ".test-temp"
 try:
     _TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 except OSError:
@@ -280,7 +281,7 @@ class RulepackTest(unittest.TestCase):
             second = rulepack.build_rulepack()
         self.assertEqual(first["platformVersion"], "1.0.0")
         self.assertEqual(first["toolContractVersion"], "1.0.0")
-        self.assertEqual(first["rulepackVersion"], "2026-11-07.3")
+        self.assertEqual(first["rulepackVersion"], "2026-11-07.4")
         self.assertNotEqual(first["platformVersion"], first["rulepackVersion"])
         self.assertEqual(rulepack.dumps_pack(first), rulepack.dumps_pack(second))
         self.assertEqual(len(first["tools"]), len(registry.TOOLS))
@@ -755,7 +756,7 @@ class CliToolTest(StubServerTest):
         self.assertEqual(0, status)
         payload = json.loads(stdout)
         self.assertEqual("1.0.0", payload["platformVersion"])
-        self.assertEqual("2026-11-07.3", payload["rulepackVersion"])
+        self.assertEqual("2026-11-07.4", payload["rulepackVersion"])
         self.assertIn("sha256", payload["openapi"])
         status, stdout, stderr = self.run_cli(["tools", "list", "--json"])
         self.assertEqual(0, status)
@@ -817,3 +818,132 @@ class CliToolTest(StubServerTest):
         self.assertEqual(1, status)
         self.assertNotIn(TOKEN, stdout + stderr)
         self.assertIn("<redacted>", stderr)
+
+
+# --------------------------------------------------------------------------- #
+# 组图命名集成（media_naming 引擎已安装）
+# --------------------------------------------------------------------------- #
+
+MEDIA_FAMILY = "守望先锋 朱诺"
+MEDIA_EXISTING = [f"{MEDIA_FAMILY} {number}.png" for number in range(1, 11)]
+MEDIA_RAW = ["browser_download_7f3a.png", "browser_download_7f3b.png",
+             "browser_download_7f3c.png", "browser_download_7f3d.png"]
+
+
+class MediaOrganizeTest(StubServerTest):
+    FAMILY = MEDIA_FAMILY
+    EXISTING = MEDIA_EXISTING
+    RAW = MEDIA_RAW
+    ASSET_IDS = {name: f"asset-{index}" for index, name in enumerate(RAW, start=1)}
+
+    def page(self, names):
+        items = []
+        for name in names:
+            items.append({"id": self.ASSET_IDS.get(name, "asset-" + name.replace(" ", "-")),
+                          "fileName": name, "relPath": name, "libraryId": "lib-1"})
+        return {"items": items, "nextCursor": None}
+
+    def groups(self):
+        return [{
+            "family": self.FAMILY,
+            "files": [{"name": name} for name in self.RAW],
+            "confidence": 1.0,
+            "confirmed": True,
+            "evidence": ["同一下载批次 + 同目录"],
+        }]
+
+    def routes(self, pages):
+        StubHandler.routes[("GET", "/api/v1/assets")] = [(200, page) for page in pages]
+        StubHandler.routes[("GET", "/api/v1/libraries")] = (
+            200, [{"id": "lib-1", "name": "合成库", "capabilities": {"authorAttach": True}}])
+        for asset_id in self.ASSET_IDS.values():
+            StubHandler.routes[("POST", f"/api/v1/assets/{asset_id}/move")] = (200, {})
+
+    def prepare(self):
+        _spec, result = self.call("media.organize.prepare",
+                                  {"libraryId": "lib-1", "groups": self.groups()})
+        return result
+
+    def test_prepare_assigns_one_work_number_for_a_whole_group(self):
+        self.routes([self.page(self.EXISTING + self.RAW)])
+        prepared = self.prepare()
+        plan = prepared["plan"]
+        self.assertEqual("ready", plan["status"])
+        self.assertEqual([11], plan["impact"]["workNumbers"])
+        self.assertEqual(4, plan["impact"]["groupedFiles"])
+        targets = [page["targetName"] for group in plan["groups"] for page in group["pages"]]
+        self.assertEqual([
+            f"{self.FAMILY} 11 (1).png",
+            f"{self.FAMILY} 11 (2).png",
+            f"{self.FAMILY} 11 (3).png",
+            f"{self.FAMILY} 11 (4).png",
+        ], targets)
+        self.assertTrue(any("11" in line for line in prepared["diagnostics"]["preview"]))
+        # prepare 只读：没有移动/写入请求
+        self.assertFalse([item for item in StubHandler.seen
+                          if item["method"] in ("POST", "PUT", "DELETE")])
+
+    def test_apply_moves_with_lock_and_verifies_readback(self):
+        after = self.page(self.EXISTING + [
+            f"{self.FAMILY} 11 (1).png", f"{self.FAMILY} 11 (2).png",
+            f"{self.FAMILY} 11 (3).png", f"{self.FAMILY} 11 (4).png"])
+        self.routes([self.page(self.EXISTING + self.RAW),
+                     self.page(self.EXISTING + self.RAW), after])
+        plan = self.prepare()["plan"]
+        with temp_dir() as lock_parent:
+            lock_root = lock_parent / "locks"
+            with patch.object(tools_media, "_resolve_lock_dir",
+                              return_value=str(lock_root)):
+                _spec, result = self.call("media.organize.apply",
+                                          {"plan": plan, "confirm": True})
+        self.assertEqual("applied", result["status"])
+        self.assertEqual(4, result["stepCount"])
+        self.assertTrue(all(step["status"] == "committed"
+                            for step in result["executedSteps"]))
+        self.assertTrue(result["readback"]["ok"])
+        moves = [item for item in StubHandler.seen if item["method"] == "POST"]
+        self.assertEqual(4, len(moves))
+        bodies = [json.loads(item["body"]) for item in moves]
+        self.assertEqual(sorted(f"{self.FAMILY} 11 ({index}).png" for index in range(1, 5)),
+                         sorted(body["newName"] for body in bodies))
+        self.assertFalse([item for item in moves if not item["path"].endswith("/move")])
+
+    def test_apply_rejects_stale_plan_after_directory_changes(self):
+        after_change = self.page(self.EXISTING + self.RAW + ["new_unrelated.png"])
+        self.routes([self.page(self.EXISTING + self.RAW), after_change])
+        plan = self.prepare()["plan"]
+        with temp_dir() as lock_parent, patch.object(
+                tools_media, "_resolve_lock_dir", return_value=str(lock_parent / "locks")):
+            with self.assertRaises(errors.ToolError) as caught:
+                self.call("media.organize.apply", {"plan": plan, "confirm": True})
+        self.assertEqual("PRECONDITION_FAILED", caught.exception.code)
+        self.assertFalse([item for item in StubHandler.seen if item["method"] == "POST"])
+
+    def test_tampered_plan_is_rejected(self):
+        self.routes([self.page(self.EXISTING + self.RAW)])
+        plan = self.prepare()["plan"]
+        tampered = json.loads(json.dumps(plan))
+        tampered["changes"][0]["targetName"] = "被篡改.png"
+        with temp_dir() as lock_parent, patch.object(
+                tools_media, "_resolve_lock_dir", return_value=str(lock_parent / "locks")):
+            with self.assertRaises(errors.ToolError) as caught:
+                self.call("media.organize.apply", {"plan": tampered, "confirm": True})
+        self.assertEqual("PLAN_FINGERPRINT_MISMATCH", caught.exception.code)
+        self.assertFalse([item for item in StubHandler.seen if item["method"] == "POST"])
+
+    def test_engine_missing_keeps_tools_planned(self):
+        with patch.object(tools_media, "engine_module", return_value=None):
+            document, _raw = openapi.parse_file(OPENAPI)
+            for tool_id in ("media.organize.prepare", "media.organize.apply"):
+                self.assertEqual("planned",
+                                 registry.tool_status(registry.get(tool_id), document)["status"])
+            with self.assertRaises(errors.ToolError) as caught:
+                self.call("media.organize.prepare", {"libraryId": "lib-1", "groups": []})
+            self.assertEqual("TOOL_NOT_IMPLEMENTED", caught.exception.code)
+
+    def test_engine_installed_marks_tools_supported_with_engine_version(self):
+        document, _raw = openapi.parse_file(OPENAPI)
+        for tool_id in ("media.organize.prepare", "media.organize.apply"):
+            summary = registry.tool_summary(registry.get(tool_id), document)
+            self.assertEqual("supported", summary["status"])
+            self.assertEqual("1.0.0", summary["implementationVersion"])

@@ -23,7 +23,8 @@
 | `tools_query.py` | 只读查询与研究工具实现。 |
 | `tools_author.py` | 作者档案 prepare/update、清理 prepare/apply、原子合并。 |
 | `tools_asset.py` | 资产作者关联 prepare/apply。 |
-| `tools_media.py` | media.organize.prepare/apply 适配层；命名算法唯一实现在 `media_naming.py`（缺失时工具为 planned）。 |
+| `media_naming.py` | **组图命名纯规划/校验引擎**（作品索引、`(1)..(n)` 页码、计划指纹、`SerializedLocks`、回读报告）；ENGINE_VERSION=1.0.0。 |
+| `tools_media.py` | media.organize.prepare/apply 适配层：有界读目录现状、调用引擎、加锁逐步 move 并回读；缺失引擎时工具动态 planned。 |
 | `profile_import.py` | 作者公开档案受控填充的**唯一写入实现**；旧脚本 `../import_creator_profiles.py` 只转发。 |
 | `rulepack.py` | 生成规则包（分离版本 + 工具状态 + 能力核对），稳定可比较。 |
 | `cli.py` | 统一入口：兼容旧只读子命令 + `version`/`tools`/`tool call`。 |
@@ -31,6 +32,7 @@
 | [test_ai_maintenance.py](../test_ai_maintenance.py) | 规则包/旧 CLI 合同回归（合成数据、127.0.0.1 stub）。 |
 | [test_ai_toolkit.py](../test_ai_toolkit.py) | 分块解析、能力降级、注册表/禁用、计划指纹、作者/清理/合并/资产流程。 |
 | [test_ai_mcp.py](../test_ai_mcp.py) | 两个独立合成 MCP 客户端的协议、超时、取消与脱敏回归。 |
+| [test_media_naming.py](../test_media_naming.py) | 命名引擎纯函数回归（工作编号/页码/补图/缺页/锁/回读）。 |
 
 生成物默认输出到 stdout；`--out` 写入文件。本目录 `.gitignore` 已忽略 `rulepack.json`；
 建议写到被忽略的 `build/ai-maintenance/`。
@@ -59,6 +61,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求前拒绝全部有副作用工具。 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
 | `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
+| `QIMENG_AI_LOCK_DIR` | 可选 | media.organize.apply 的命名锁目录（默认系统临时目录）；受限沙箱下可指向可写目录。 |
 
 ```powershell
 $env:QIMENG_API_BASE = "http://127.0.0.1:8420"
@@ -182,7 +185,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
   可在本地一刀关闭全部副作用工具。
 - 8420 真库禁止测试写入；测试只用临时目录、合成数据与 127.0.0.1 stub。
 - 本机沙箱若限制系统临时目录/目录权限，测试临时目录放在被忽略的
-  `build/ai-maintenance/test-temp/`。
+  `tools/ai_maintenance/.test-temp/`。
 
 ## MCP stdio 适配器
 
@@ -231,12 +234,28 @@ python -X utf8 tools/check_docs.py
 测试覆盖：分块解析行为（含描述块标量跳过）、合成 OpenAPI 变更只让相关工具降级、
 版本/指纹稳定、工具列举/禁用/只读模式、输入 Schema 非法、计划指纹与版本校验、
 人工字段保护、409 传播、清理多信号候选、原子合并指纹确认、资产作者关联、旧 CLI
-合同、旧脚本转发统一实现、MCP 两客户端协议与脱敏。全部使用合成数据与回环 stub。
+合同、旧脚本转发统一实现、MCP 两客户端协议与脱敏、media.organize 端到端
+（11 (1)..(4) 作品编号/页码、锁内执行、回读失败与篡改计划拒绝）。全部使用合成数据
+与回环 stub；命名引擎自身另跑 `python -m unittest test_media_naming`。
+
+## 组图命名集成（media.organize.*）
+
+`media_naming.py`（ENGINE_VERSION=1.0.0）负责：识别分组 → 每组一个作品编号
+（同 family 现有最大编号+1，补图从现有最大页+1）→ 组内 `(1)..(n)` 页码 → 计划
+指纹/幂等键/预览 → `validate_plan`（锁内双检）→ `plan_steps` → `readback_report`。
+
+- `media.organize.prepare` 只读：有界翻页 `GET /assets` 取目标目录现状（最多
+  20 页 × 200），生成计划与 preview；confidence 不足或未确认时 `needs_confirmation`。
+- `media.organize.apply` 需 `confirm=true`：在 `instance+library` 级
+  `SerializedLocks` 内重新取现状、核对计划指纹/前置文件名指纹、逐步
+  `POST /api/v1/assets/{assetId}/move`、回读实际文件名；服务端同名自动改名
+  （`基名 (2).ext`）按冲突终止，不得当作成功。锁超时/失效返回 `CONFLICT`，
+  stale 锁不自动删除；锁文件只写 pid/时间/引擎版本。
+- 本地受限沙箱若不能在新建目录写锁文件，请设 `QIMENG_AI_LOCK_DIR` 到可写目录；
+  本地 apply 集成测试会把锁目录 patch 到工作区临时目录。
 
 ## 本切片明确未实现（planned）
 
 - `backup.export`：大响应、落盘摘要与预算流程未实现。
 - `device.apply.*`：服务端结果包 API 已存在，Android Worker/配对/真机后台同步未实现。
-- `media.organize.*` 已随本发行物提供 `media_naming.py` 命名引擎（组图作品编号/页码、
-  计划指纹、并发锁、回读判定）；工具核心不复制第二套命名算法。
 - 标签写入、任意 SQL/文件/shell 执行、通用插件市场、远程 HTTP AI API。
