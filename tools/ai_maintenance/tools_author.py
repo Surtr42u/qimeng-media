@@ -395,7 +395,7 @@ def _replay_profile_applied(current: dict, plan: dict) -> bool:
 
 def author_profile_update(ctx: ToolContext, payload: dict) -> dict:
     plan = plans.verify_plan(payload.get("plan"), tool_id="author.profile.update",
-                             rulepack_version=ctx.rulepack_version)
+                             rulepack_version=ctx.rulepack_version, instance=ctx.target)
     if payload.get("confirm") is not True:
         raise errors.not_confirmed("author.profile.update")
     if plan.get("kind") != "profile.update":
@@ -779,33 +779,94 @@ def author_cleanup_prepare(ctx: ToolContext, payload: dict) -> dict:
     }}
 
 
-def _cleanup_apply_one(ctx: ToolContext, action: dict) -> dict:
+def _inventory_signature(entry: dict) -> dict:
+    """计划 inventory 与实时读取共用的档案/来源稳定签名（不含展示字段）。"""
+    profile = entry.get("profile") if isinstance(entry.get("profile"), dict) else {}
+    return {
+        "profile": {
+            "revision": profile.get("revision"),
+            "status": profile.get("status"),
+            "empty": profile.get("empty"),
+            "hasXProfile": profile.get("hasXProfile"),
+        },
+        "sources": entry.get("sources"),
+    }
+
+
+def _fresh_inventory_signature(ctx: ToolContext, author_id: str, author_type: str) -> dict:
+    profile = _normalize_profile(ctx.client.get(_profile_path(author_id)))
+    return {
+        "profile": {
+            "revision": profile["revision"],
+            "status": profile["status"],
+            "empty": _empty_profile(profile),
+            "hasXProfile": isinstance(profile.get("xProfile"), dict),
+        },
+        "sources": _sources_list(ctx.client, author_id, author_type),
+    }
+
+
+def _assert_inventory_unchanged(ctx: ToolContext, plan: dict, author_id: str,
+                                author_type: str) -> None:
+    """按计划快照复检档案/来源；变化即拒绝，避免按过期影响数量执行删除。"""
+    inventory = plan.get("inventory") if isinstance(plan.get("inventory"), dict) else {}
+    expected = inventory.get(author_id)
+    if not isinstance(expected, dict):
+        raise errors.plan_invalid("计划缺少该作者的档案/来源快照", {"authorId": author_id})
+    current = _fresh_inventory_signature(ctx, author_id, author_type)
+    if plans.digest(current) != plans.digest(_inventory_signature(expected)):
+        raise errors.precondition_failed(
+            "作者档案/来源在 prepare 后已变化，拒绝执行清理动作（需重新 prepare）",
+            {"authorId": author_id, "reason": "inventory_changed"})
+
+
+def _cleanup_apply_one(ctx: ToolContext, action: dict, plan: dict) -> dict:
     """执行单个清理动作并回读；回读不一致抛 READBACK_MISMATCH。"""
-    author_id = action["authorId"]
-    if action["action"] == "delete":
+    action_type = action.get("action")
+    if action_type == "delete":
+        author_id = action.get("authorId")
+        if not isinstance(author_id, str) or not author_id:
+            raise errors.plan_invalid("delete 动作缺少 authorId")
+        inventory = plan.get("inventory") if isinstance(plan.get("inventory"), dict) else {}
+        entry = inventory.get(author_id) if isinstance(inventory.get(author_id), dict) else {}
+        author_type = (entry.get("author") or {}).get("type") if isinstance(entry.get("author"), dict) else None
+        if not isinstance(author_type, str):
+            author_type = "regular"
+        # 删除前最后一次复检：prepare 之后档案/来源若变化，影响预览已失效。
+        _assert_inventory_unchanged(ctx, plan, author_id, author_type)
         ctx.client.delete("/api/v1/authors/" + parse.quote(author_id, safe=""))
         index = _authors_index(ctx.client)
         if author_id in index:
             raise errors.readback_mismatch("删除后作者仍存在", {"authorId": author_id})
         return {"action": "delete", "authorId": author_id, "status": "applied",
                 "readback": {"author": "absent", "associations": "removed", "media": "preserved"}}
-    if action["action"] == "rename":
+    if action_type == "rename":
+        author_id = action.get("authorId")
+        if not isinstance(author_id, str) or not author_id:
+            raise errors.plan_invalid("rename 动作缺少 authorId")
+        display_name = action.get("displayName")
+        if not isinstance(display_name, str) or not display_name:
+            raise errors.plan_invalid("rename 动作缺少 displayName")
         response = ctx.client.put("/api/v1/authors/" + parse.quote(author_id, safe=""),
-                                  {"displayName": action["displayName"]})
+                                  {"displayName": display_name})
         if not isinstance(response, dict) or not isinstance(response.get("id"), str):
             raise errors.readback_mismatch("改名响应缺少 id", {"response": response})
         new_id = response["id"]
         index = _authors_index(ctx.client)
         author = index.get(new_id)
-        if author is None or author.get("displayName") != action["displayName"]:
+        if author is None or author.get("displayName") != display_name:
             raise errors.readback_mismatch("改名回读不一致", {"expectedId": new_id})
         if new_id != author_id and author_id in index:
             raise errors.readback_mismatch("改名后旧身份仍存在", {"oldId": author_id})
         return {"action": "rename", "authorId": author_id, "newAuthorId": new_id,
                 "status": "applied",
                 "readback": {"id": new_id, "displayName": author.get("displayName")}}
-    source_id = action["sourceAuthorId"]
-    target_id = action["targetAuthorId"]
+    if action_type != "merge":
+        raise errors.plan_invalid("未知清理动作：" + str(action_type))
+    source_id = action.get("sourceAuthorId")
+    target_id = action.get("targetAuthorId")
+    if not isinstance(source_id, str) or not source_id or not isinstance(target_id, str) or not target_id:
+        raise errors.plan_invalid("merge 动作缺少 sourceAuthorId/targetAuthorId")
     response = ctx.client.post("/api/v1/authors/merge",
                                json_body={"sourceAuthorId": source_id, "targetAuthorId": target_id})
     if not isinstance(response, dict):
@@ -822,7 +883,7 @@ def _cleanup_apply_one(ctx: ToolContext, action: dict) -> dict:
 
 def author_cleanup_apply(ctx: ToolContext, payload: dict) -> dict:
     plan = plans.verify_plan(payload.get("plan"), tool_id="author.cleanup.apply",
-                             rulepack_version=ctx.rulepack_version)
+                             rulepack_version=ctx.rulepack_version, instance=ctx.target)
     if payload.get("confirm") is not True:
         raise errors.not_confirmed("author.cleanup.apply")
     if plan.get("kind") != "author.cleanup":
@@ -842,11 +903,29 @@ def author_cleanup_apply(ctx: ToolContext, payload: dict) -> dict:
     current_digest = plans.digest(sorted(current_snapshots, key=lambda item: str(item.get("id"))))
     if current_digest != preconditions.get("authorsDigest"):
         raise errors.precondition_failed("作者现状与计划快照不一致（关联数/显示名/身份已变化）")
+    # 计划影响预览基于 prepare 时的档案/来源；执行前整体复检一次，delete 再逐项复检。
+    for author_id in preconditions.get("involvedAuthorIds") or []:
+        _assert_inventory_unchanged(ctx, plan, author_id, index[author_id].get("type") or "regular")
     executed: list[dict] = []
     total = len(actions)
     for position, action in enumerate(actions, start=1):
         try:
-            step = _cleanup_apply_one(ctx, action)
+            step = _cleanup_apply_one(ctx, action, plan)
+        except errors.ToolError as exc:
+            executed.append({"action": action.get("action"), "status": "failed",
+                             "error": exc.to_dict(),
+                             "position": position, "remaining": total - position})
+            readback_index = _authors_index(ctx.client)
+            return {
+                "status": "partial" if position > 1 else "failed",
+                "tool": "author.cleanup.apply",
+                "executedActions": executed,
+                "actionCount": total,
+                "readback": {"authors": [
+                    {"id": author_id, "present": author_id in readback_index}
+                    for author_id in preconditions.get("involvedAuthorIds") or []]},
+                "summary": "前置条件在 apply 时变化或动作执行失败，已停止后续动作并保留已执行步骤。",
+            }
         except http_client.HTTPStatusError as exc:
             executed.append({"action": action.get("action"), "status": "failed",
                              "httpStatus": exc.status, "error": exc.body,

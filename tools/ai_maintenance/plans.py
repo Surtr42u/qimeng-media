@@ -91,8 +91,14 @@ def make_plan(*, tool: str, tool_version: str, kind: str, target: dict,
     return plan
 
 
-def verify_plan(plan, *, tool_id: str, rulepack_version: str) -> dict:
-    """校验计划结构与指纹/版本；通过返回计划对象。"""
+def verify_plan(plan, *, tool_id: str, rulepack_version: str,
+                instance: str | None = None) -> dict:
+    """校验计划结构与指纹/版本；通过返回计划对象。
+
+    instance 是 apply 侧当前连接实例的标签（host:port）。给出时必须与
+    plan.target.instance 完全一致，防止把 A 实例的计划应用到 B 实例；
+    实例不一致属于前置条件失效（重新 prepare），不是计划被篡改。
+    """
     if not isinstance(plan, dict):
         raise errors.plan_invalid("plan 必须是对象")
     missing = [key for key in PLAN_REQUIRED_KEYS if key not in plan]
@@ -119,6 +125,16 @@ def verify_plan(plan, *, tool_id: str, rulepack_version: str) -> dict:
     if plan.get("planFingerprint") != expected_fingerprint:
         raise errors.plan_fingerprint_mismatch(expected_fingerprint, plan.get("planFingerprint"))
     target = plan.get("target") if isinstance(plan.get("target"), dict) else {}
+    plan_instance = str(target.get("instance") or "")
+    if instance is not None and plan_instance != str(instance):
+        raise errors.precondition_failed(
+            "计划绑定的目标实例与当前连接实例不一致，拒绝跨实例执行",
+            {
+                "reason": "instance_mismatch",
+                "planInstance": plan_instance,
+                "currentInstance": str(instance),
+            },
+        )
     expected_key = compute_idempotency_key(tool_id, expected_fingerprint, str(target.get("instance") or ""))
     if plan.get("idempotencyKey") != expected_key:
         raise errors.plan_invalid("plan.idempotencyKey 与计划内容不一致")

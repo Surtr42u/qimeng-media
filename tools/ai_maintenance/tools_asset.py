@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 from urllib import parse
 
 from . import client as http_client
@@ -14,6 +15,50 @@ from . import errors, plans, validation
 from .runtime import ToolContext
 
 MAX_NEW_AUTHOR_NAMES = 20
+
+# 服务端规范身份按「两个以上空白」或「 / 」拆分别名，取首个别名决定身份；
+# 回读匹配用同一保守口径（只做大小写与首别名归一），不把空格差异当同一人。
+_ALIAS_SEPARATOR = re.compile(r"(?:\s{2,}|\s/\s)")
+
+
+def _display_key(value) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text:
+        return ""
+    first_alias = _ALIAS_SEPARATOR.split(text)[0]
+    return first_alias.strip().casefold()
+
+
+def _verify_author_readback(*, explicit_ids, new_names, readback_authors, pre_index) -> dict:
+    """按作者名解析后的回读核对。
+
+    显式 authorIds 返回的 id 必须齐全；因 newAuthorNames 由服务端解析成新 id
+    （新建）或复用既有作者（显示名可能与输入不同），额外 id 只有在「显示名按
+    保守口径命中某个 newAuthorNames」或「PUT 前已存在该常规作者（按名复用）」
+    时才视为预期；其余任意额外 id 一律判失败，避免静默放行同名/错名关联。
+    """
+    readback_ids = sorted({item["id"] for item in readback_authors})
+    explicit = set(explicit_ids)
+    missing = sorted(explicit - set(readback_ids))
+    extras = [author_id for author_id in readback_ids if author_id not in explicit]
+    name_keys = {_display_key(name) for name in new_names if _display_key(name)}
+    by_id = {item["id"]: item for item in readback_authors}
+    display_matched = [author_id for author_id in extras
+                       if _display_key(by_id.get(author_id, {}).get("displayName")) in name_keys]
+    pre_regular_ids = {author_id for author_id, item in pre_index.items()
+                       if isinstance(item, dict) and item.get("type") == "regular"}
+    reused = [author_id for author_id in extras if author_id in pre_regular_ids]
+    unexpected = sorted(set(extras) - set(display_matched) - set(reused))
+    # 请求了按名新建/复用却一个额外作者都没出现：服务端未解析任何名字，判失败。
+    unresolved = list(new_names) if new_names and not extras else []
+    return {
+        "readbackIds": readback_ids,
+        "missing": missing,
+        "unexpected": unexpected,
+        "unresolved": unresolved,
+    }
 
 
 def _asset_path(asset_id: str) -> str:
@@ -198,7 +243,7 @@ def asset_authors_prepare(ctx: ToolContext, payload: dict) -> dict:
 
 def asset_authors_apply(ctx: ToolContext, payload: dict) -> dict:
     plan = plans.verify_plan(payload.get("plan"), tool_id="asset.authors.apply",
-                             rulepack_version=ctx.rulepack_version)
+                             rulepack_version=ctx.rulepack_version, instance=ctx.target)
     if payload.get("confirm") is not True:
         raise errors.not_confirmed("asset.authors.apply")
     if plan.get("kind") != "asset.authors":
@@ -230,24 +275,27 @@ def asset_authors_apply(ctx: ToolContext, payload: dict) -> dict:
     body = {"authorIds": final_ids}
     if new_names:
         body["newAuthorNames"] = new_names
+    # PUT 前记录作者索引，用于区分「按名复用既有作者」与「意外多出的关联」。
+    pre_index = _authors_index(ctx)
     response = ctx.client.put(_asset_path(asset_id) + "/authors", body)
     if not isinstance(response, dict):
         raise errors.readback_mismatch("PUT 资产作者响应不是对象")
     readback = _read_asset(ctx, asset_id)
-    readback_ids = _current_author_ids(readback)
-    expected_ids = set(final_ids)
-    missing = [author_id for author_id in expected_ids if author_id not in readback_ids]
-    unexpected_new = [author_id for author_id in readback_ids if author_id not in expected_ids]
-    # newAuthorNames 解析出的新作者身份未知，用显示名核对；不视为意外。
-    resolved_names = {item.get("displayName") for item in readback.get("authors") or []
-                      if isinstance(item, dict)}
-    unresolved = [name for name in new_names if name not in resolved_names]
-    if missing or unexpected_new or unresolved:
+    readback_authors = [item for item in readback.get("authors") or []
+                        if isinstance(item, dict) and isinstance(item.get("id"), str)]
+    checked = _verify_author_readback(
+        explicit_ids=final_ids,
+        new_names=new_names,
+        readback_authors=readback_authors,
+        pre_index=pre_index,
+    )
+    if checked["missing"] or checked["unexpected"] or checked["unresolved"]:
         raise errors.readback_mismatch("资产作者关联回读与计划不一致", {
-            "missingAuthorIds": missing,
-            "unexpectedAuthorIds": unexpected_new,
-            "unresolvedNewAuthorNames": unresolved,
+            "missingAuthorIds": checked["missing"],
+            "unexpectedAuthorIds": checked["unexpected"],
+            "unresolvedNewAuthorNames": checked["unresolved"],
         })
+    readback_ids = checked["readbackIds"]
     return {
         "status": "applied",
         "tool": "asset.authors.apply",

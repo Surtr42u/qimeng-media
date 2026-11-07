@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import re
 import tempfile
 from urllib import parse
 
@@ -59,27 +60,47 @@ def _library_id(payload: dict) -> str:
     return value
 
 
+_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
+
+
 def _directory(payload: dict) -> str:
+    """规范化并校验库内相对目录（与 GET /assets 的 directory 参数语义对齐）。
+
+    OpenAPI：directory 为空串=库根，只返回该目录的直接子文件、不递归；缺省=不
+    过滤；绝对路径/盘符/../逃逸/保留设备名等由服务端 400。本地只做保守预检，
+    最终仍以服务端校验为准——这里绝不把非法路径悄悄"修正"成另一个目录。
+    """
     value = payload.get("directory", "")
     if not isinstance(value, str):
         raise errors.invalid_input("directory 必须是字符串")
-    if ".." in value.split("/") or "\\" in value:
-        raise errors.invalid_input("directory 不能越出库根")
-    return value.strip("/")
+    text = value.strip()
+    if text == "":
+        return ""
+    if text.startswith(("/", "\\")) or _DRIVE_PREFIX.match(text):
+        raise errors.invalid_input("directory 必须是库内相对路径（不能是绝对路径）")
+    if "\\" in text:
+        raise errors.invalid_input("directory 只能使用 / 分隔的库内相对路径")
+    segments = text.split("/")
+    if any(segment in ("", ".", "..") for segment in segments):
+        raise errors.invalid_input("directory 不能包含空段、. 或 .. 路径段")
+    return "/".join(segments)
 
 
 def _list_library_files(ctx: ToolContext, library_id: str, directory: str) -> dict[str, str]:
-    """有界翻页读取库内资产，返回 {fileName: assetId}（限定目标目录）。
+    """有界翻页读取目标目录的直接子文件，返回 {fileName: assetId}。
 
-    当前 GET /assets 没有 fileName/directory 过滤参数，adapter 只按 libraryId
-    翻页并在本地按 relPath 目录前缀过滤；页数有界，超限明确失败而不是静默截断。
+    使用 GET /assets 的 directory 参数（库内相对目录精确匹配、不递归；空串=库根）
+    让服务端做目录边界判断，避免客户端按 relPath 猜目录时把子目录文件或同前缀
+    目录（a 与 ab）误选进来，也避免库根把全部递归文件当成候选。始终显式传
+    directory（含空串），不依赖"缺省=不过滤"。页数有界，超限明确失败而不是静默截断。
     """
     files: dict[str, str] = {}
     cursor = None
     for _page in range(MAX_LIST_PAGES):
         data = ctx.client.get("/api/v1/assets", {"libraryId": library_id,
                                                 "limit": ASSET_PAGE_LIMIT,
-                                                "cursor": cursor})
+                                                "cursor": cursor,
+                                                "directory": directory})
         if not isinstance(data, dict):
             raise errors.internal_error("资产列表响应不是对象")
         items = data.get("items")
@@ -92,15 +113,7 @@ def _list_library_files(ctx: ToolContext, library_id: str, directory: str) -> di
             asset_id = item.get("id")
             if not isinstance(name, str) or not isinstance(asset_id, str):
                 continue
-            rel_path = item.get("relPath")
-            parent = ""
-            if isinstance(rel_path, str) and "/" in rel_path:
-                parent = rel_path.rsplit("/", 1)[0]
-            if directory:
-                if parent != directory and not parent.startswith(directory + "/"):
-                    continue
-            elif parent:
-                continue
+            # 目录边界由服务端 directory 参数保证；返回条目都是该目录直接子文件。
             if name in files and files[name] != asset_id:
                 raise errors.precondition_failed("目录内存在同名文件，无法安全规划命名",
                                                  {"fileName": name})
@@ -218,6 +231,12 @@ def media_organize_apply(ctx: ToolContext, payload: dict) -> dict:
     if payload.get("confirm") is not True:
         raise errors.not_confirmed("media.organize.apply")
     target = plan.get("target") if isinstance(plan.get("target"), dict) else {}
+    plan_instance = str(target.get("instance") or "")
+    if plan_instance != str(ctx.target):
+        raise errors.precondition_failed(
+            "命名计划绑定的目标实例与当前连接实例不一致，拒绝跨实例执行",
+            {"reason": "instance_mismatch",
+             "planInstance": plan_instance, "currentInstance": str(ctx.target)})
     library_value = target.get("library")
     if isinstance(library_value, dict):
         library_id = _library_id({"libraryId": library_value.get("id")})
