@@ -628,6 +628,32 @@ func (q *Queries) PauseMaintenanceJob(ctx context.Context, arg PauseMaintenanceJ
 	return result.RowsAffected()
 }
 
+const releaseMaintenanceLease = `-- name: ReleaseMaintenanceLease :execrows
+UPDATE maintenance_jobs
+SET lease_owner = NULL,
+    lease_until = NULL,
+    updated_at = ?1
+WHERE id = ?2
+  AND lease_owner = ?3
+`
+
+type ReleaseMaintenanceLeaseParams struct {
+	UpdatedAt  string
+	ID         string
+	LeaseOwner sql.NullString
+}
+
+// Best-effort release for a claim that cannot be used locally (e.g. the detail
+// read after the claim UPDATE failed). Only the current holder may release, so
+// a delayed cleanup can never steal a lease that was already reassigned.
+func (q *Queries) ReleaseMaintenanceLease(ctx context.Context, arg ReleaseMaintenanceLeaseParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, releaseMaintenanceLease, arg.UpdatedAt, arg.ID, arg.LeaseOwner)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const resumeMaintenanceJob = `-- name: ResumeMaintenanceJob :execrows
 UPDATE maintenance_jobs
 SET status = 'queued',

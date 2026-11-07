@@ -36,6 +36,12 @@ const (
 	DefaultWorkerConcurrency = 1
 )
 
+// maxWorkerHeartbeatFailures 是心跳连续非租约失败上限：达到后不再信任租约，
+// 取消在途 handler 并停止本轮执行（任务保持原状态，租约到期后重领；已完成
+// 步骤不会重复副作用）。非租约错误包括 DB 忙/临时故障，不应把可重试任务
+// 永久标成 failed。
+const maxWorkerHeartbeatFailures = 2
+
 // 账本 error_code 约定（worker 侧）：步骤失败但 handler 未提供具体错误码时
 // 用 STEP_FAILED；panic 兜底用 WORKER_PANIC；其余 handler 自报（如
 // BACKUP_EXPORT_*）。error_code 上限 MaxErrorCodeRunes，超长会被截断。
@@ -332,30 +338,65 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 		prior[step.Step] = step
 	}
 
-	// 心跳：租约 TTL/3 续租一次。失去租约（暂停/取消/被接管）时关闭
-	// leaseLost，本任务在下一个步骤边界停止，不再推进状态；已经提交的步骤
-	// 记录保留（取消语义：保留已提交步骤）。
+	// jobCtx 是本任务的执行上下文（handler 专用）：租约丢失或心跳判定不可
+	// 靠时主动 cancel，让 backup 等长步骤的在途副作用尽快停止，避免暂停/
+	// 取消后 resume 或重领的新执行器与旧执行器并发执行同一步。账本收尾写入
+	// 仍用 WithoutCancel 派生上下文，取消不会打断已开始的终态记录。
+	jobCtx, jobCancel := context.WithCancel(ctx)
+	defer jobCancel()
+	// 心跳：租约 TTL/3 续租一次。失去租约（暂停/取消/被接管）时 cancel
+	// jobCtx 并关闭 leaseLost；连续非租约失败或租约余量不足时同样取消在途
+	// 步骤并停止心跳（任务保持原状态，等租约到期重领）。
 	leaseLost := make(chan struct{})
 	hbDone := make(chan struct{})
 	hbCtx, hbCancel := context.WithCancel(ctx)
 	var leaseLostOnce sync.Once
 	safego.Go(w.logger, "维护任务租约心跳", func() {
 		defer close(hbDone)
-		ticker := time.NewTicker(w.heartbeatInterval())
+		interval := w.heartbeatInterval()
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
+		// 本地跟踪的租约到期时刻：初始来自领取结果，成功续租后刷新。
+		var leaseUntil time.Time
+		if job.LeaseUntil != nil {
+			leaseUntil = *job.LeaseUntil
+		}
+		failures := 0
 		for {
 			select {
 			case <-hbCtx.Done():
 				return
 			case <-ticker.C:
-				if err := w.svc.Heartbeat(hbCtx, job.ID, leaseOwner, w.leaseTTL); err != nil {
-					if errors.Is(err, ErrLeaseLost) {
-						leaseLostOnce.Do(func() { close(leaseLost) })
-						return
-					}
-					if hbCtx.Err() == nil {
-						w.logger.Warn("维护任务心跳失败（下个周期重试）", "jobId", job.ID, "error", err)
-					}
+				err := w.svc.Heartbeat(hbCtx, job.ID, leaseOwner, w.leaseTTL)
+				if err == nil {
+					failures = 0
+					leaseUntil = w.now().UTC().Add(w.leaseTTL)
+					continue
+				}
+				if errors.Is(err, ErrLeaseLost) {
+					// 暂停/取消/被接管：取消在途 handler，并让步骤边界停止。
+					leaseLostOnce.Do(func() {
+						jobCancel()
+						close(leaseLost)
+					})
+					return
+				}
+				if hbCtx.Err() != nil {
+					return
+				}
+				failures++
+				w.logger.Warn("维护任务心跳失败（间歇重试）", "jobId", job.ID,
+					"failures", failures, "error", err)
+				remaining := time.Duration(0)
+				if !leaseUntil.IsZero() {
+					remaining = leaseUntil.Sub(w.now().UTC())
+				}
+				if failures >= maxWorkerHeartbeatFailures ||
+					(!leaseUntil.IsZero() && remaining <= interval) {
+					w.logger.Warn("维护任务续租不可靠（连续失败/租约余量不足），取消在途步骤并停止本轮执行",
+						"jobId", job.ID, "failures", failures, "remaining", remaining.String())
+					jobCancel()
+					return
 				}
 			}
 		}
@@ -374,6 +415,12 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 			w.logger.Info("维护任务因进程退出中止（保留已提交步骤）", "jobId", job.ID, "step", spec.Name)
 			return
 		}
+		if jobCtx.Err() != nil {
+			// 心跳已判定租约丢失或不可靠：在途步骤已取消，不再开始新步骤。
+			w.logger.Info("维护任务租约不可用，停止后续步骤（保留已提交步骤）",
+				"jobId", job.ID, "status", status, "nextStep", spec.Name)
+			return
+		}
 		if channelClosed(leaseLost) {
 			w.logger.Info("维护任务租约已丢失，停止后续步骤（保留已提交步骤）",
 				"jobId", job.ID, "status", status, "nextStep", spec.Name)
@@ -382,11 +429,15 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 		// 步骤边界复核租约：暂停/取消会清空租约，必须在开始新副作用前发现。
 		if err := w.svc.Heartbeat(ctx, job.ID, leaseOwner, w.leaseTTL); err != nil {
 			if errors.Is(err, ErrLeaseLost) || ctx.Err() != nil {
+				jobCancel()
 				w.logger.Info("维护任务租约已失效，停止后续步骤（保留已提交步骤）", "jobId", job.ID, "step", spec.Name)
 				return
 			}
-			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, StepSpec{}, 0, time.Time{},
-				StepFailedCode, "续租失败: "+err.Error())
+			// P2-2：非租约错误（DB 忙/临时故障）不把任务标 failed——停止本槽
+			// 并取消 jobCtx，租约到期后由重领路径接续（已完成步骤不会重复副作用）。
+			w.logger.Warn("维护任务续租遇非租约错误，停止本轮执行（任务保持原状态，租约到期后重领）",
+				"jobId", job.ID, "step", spec.Name, "error", err)
+			jobCancel()
 			return
 		}
 		next, ok := advanceStage(status, spec.Stage)
@@ -399,6 +450,14 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 			if _, err := w.svc.AdvanceStatus(ctx, job.ID, leaseOwner, next); err != nil {
 				if errors.Is(err, ErrLeaseLost) || ctx.Err() != nil {
 					w.logger.Info("维护任务状态推进时租约已失效，停止后续步骤", "jobId", job.ID, "step", spec.Name)
+					return
+				}
+				if !errors.Is(err, ErrStateConflict) {
+					// 非状态冲突的 DB/临时错误同样不判定任务失败：停止本轮，
+					// 等租约到期重领（与续租错误分类一致）。
+					w.logger.Warn("维护任务状态推进遇临时错误，停止本轮执行（任务保持原状态）",
+						"jobId", job.ID, "step", spec.Name, "error", err)
+					jobCancel()
 					return
 				}
 				w.failJob(context.WithoutCancel(ctx), job, leaseOwner, StepSpec{}, 0, time.Time{},
@@ -432,10 +491,19 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 		}
 		activeStep, stepAttempt, stepStarted = spec, attempt, startedAt
 
-		outcome, execErr := handler.Execute(ctx, job, spec, prior)
+		// handler 使用 jobCtx：租约丢失时心跳会 cancel 它，backup 等长步骤的
+		// 在途副作用立即停止，不再与 resume/重领后的新执行器并发执行同一步。
+		outcome, execErr := handler.Execute(jobCtx, job, spec, prior)
 		if ctx.Err() != nil {
 			// 进程退出打断步骤：不判定失败（下次启动重跑该步骤）。
 			w.logger.Info("维护任务步骤因进程退出中断（下次启动续跑）", "jobId", job.ID, "step", spec.Name)
+			return
+		}
+		if jobCtx.Err() != nil {
+			// 租约丢失/心跳判定不可靠导致主动取消：不判定失败、不写终态，
+			// 已提交步骤保留，重领后从该步骤之后续跑。
+			w.logger.Info("维护任务在途步骤已取消（租约不可用），停止执行（保留已提交步骤）",
+				"jobId", job.ID, "step", spec.Name)
 			return
 		}
 		if execErr != nil {
@@ -509,6 +577,12 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 	if _, settleErr := w.settleStages(ctx, job.ID, leaseOwner, status, StatusVerifying); settleErr != nil {
 		if errors.Is(settleErr, ErrLeaseLost) || ctx.Err() != nil {
 			w.logger.Info("完成前推进状态时租约已失效，停止", "jobId", job.ID, "step", "")
+			return
+		}
+		if !errors.Is(settleErr, ErrStateConflict) {
+			// 非状态冲突错误（DB/临时故障）不判定任务失败；保持原状态等重领。
+			w.logger.Warn("完成前状态推进遇临时错误，停止本轮执行（任务保持原状态）",
+				"jobId", job.ID, "error", settleErr)
 			return
 		}
 		w.failJob(context.WithoutCancel(ctx), job, leaseOwner, StepSpec{}, 0, time.Time{},

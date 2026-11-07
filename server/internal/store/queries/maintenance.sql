@@ -117,6 +117,17 @@ WHERE id = sqlc.arg(id)
   AND lease_until IS NOT NULL
   AND lease_until >= sqlc.arg(now);
 
+-- name: ReleaseMaintenanceLease :execrows
+-- Best-effort release for a claim that cannot be used locally (e.g. the detail
+-- read after the claim UPDATE failed). Only the current holder may release, so
+-- a delayed cleanup can never steal a lease that was already reassigned.
+UPDATE maintenance_jobs
+SET lease_owner = NULL,
+    lease_until = NULL,
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id)
+  AND lease_owner = sqlc.arg(lease_owner);
+
 -- name: HeartbeatMaintenanceJob :execrows
 -- Only the current holder of a still-valid lease may renew it. An expired lease
 -- is no longer authoritative: the job may already be claimable by another

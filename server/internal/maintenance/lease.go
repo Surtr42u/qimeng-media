@@ -76,7 +76,44 @@ func (s *Service) Claim(ctx context.Context, kind Kind, owner string, ttl time.D
 		return Detail{}, false, err
 	}
 	detail, err := s.Get(ctx, candidate.ID)
-	return detail, true, err
+	if err != nil {
+		// P3-3：租约已在事务里提交，但详情读取失败（临时 DB/ctx 错误）时
+		// worker 拿不到已提交步骤，无法安全续跑。释放本次租约，避免任务被
+		// 锁到 TTL 后才可重领；释放失败也只记日志（TTL 兜底）。
+		s.releaseLease(candidate.ID, owner)
+		return Detail{}, false, err
+	}
+	return detail, true, nil
+}
+
+// releaseLease 尽力释放 owner 名下的租约（Claim 成功后本地准备失败等清理
+// 路径）。用独立的 Background 上下文而不是调用方 ctx：调用方 ctx 可能已
+// 取消，但释放属于收尾语义，仍应尝试；失败由 TTL 自然过期兜底。
+func (s *Service) releaseLease(id, owner string) {
+	ctx := context.Background()
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		s.logger.Warn("释放维护任务租约失败（等待 TTL 自然过期）", "jobId", id, "error", err)
+		return
+	}
+	defer s.rollback(tx)
+	q := s.q.WithTx(tx)
+	affected, err := q.ReleaseMaintenanceLease(ctx, db.ReleaseMaintenanceLeaseParams{
+		UpdatedAt:  store.FormatTimestamp(s.now().UTC()),
+		ID:         id,
+		LeaseOwner: sql.NullString{String: owner, Valid: true},
+	})
+	if err != nil {
+		s.logger.Warn("释放维护任务租约失败（等待 TTL 自然过期）", "jobId", id, "error", err)
+		return
+	}
+	if affected == 0 {
+		// 租约已被暂停/取消/重领清理：无需释放。
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		s.logger.Warn("提交维护任务租约释放失败（等待 TTL 自然过期）", "jobId", id, "error", err)
+	}
 }
 
 // Heartbeat extends a lease held by owner. ErrLeaseLost means the worker no

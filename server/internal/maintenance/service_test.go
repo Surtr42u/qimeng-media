@@ -766,3 +766,37 @@ func TestFencedWritesRequireUnexpiredLease(t *testing.T) {
 		t.Fatalf("新 token 完成失败: status=%v err=%v", done.Job.Status, err)
 	}
 }
+
+// TestClaimReleasesLeaseWhenDetailReadFails 覆盖 P3-3：Claim 已提交租约后，
+// 详情读取失败（模拟 DB 临时错误）必须释放本次租约，避免任务被锁到 TTL
+// 后才可重领；释放用独立写事务，旧持有者不能覆盖已被重领的租约。
+func TestClaimReleasesLeaseWhenDetailReadFails(t *testing.T) {
+	svc, clock := newTestService(t)
+	ctx := context.Background()
+	job := mustCreate(t, svc, "claim-release")
+	closedConn, err := store.Open(filepath.Join(t.TempDir(), "closed-claim.db"))
+	if err != nil {
+		t.Fatalf("打开临时库失败: %v", err)
+	}
+	if err := closedConn.Close(); err != nil {
+		t.Fatalf("关闭临时库失败: %v", err)
+	}
+	// conn 指向真实库（Claim 的写事务可提交），q 指向已关闭库（Get 详情失败），
+	// 用于复现「领取成功但详情读取失败」。
+	broken := &Service{conn: svc.conn, q: db.New(closedConn), now: clock.Now, logger: svc.logger}
+	if _, ok, err := broken.Claim(ctx, KindAssetResearch, "worker-release/token-1", time.Minute); err == nil {
+		t.Fatal("详情读取失败时 Claim 应返回错误")
+	} else if ok {
+		t.Fatal("详情读取失败时 Claim 不应报告领取成功")
+	}
+	reclaimed, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-release/token-2", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("租约未释放，任务被锁到 TTL 后才能重领: ok=%v err=%v", ok, err)
+	}
+	if reclaimed.Job.ID != job.Job.ID || reclaimed.Job.LeaseOwner != "worker-release/token-2" {
+		t.Fatalf("重新领取异常: id=%s owner=%s", reclaimed.Job.ID, reclaimed.Job.LeaseOwner)
+	}
+	if reclaimed.Job.LeaseUntil == nil {
+		t.Fatal("重新领取后租约到期时间应为空/已被新 token 覆盖")
+	}
+}

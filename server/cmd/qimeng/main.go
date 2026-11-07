@@ -457,8 +457,17 @@ func main() {
 	apiSrv.CloseRecommendCache()
 	<-creatorDone
 	// 等 worker 退出再关库：worker 停止领取后仍在途的步骤可能写账本，先于
-	// conn.Close 收敛可避免「写已关闭连接」的噪声失败。
-	<-maintenanceDone
+	// conn.Close 收敛可避免「写已关闭连接」的噪声失败。用独立超时（shutdownCtx
+	// 可能已被 HTTP 优雅关闭耗尽）：若未来 handler 不响应 ctx 导致在途步骤不
+	// 收敛，记录后继续关库而不是挂死；任务保持原状态，租约到期后重领续跑。
+	workerWaitCtx, workerWaitCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	select {
+	case <-maintenanceDone:
+	case <-workerWaitCtx.Done():
+		logger.Warn("等待维护任务 worker 收敛超时，继续关闭数据库（在途步骤可能中断，租约到期后重领）",
+			"error", workerWaitCtx.Err())
+	}
+	workerWaitCancel()
 	if err := apiSrv.WaitThumbnailWarmup(shutdownCtx); err != nil {
 		logger.Warn("等待缩略图及图片尺寸回填退出超时", "error", err)
 	}

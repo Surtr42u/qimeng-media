@@ -3,6 +3,7 @@ package maintenance
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/backup"
+	"qimeng-media/server/internal/store/db"
 )
 
 // workerTestSteps 是最小 3 步流水线（inventory -> applying -> verifying），
@@ -756,5 +758,131 @@ func TestStaleLeaseCannotOverwriteTakeoverResult(t *testing.T) {
 		if artifact.URI == "stale://artifact/1" {
 			t.Fatalf("旧实例工件被写入账本: %+v", artifact)
 		}
+	}
+}
+
+// TestWorkerPauseResumeCancelsInFlightStep 覆盖 P2-1：Start + Concurrency=2 下
+// 长步骤正在执行时暂停，心跳发现租约丢失后必须 cancel 该任务的 jobCtx，让
+// handler 的在途副作用停止（修复前 handler 拿 worker 根 ctx，pause 后永不
+// 取消）；resume 后只重跑未完成步骤，旧执行器不能与新执行器并发/覆盖。
+func TestWorkerPauseResumeCancelsInFlightStep(t *testing.T) {
+	svc, clock := newTestService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	job := mustCreateKind(t, svc, KindAssetResearch, "worker-pause-resume-concurrent")
+
+	var firstApply atomic.Bool
+	firstApply.Store(true)
+	var active int32
+	var peak int32
+	entered := make(chan struct{})
+	var enteredOnce sync.Once
+	handler := newRecordingHandler(workerTestSteps)
+	handler.hook = func(ctx context.Context, job Job, spec StepSpec, prior map[string]Step) (StepOutcome, error) {
+		current := atomic.AddInt32(&active, 1)
+		for {
+			old := atomic.LoadInt32(&peak)
+			if current <= old || atomic.CompareAndSwapInt32(&peak, old, current) {
+				break
+			}
+		}
+		defer atomic.AddInt32(&active, -1)
+		if spec.Name == "apply" && firstApply.CompareAndSwap(true, false) {
+			enteredOnce.Do(func() { close(entered) })
+			// 只有 jobCtx 被取消（租约丢失）才会返回；根 ctx 不会取消。
+			<-ctx.Done()
+			return StepOutcome{}, ctx.Err()
+		}
+		return StepOutcome{}, nil
+	}
+	worker := NewWorker(WorkerOptions{
+		Service: svc, Logger: discardLogger(), Owner: "worker-pause-resume",
+		LeaseTTL: 90 * time.Millisecond, PollInterval: 10 * time.Millisecond, Concurrency: 2,
+		Now: clock.Now, Handlers: map[Kind]Handler{KindAssetResearch: handler},
+	})
+	done := make(chan struct{})
+	go func() { defer close(done); worker.Start(ctx) }()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker 未开始执行 apply 步骤")
+	}
+	if _, err := svc.Pause(context.Background(), job.Job.ID); err != nil {
+		t.Fatalf("暂停失败: %v", err)
+	}
+	waitFor(t, 3*time.Second, "旧执行的在途 handler 被取消", func() bool {
+		return atomic.LoadInt32(&active) == 0
+	})
+	if paused := getDetail(t, svc, job.Job.ID); paused.Job.Status != StatusPaused {
+		t.Fatalf("暂停后状态 = %s，期望 paused", paused.Job.Status)
+	}
+	if _, err := svc.Resume(context.Background(), job.Job.ID); err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+	waitFor(t, 3*time.Second, "resume 后任务完成", func() bool {
+		return getDetail(t, svc, job.Job.ID).Job.Status == StatusCompleted
+	})
+	final := getDetail(t, svc, job.Job.ID)
+	if final.Job.Status != StatusCompleted || final.Job.ErrorCode != "" {
+		t.Fatalf("最终状态异常: status=%s errorCode=%q", final.Job.Status, final.Job.ErrorCode)
+	}
+	if step, ok := findStep(final, "apply"); !ok || step.Attempt != 2 || step.Status != StepCompleted {
+		t.Fatalf("apply 步骤异常（应只重跑未完成步骤）: %+v", step)
+	}
+	if got := atomic.LoadInt32(&peak); got != 1 {
+		t.Fatalf("同一任务出现并发 handler 执行（峰值 %d，期望 1）", got)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker.Start 未在 ctx 取消后退出")
+	}
+}
+
+// failingHeartbeatDB 包装真实 *sql.DB：只让心跳语句失败，其余语句正常。
+// 这样模拟「一次临时 DB 错误」后，若 worker 误调用 failJob，失败步骤/终态会
+// 真实落库（可被断言捕获），而不是随着坏连接一起丢失。
+type failingHeartbeatDB struct {
+	*sql.DB
+}
+
+func (d failingHeartbeatDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if strings.Contains(query, "-- name: HeartbeatMaintenanceJob") {
+		return nil, errors.New("synthetic transient db busy")
+	}
+	return d.DB.ExecContext(ctx, query, args...)
+}
+
+// TestWorkerTransientHeartbeatErrorDoesNotFailJob 覆盖 P2-2：步骤边界续租遇到
+// 非租约错误（模拟一次临时 DB busy）时不得把任务永久标成 failed；应停止本轮
+// 执行，任务保持原状态等租约到期重领。
+func TestWorkerTransientHeartbeatErrorDoesNotFailJob(t *testing.T) {
+	svc, clock := newTestService(t)
+	ctx := context.Background()
+	job := mustCreateKind(t, svc, KindAssetResearch, "worker-heartbeat-transient")
+	claimed, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-transient/token-1", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("Claim 失败: ok=%v err=%v", ok, err)
+	}
+	// 心跳查询返回一次临时错误（非 ErrLeaseLost），其余查询/写入走真实库。
+	broken := &Service{
+		conn: svc.conn, q: db.New(failingHeartbeatDB{DB: svc.conn}),
+		now: clock.Now, logger: discardLogger(),
+	}
+	handler := newRecordingHandler(workerTestSteps)
+	worker := NewWorker(WorkerOptions{
+		Service: broken, Logger: discardLogger(), Owner: "worker-transient",
+		LeaseTTL: time.Minute, Now: clock.Now,
+		Handlers: map[Kind]Handler{KindAssetResearch: handler},
+	})
+	worker.process(ctx, claimed, claimed.Job.LeaseOwner)
+	detail := getDetail(t, svc, job.Job.ID)
+	if detail.Job.Status == StatusFailed {
+		t.Fatalf("临时续租错误被误标 failed: status=%s errorCode=%q", detail.Job.Status, detail.Job.ErrorCode)
+	}
+	if detail.Job.StepCount != 0 || handler.count("inventory") != 0 {
+		t.Fatalf("续租失败后不应开始步骤: steps=%d inventory=%d",
+			detail.Job.StepCount, handler.count("inventory"))
 	}
 }
