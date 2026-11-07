@@ -5,8 +5,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/thumbnail"
 )
 
@@ -76,5 +78,51 @@ func TestRestoreBusinessKeepsIntentUntilStatisticsCommit(t *testing.T) {
 	files, err := os.ReadDir(media)
 	if err != nil || len(files) != 1 {
 		t.Fatalf("恢复重试产生重复文件: %v %v", files, err)
+	}
+}
+
+// TestPurgeTrashDropsAuthorTXTWorkLine：移入回收站不改 TXT（保留恢复依据），
+// 物理删除前同事务清掉作品行并修剪上传条目。
+func TestPurgeTrashDropsAuthorTXTWorkLine(t *testing.T) {
+	svc, library, _, body := uploadFixture(t)
+	svc.thumbs = thumbnail.NewGenerator(svc.cfg.DataDir, nil, thumbnail.Options{})
+	ctx := context.Background()
+	asset, err := svc.Direct(ctx, DirectUpload{LibraryID: library, Filename: "purged.png", Body: bytes.NewReader(body), ContentLength: int64(len(body))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := "1  synthetic\n来源\nsite-a\n作品\npurged.png\n"
+	seedSyntheticAuthorTXT(t, svc, asset.AssetID, content, "purged.png")
+
+	if err := svc.MoveToTrash(ctx, asset.AssetID); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := authorattach.LoadSources(ctx, svc.q)
+	if err != nil || len(sources) != 1 || sources[0].Content != content {
+		t.Fatalf("移入回收站不得改 TXT（恢复依据）: %+v %v", sources, err)
+	}
+	entries, err := svc.ListTrash()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("回收站条目=%+v %v", entries, err)
+	}
+	if err := svc.PurgeTrash(entries[0].ID); err != nil {
+		t.Fatalf("PurgeTrash 失败: %v", err)
+	}
+	sources, err = authorattach.LoadSources(ctx, svc.q)
+	if err != nil || len(sources) != 1 {
+		t.Fatalf("读取片段失败: %+v %v", sources, err)
+	}
+	if strings.Contains(sources[0].Content, "purged.png") {
+		t.Fatalf("物理删除后作品行未清理: %q", sources[0].Content)
+	}
+	if !strings.Contains(sources[0].Content, "1  synthetic") || !strings.Contains(sources[0].Content, "site-a") {
+		t.Fatalf("清理作品行不得破坏块/来源区: %q", sources[0].Content)
+	}
+	uploadEntries, err := authorattach.LoadUploadEntries(ctx, svc.q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uploadEntries["f.txt"]) != 0 {
+		t.Fatalf("物理删除后上传条目未修剪: %+v", uploadEntries)
 	}
 }

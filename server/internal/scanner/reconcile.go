@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 
+	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -121,11 +123,22 @@ func (s *Scanner) takeLiveMergeCandidate(ctx context.Context, lib db.Library, go
 }
 
 // deleteGone 删除一条消失记录（view_events 无外键，事件流天然保留）。
+// TXT 作品行与资产行同一事务清理：先按当前关联/文件名删行，再删资产行
+// （反过来外键级联清空关联后就无法知道该删哪些作者块）。
 func (s *Scanner) deleteGone(ctx context.Context, lib db.Library, gone db.Asset) error {
-	if err := s.q.DeleteAsset(ctx, gone.AssetID); err != nil {
+	if s.conn == nil {
+		return errors.New("scanner: 删除对账需要事务连接")
+	}
+	if err := s.runAssetTx(ctx, func(q *db.Queries) error {
+		if err := (&authorattach.Service{Logger: s.logger}).DropAssetWorks(
+			ctx, q, s.now(), gone.AssetID, gone.FileName); err != nil {
+			return fmt.Errorf("清理作者TXT作品行: %w", err)
+		}
+		return q.DeleteAsset(ctx, gone.AssetID)
+	}); err != nil {
 		return fmt.Errorf("scanner: 删除消失资产 %s: %w", gone.RelPath, err)
 	}
-	s.logger.Info("scanner: 文件消失，删除记录（view_events 事件流保留）",
+	s.logger.Info("scanner: 文件消失，删除记录与TXT作品行（view_events 事件流保留）",
 		"libraryId", lib.ID, "relPath", gone.RelPath, "assetId", gone.AssetID)
 	return nil
 }
@@ -145,6 +158,12 @@ func (s *Scanner) applyMoveMerge(ctx context.Context, lib db.Library, gone, cand
 		return errors.New("scanner: 移动合并需要事务连接")
 	}
 	if err := s.runAssetTx(ctx, func(q *db.Queries) error {
+		// 改名/移动合并=旧身份换路径：TXT 作品行必须同事务由旧文件名替换为
+		// 新文件名（只追加会留下旧行，下次统一重建即成无文件可匹配的污染）。
+		if err := (&authorattach.Service{Logger: s.logger}).RenameAssetWorks(
+			ctx, q, s.now(), gone.AssetID, path.Base(gone.RelPath), path.Base(cand.RelPath)); err != nil {
+			return fmt.Errorf("更新作者TXT作品行: %w", err)
+		}
 		if err := q.DeleteAsset(ctx, cand.AssetID); err != nil {
 			return err
 		}

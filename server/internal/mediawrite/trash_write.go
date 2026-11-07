@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 
+	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
 )
@@ -100,6 +102,37 @@ func (s *Service) MoveToTrash(ctx context.Context, assetID string) error {
 	return nil
 }
 
+// dropTrashWorks 在回收站文件被物理删除前，用同一数据库事务清理该条目的
+// TXT 作品行。MoveToTrash 已删除 assets 行（asset_authors 随外键级联清空），
+// 因此 DropAssetWorks 会走「资产行不存在」的文件名级兜底；库内仍有同名资产
+// 时它保留作品行。调用方负责确认没有其他同名可恢复条目后再调用。
+func (s *Service) dropTrashWorks(ctx context.Context, assetID, fileName string) error {
+	if s.conn == nil {
+		return errors.New("mediawrite: 回收站物理删除缺少数据库连接")
+	}
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer s.rollback(tx, "回收站物理删除作者TXT作品行")
+	qtx := s.q.WithTx(tx)
+	if err := (&authorattach.Service{Logger: s.logger}).DropAssetWorks(ctx, qtx, s.now(), assetID, fileName); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// hasRestorableSameName 报告除 target 外是否还有同名（basename）的回收站
+// 条目——它们仍可能被恢复，作品行不能删。entries 是本次操作看到的完整快照。
+func hasRestorableSameName(entries []TrashEntry, targetID, fileName string) bool {
+	for _, other := range entries {
+		if other.ID != targetID && path.Base(other.Meta.OriginalPath) == fileName {
+			return true
+		}
+	}
+	return false
+}
+
 // PurgeTrash 物理删除回收站内单个条目（文件+meta 成对删除）。
 func (s *Service) PurgeTrash(trashID string) error {
 	unlockTrash := filing.LockLibrary(trashOperationGate)
@@ -108,6 +141,17 @@ func (s *Service) PurgeTrash(trashID string) error {
 	e, ok := s.findTrashEntry(trashID)
 	if !ok {
 		return fail(TrashMissing, "回收站条目不存在", nil)
+	}
+	entries, err := s.ListTrash()
+	if err != nil {
+		return fail(InternalFailure, "遍历回收站", err)
+	}
+	fileName := path.Base(e.Meta.OriginalPath)
+	if !hasRestorableSameName(entries, e.ID, fileName) {
+		// 永久删除前先同事务清理 TXT 作品行：失败则不删文件，条目保留可重试。
+		if err := s.dropTrashWorks(context.Background(), e.Meta.AssetID, fileName); err != nil {
+			return fail(InternalFailure, "清理作者TXT作品行", err)
+		}
 	}
 	// stamp/<assetID>/ 子树里只有这一对文件+meta（一次删除一个文件），
 	// 整树删除顺带清掉空目录壳。
@@ -134,11 +178,32 @@ func (s *Service) ClearTrash() error {
 	unlockTrash := filing.LockLibrary(trashOperationGate)
 	defer unlockTrash()
 
-	// meta 是回收站真相源：RemoveAll 之后无法再反查 assetID，缩略图联动
-	// 清理必须先收集（遍历失败只降级——缓存残留待对账兜底，不拦清空）。
+	// meta 是回收站真相源：RemoveAll 之后无法再反查 assetID/原文件名，
+	// TXT 作品行清理与缩略图联动都必须先收集。遍历失败不能降级：不知道
+	// 要清哪些条目就物理删除会留下 TXT 污染，保留回收站等待重试。
 	entries, err := s.ListTrash()
 	if err != nil {
-		s.logger.Warn("清空前遍历回收站失败（缩略图联动清理跳过）", "err", err)
+		return fail(InternalFailure, "遍历回收站", err)
+	}
+	if len(entries) > 0 {
+		if s.conn == nil {
+			return fail(InternalFailure, "清空回收站", errors.New("缺少数据库连接"))
+		}
+		tx, err := s.conn.BeginTx(context.Background(), nil)
+		if err != nil {
+			return fail(InternalFailure, "清空回收站", err)
+		}
+		defer s.rollback(tx, "清空回收站前清理作者TXT作品行")
+		qtx := s.q.WithTx(tx)
+		attacher := &authorattach.Service{Logger: s.logger}
+		for _, e := range entries {
+			if err := attacher.DropAssetWorks(context.Background(), qtx, s.now(), e.Meta.AssetID, path.Base(e.Meta.OriginalPath)); err != nil {
+				return fail(InternalFailure, "清理作者TXT作品行", err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fail(InternalFailure, "清理作者TXT作品行", err)
+		}
 	}
 	filing.InvalidateAllRestoreIntents(s.cfg.DataDir)
 	defer filing.InvalidateAllRestoreIntents(s.cfg.DataDir)
