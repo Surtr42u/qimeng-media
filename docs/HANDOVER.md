@@ -65,6 +65,8 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 
 ## 5. 外部AI维护任务交接（2026-11-06）
 
+> 2026-11-07 更新：现行执行清单已迁移到[外部 AI 接入平台统一任务书 V2](AI_PLATFORM_TASKBOOK.md)与 [ADR-0056](adr/0056-独立AI接入平台架构.md)；本节保留历史交接记录，最新状态见 §9。
+
 用户要求混合媒体下载后由外部AI研究、校对命名、补作者/头像/链接/双语简介并执行清理与关联维护，任务后台执行、双端可用，未来延伸到NAS云端模型。第二批需求（2026-11-06）重新划定范围：[ADR-0052](adr/0052-外部AI维护需求修订.md)取代ADR-0051的标签加密部分，取消标签加密、外部代号与AI标签维护；新增本地维护权限（只读服务端数据目录、授权维护目录读写、业务写入走正式API）、无前台 PC→手机桥接、作者清理/去重、两代备份分代目录与可发现规则包。
 
 交接入口为[详细任务书](AI_MAINTENANCE_TASKBOOK.md)，含用户场景、工具契约、本地维护权限与无前台跨端通道、规则包、后台任务、两代备份及阶段验收。规则包/只读 CLI（第六百九十二笔）、作者合并端点（第六百九十一笔）、持久任务账本端点（第六百九十六笔，[ADR-0054](adr/0054-持久维护任务队列.md)）与 PC→手机设备结果包服务端 API（第六百九十七笔，[ADR-0055](adr/0055-手机无前台维护结果包协议.md)）已实现；worker 执行器、Android Worker/配对、Web 任务中心、作者清理工具和两代备份布局仍未实现，现行三代备份与标签明文继续有效。
@@ -79,6 +81,8 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 
 ## 7. 持久维护任务队列（2026-11-07）
 
+> 2026-11-07 本轮补充：Go worker（租约/心跳/逐步记录/恢复/按 kind 领取）、同幂等键不同载荷 409 冲突保护与 Web 任务中心已实现源码，见 §9；本节其余描述为上一轮交付时点的历史状态。
+
 维护任务账本已按 [ADR-0054](adr/0054-持久维护任务队列.md) 落地 P3 第一刀：migration `0023_maintenance_jobs` 新增 `maintenance_jobs/maintenance_steps/maintenance_artifacts` 三表；`server/internal/maintenance` 提供状态机、幂等、租约字段与步骤/工件索引；OpenAPI 新增 `POST/GET /api/v1/maintenance/jobs`、`GET /api/v1/maintenance/jobs/{id}` 与 `POST …/{id}/pause|resume|cancel` 六个端点，SDK 三端与 `api/sdk.lock` 同批生成（331 项）。创建幂等（同 key 返回既有任务，201/200），非法迁移/终态 409 `STATE_CONFLICT`，不存在 404；任务载荷/预算为有上限的 JSON 对象，工件正文不入库。
 
 **实际状态：已实现、未安装。** 本轮未在现装 PC/手机部署，也未对真实库创建任务；现装仍为上文 264b9d83。worker 执行器尚未实现——没有进程消费 queued 任务，租约 `Claim/Heartbeat/Complete` 与步骤/工件写入只是包内原语、无 HTTP 端点；Web 任务中心、PC→手机桥接、`author.cleanup.prepare/apply` 与 MCP 适配仍未做。业务 `go test` 按仓库规定走云端 CI，本地已跑 `go build ./...`、`gofmt`、`go vet` 与 `make sdk`。端点无独立开关，但因无 worker，创建后任务只会停在 queued（或人工暂停/取消）。
@@ -88,3 +92,31 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 按 [ADR-0055](adr/0055-手机无前台维护结果包协议.md) 与 [AI 维护 P0](AI_MAINTENANCE_P0.md) §4.5 落地 P4 第一刀（仅服务端）：migration `0024_device_apply_tasks` 新增 `device_apply_tasks`/`device_apply_segments` 两表与索引；`server/internal/deviceapply` 提供 manifest 校验、段文件落盘与 SHA-256 复算、状态机、惰性过期、领取/回传/取消幂等；OpenAPI 新增 `POST/GET /api/v1/device/apply-tasks`、`GET …/{id}`、`POST …/{id}/claim`、`GET …/{id}/segments/{kind}`、`POST …/{id}/result`、`POST …/{id}/cancel` 七个端点，SDK 三端与 `api/sdk.lock` 同批生成（355 项）。包体为 manifest JSON + masterTxt ≤1MiB + v2Backup ≤64MiB，整体 66MiB 上限；段字节落 `<dataDir>/device-apply-packages/<taskId>/`，数据库只存元数据；声明字节数或 SHA-256 不符在任何写库前拒绝。领取对已 claimed 任务幂等（无领取者身份），回传仅对完全相同的归一化结果幂等，其余终态变更 409。
 
 **实际状态：已实现、未安装。** 本轮未在现装 PC/手机部署，也未对真实库登记/领取/回传任何包；现装仍为上文 796d813f。Android Worker（WorkManager 周期拉取、充电+Wi-Fi、前台立即应用、回读与清理临时包）、配对/设备身份、真机后台领取/应用/回传、包字节清理与 Web 结果包界面均未实现；`targetDeviceId` 只是不透明标签，不能当作设备授权。业务 `go test` 按仓库规定走云端 CI，本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet`、文档/隐私/迁移检查；测试只用临时 SQLite、临时包目录与合成字节。
+
+## 9. 外部 AI 接入平台与维护执行面（2026-11-07 本轮交付）
+
+本轮按[统一任务书 V2](AI_PLATFORM_TASKBOOK.md)（R0–R7）与 [ADR-0056](adr/0056-独立AI接入平台架构.md) 交付源码、测试与文档；**未安装到现装运行包**，现装仍为 §2 记录的 796d813f（PC 0.2.1/schema22、arm64 手机 code35）。本节区分「源码交付 / 本机验证 / 云端 CI / 安装 / 真实数据与设备验收」。
+
+### 9.1 源码交付范围
+
+| 阶段 | 交付 |
+|---|---|
+| R0 | [AI 接入平台 R0 审计](AI_PLATFORM_AUDIT.md)：脚本清单、三分类、复用/退役映射、规则漂移 A1–A9、最小变更计划；[统一任务书 V2](AI_PLATFORM_TASKBOOK.md) 纳入仓库并取代旧任务书作为现行清单；旧任务书/P0 标记历史来源；ADR-0056 与索引、AGENTS/AI_README_FIRST/llms/ARCHITECTURE/CAPABILITY_MAP 入口同步 |
+| R1–R3 | `tools/ai_maintenance/` 统一工具核心：分离版本（platform/toolContract/rulepack/openapiSha）、25 个显式注册工具（supported/planned 如实）、分块 OpenAPI 能力核对（端点+方法+必需字段）、统一 CLI（保留旧只读子命令与 `--json`/退出码，新增 version/tools list/tool call）、计划指纹/确认/执行/回读框架、作者链受控写入（档案 prepare/update、cleanup prepare/apply、merge、asset.authors prepare/apply）、人工字段保护与 409 处理；旧 `tools/import_creator_profiles.py` 转发统一实现（环境变量兼容映射，不回显 token） |
+| R4 | `tools/ai_maintenance/mcp_server.py` stdio MCP 适配器：JSON-RPC 2.0 子集（initialize/notifications/ping/tools.list/tools.call/取消与超时），与 CLI 共用同一 dispatch 与工具 Schema；协议层用两个独立合成客户端验证；**真实 AI 客户端（Codex/Claude 等）接入未实测**，README 已如实说明 |
+| R5 | `server/internal/maintenance` Go worker：按注册 handler 的 kind 领取、租约 TTL+心跳、有界并发、逐步骤记录、暂停/取消后停止并保留已提交步骤、租约过期/重启后从已完成步骤续跑不重复副作用、panic 兜底、`backup_export` 内置 handler（复用 `backup.Manager`）与工件记录；同幂等键不同载荷指纹返回 409；由 `cmd/qimeng` 组合根以 `safego.Go` 启动，参数为具名配置/`QIMENG_*`；无 handler 的 kind 保持 queued 供未来外部 AI 执行器，未开放 HTTP 领取端点 |
+| R7 | 两代备份布局：`server/internal/authorattach` 作者镜像在 `path` 祖先目录为 `当前`/`current` 时按同根兄弟 `上次`/`previous` 推导上一代，两代独立摘要、先提交当前再写新当前、相同数据不轮换、上次代摘要不符/不可读拒覆盖、旧 flat3 行为不变；`tools/migrate_backup_layout.py` 默认只读核对、`--apply` 复制生成两代、绝不删除；Web `maintenance-folder.ts` 与 Android `MaintenanceFolderRepository` 同约定两代轮换并保留旧布局只读兼容；文档见 [作者镜像两代分代目录](api/authors.md#作者总表镜像的两代分代目录2026-11-07) |
+| 追加需求 | 组图命名与作品编号（§6.6）：Go 命名解析纯函数（`server/internal/filing/workname.go`）区分主作品编号与组内页码、`/assets/name-suggestions` 对组图页建议下一作品编号；AI 工具层 `media_naming.py` 规划/校验/回读引擎与 `media.organize.prepare/apply` 适配（计划确认后才执行，自动改名判失败）；搜索语义与文件名显示（§6.7）：共享 Go 谓词 `qimeng_search_token`（数字按独立数字段、组图页码 `(n)` 定位、列表/计数/分面同口径），Web/Android 搜索结果文件名与详情完整名/复制修订 |
+
+### 9.2 本机验证与云端 CI
+
+- 本机实际执行：`python -m unittest discover -s tools -p 'test_*.py'`（142 项）、AI toolkit/MCP/命名/迁移工具单测、`check_docs.py`（142 文件 0 错误）、`check_privacy.py --mode worktree`（passed）、server 下 `go build ./...`、`go vet ./...`、定向 `go test`（maintenance/authorattach/filing/store/search/httpapi 相关）、sqlc v1.31.1 重新生成比对；Web 侧 vitest（维护库/任务中心）与 `tsc --noEmit`；Android 未构建（云端 CI 为编译门禁）。
+- **云端 CI**：待推送后补记（CI 通过前不得把源码交付写成已完成验收）。
+- 未执行：全量 `go test ./...`（按仓库约定走云端 CI）、Android Gradle 构建/单测、vite build、真实服务端联调。
+
+### 9.3 未安装与未验收边界
+
+- 本轮**未部署**到现装 PC/手机；两代维护目录未迁移真实维护目录（迁移工具只在合成目录验证）；组图命名与媒体整理未在真实媒体库执行；AI 工具未对真实实例运行写入；MCP 未接真实 AI 客户端；Android 搜索文件名/详情复制未真机走查；搜索修复未在真实大库与内嵌模式做性能/行为验收。
+- 服务端仍只有管理员 Bearer：AI 工具层凭据隔离与权限声明不等于服务端最小权限；正式开放 AI 写入前需另行评审受限凭据或不可绕过执行端隔离（ADR-0056 §5）。
+- 外部 AI 执行器的「可信领取/续租/完成」协议仍未定稿；Android 设备配对/后台 Worker 未实现；NAS 执行器与目标硬件未验。
+

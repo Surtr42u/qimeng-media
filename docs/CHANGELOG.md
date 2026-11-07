@@ -1,3 +1,59 @@
+
+
+## docs(ai): 独立 AI 接入平台 V2 任务书、ADR-0056 与 R0 定向审计（2026-11-07 第六百九十八笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 纳入 [外部 AI 接入平台统一任务书 V2](AI_PLATFORM_TASKBOOK.md) 作为现行执行清单（R0–R8、§6.6 组图命名与作品编号、§6.7 搜索语义与双端文件名显示、§11 安全权限与 §14 验收矩阵）；原[外部 AI 维护任务书](AI_MAINTENANCE_TASKBOOK.md)与 [P0 底稿](AI_MAINTENANCE_P0.md)标记为历史需求与设计来源，保留全文供追溯，不再作为并行执行清单。
+- 新增 [ADR-0056 独立 AI 接入平台架构](adr/0056-独立AI接入平台架构.md) 与 ADR 索引：两层接口独立、Python 标准库工具核心与显式注册表、版本分离与能力核对、计划/确认/执行/回读、唯一维护账本与内部 Worker、两代备份路径约定、研究默认关闭的边界与被否方案。
+- 新增 [R0 定向审计](AI_PLATFORM_AUDIT.md)：脚本/工具逐项清点（AI 工具链、作者写入、研究链、管理员工具、服务端能力）、三分类收敛、重复实现 D1–D8、规则包与 OpenAPI 逐条漂移（A1–A9，无 P0，24 个有端点声明路径+方法匹配）、复用/退役映射与最小变更计划。
+- 文档治理同批：AGENTS/AI_README_FIRST/llms 任务入口、ARCHITECTURE 外部 AI 平台章节、CAPABILITY_MAP 能力域（AI 工具层/维护队列/两代备份/组图命名/检索筛选）、HANDOVER §5 指针与 §9 本轮交付边界；旧三代陈述在 docs/domain/migration.md、docs/SECURITY.md、tools/MEDIA_RESEARCH_IMPORT.md 改为「当前/上次」两代并保留旧 flat3 兼容读取；tools/README 增迁移工具条目。
+- 验证边界：纯文档与入口调整，未改代码/协议/迁移/SDK；`python -X utf8 tools/check_docs.py` 0 错误、`check_privacy.py --mode worktree` passed。本轮源码交付的安装、真实数据与设备验收状态见 HANDOVER §9。
+
+## feat(tools): 独立 AI 工具核心、作者链受控写入与 stdio MCP 适配器（2026-11-07 第六百九十九笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- `tools/ai_maintenance/` 升级为可独立维护的统一工具包（仅 Python 3.13 标准库）：新增 versions/errors/openapi/schema/registry/runtime/execution/plans/client/validation 模块与 tools_query/tools_author/tools_asset/tools_media/profile_import 实现；分离 platformVersion/toolContractVersion/rulepackVersion 与 openapiSha256（仅来源追踪），OpenAPI 改为分块解析（path→method→requestBody/schema/parameters，支持 $ref），按工具独立核对端点+方法+必需字段并输出 supported/unavailable/incompatible；25 个显式注册工具（19 supported/6 planned 如实），可列举、可禁用（QIMENG_AI_DISABLED_TOOLS/QIMENG_AI_READONLY），新增工具不改入口分支。
+- 统一 CLI 保留既有只读子命令与 `--json`/退出码 0/1/2 合同，新增 `version`、`tools list/show`、`tool call <id> --input-json/--input-file`；token 仍只来自环境变量，输出/日志/报告不回显；请求客户端统一（QIMENG_BASE_URL→QIMENG_API_BASE 兼容映射并提示弃用）。
+- 受控写入：prepare 计划（目标实例/库/对象、changes、impact、evidence、前置 revision/摘要、planFingerprint、idempotencyKey、confirmation、recoverableSteps、expectedReadback）→apply 校验确认+指纹+toolContract/rulepack 版本+live 前置摘要→正式 API→回读→结构化报告；作者档案 prepare/update（人工已填字段默认保护，409 不覆盖）、cleanup prepare/apply（删除/改名/合并预览与逐项回读，零关联不单条件删除）、author.merge（只用原子端点）、asset.authors prepare/apply；旧 `tools/import_creator_profiles.py` 改为转发统一实现，保留参数/退出码/输出类别与人工资料保护语义。
+- 新增 `media_naming.py` 组图命名规划引擎（作品编号 vs 组内页码、先分组→编号→页码、补图/缺页/并发/回读；prepare_plan/validate_plan/plan_steps/readback_report/SerializedLocks）与 `tools_media.py` 适配：apply 前按 instance+library 串行化、锁内重取现状+双检、逐步 POST move、回读发现自动改名/缺失/多余即失败；`media.organize.prepare/apply` 由 planned 动态变为 supported。
+- 新增 stdio MCP 适配器 `mcp_server.py`（JSON-RPC 2.0 最小子集：initialize/notifications/ping/tools.list/tools.call/取消与超时；与 CLI 共用同一注册表与 Schema；无 shell/任意 Python 执行；不暴露 token）；协议层以两个独立合成客户端验证，**真实 AI 客户端（Codex/Claude 等）接入未实测**，README 如实说明。
+- 规则源同批：rules.json schemaVersion=2、source 指向 V2 任务书与 ADR-0056、新增 mediaNaming 规则节、补齐 maintenance/jobs* 与 device/apply-tasks* 能力声明、区分 status/apiStatus/toolStatus、过时三代陈述改两代；rulesVersion/rulepackVersion 增为 2026-11-07.3。
+- 验证边界：`python -m unittest discover -s tools -p 'test_*.py'` 181 项通过（含旧 22 项 CLI 合同与旧脚本 15 项收敛回归、MCP 双合成客户端、命名 39 项）；CLI/MCP 冒烟通过；check_docs 0 错误、check_privacy passed。未改 server/api/web/android，未接真实服务端/真实 AI 客户端/8420 真库。
+
+## feat(server): 维护任务 Worker、幂等载荷指纹冲突与组合根装配（2026-11-07 第七百笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- `server/internal/maintenance` 新增 `worker.go`：内部常驻执行器（不开放任何 HTTP 领取/续租/完成端点），仅领取本进程已注册 handler 的 kind（sqlc 查询按 kind 过滤），有界并发（默认 1）、租约 TTL+心跳、逐步骤 RecordStep（running/completed/failed/skipped + attempt/时间/detail）、状态机安全推进（queued→inventory→applying→verifying→completed/partial/failed）、暂停/取消/租约丢失后停止后续步骤并保留已提交步骤、进程退出不写终态由租约过期续跑、panic 兜底只影响单任务、已完成步骤不重复执行副作用。
+- 内置 `backup_export` handler（`handler_backup.go`）：复用既有 `backup.Manager` 生成库快照并 AddArtifact 记录工件元数据（正文不入库）；无 handler 的 `asset_research`/`author_cleanup`/`custom` 保持 queued 供未来外部 AI 执行器。
+- 幂等冲突保护：`Service.Create` 命中同 idempotencyKey 时比较新载荷 inputFingerprint，相同保持重放（200/created=false），不同返回 ErrStateConflict（409），httpapi 映射 STATE_CONFLICT；补并发 replay 竞争路径。
+- 装配与配置：`cmd/qimeng` 以 `safego.Go` 启动 worker 并在关库前收齐；config 新增具名默认值（轮询 5s/租约 2min/并发 1，`QIMENG_MAINTENANCE_WORKER_*` 可覆盖，默认启用但只处理已注册 kind）；SQL 改动经锁定 sqlc v1.31.1 重新生成。
+- 测试与文档：maintenance/config 包覆盖领取/心跳、租约过期接管、重启续跑不重复、暂停取消、无 handler kind 不被领取、同 key 同/不同载荷、backup_export 工件与失败终态；docs/api/maintenance.md 更新 worker/冲突/未开放外部领取端点的边界，ADR-0054 追加实现补充。
+- 验证边界：本机 `go build ./...`、`go vet ./...`、定向 `go test ./internal/maintenance/ ./internal/config/` 通过，`gofmt -l` 干净；完整回归与 race 检测以云端 CI 为准（见 HANDOVER）。未安装到现装运行包，未对真实库创建任务。
+
+## feat(server): 两代备份镜像、组图命名解析与搜索编号语义（2026-11-07 第七百零一笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 两代备份布局（服务端）：`server/internal/authorattach/mirror.go` 在 `path` 祖先目录恰有一段 `当前`/`current` 时，按同根兄弟 `上次`/`previous` 推导上一代并校验仍在维护根内；内容变化先把当前代（正文+独立 .sha256）提交为上次代再写新当前，相同数据只刷新当前；上次目标已存在且正文不同时必须有可复算匹配的 .sha256 才覆盖，缺失/不符/不可读拒绝并告警；相对路径、无代目录段、多段歧义、盘符/共享根等不推导时回退旧 flat3 三代语义，旧配置行为不变。新增 8 组测试覆盖推导、轮换、拒覆盖、外部编辑、失败重试与 master 模式全链路。
+- 迁移核对工具：新增 `tools/migrate_backup_layout.py`，默认 `--check` 只读核对（可读性/.sha256 复算/新旧对应建议/JSON 摘要），`--apply` 才复制生成当前/上次（当前=旧最新，上次=旧「（上次）」），上上次仅列可清理清单；绝不删除/移动，目标占用拒覆盖，临时文件+os.replace 原子写；12 项合成目录单测通过。
+- 组图命名：新增 `server/internal/filing/workname.go` 纯函数解析作品基名/主作品编号（位宽/分隔/标记风格）/可选组内页码，仅括号序号（含上传自动改名产物）回退旧 seriesSuffix；`SuggestSeriesNames` 对组图页建议下一作品编号而非下一页码，组图与单图混合/乱序/缺页/补图/全角括号/零填充均覆盖测试；`docs/domain/files.md` 与 `docs/api/files.md` 记录命名语法、三步优先级与「自动改名不算命名成功」。
+- 搜索编号语义：新增 `server/internal/store/searchtoken`（纯函数 Match + modernc 确定性标量函数 `qimeng_search_token`，init 注册失败直接 panic 防静默退化）；browse/facets 的 10 处 q 谓词统一改为该函数：数字 token 按独立数字段匹配（前后非 ASCII 数字，裸数字不命中括号页码），`(2)` 等页码 token 定位组图页，非数字 token 保持旧 ASCII 子串多字段语义；列表/计数/分面/dateCounts 同口径。修复前隔离测试复现「朱诺 1 命中 13/13、朱诺 11 命中 110/2011、朱诺 2 命中页码」，修复后 store/search/httpapi 定向测试通过；sqlc 重新生成比对无额外漂移。
+- 验证边界：上述 Go 侧本机 `go build/vet/gofmt` 与 authorttach/store/search/httpapi 定向测试通过；Python 侧 12 项迁移工具测试通过；未改 OpenAPI/sdk.lock/SDK/migration；未迁移真实维护目录、未对真实库执行搜索专项或命名整理。
+
+## feat(web/app): 维护任务中心与两代布局、双端搜索结果文件名显示（2026-11-07 第七百零二笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- Web 维护任务中心（只读）：新增 `lib/maintenance-jobs.ts`(+test)、`hooks/use-maintenance-jobs.ts`、`components/maintenance/`（任务中心/列表/详情），维护页追加任务列表（状态筛选/cursor 分页/刷新）、详情（类型/状态/进度/步骤/工件元数据/错误码）与取消（二次确认后刷新）；不展示 payload/budget 与工件正文，未写「实时」承诺。
+- Web 两代维护目录：`lib/maintenance-folder.ts`(+test) 与目录卡/备份卡/hook 改为 `当前/上传归档 → 上次` 两代整代轮换，每代独立 .sha256，createWritable 原子替换，摘要不符/缺摘要/不可读拒覆盖并保留现场；旧 flat3 只读兼容并可列提示、绝不删除；恢复入口改为当前/上次，旧「上上次」改文件导入说明。
+- Web 搜索：搜索结果标题取完整文件名（COS 结果亦可见作品编号/组图页码）单行省略、悬停/读屏完整名，普通浏览网格保持 cosWork 优先两行；换搜索词显示「正在搜索…」加载态而不混旧词结果，同词筛选/分区保持 keepPreviousData 不闪；详情新增完整文件名行与复制（失败提示手动复制）；消费共享 Go 搜索语义，不重写匹配。
+- Android 两代维护目录：`MaintenanceFolderRepository` 改为当前/上次两代 + 上传归档，整代轮换、独立摘要、原子写、拒覆盖保留现场、旧 flat3 只读兼容；新增 `MaintenanceGenerations.kt`（纯 JVM 轮换/原子写/摘要）与 `MaintenanceLayoutMigration.kt`（旧三代只读核对+复制不删除）；旧镜像/备份偏好改指新代且保留旧文件；18 项 JVM 单测由本机 kotlinc+JUnit 运行通过（AGP/Gradle 与真机未跑，云端 CI 为编译门禁）。
+- Android 搜索结果：缩略图下一行简短文件名（单行省略、保留编号/页码），详情完整文件名与复制，换词取消/丢弃在途结果并重置分页滚动，保留双指缩放 2～5 列/分页/返回，内嵌与连接模式同一 API；补 JVM 单测。**状态以交付说明为准：真机与内嵌现场未验收。**
+- 验证边界：Web vitest 全量 41 文件/381 用例、tsc --noEmit 与本次改动 oxlint 通过（未跑 vite build/dev、浏览器走查另按 HANDOVER）；Android 仅静态类型检查与 JVM 单测，未跑 AGP/Gradle/真机；未安装到现装 PC/手机。
+
 ## feat(server): 设备结果包服务端 API（PC→手机无前台维护第一刀）（2026-11-07 第六百九十七笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
@@ -241,42 +297,3 @@
 - 整合 actions/setup-python 7.1.0、tauri-build 2.7.4、knip 6.43.0 与 Tauri CLI 2.12.4；仅构建/开发依赖及锁文件，无 API、schema、运行时权限或媒体行为变更。原四 PR 文档门禁缺少具体影响说明，已补充依据，不绕过检查。
 - 文档影响：HANDOVER 同步作者管理已合并及依赖整合边界；原完整条目移入历史档并更新索引。整合结果以当前 head 云端 CI、安全与文档门禁为准；本次不构建/安装本地应用，不操作真实媒体或设备。
 - 大图加载仅做源码分析与方案咨询，确认 Android 原图不降采样、不落磁盘、邻位预载的既有约定；未实施高清预览、分块或缓存策略变更，未宣称完成网络/NAS 性能测量。
-
-## chore(app): 完成作者管理双端覆盖更新 code14（2026-10-30 第六百七十二笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 按用户授权，干净来源4349c53e、0.2.1/schema20的PC/Web与原手机均已覆盖安装；手机code13→14，协议/数据格式不变。完整CI40913733371、安全40913733451、文档40913733373、PC40913762738和Release40913775040共18项通过，自审无可确认发现，PR #30无现有审查意见，未另触发机器人审查。
-- 电脑服务端和111份Web字节符合发布清单，8份启动/配置/密钥摘要保持，旧程序/Web保留且后端始终关闭；原手机同签名保留数据安装，回拉APK与候选逐字节一致、首次安装记录保留，旧code13包保留。手机包下载重试后完整摘要通过才安装，未降低校验要求。
-- 文档影响：HANDOVER及双端README同步真实安装来源与边界；包摘要/操作证据见HANDOVER。未主动启动两端界面或后端、未向8420写测试数据、未做设备冷启动/业务全回归/备份恢复/NAS验收，未重建整库备份。私密设备信息和安装材料仅留忽略目录，后补文档不重标4349c53e产物来源；PR #30尚未合并。
-
-## feat(app): 同步双端作者资料管理与设置入口（2026-10-30 第六百七十一笔）
-
-执行 AI：未知（主代理；工具 Codex；无可核实的完整型号与变体元数据）。
-
-- 已核实 desktop-browse-fixes 由 PR #24 合并；兴趣卡片 PR #29 当前 head 16 项检查通过，解除草稿并合并为 e5b8caa9。
-- App/Web 同步作者改名/别名、来源编辑、关注与删除口径；新增来源读取/失败重试/清空保存/草稿保护，COS 不开放手工管理。Web 玻璃列表与资料弹层、App 中性卡面与 Material 菜单保留各端风格；设置页补分组入口及实际状态。
-- 文档影响：GUIDE_UI、双端 README 同步交互；HANDOVER 记录合并与未装机边界。复用既有协议和仓储，不变更 OpenAPI、数据库或领域公式。
-- 验证：首轮云端文档同步门禁未通过（CI 证据上传变化漏同步工具说明），已补 tools/README；本地文档检查通过。新增 Web 合成浏览器行为及 Android 来源状态回归，构建/单测依约提交云端执行，首轮 Android 构建/单测/Lint、Web 类型/构建/Lint/单测已通过；浏览器37项通过、两项失败，修正新用例等待读取失败状态的时序，并隔离既有小时键盘用例的鼠标悬停干扰。修正后源码 c4bf1ba3 的完整 CI40910398593、安全40910398642、文档40910398615共16项全通过，Web39个浏览器场景通过；最终桌面/窄屏列表及来源弹层截图已核对。自审未发现可确认问题。PR #30交付，未操作8420或设备、未安装新版；Android构建/单测/Lint通过不等于实机视觉验收，后补文档不重标c4bf1ba3验证来源。
-
-## chore(app): 完成兴趣卡片双端覆盖安装 code13（2026-10-29 第六百七十笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 用户明确要求安装电脑与原手机。安装前已只读核对原手机连接及现有0.2.1/code12；Android安装序号12→13，发布版本仍0.2.1。兴趣卡片、接口、schema及持久化格式与已验证35bf2638一致，无业务代码变化。
-- 同来源adfc7055的完整CI40886761127、安全40886761123、文档40886761122、PC40887024832和Release40887041567共18项通过后覆盖双端。电脑服务端及110份Web字节与清单一致，8份启动/配置/密钥摘要保持，旧程序/Web保留且服务始终关闭；原手机同签名保留数据更新code13，回拉已装APK与候选逐字节一致、首次安装记录保留，旧APK保留。
-- 文档影响：HANDOVER、双端README同步实际装机身份/范围；来源、产物摘要与下载重试事实见HANDOVER。首次不完整PC下载未通过摘要而被拦下，重取核对后才安装；不放宽来源/签名门禁。自审无可确认发现，未新增机器人审查、冷启动/真库业务/备份恢复/NAS测试，未启动后端或手机Activity、未重建整库备份；详细设备/本机材料只留忽略目录。后补文档不重标adfc7055产物来源。
-
-## feat(app): 落实双端兴趣变化简洁卡片（2026-10-29 第六百六十九笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 用户逐轮确认叠片卡片布局并要求去掉图标及叠片图形，最终写入双端：更多关注/较少关注分组、名称/分类/份额增减、单卡详情/收起。精确份额、次数及百分点默认隐藏，空组不展示，组内保留服务端顺序；Web沿用紫青玻璃token，Android沿用中性主题卡面，不改接口、领域公式或兴趣选取。
-- 文档影响：GUIDE_UI与双端README同步最终展示和独立展开约定，HANDOVER记录候选边界；Web既有场景覆盖分组、无图标、键盘展开及互不干扰。首轮854d40e3在Web测试类型检查失败：共享合成夹具将interests声明为unknown；已在测试边界使用生成协议类型明确字段，不改夹具运行值。测试改为直接引用生成的纯类型文件。c262d08a的Web37项浏览器场景、Android构建/单测/双Lint已通过；云端产物390px实际预览发现右侧留白挤压详情导致裁切，已收回窄屏留白并让详情自动换列，补防裁切断言。最终实现35bf2638的完整CI40884230585、安全40884230775、文档40884230661和PC出包40884418308共17项全部通过，含Web37项浏览器场景与Android构建/单测/双Lint。云端包来源/协议摘要/清单字节核对后，已在隔离合成预览复核深色桌面卡片及浅色390px详情，裁切消除、独立展开正常；自审无可确认发现。未覆盖安装双端日常版本，未新增Android实机视觉验收；后补文档不重标产物来源。
-
-## feat(app): 用双点对比柔化浏览回顾兴趣变化（2026-10-29 第六百六十八笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 双端以固定0–100%刻度的空心上期/实心本期双点连线和更多/较少关注代替默认百分比行，精确份额、次数和百分点由按钮展开/收起。Web沿用紫青token/玻璃材质，Android沿用中性主题，不改接口、排序、兴趣公式或浏览数据。
-- 文档影响：GUIDE_UI与双端README同步展示和展开约定；Web既有浏览回顾场景改为检查图形语义和详情展开/收起。实现bedf58e3的完整CI40849634268、安全40849634247、文档40849634241及PC出包40849654515均通过，含Web浏览器场景与Android构建/单测/双Lint。核对云端包来源/清单字节后，在隔离合成预览核对深色桌面、浅色390px窄屏及详情展开/收起；差异与直接消费点自审无可确认发现。未安装双端日常版本，未做App实机视觉核验；后补记录不重标产物来源。
