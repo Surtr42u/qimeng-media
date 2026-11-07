@@ -34,6 +34,7 @@ const (
 type backupImport struct {
 	s          *Service
 	ctx        context.Context
+	opts       ImportOptions
 	err        error
 	committed  bool
 	res        ImportResult
@@ -188,43 +189,59 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 					return
 				}
 				restore := creatorprofile.IsEmpty(current)
-				fillAvatar := a.AvatarData != nil && len(current.AvatarData) == 0 && current.AvatarURL == profile.AvatarURL
-				fillX := canFillXProfile(current, profile)
-				fillTranslation := canFillXTranslation(current, profile)
-				if !restore && profilesConflict(current, profile) {
-					conflicts++
-				}
-				if !restore && !fillAvatar && !fillX && !fillTranslation {
-					imp.bump(&imp.res.AuthorsImported)
-					continue
-				}
-				if !restore {
-					xProfile := profile.XProfile
-					profile = current
-					if fillX {
-						profile.XProfile = xProfile
-					} else if fillTranslation {
-						translated := *current.XProfile
-						translated.BiographyZh = xProfile.BiographyZh
-						profile.XProfile = &translated
-					}
-				}
-				if a.AvatarData != nil && (restore || fillAvatar) {
-					profile.AvatarData, profileErr = creatorprofile.DecodeAvatar(*a.AvatarData)
+				replaceProfile := !restore && imp.opts.AuthorProfileConflict == AuthorProfileConflictReplace
+				if replaceProfile {
+					// 显式 replace：以备份档案整份覆盖本机（含离线头像），与首次
+					// restore 共用恢复口径；不参与冲突计数，也不发「保留本机」提示。
+					profile, profileErr = profileFromBackup(a, profile)
 					if profileErr != nil {
 						imp.fail("解析离线头像", profileErr)
 						return
 					}
-				}
-				if restore {
-					profile.AuthorID = a.AuthorId
-					profile.AutoRefresh = false
-					profile.TrackUpdates = false
+				} else {
+					fillAvatar := a.AvatarData != nil && len(current.AvatarData) == 0 && current.AvatarURL == profile.AvatarURL
+					fillX := canFillXProfile(current, profile)
+					fillTranslation := canFillXTranslation(current, profile)
+					if !restore && profilesConflict(current, profile) {
+						conflicts++
+					}
+					if !restore && !fillAvatar && !fillX && !fillTranslation {
+						imp.bump(&imp.res.AuthorsImported)
+						continue
+					}
+					if !restore {
+						xProfile := profile.XProfile
+						profile = current
+						if fillX {
+							profile.XProfile = xProfile
+						} else if fillTranslation {
+							translated := *current.XProfile
+							translated.BiographyZh = xProfile.BiographyZh
+							profile.XProfile = &translated
+						}
+					}
+					if a.AvatarData != nil && fillAvatar {
+						profile.AvatarData, profileErr = creatorprofile.DecodeAvatar(*a.AvatarData)
+						if profileErr != nil {
+							imp.fail("解析离线头像", profileErr)
+							return
+						}
+					}
+					if restore {
+						profile, profileErr = profileFromBackup(a, profile)
+						if profileErr != nil {
+							imp.fail("解析离线头像", profileErr)
+							return
+						}
+					}
 				}
 				profile.Revision = current.Revision + 1
 				if profileErr = creatorprofile.Persist(imp.ctx, qx, profile, imp.s.now()); profileErr != nil {
 					imp.fail("导入作者档案", profileErr)
 					return
+				}
+				if replaceProfile {
+					imp.bump(&imp.res.AuthorProfilesReplaced)
 				}
 			}
 			imp.bump(&imp.res.AuthorsImported)
@@ -266,6 +283,23 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 	if imp.err == nil && len(sliceOrEmpty(refs)) > 0 {
 		imp.s.mirror.Refresh(imp.ctx, imp.s.q)
 	}
+}
+
+// profileFromBackup 把备份档案整份落成本机档案：身份、维护开关与离线头像
+// 统一覆盖；首次 restore 与显式 replace 共用，Revision 由调用方按本机当前值
+// 递增（备份自身 revision 不参与，避免旧备份回退本机版本）。
+func profileFromBackup(a Author, profile creatorprofile.Profile) (creatorprofile.Profile, error) {
+	profile.AuthorID = a.AuthorId
+	profile.AutoRefresh = false
+	profile.TrackUpdates = false
+	if a.AvatarData != nil {
+		avatar, err := creatorprofile.DecodeAvatar(*a.AvatarData)
+		if err != nil {
+			return profile, err
+		}
+		profile.AvatarData = avatar
+	}
+	return profile, nil
 }
 
 // hasCosPrefix：COS 作者 id 约定前缀（0001 表注释 / DOMAIN_RULES §6）。

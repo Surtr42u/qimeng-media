@@ -7,12 +7,14 @@ import (
 	"qimeng-media/server/internal/creatorprofile"
 )
 
-// 协议 CreatorProfileWrite 原有字段必填，xProfile可选：指针区分缺失/null 与显式清空或关闭。
-// 翻译字段的缺省由领域保存逻辑按账号和原文判断是否保留。
+// 协议 CreatorProfileWrite 原有字段必填，xProfile/remark 可选：指针区分缺失/null
+// 与显式清空或关闭。翻译字段的缺省由领域保存逻辑按账号和原文判断是否保留；
+// remark 省略时为兼容未升级客户端保留原值，显式空字符串才清空。
 type creatorProfileWriteRequest struct {
 	Revision     *int64          `json:"revision"`
 	Nickname     *string         `json:"nickname"`
 	Biography    *string         `json:"biography"`
+	Remark       *string         `json:"remark"`
 	AvatarURL    *string         `json:"avatarUrl"`
 	HomepageURL  *string         `json:"homepageUrl"`
 	EvidenceURLs *[]string       `json:"evidenceUrls"`
@@ -75,8 +77,20 @@ func (s *Server) PutApiV1AuthorsAuthorIdProfile(w http.ResponseWriter, r *http.R
 			}
 		}
 	}
+	remark := ""
+	if body.Remark != nil {
+		remark = *body.Remark
+	} else {
+		// 旧客户端不认识新字段；省略 remark 时保留原值，避免编辑其他资料时清空备注。
+		current, err := s.creatorProfiles.Get(r.Context(), authorId)
+		if err != nil {
+			s.creatorProfileErr(w, err)
+			return
+		}
+		remark = current.Remark
+	}
 	p, err := s.creatorProfiles.Save(r.Context(), authorId, creatorprofile.Write{
-		Revision: *body.Revision, Nickname: *body.Nickname, Biography: *body.Biography,
+		Revision: *body.Revision, Nickname: *body.Nickname, Biography: *body.Biography, Remark: remark,
 		AvatarURL: *body.AvatarURL, HomepageURL: *body.HomepageURL, EvidenceURLs: *body.EvidenceURLs,
 		Status: *body.Status, AutoRefresh: *body.AutoRefresh, FeedURL: *body.FeedURL, TrackUpdates: *body.TrackUpdates,
 		XProfile: xProfile,

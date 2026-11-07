@@ -12,6 +12,8 @@ v2按原事件身份合并，必须携带viewEvents（可为空），不把media
 
 v2作者条目的可选`avatarData`传输已下载头像的标准Base64，与同条`profileJson`绑定。完整校验、已有资料补图条件、离线读取与旧备份兼容见[作者档案迁移规则](../domain/migration.md#作者公开档案)。
 
+POST 支持可选 query `authorProfileConflict`（`keep`|`replace`，默认 `keep`）：`keep` 保留本机已有作者档案，沿用原补缺与冲突提示；`replace` 对备份中带 `profileJson` 且本机已有档案的作者，以备份档案整份替换昵称/简介/主页/证据/xProfile/头像（含离线图片），Revision 在本机当前值上 +1，不再计入冲突提示，替换数见响应 `authorProfilesReplaced`。`replace` 会覆盖手机端人工编辑，只在明确以备份为准时显式使用；默认行为不变。
+
 ## 备份热备
 
 端点：POST/GET /backups、PUT /backups/schedule、GET /backups/{name}/file、DELETE /backups/{name}

@@ -8,11 +8,17 @@
 
 `GET/PUT /authors/{authorId}/profile` 为普通/COS作者提供独立附属档案，不改变作者ID、显示名、TXT来源或作品关联。首次未配置档案返回revision=0；删除后同ID重建返回空字段及保留的更高版本，不能以revision是否0判断有无资料。PUT显式提交当前revision，过期版本409且不覆盖新资料；状态区分empty/candidate/verified，verified需HTTPS主页与非空有效证据链接。研究结果须以candidate写入供审阅，同名不等于同人。
 
+档案新增可选 `remark`（特殊情况备注，≤500 字，缺省为空）：**仅用于特殊情况**——作者已退圈、X/Patreon 等官方账号全部删除、身份证据只能来自 Wayback 等存档；常规作者留空。写入省略或 null 时保留已有值（兼容未升级客户端），显式空字符串清空；该字段随 v2 备份 `profileJson` 原样同步。
+
+| 字段 | 上限 | 使用规则 |
+|---|---|---|
+| `remark`（特殊情况备注） | 500 字（按 rune） | 仅用于上述特殊情况，常规作者留空；省略/null 保留原值，空字符串清空。 |
+
 `POST /authors/{authorId}/profile/refresh` 从保存主页读取公开HTML元数据生成candidate，绝不自动覆盖人工昵称/简介/头像；不把og:image宣传图当作者头像。失败保留原资料、旧候选和最近成功时间，在lastError明示；刷新期间编辑导致revision变化时拒绝迟到结果。用户审阅候选并显式PUT才应用。需要登录/API凭据、跳转或无可用元数据时明确失败，不声称取得X/Pixiv完整资料。
 
 autoRefresh默认关闭，开启需verified与明确主页；main每小时检查一次，每作者至少24小时检查间隔，串行遍历、全局最多2次外部读取。trackUpdates默认关闭，开启需verified及明确RSS/Atom feedUrl，返回最多30个去重公开条目；无订阅源的平台不能仅凭开关产生动态，不自动下载媒体。关闭追踪时清空已显示条目。手动刷新只访问已保存地址。外部请求边界见[安全专题](../SECURITY.md#作者公开资料出站访问)。
 
-头像通过认证`GET /authors/{authorId}/profile/avatar`读取保存图片或来源地址，无任意URL参数；响应`Cache-Control: no-store`，避免修改头像后复用旧HTTP缓存，类型只接受PNG/JPEG/GIF/WebP，失败502或无头像404。客户端不得把源avatarUrl直接嵌入页面产生跨站请求。v2备份可选profileJson保存档案，导入只填本端空档案并关闭维护，见[备份专题](../domain/migration.md#作者公开档案)。
+头像通过认证`GET /authors/{authorId}/profile/avatar`读取保存图片或来源地址，无任意URL参数；响应`Cache-Control: no-store`，避免修改头像后复用旧HTTP缓存，类型只接受PNG/JPEG/GIF/WebP，失败502或无头像404。客户端不得把源avatarUrl直接嵌入页面产生跨站请求。v2备份可选profileJson保存档案，导入默认只填本端空档案并关闭维护；显式 `authorProfileConflict=replace` 时以备份整份覆盖，见[备份专题](../domain/migration.md#作者公开档案)。
 
 v2备份还可携带离线头像图片；认证头像接口优先读本地持久图片，缺图时才读取保存来源。普通档案JSON不含图片正文，改换或清空头像来源会清除旧图。已有档案可按来源一致条件补图，具体预算与保留语义见上述备份专题。
 
