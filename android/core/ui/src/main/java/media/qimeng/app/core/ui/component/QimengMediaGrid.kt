@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,6 +47,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -252,6 +254,12 @@ fun QimengMediaGrid(
     tightenLeadingHeader: Boolean = false,
     /** 作者资料等内容作为同一网格的跨列首项，随作品滚动，不挤占作品视口。 */
     leadingContent: (@Composable () -> Unit)? = null,
+    /**
+     * 缩略图下的单行标题（2026-11-07 搜索文件名需求）：null=不渲染（默认，全部既有网格页行为不变）；
+     * 非空时仅搜索结果页传入文件名，让用户不逐张打开即可辨认作品编号与组图页码。
+     * 调用方负责文本内容与长度控制；组件只做单行省略，完整名由详情页/信息弹窗查看。
+     */
+    caption: ((MediaAsset) -> String?)? = null,
 ) {
     // 扁平化为 (header?, asset?) 序列：组头跨全列，卡片单列（含按 id 防御性去重，见函数 KDoc）
     val cells = remember(sections) { flattenGridCells(sections) }
@@ -364,15 +372,44 @@ fun QimengMediaGrid(
             } else {
                 val asset = cell.asset
                 if (asset != null) {
-                    AssetCard(
-                        asset = asset,
-                        animatedUrlResolver = animatedUrlResolver,
-                        paused = false,
-                        isSelected = asset.id in selectedAssetIds,
-                        isSelectionMode = isSelectionMode,
-                        onAssetClick = onAssetClick,
-                        onAssetLongClick = onAssetLongClick,
-                    )
+                    if (caption == null) {
+                        AssetCard(
+                            asset = asset,
+                            animatedUrlResolver = animatedUrlResolver,
+                            paused = false,
+                            isSelected = asset.id in selectedAssetIds,
+                            isSelectionMode = isSelectionMode,
+                            onAssetClick = onAssetClick,
+                            onAssetLongClick = onAssetLongClick,
+                        )
+                    } else {
+                        // 标题在缩略图卡片外下方：单行省略、不压缩缩略图比例、不改变网格列数。
+                        // 仅搜索结果页启用（caption 参数默认 null），普通网格零行为变化。
+                        Column {
+                            AssetCard(
+                                asset = asset,
+                                animatedUrlResolver = animatedUrlResolver,
+                                paused = false,
+                                isSelected = asset.id in selectedAssetIds,
+                                isSelectionMode = isSelectionMode,
+                                onAssetClick = onAssetClick,
+                                onAssetLongClick = onAssetLongClick,
+                            )
+                            val captionText = caption(asset)
+                            if (!captionText.isNullOrBlank()) {
+                                Text(
+                                    text = captionText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = CARD_OUTER_PADDING),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

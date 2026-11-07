@@ -204,6 +204,11 @@ type ListResult struct {
 }
 
 // StepInput is the internal step-writer input (no HTTP surface).
+//
+// LeaseOwner is the fencing token of the claim that produced this step (worker
+// sets it; see Worker.newLeaseToken). Non-empty means the write only succeeds
+// while that exact owner still holds an unexpired lease; empty keeps the
+// administrative/test write path unfenced.
 type StepInput struct {
 	JobID      string
 	Step       string
@@ -212,16 +217,19 @@ type StepInput struct {
 	StartedAt  *time.Time
 	FinishedAt *time.Time
 	Detail     json.RawMessage
+	LeaseOwner string
 }
 
 // ArtifactInput is the internal artifact-writer input (no HTTP surface).
+// LeaseOwner carries the same fencing semantics as StepInput.LeaseOwner.
 type ArtifactInput struct {
-	JobID     string
-	Kind      string
-	URI       string
-	SHA256    string
-	Bytes     int64
-	CreatedAt time.Time
+	JobID      string
+	Kind       string
+	URI        string
+	SHA256     string
+	Bytes      int64
+	CreatedAt  time.Time
+	LeaseOwner string
 }
 
 // Sentinel errors mapped by httpapi to 400/404/409.

@@ -7,7 +7,9 @@ import io
 import json
 import os
 import socket
+import shutil
 import tempfile
+import uuid
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,6 +25,25 @@ OPENAPI = ROOT / "api" / "openapi.yaml"
 RULES = ROOT / "tools" / "ai_maintenance" / "rules.json"
 SYNTHETIC_TOKEN = "-".join(("synthetic", "test", "credential"))
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"synthetic-image-marker"
+
+_TEMP_ROOT = (Path(__file__).resolve().parents[1]
+              / "tools" / "ai_maintenance" / ".test-temp")
+try:
+    _TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+except OSError:
+    _TEMP_ROOT = Path(tempfile.gettempdir())
+
+
+@contextlib.contextmanager
+def temp_dir():
+    """测试临时目录：本机沙箱对 mkdtemp(0700) 目录写入受限，改用默认权限目录。"""
+    path = _TEMP_ROOT / ("case-" + uuid.uuid4().hex)
+    os.makedirs(path)
+    try:
+        yield str(path)
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
 
 
 class StubHandler(BaseHTTPRequestHandler):
@@ -82,19 +103,25 @@ class RulepackTest(unittest.TestCase):
         return path
 
     def test_required_shape_hash_and_known_paths(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             path = self.snapshot(directory)
             pack = rulepack.build_rulepack(openapi_path=path)
             raw = path.read_bytes()
 
         for key in (
-            "schemaVersion", "rulesVersion", "openapiSha256", "paths", "capabilities",
-            "fields", "authorActions", "tags", "backup", "errors", "workflows", "permissions",
+            "schemaVersion", "rulesVersion", "rulepackVersion", "platformVersion",
+            "toolContractVersion", "openapiSha256", "paths", "capabilities",
+            "fields", "authorActions", "tags", "backup", "errors", "workflows",
+            "permissions", "tools", "mediaNaming", "toolConfig", "compatibility",
         ):
             self.assertIn(key, pack)
-        self.assertEqual(1, pack["schemaVersion"])
+        self.assertEqual(2, pack["schemaVersion"])
         self.assertNotIn("generatedAt", pack)
         self.assertEqual(hashlib.sha256(raw).hexdigest(), pack["openapiSha256"])
+        self.assertEqual("1.0.0", pack["platformVersion"])
+        self.assertEqual("1.0.0", pack["toolContractVersion"])
+        self.assertEqual("2026-11-07.6", pack["rulepackVersion"])
+        self.assertEqual(pack["rulepackVersion"], pack["rulesVersion"])
         for known in (
             "/api/v1/healthz",
             "/api/v1/libraries",
@@ -107,17 +134,36 @@ class RulepackTest(unittest.TestCase):
             "/api/v1/research/lens",
         ):
             self.assertIn(known, pack["paths"])
-        self.assertTrue(all(entry["status"] == "planned" for entry in pack["capabilities"]["write"].values()))
+        write = pack["capabilities"]["write"]
+        for name in ("author.profile.update", "author.merge", "author.cleanup.apply",
+                     "asset.authors.apply"):
+            self.assertEqual("supported", write[name]["status"], name)
+        for name in ("backup.import", "device.apply.prepare", "device.apply.submit",
+                     "device.apply.status"):
+            self.assertEqual("planned", write[name]["status"], name)
+            self.assertTrue(write[name].get("endpoint"), name)
+        tool_ids = {tool["id"] for tool in pack["tools"]}
+        for name in ("author.profile.prepare", "author.cleanup.apply", "author.merge",
+                     "asset.authors.apply", "maintenance.inventory", "maintenance.status"):
+            self.assertIn(name, tool_ids)
+        for tool in pack["tools"]:
+            self.assertIn(tool["status"], ("supported", "unavailable", "incompatible", "planned"))
+            self.assertIn("checks", tool)
         for name, entry in pack["capabilities"]["read"].items():
             if entry["status"] == "supported" and entry.get("endpoint"):
                 self.assertTrue(entry.get("endpointPresent"), name)
+        profile = pack["fields"]["authorProfile"]
+        self.assertTrue(profile.get("endpointPresent"))
+        self.assertTrue(profile.get("methodsPresent"))
+        self.assertEqual("supported", profile.get("capabilityStatus"))
+        self.assertEqual("CreatorProfileWrite", profile.get("putRequestSchema"))
         for name, action in pack["authorActions"].items():
             if action.get("apiStatus") == "available":
                 self.assertTrue(action.get("endpointPresent"), name)
         self.assertEqual("read-only", pack["tags"]["access"])
         self.assertEqual("not_supported", pack["tags"]["write"])
         self.assertTrue(pack["backup"]["exportBeforeImport"])
-        self.assertEqual(4, len(pack["workflows"]))
+        self.assertEqual(5, len(pack["workflows"]))
         self.assertEqual("QIMENG_API_TOKEN", pack["permissions"]["api"]["tokenEnv"])
 
         profile = pack["fields"]["authorProfile"]
@@ -129,7 +175,7 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(["empty", "candidate", "verified"], profile["status"]["enum"])
 
     def test_research_capabilities_follow_openapi_and_keep_lens_caveat(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             pack = rulepack.build_rulepack(openapi_path=self.snapshot(directory))
         read = pack["capabilities"]["read"]
         for name, path, command in (
@@ -152,7 +198,7 @@ class RulepackTest(unittest.TestCase):
         self.assertTrue(any("links" in point for point in guide[0]["points"]))
 
     def test_merge_marker_follows_openapi_and_write_stays_planned(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             pack = rulepack.build_rulepack(openapi_path=self.snapshot(directory))
         merge_paths = [path for path in pack["paths"] if path.startswith("/api/v1/authors") and path.endswith("/merge")]
         merge = pack["authorActions"]["merge"]
@@ -167,7 +213,7 @@ class RulepackTest(unittest.TestCase):
             self.assertFalse(merge["endpointPresent"])
 
     def test_same_openapi_bytes_are_stable(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             path = self.snapshot(directory)
             first = rulepack.build_rulepack(openapi_path=path)
             second = rulepack.build_rulepack(openapi_path=path)
@@ -180,7 +226,7 @@ class RulepackTest(unittest.TestCase):
             self.assertEqual(first["openapiSha256"], loaded["openapiSha256"])
 
     def test_fingerprint_changes_when_openapi_bytes_change(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             path = self.snapshot(directory)
             first = rulepack.build_rulepack(openapi_path=path)
             path.write_bytes(path.read_bytes() + b"\n# synthetic fingerprint probe\n")
@@ -189,7 +235,7 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(first["paths"], second["paths"])
 
     def test_unknown_endpoint_is_downgraded_instead_of_claimed(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             rules = json.loads(RULES.read_text(encoding="utf-8"))
             rules["capabilities"]["read"]["synthetic.query"] = {
                 "status": "supported",
@@ -199,15 +245,21 @@ class RulepackTest(unittest.TestCase):
             rules_path.write_text(json.dumps(rules, ensure_ascii=False), encoding="utf-8")
             pack = rulepack.build_rulepack(openapi_path=self.snapshot(directory), rules_path=rules_path)
         entry = pack["capabilities"]["read"]["synthetic.query"]
-        self.assertEqual("planned", entry["status"])
+        self.assertEqual("unavailable", entry["status"])
+        self.assertEqual("endpoint_not_in_openapi", entry["statusReason"])
         self.assertFalse(entry["endpointPresent"])
+        self.assertFalse(entry["methodsPresent"])
 
     def test_markdown_guide_reports_fingerprint_and_planned_writes(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             pack = rulepack.build_rulepack(openapi_path=self.snapshot(directory))
         text = rulepack.render_markdown(pack)
         self.assertIn(pack["openapiSha256"], text)
-        self.assertIn("写入能力（本切片一律 planned）", text)
+        self.assertIn(pack["platformVersion"], text)
+        self.assertIn(pack["rulepackVersion"], text)
+        self.assertIn("工具状态", text)
+        self.assertIn("tools list", text)
+        self.assertIn("backup.export", text)
         self.assertIn("context", text)
         self.assertIn("research provider", text)
         self.assertIn("research lens", text)
@@ -228,7 +280,7 @@ class CliContextTest(unittest.TestCase):
         return path
 
     def test_context_is_local_and_parseable(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             path = self.snapshot(directory)
             status, stdout, stderr = self.run_cli(["context", "--openapi", str(path)])
         self.assertEqual(0, status)
@@ -239,7 +291,7 @@ class CliContextTest(unittest.TestCase):
         self.assertNotIn(SYNTHETIC_TOKEN, stdout)
 
     def test_context_out_writes_same_document(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             path = self.snapshot(directory)
             output = Path(directory) / "rulepack.json"
             status, stdout, stderr = self.run_cli(["context", "--openapi", str(path), "--out", str(output)])
@@ -248,7 +300,7 @@ class CliContextTest(unittest.TestCase):
             self.assertEqual(stdout, output.read_text(encoding="utf-8"))
 
     def test_context_markdown(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             path = self.snapshot(directory)
             status, stdout, stderr = self.run_cli(["context", "--openapi", str(path), "--markdown"])
         self.assertEqual(0, status)
@@ -619,7 +671,7 @@ class CliHTTPTest(unittest.TestCase):
         self.assertEqual("RESEARCH_DISABLED", payload["body"]["code"])
 
     def test_research_lens_posts_multipart_and_summarizes_counts(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             image = Path(directory) / "synthetic.png"
             image.write_bytes(PNG_BYTES)
             status, stdout, stderr = self.run_cli(["research", "lens", "--file", str(image)])
@@ -653,7 +705,7 @@ class CliHTTPTest(unittest.TestCase):
             {"code": "RESEARCH_SIDECAR_ERROR", "message": "sidecar echoed " + SYNTHETIC_TOKEN},
             "application/json",
         )
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             image = Path(directory) / "synthetic.jpg"
             image.write_bytes(PNG_BYTES)
             status, stdout, stderr = self.run_cli(["research", "lens", "--file", str(image)])
@@ -668,7 +720,7 @@ class CliHTTPTest(unittest.TestCase):
 
     def test_research_lens_local_precheck_rejects_before_request(self):
         before = len(StubHandler.posts)
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             wrong = Path(directory) / "synthetic.gif"
             wrong.write_bytes(PNG_BYTES)
             empty = Path(directory) / "empty.png"

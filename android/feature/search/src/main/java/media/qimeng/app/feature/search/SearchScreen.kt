@@ -353,6 +353,9 @@ private fun ResultPhase(
                     sections = remember(state.items, nowMs, state.dateCounts) {
                         state.items.groupByDateLabel(nowMs, state.dateCounts) { it.modifiedAtMs }
                     },
+                    // 搜索结果缩略图下显示单行短文件名（2026-11-07 用户需求）：不逐张打开即可辨认
+                    // 作品编号与组图页码；完整文件名在详情信息弹窗查看并复制。
+                    caption = { asset -> searchFileCaption(asset.fileName) },
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,
                     listState = gridState,
@@ -411,6 +414,18 @@ private fun SearchFilterOptions(
             modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
         )
     }
+}
+
+/**
+ * 搜索结果缩略图下的单行短文件名（2026-11-07 用户需求）：
+ * 去掉扩展名得到简短显示（如「守望先锋 朱诺 11 (2)」），保留作品编号与组图页码可辨认性；
+ * 只影响显示文本，不改变真实文件名/身份，完整文件名在详情信息弹窗查看并可复制。
+ * 无扩展名或点开头文件名按原样返回（不误吞点前缀）。
+ */
+internal fun searchFileCaption(fileName: String): String {
+    val name = fileName.trim()
+    if (name.isEmpty() || name.startsWith(".")) return name
+    return name.substringBeforeLast('.', name)
 }
 
 private fun SearchMediaType.labelRes(): Int = when (this) {

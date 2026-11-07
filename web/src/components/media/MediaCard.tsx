@@ -5,6 +5,10 @@
  * 移植进 web 前抽共享函数——本组件即合并结果；原型出处历史见 CHANGELOG）。
  * 类名与原型逐字一致（styles/prototype.css 消费），阶段 B 接真实数据时
  * props 增加 assetId 等字段，展示结构保持不变。
+ *
+ * 搜索结果额外需要「文件名可辨认」：标题固定用完整文件名（作品编号/组图页码
+ * 都在文件名里），单行省略避免撑破网格，完整文本经 title/fullTitle 提示。
+ * 这两项为可选 props，其他页面保持原两行 clamp 与 cosWork 标题口径。
  */
 
 import { memo } from 'react'
@@ -16,6 +20,10 @@ export interface MediaCardProps {
   id?: string
   cover: string
   title: string
+  /** 标题完整文本（原生 title 提示与 aria-label）；缺省=title。搜索结果用于承载完整文件名。 */
+  fullTitle?: string
+  /** 标题单行省略（缺省两行 clamp）。搜索结果用于让编号/页码在首行即可辨认。 */
+  singleLineTitle?: boolean
   /** 时长角标（右下角，仅视频传 m:ss / h:mm:ss；图片/动图不传不渲染） */
   duration?: string
   /** 作者行（第一行，作者名/「名 等N」/出处回退值由调用方经 formatCardUp 组装） */
@@ -30,12 +38,13 @@ export interface MediaCardProps {
   onOpen?: (id?: string) => void
 }
 
-function MediaCardImpl({ id, cover, title, duration, up, date, onClick, onOpen }: MediaCardProps) {
+function MediaCardImpl({ id, cover, title, fullTitle, singleLineTitle, duration, up, date, onClick, onOpen }: MediaCardProps) {
   const handleClick = onClick ?? (onOpen ? () => onOpen(id) : undefined)
   // 缩略图档位偏好（HANDOVER §5④）：auto=服务端下发原样；显式档位改写 size
   // 参数（缓存键随档位切换，无混存）。useSyncExternalStore 订阅——memo 卡片
   // 靠 store 变化全量重渲染，档位切换全站即时生效。
   const [thumbSize] = useThumbSize()
+  const accessibleTitle = fullTitle ?? title
   return (
     <div
       className="card"
@@ -43,15 +52,21 @@ function MediaCardImpl({ id, cover, title, duration, up, date, onClick, onOpen }
       onClick={handleClick}
       role={handleClick ? 'button' : undefined}
       tabIndex={handleClick ? 0 : undefined}
-      aria-label={handleClick ? title : undefined}
+      aria-label={handleClick ? accessibleTitle : undefined}
       onKeyDown={event => { if (handleClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleClick() } }}
     >
       <div className="card--cover">
         {/* decoding=async：缩略图解码移出主线程（滚动中大量卡片时避免掉帧） */}
-        <img src={applyThumbSize(cover, thumbSize)} alt={title} loading="lazy" decoding="async" />
+        <img src={applyThumbSize(cover, thumbSize)} alt={accessibleTitle} loading="lazy" decoding="async" />
         {duration ? <span className="card--duration">{duration}</span> : null}
       </div>
-      <div className="card--title">{title}</div>
+      <div
+        className="card--title"
+        title={accessibleTitle}
+        style={singleLineTitle ? { WebkitLineClamp: 1 } : undefined}
+      >
+        {title}
+      </div>
       {up || date ? (
         <div className="card--meta">
           {up ? <span className="card--up">{up}</span> : null}

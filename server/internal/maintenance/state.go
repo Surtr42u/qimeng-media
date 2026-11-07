@@ -15,7 +15,10 @@ var transitions = map[Status]map[Status]struct{}{
 		StatusWaitingAuthorization: {}, StatusWaitingDevice: {},
 	},
 	StatusInventory: {
-		StatusResearch: {}, StatusPlanned: {}, StatusPaused: {},
+		// inventory -> applying 允许「无研究/计划步骤」的短流水线（如
+		// backup_export：盘点后直接应用）；有研究类步骤的 kind 仍走
+		// inventory -> research -> planned -> applying。
+		StatusApplying: {}, StatusResearch: {}, StatusPlanned: {}, StatusPaused: {},
 		StatusCancelled: {}, StatusFailed: {}, StatusWaitingEvidence: {},
 		StatusWaitingAuthorization: {}, StatusWaitingDevice: {},
 	},

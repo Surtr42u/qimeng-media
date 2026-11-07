@@ -161,6 +161,11 @@ class SearchViewModel @Inject constructor(
             suggestions = emptyList(), // 结果态只展示网格；回建议态时按词重拉
             selectedZone = Zone.ALL,
             selectedMediaType = SearchMediaType.ALL,
+            // 换词立即清空旧结果/游标/日期计数：旧词结果不得伪装成新词结果
+            // （在途旧请求由 queryGeneration 丢弃；2026-11-07 搜索语义需求）
+            items = emptyList(),
+            nextCursor = null,
+            dateCounts = emptyMap(),
         )
         viewModelScope.launch { searchHistoryRepository.record(query) }
         loadItems(cursor = null, append = false)

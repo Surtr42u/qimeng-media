@@ -91,6 +91,11 @@ func (s *Server) PostApiV1DeviceApplyTasks(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "manifest 超过 256KiB 上限")
 		return
 	}
+	// AI 客户端只能登记发往自己绑定设备的结果包（ADR-0057 P1，设备级隔离）；
+	// 管理员会话不受限。manifest 结构合法性仍由 deviceapply.Create 判定。
+	if !s.requireAIDeviceManifestAccess(w, r, []byte(manifest)) {
+		return
+	}
 
 	segments := make(map[deviceapply.SegmentKind]io.Reader, 2)
 	closers := make([]io.Closer, 0, 2)
@@ -129,11 +134,16 @@ func (s *Server) PostApiV1DeviceApplyTasks(w http.ResponseWriter, r *http.Reques
 		s.writeDeviceApplyError(w, "登记设备结果包", err)
 		return
 	}
+	annotateAIAudit(r, "create:"+task.TargetDeviceID)
 	writeJSON(w, http.StatusCreated, deviceApplyTaskToGen(task))
 }
 
 // GetApiV1DeviceApplyTasks 设备结果包列表（targetDevice 必填）。
 func (s *Server) GetApiV1DeviceApplyTasks(w http.ResponseWriter, r *http.Request, params gen.GetApiV1DeviceApplyTasksParams) {
+	// AI 客户端只能按自己绑定的设备标签查询（管理员会话不受限）。
+	if !s.requireAIDeviceAccess(w, r, params.TargetDevice) {
+		return
+	}
 	opts := deviceapply.ListOptions{TargetDeviceID: params.TargetDevice}
 	if params.Status != nil {
 		opts.Status = deviceapply.Status(*params.Status)
@@ -172,21 +182,43 @@ func (s *Server) GetApiV1DeviceApplyTasksId(w http.ResponseWriter, r *http.Reque
 		s.writeDeviceApplyError(w, "读取设备结果包", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, deviceApplyTaskToGen(task))
-}
-
-// PostApiV1DeviceApplyTasksIdClaim 领取（pending -> claimed；重复领取幂等）。
-func (s *Server) PostApiV1DeviceApplyTasksIdClaim(w http.ResponseWriter, r *http.Request, id gen.DeviceApplyTaskId) {
-	task, err := s.deviceApply.Claim(r.Context(), id.String())
-	if err != nil {
-		s.writeDeviceApplyError(w, "领取设备结果包", err)
+	if !s.requireAIDeviceAccess(w, r, task.TargetDeviceID) {
 		return
 	}
 	writeJSON(w, http.StatusOK, deviceApplyTaskToGen(task))
 }
 
+// PostApiV1DeviceApplyTasksIdClaim 领取（pending -> claimed；重复领取幂等）。
+func (s *Server) PostApiV1DeviceApplyTasksIdClaim(w http.ResponseWriter, r *http.Request, id gen.DeviceApplyTaskId) {
+	// 先读任务做设备绑定校验，再领取：越权请求不能改变任务状态。
+	task, err := s.deviceApply.Get(r.Context(), id.String())
+	if err != nil {
+		s.writeDeviceApplyError(w, "读取设备结果包", err)
+		return
+	}
+	if !s.requireAIDeviceAccess(w, r, task.TargetDeviceID) {
+		return
+	}
+	task, err = s.deviceApply.Claim(r.Context(), id.String())
+	if err != nil {
+		s.writeDeviceApplyError(w, "领取设备结果包", err)
+		return
+	}
+	annotateAIAudit(r, "claim:"+task.TargetDeviceID)
+	writeJSON(w, http.StatusOK, deviceApplyTaskToGen(task))
+}
+
 // PostApiV1DeviceApplyTasksIdResult 回传终态结果。
 func (s *Server) PostApiV1DeviceApplyTasksIdResult(w http.ResponseWriter, r *http.Request, id gen.DeviceApplyTaskId) {
+	// 设备绑定校验在解析/写入终态之前完成（AI 客户端只能回传自己设备的任务）。
+	task, err := s.deviceApply.Get(r.Context(), id.String())
+	if err != nil {
+		s.writeDeviceApplyError(w, "读取设备结果包", err)
+		return
+	}
+	if !s.requireAIDeviceAccess(w, r, task.TargetDeviceID) {
+		return
+	}
 	var body gen.DeviceApplyResultRequest
 	if !decodeJSON(w, r, &body) {
 		return
@@ -212,26 +244,47 @@ func (s *Server) PostApiV1DeviceApplyTasksIdResult(w http.ResponseWriter, r *htt
 			})
 		}
 	}
-	task, err := s.deviceApply.Result(r.Context(), id.String(), input)
+	task, err = s.deviceApply.Result(r.Context(), id.String(), input)
 	if err != nil {
 		s.writeDeviceApplyError(w, "回传设备结果包结果", err)
 		return
 	}
+	// 审计动作后缀记录回传终态，便于追踪哪台手机执行了什么（设备标签在
+	// claim 审计里记录，这里两者可经同一 clientId 关联）。
+	annotateAIAudit(r, "result:"+string(task.Status))
 	writeJSON(w, http.StatusOK, deviceApplyTaskToGen(task))
 }
 
 // PostApiV1DeviceApplyTasksIdCancel 取消（pending/claimed -> cancelled；重复取消幂等）。
 func (s *Server) PostApiV1DeviceApplyTasksIdCancel(w http.ResponseWriter, r *http.Request, id gen.DeviceApplyTaskId) {
-	task, err := s.deviceApply.Cancel(r.Context(), id.String())
+	task, err := s.deviceApply.Get(r.Context(), id.String())
+	if err != nil {
+		s.writeDeviceApplyError(w, "读取设备结果包", err)
+		return
+	}
+	if !s.requireAIDeviceAccess(w, r, task.TargetDeviceID) {
+		return
+	}
+	task, err = s.deviceApply.Cancel(r.Context(), id.String())
 	if err != nil {
 		s.writeDeviceApplyError(w, "取消设备结果包", err)
 		return
 	}
+	annotateAIAudit(r, "cancel:"+task.TargetDeviceID)
 	writeJSON(w, http.StatusOK, deviceApplyTaskToGen(task))
 }
 
 // GetApiV1DeviceApplyTasksIdSegmentsKind 下载段字节。
 func (s *Server) GetApiV1DeviceApplyTasksIdSegmentsKind(w http.ResponseWriter, r *http.Request, id gen.DeviceApplyTaskId, kind gen.DeviceApplySegmentKind) {
+	// 设备绑定校验必须在打开段文件之前（避免越权探测段是否存在）。
+	task, err := s.deviceApply.Get(r.Context(), id.String())
+	if err != nil {
+		s.writeDeviceApplyError(w, "读取设备结果包", err)
+		return
+	}
+	if !s.requireAIDeviceAccess(w, r, task.TargetDeviceID) {
+		return
+	}
 	segment, reader, err := s.deviceApply.OpenSegment(r.Context(), id.String(), deviceapply.SegmentKind(kind))
 	if err != nil {
 		s.writeDeviceApplyError(w, "下载设备结果包段", err)

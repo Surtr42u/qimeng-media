@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"qimeng-media/server/internal/aiauth"
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/authoredit"
 	"qimeng-media/server/internal/authorimport"
@@ -188,6 +189,10 @@ type Deps struct {
 	// Maintenance 持久维护任务账本（internal/maintenance，ADR-0054）；nil 时
 	// New 内部用同源 Conn/Queries/Now/Logger 构造缺省实例（缺省即生产实现）。
 	Maintenance *maintenance.Service
+	// AIAuth 独立 AI 客户端凭据（internal/aiauth，ADR-0057 P1）；nil 时
+	// New 用同源 Conn/Queries/Now/Logger 构造并加载缺省实例——缺省即生产
+	// 形态（表由 migration 0025 建立），不创建第二套凭据状态。
+	AIAuth *aiauth.Service
 	// DeviceApply 设备结果包账本与段文件存储（internal/deviceapply，
 	// ADR-0055）；nil 时 New 用同源 Conn/Queries 与 Cfg.DataDir 构造缺省实例。
 	DeviceApply *deviceapply.Service
@@ -242,6 +247,9 @@ type Server struct {
 	// maintenance 持久维护任务账本（Deps.Maintenance 的落位；无独立开关，
 	// 账本端点恒可用，worker 执行面本轮未实现）。
 	maintenance *maintenance.Service
+	// aiAuth 独立 AI 客户端凭据与审计（Deps.AIAuth 的落位；Bearer 分的
+	// 第二类身份，scope 强制与写审计见 aiclient.go）。
+	aiAuth *aiauth.Service
 	// deviceApply 设备结果包账本与段文件存储（Deps.DeviceApply 的落位；
 	// 无独立开关，配对/设备身份校验/Android Worker 本轮未实现）。
 	deviceApply *deviceapply.Service
@@ -384,6 +392,18 @@ func New(deps Deps) (*Server, error) {
 			RootDir: filepath.Join(deps.Cfg.DataDir, "device-apply-packages"),
 			Now:     now, Logger: logger,
 		})
+	}
+	// 独立 AI 客户端凭据缺省兜底：与其余 store 型服务同源，构造时完成
+	// 一次内存加载（加载失败拒绝启动，避免所有 AI token 静默变 401）。
+	s.aiAuth = deps.AIAuth
+	if s.aiAuth == nil {
+		aiSvc, aiErr := aiauth.New(aiauth.Options{
+			Conn: deps.Conn, Queries: deps.Queries, Now: now, Logger: logger,
+		})
+		if aiErr != nil {
+			return nil, aiErr
+		}
+		s.aiAuth = aiSvc
 	}
 	s.txt = deps.TXT
 	if s.txt == nil {

@@ -111,6 +111,14 @@ class BackupViewModel @Inject constructor(
 
     private fun fileOperationBlocked(): Boolean = _uiState.value.let { it.importing || it.exporting || it.pendingImport != null }
 
+    /** 恢复槽缺失文案（自动/上次/上上次/当前分别可辨认，避免一律报「还没有备份文件」）。 */
+    private fun missingBackupMessage(kind: BackupFileKind): String = when (kind) {
+        BackupFileKind.AUTOMATIC -> "备份目录还没有本机自动备份文件"
+        BackupFileKind.PREVIOUS -> "还没有上次备份文件（两代布局保留当前/上次两代）"
+        BackupFileKind.OLDER -> "还没有上上次备份文件（旧三代布局的「（上上次）」可只读恢复）"
+        else -> ERROR_NO_BACKUP_FILE
+    }
+
     /** 显式读取所选槽；读盘和解析前即置忙，不能与手动导出交错。 */
     fun importFromBackupDir(kind: BackupFileKind = BackupFileKind.MANUAL) {
         if (fileOperationBlocked()) return
@@ -123,17 +131,18 @@ class BackupViewModel @Inject constructor(
             try {
                 val status = autoBackupRunner.readFileStatus(kind)
                 if (status == null) {
-                    val message = if (kind == BackupFileKind.AUTOMATIC) "备份目录还没有本机自动备份文件" else ERROR_NO_BACKUP_FILE
-                    _uiState.update { it.copy(errorMessage = message) }
+                    _uiState.update { it.copy(errorMessage = missingBackupMessage(kind)) }
                     return@launch
                 }
-                val bytes = autoBackupRunner.readBackupBytes(kind)
-                if (bytes == null) {
+                // 用解析后的真实文件名进入校验链：两代布局上次代是独立目录里的影库备份.json，
+                // 旧 flat3 才是「影库备份（上次）.json」，确认弹窗不能展示槽别名。
+                val backup = autoBackupRunner.readBackup(kind)
+                if (backup == null) {
                     _uiState.update { it.copy(errorMessage = ERROR_READ_FILE) }
                     return@launch
                 }
                 val result = withContext(Dispatchers.Default) {
-                    BackupValidator.validate(kind.fileName, bytes)
+                    BackupValidator.validate(backup.fileName, backup.bytes)
                 }
                 stageValidation(result)
             } catch (cancelled: CancellationException) { throw cancelled

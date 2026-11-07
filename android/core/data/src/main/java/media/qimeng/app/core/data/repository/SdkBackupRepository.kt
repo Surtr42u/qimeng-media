@@ -55,6 +55,7 @@ class SdkBackupRepository @Inject constructor(
             mediaFilesTotal = result.mediaFilesTotal,
             assetsMatched = result.assetsMatched,
             authorsImported = result.authorsImported,
+            authorRefsImported = result.authorRefsImported,
             tagsImported = result.tagsImported,
             eventsReplayed = result.eventsReplayed,
             warnings = result.warnings,

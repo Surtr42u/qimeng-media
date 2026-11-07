@@ -62,6 +62,30 @@ class SearchViewModelTest {
         assertTrue(vm.uiState.value.items.isEmpty())
     }
 
+    @Test
+    fun `换词提交立即清空旧结果与游标，旧代在途响应不复活`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeMediaRepository()
+        val viewModel = viewModel(repo, FakeSearchHistoryRepository())
+        viewModel.submit("first")
+        advanceUntilIdle()
+        repo.assetsCalls.single().gate.complete(page(items = listOf(asset("old")), nextCursor = "cursor-1", total = 1))
+        advanceUntilIdle()
+        assertEquals(1, viewModel.uiState.value.items.size)
+        assertEquals("cursor-1", viewModel.uiState.value.nextCursor)
+
+        viewModel.submit("second")
+        // 新词提交的同一同步状态更新内清空旧结果，旧词内容不伪装成新词结果（2026-11-07 需求）
+        assertTrue(viewModel.uiState.value.items.isEmpty())
+        assertNull(viewModel.uiState.value.nextCursor)
+        advanceUntilIdle()
+        assertEquals(2, repo.assetsCalls.size)
+        assertEquals("second", repo.assetsCalls[1].query.q)
+
+        repo.assetsCalls[1].gate.complete(page(items = listOf(asset("new")), total = 1))
+        advanceUntilIdle()
+        assertEquals(listOf("new"), viewModel.uiState.value.items.map { it.id })
+    }
+
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 

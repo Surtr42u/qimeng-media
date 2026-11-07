@@ -62,15 +62,32 @@ class AutoBackupRunner @Inject constructor(
         maintenance.writeIfManaged(dirUri, BackupFileKind.MANUAL)
     }
 
-    /** 读备份目录内固定名备份文件全量字节（备份页「导入」数据源）；未设目录/无文件/读失败返回 null */
-    suspend fun readBackupBytes(kind: BackupFileKind = BackupFileKind.MANUAL): ByteArray? {
+    /**
+     * 读取备份槽（2026-11-07 task-13 修复）：维护目录先由 [MaintenanceBackupWriter.readManagedBackup]
+     * 按两代布局/旧 flat3 解析**真实文件**——上次代在独立目录 `上次/备份/影库备份.json`，
+     * 旧 flat3 历史份是同目录旧名文件，不能再用「当前目录 + 历史固定名」拼路径（用户报障根因）。
+     * 非托管目录（SAF 旧目录）仍走 dirAccess 固定名。返回真实文件名 + 已核对摘要的字节，
+     * 确认弹窗与 v2 校验链以真实名为准；未设目录/无文件/读取或摘要核对失败返回 null。
+     */
+    suspend fun readBackup(kind: BackupFileKind = BackupFileKind.MANUAL): ManagedBackupFile? {
         val dirUri = prefs.state.first().dirUri ?: return null
-        return dirAccess.readBytes(dirUri, maintenance.readKind(dirUri, kind))
+        maintenance.readManagedBackup(dirUri, kind)?.let { return it }
+        val bytes = dirAccess.readBytes(dirUri, maintenance.readKind(dirUri, kind)) ?: return null
+        return ManagedBackupFile(kind.fileName, bytes)
     }
 
-    /** 读备份目录内固定名备份文件状态（备份页状态行数据源）；未设目录/无文件/查询失败返回 null */
+    /** 读备份字节（兼容入口，语义同 [readBackup]）；未设目录/无文件/读失败返回 null */
+    suspend fun readBackupBytes(kind: BackupFileKind = BackupFileKind.MANUAL): ByteArray? =
+        readBackup(kind)?.bytes
+
+    /**
+     * 读备份槽状态（备份页状态行/「有没有此份」判断数据源，2026-11-07 task-13）：维护目录先
+     * 解析历史槽真实文件（含旧 flat3 回退），否则退回 dirAccess 固定名；
+     * 未设目录/无文件/查询失败返回 null。
+     */
     suspend fun readFileStatus(kind: BackupFileKind = BackupFileKind.MANUAL): BackupFileStatus? {
         val dirUri = prefs.state.first().dirUri ?: return null
+        maintenance.managedBackupStatus(dirUri, kind)?.let { return it }
         return dirAccess.fileStatus(dirUri, maintenance.readKind(dirUri, kind))
     }
 

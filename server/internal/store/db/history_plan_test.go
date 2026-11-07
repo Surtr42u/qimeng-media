@@ -29,6 +29,10 @@ import (
 
 	_ "modernc.org/sqlite" // 本测试二进制独立建库，需在此注册 "sqlite" 驱动
 
+	// browse/facets 生成查询使用 qimeng_search_token 自定义函数；本包测试
+	// 不能反向导入 store（store 导入 db），故直接依赖独立的注册包。
+	_ "qimeng-media/server/internal/store/searchtoken"
+
 	"qimeng-media/server/migrations"
 )
 

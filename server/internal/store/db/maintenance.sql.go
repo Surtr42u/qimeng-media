@@ -10,6 +10,45 @@ import (
 	"database/sql"
 )
 
+const advanceMaintenanceJobStatus = `-- name: AdvanceMaintenanceJobStatus :execrows
+UPDATE maintenance_jobs
+SET status = ?1,
+    updated_at = ?2
+WHERE id = ?3
+  AND lease_owner = ?4
+  AND status = ?5
+  AND lease_until IS NOT NULL
+  AND lease_until >= ?6
+`
+
+type AdvanceMaintenanceJobStatusParams struct {
+	NextStatus    string
+	UpdatedAt     string
+	ID            string
+	LeaseOwner    sql.NullString
+	CurrentStatus string
+	Now           sql.NullString
+}
+
+// Worker-facing pipeline advance. The previous status is part of the WHERE
+// clause so a concurrent pause/resume/cancel (or a second worker) cannot be
+// overwritten; lease_owner + an unexpired lease_until prove the caller still
+// holds the job (an expired lease is recoverable by another claim).
+func (q *Queries) AdvanceMaintenanceJobStatus(ctx context.Context, arg AdvanceMaintenanceJobStatusParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, advanceMaintenanceJobStatus,
+		arg.NextStatus,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.LeaseOwner,
+		arg.CurrentStatus,
+		arg.Now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const cancelMaintenanceJob = `-- name: CancelMaintenanceJob :execrows
 UPDATE maintenance_jobs
 SET status = 'cancelled',
@@ -42,7 +81,7 @@ SET lease_owner = ?,
     started_at = COALESCE(started_at, ?),
     updated_at = ?
 WHERE id = ?
-  AND status = 'queued'
+  AND status IN ('queued', 'inventory', 'research', 'planned', 'applying', 'verifying')
   AND (lease_until IS NULL OR lease_until < ?)
 `
 
@@ -55,6 +94,9 @@ type ClaimMaintenanceJobParams struct {
 	LeaseUntil_2 sql.NullString
 }
 
+// Same status list as ListClaimableMaintenanceJobs (keep the two in sync):
+// taking over an expired in-flight job preserves its status so the worker can
+// continue the pipeline instead of restarting side effects.
 func (q *Queries) ClaimMaintenanceJob(ctx context.Context, arg ClaimMaintenanceJobParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, claimMaintenanceJob,
 		arg.LeaseOwner,
@@ -151,16 +193,18 @@ func (q *Queries) CreateMaintenanceJob(ctx context.Context, arg CreateMaintenanc
 
 const finishMaintenanceJob = `-- name: FinishMaintenanceJob :execrows
 UPDATE maintenance_jobs
-SET status = ?,
-    finished_at = ?,
+SET status = ?1,
+    finished_at = ?2,
     lease_owner = NULL,
     lease_until = NULL,
-    error_code = ?,
-    error_message = ?,
-    updated_at = ?
-WHERE id = ?
-  AND lease_owner = ?
+    error_code = ?3,
+    error_message = ?4,
+    updated_at = ?5
+WHERE id = ?6
+  AND lease_owner = ?7
   AND status NOT IN ('completed', 'partial', 'failed', 'cancelled')
+  AND lease_until IS NOT NULL
+  AND lease_until >= ?8
 `
 
 type FinishMaintenanceJobParams struct {
@@ -171,8 +215,11 @@ type FinishMaintenanceJobParams struct {
 	UpdatedAt    string
 	ID           string
 	LeaseOwner   sql.NullString
+	Now          sql.NullString
 }
 
+// Finishing is fenced by owner + unexpired lease: a worker whose lease expired
+// and was (or can be) reassigned must not write the terminal state.
 func (q *Queries) FinishMaintenanceJob(ctx context.Context, arg FinishMaintenanceJobParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, finishMaintenanceJob,
 		arg.Status,
@@ -182,6 +229,7 @@ func (q *Queries) FinishMaintenanceJob(ctx context.Context, arg FinishMaintenanc
 		arg.UpdatedAt,
 		arg.ID,
 		arg.LeaseOwner,
+		arg.Now,
 	)
 	if err != nil {
 		return 0, err
@@ -251,11 +299,13 @@ func (q *Queries) GetMaintenanceJobByIdempotencyKey(ctx context.Context, idempot
 
 const heartbeatMaintenanceJob = `-- name: HeartbeatMaintenanceJob :execrows
 UPDATE maintenance_jobs
-SET lease_until = ?,
-    updated_at = ?
-WHERE id = ?
-  AND lease_owner = ?
+SET lease_until = ?1,
+    updated_at = ?2
+WHERE id = ?3
+  AND lease_owner = ?4
   AND status NOT IN ('completed', 'partial', 'failed', 'cancelled')
+  AND lease_until IS NOT NULL
+  AND lease_until >= ?5
 `
 
 type HeartbeatMaintenanceJobParams struct {
@@ -263,14 +313,19 @@ type HeartbeatMaintenanceJobParams struct {
 	UpdatedAt  string
 	ID         string
 	LeaseOwner sql.NullString
+	Now        sql.NullString
 }
 
+// Only the current holder of a still-valid lease may renew it. An expired lease
+// is no longer authoritative: the job may already be claimable by another
+// worker, so a stale executor must not be able to revive its ownership.
 func (q *Queries) HeartbeatMaintenanceJob(ctx context.Context, arg HeartbeatMaintenanceJobParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, heartbeatMaintenanceJob,
 		arg.LeaseUntil,
 		arg.UpdatedAt,
 		arg.ID,
 		arg.LeaseOwner,
+		arg.Now,
 	)
 	if err != nil {
 		return 0, err
@@ -308,14 +363,26 @@ func (q *Queries) InsertMaintenanceArtifact(ctx context.Context, arg InsertMaint
 
 const listClaimableMaintenanceJobs = `-- name: ListClaimableMaintenanceJobs :many
 SELECT id, kind, status, library_id, payload_json, input_fingerprint, rules_version, authorization_scope, budget_json, idempotency_key, lease_owner, lease_until, created_at, updated_at, started_at, finished_at, error_code, error_message FROM maintenance_jobs
-WHERE status = 'queued'
-  AND (lease_until IS NULL OR lease_until < ?1)
+WHERE kind = ?1
+  AND status IN ('queued', 'inventory', 'research', 'planned', 'applying', 'verifying')
+  AND (lease_until IS NULL OR lease_until < ?2)
 ORDER BY created_at ASC, id ASC
 LIMIT 1
 `
 
-func (q *Queries) ListClaimableMaintenanceJobs(ctx context.Context, now sql.NullString) ([]MaintenanceJob, error) {
-	rows, err := q.db.QueryContext(ctx, listClaimableMaintenanceJobs, now)
+type ListClaimableMaintenanceJobsParams struct {
+	Kind string
+	Now  sql.NullString
+}
+
+// Claim scan for the in-process worker: restrict to the kind the caller has a
+// registered handler for (unregistered kinds must stay queued for external
+// executors), and include in-flight states whose lease expired so a crashed or
+// restarted worker can take the job back over and resume from completed steps.
+// waiting_*/paused/terminal states are deliberately excluded: only external
+// evidence or the public pause/resume endpoints re-queue them.
+func (q *Queries) ListClaimableMaintenanceJobs(ctx context.Context, arg ListClaimableMaintenanceJobsParams) ([]MaintenanceJob, error) {
+	rows, err := q.db.QueryContext(ctx, listClaimableMaintenanceJobs, arg.Kind, arg.Now)
 	if err != nil {
 		return nil, err
 	}
@@ -555,6 +622,32 @@ type PauseMaintenanceJobParams struct {
 
 func (q *Queries) PauseMaintenanceJob(ctx context.Context, arg PauseMaintenanceJobParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, pauseMaintenanceJob, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const releaseMaintenanceLease = `-- name: ReleaseMaintenanceLease :execrows
+UPDATE maintenance_jobs
+SET lease_owner = NULL,
+    lease_until = NULL,
+    updated_at = ?1
+WHERE id = ?2
+  AND lease_owner = ?3
+`
+
+type ReleaseMaintenanceLeaseParams struct {
+	UpdatedAt  string
+	ID         string
+	LeaseOwner sql.NullString
+}
+
+// Best-effort release for a claim that cannot be used locally (e.g. the detail
+// read after the claim UPDATE failed). Only the current holder may release, so
+// a delayed cleanup can never steal a lease that was already reassigned.
+func (q *Queries) ReleaseMaintenanceLease(ctx context.Context, arg ReleaseMaintenanceLeaseParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, releaseMaintenanceLease, arg.UpdatedAt, arg.ID, arg.LeaseOwner)
 	if err != nil {
 		return 0, err
 	}
