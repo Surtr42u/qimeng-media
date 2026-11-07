@@ -1356,8 +1356,20 @@ paths:
         非法 v2 在任何写入前拒绝；通过校验后各段独立提交，后段失败保留前段并返回错误，
         已提交变更仍推进修订号/失效推荐并发布 library.changed，不表示整份导入成功。
         作者/标签/关联沿既有合并规则，标签按改动时间裁决、TXT 按 keep 重建关联。
+        作者档案默认 keep 保留本机已有资料；query authorProfileConflict=replace 时以备份整份替换并计入 authorProfilesReplaced。
         scanSources/settings 段不导入（SAF 目录概念不存在，响应 warnings 提示重新配置库）；
         albumRules 段无对应能力，忽略。
+      parameters:
+        - name: authorProfileConflict
+          in: query
+          # x-enum-varnames：显式前缀，避免 oapi-codegen v2.8.0 的裸值常量全局
+          # 去重把既有 AuthorSourcesWriteRequestMode 的 Replace/Append 改名。
+          # 不写 default：openapi-generator 的 Kotlin 生成器把 enum default 生成为
+          # `...Post.keep`（小写裸值）而常量名为 x-enum-varnames 的 CamelCase，导致
+          # Unresolved reference（CI android sdk:compileKotlin 实测）；缺省语义由服务端
+          # 缺省 keep + description 表述，调用方不传即 keep。
+          schema: { type: string, enum: [keep, replace], x-enum-varnames: [AuthorProfileConflictKeep, AuthorProfileConflictReplace] }
+          description: 作者档案（昵称/简介/主页/证据/xProfile/头像）与备份不一致时的处置；不传=keep（保留本机既有资料，默认），replace=以备份整份替换（含离线头像，Revision+1，不再计入 conflict 提示）
       requestBody:
         required: true
         content:
@@ -2705,6 +2717,10 @@ components:
         revision: { type: integer, format: int64, minimum: 0 }
         nickname: { type: string, maxLength: 200 }
         biography: { type: string, maxLength: 2000 }
+        remark:
+          type: string
+          maxLength: 500
+          description: 特殊情况备注：仅当作者已退圈、X/Patreon 等官方账号全部删除、身份证据只能来自 Wayback 等存档时填写；常规作者留空。省略或 null 保留已有值，显式空字符串清空。该字段随 v2 备份 profileJson 同步。
         avatarUrl: { type: string, maxLength: 2000 }
         homepageUrl: { type: string, maxLength: 2000 }
         evidenceUrls: { type: array, maxItems: 8, items: { type: string, maxLength: 2000 } }
@@ -2731,6 +2747,10 @@ components:
             lastCheckedAt: { type: string }
             lastSuccessAt: { type: string }
             lastError: { type: string }
+            remark:
+              type: string
+              maxLength: 500
+              description: 特殊情况备注：仅当作者已退圈、X/Patreon 等官方账号全部删除、身份证据只能来自 Wayback 等存档时填写；常规作者留空。该字段随 v2 备份 profileJson 同步。
             candidate: { $ref: "#/components/schemas/CreatorProfileCandidate" }
             updates: { type: array, maxItems: 30, items: { $ref: "#/components/schemas/CreatorUpdate" } }
     Author:
@@ -3183,8 +3203,8 @@ components:
       type: object
       required: [authorId, displayName]
       properties:
-        avatarData: { type: string, maxLength: 2796204, description: 可选离线头像的标准Base64；解码后最多2MiB且必须是PNG/JPEG/GIF/WebP，须同条profileJson绑定头像来源；已有资料只在来源一致且缺离线头像时补齐 }
-        profileJson: { type: string, maxLength: 262144, description: 作者公开附属档案JSON；可选v2扩展，旧备份缺省无操作；导入不覆盖本端已有档案且关闭自动维护 }
+        avatarData: { type: string, maxLength: 2796204, description: 可选离线头像的标准Base64；解码后最多2MiB且必须是PNG/JPEG/GIF/WebP，须同条profileJson绑定头像来源；默认keep只在来源一致且缺离线头像时补齐，authorProfileConflict=replace 时随档案整份覆盖 }
+        profileJson: { type: string, maxLength: 262144, description: 作者公开附属档案JSON；可选v2扩展，旧备份缺省无操作；默认keep不覆盖本端已有档案且关闭自动维护，authorProfileConflict=replace 时以备份整份替换（含Revision+1） }
         authorId:         { type: string, description: 常规作者原样；COS 作者带 cos_ 前缀原样保留 }
         displayName:      { type: string }
         createdAtMillis:  { type: integer, format: int64 }
@@ -3319,6 +3339,7 @@ components:
         txtFragmentsImported:   { type: integer, description: TXT 片段新增+替换数（§10「TXT 片段」；旧版客户端忽略此字段） }
         txtFragmentsSkipped:    { type: integer, description: TXT 片段未产生变更的跳过数（内容相同幂等跳过＋单片段导入失败跳过，失败有 Warn 日志） }
         authorsImported:        { type: integer }
+        authorProfilesReplaced: { type: integer, description: 本次因 replace 被整份替换的作者档案数；keep/未传时缺省 }
         authorRefsImported:     { type: integer, description: 关联写入数（含因资产未匹配而跳过之外的净写入） }
         authorRefsSkipped:      { type: integer, description: 关联因资产未匹配而跳过数 }
         tagsImported:           { type: integer }

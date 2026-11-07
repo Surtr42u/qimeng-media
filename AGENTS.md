@@ -18,6 +18,7 @@
 | 当前形态、进行中事项、接手未完任务 | `docs/HANDOVER.md`，无需先读里程碑 |
 | API/SDK | `api/openapi.yaml` 对应 path/schema + `docs/GUIDE_API.md` 对应专题 |
 | 算法、筛选、统计、作者、迁移、缩略图等业务 | `docs/DOMAIN_RULES.md` 目录 → 命中专题，禁止整本默认必读 |
+| 识图/作品归属与作者核实 | `tools/IMAGE_RESEARCH.md` → `tools/AUTHOR_RESEARCH.md` |
 | Go 服务端/模块边界 | `server/README.md`；边界变化另读 `docs/ARCHITECTURE.md` §5/§5.1 |
 | Web / Android / desktop UI | 对应 `web/README.md` / `android/README.md` / `desktop/README.md` + `docs/GUIDE_UI.md` 对应部分 |
 | 数据库/身份 | ADR 索引定位 0003/0004/0011；相关 migration/查询规则 |

@@ -27,10 +27,12 @@ var (
 )
 
 // Write 对应 OpenAPI CreatorProfileWrite；revision 为每次持久化的乐观并发版本。
+// Remark 为特殊情况备注，通过嵌入成为 Profile 的持久化字段。
 type Write struct {
 	Revision     int64     `json:"revision"`
 	Nickname     string    `json:"nickname"`
 	Biography    string    `json:"biography"`
+	Remark       string    `json:"remark,omitempty"`
 	AvatarURL    string    `json:"avatarUrl"`
 	HomepageURL  string    `json:"homepageUrl"`
 	EvidenceURLs []string  `json:"evidenceUrls"`
@@ -130,7 +132,7 @@ func revisionFloor(ctx context.Context, q *db.Queries, id string) (int64, error)
 
 // IsEmpty 检查资料而非版本；删除/重建后的空档案仍保留单调版本墓碑。
 func IsEmpty(p Profile) bool {
-	return p.XProfile == nil && p.Status == "empty" && p.Nickname == "" && p.Biography == "" && p.AvatarURL == "" && p.HomepageURL == "" && len(p.EvidenceURLs) == 0 && !p.AutoRefresh && !p.TrackUpdates && p.FeedURL == "" && p.Candidate.Nickname == "" && p.Candidate.Biography == "" && p.Candidate.AvatarURL == "" && p.Candidate.HomepageURL == "" && len(p.Candidate.EvidenceURLs) == 0 && len(p.Updates) == 0
+	return p.XProfile == nil && p.Status == "empty" && p.Nickname == "" && p.Biography == "" && p.Remark == "" && p.AvatarURL == "" && p.HomepageURL == "" && len(p.EvidenceURLs) == 0 && !p.AutoRefresh && !p.TrackUpdates && p.FeedURL == "" && p.Candidate.Nickname == "" && p.Candidate.Biography == "" && p.Candidate.AvatarURL == "" && p.Candidate.HomepageURL == "" && len(p.Candidate.EvidenceURLs) == 0 && len(p.Updates) == 0
 }
 func normalize(p *Profile) {
 	if p.EvidenceURLs == nil {
@@ -175,7 +177,7 @@ func Validate(w Write) error {
 	for _, v := range []struct {
 		s string
 		n int
-	}{{w.Nickname, 200}, {w.Biography, 2000}} {
+	}{{w.Nickname, 200}, {w.Biography, 2000}, {w.Remark, 500}} {
 		if !utf8.ValidString(v.s) || utf8.RuneCountInString(v.s) > v.n {
 			return ErrInvalid
 		}

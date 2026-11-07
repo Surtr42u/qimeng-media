@@ -108,7 +108,11 @@ func (s *Service) commitMove(ctx context.Context, row db.GetAssetWithLibraryRow,
 		RelPath: newRel, FileName: name, UpdatedAt: store.FormatTimestamp(s.now()), AssetID: row.AssetID,
 	})
 	if updateErr == nil {
-		updateErr = (&authorattach.Service{Logger: s.logger}).RecordAssetWorks(ctx, qtx, s.now(), row.AssetID)
+		// 改名=替换 TXT 作品行，不是追加：旧文件名行必须与路径更新同事务
+		// 消失，否则下次统一重建会把旧行当成无文件可匹配的污染（ADR-0024
+		// 片段本体唯一真相）。oldFileName 必须在 MoveAssetPath 之前取。
+		updateErr = (&authorattach.Service{Logger: s.logger}).RenameAssetWorks(
+			ctx, qtx, s.now(), row.AssetID, path.Base(row.RelPath), name)
 	}
 	if updateErr == nil {
 		updateErr = tx.Commit()

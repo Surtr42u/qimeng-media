@@ -6,16 +6,19 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/scanner"
+	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
-	"strings"
 )
 
 func moveFixture(t *testing.T) (*Service, db.Asset, string, []byte, *events.Subscription) {
@@ -288,4 +291,106 @@ func TestRenameKeepsAuthorTXTReproducibleWithoutResettingProvenance(t *testing.T
 		t.Fatalf("author provenance changed: %s %v", origin, err)
 	}
 
+}
+
+// seedSyntheticAuthorTXT 预置一个 regular 作者 + 资产关联 + 片段作品行 + 上传
+// 条目（TXT 硬约束回归的最小夹具）。
+func seedSyntheticAuthorTXT(t *testing.T, s *Service, assetID, fragmentContent, workLine string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := s.conn.Exec(`INSERT INTO authors(id,display_name,type,created_at,origin) VALUES('synthetic','Synthetic','regular','2026-10-21T00:00:00.000Z','legacy')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.conn.Exec(`INSERT INTO asset_authors(asset_id,author_id,created_at,origin) VALUES(?,'synthetic','2026-10-21T01:00:00.000Z','import')`, assetID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := authorattach.PersistSources(ctx, s.q, now, []authorattach.Source{{
+		Filename: "f.txt", Content: fragmentContent, ImportedAt: store.FormatTimestamp(now),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := authorattach.SaveUploadEntries(ctx, s.q, now, map[string][]authoring.UploadEntry{
+		"f.txt": {{AuthorID: "synthetic", DisplayName: "Synthetic", Names: []string{"synthetic"}, Works: []string{workLine}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestMoveReplacesAuthorTXTWorkLine：改名后片段无旧行、有新行，编号行/来源区/
+// 其他作者块不动，作者关联与溯源不变，上传条目同步换行。
+func TestMoveReplacesAuthorTXTWorkLine(t *testing.T) {
+	s, asset, media, body, _ := moveFixture(t)
+	ctx := context.Background()
+	content := "1  synthetic\n来源\nsite-a\n作品\noriginal.png\n\n\n\n2  other\n作品\nkeep.png\n"
+	seedSyntheticAuthorTXT(t, s, asset.AssetID, content, "original.png")
+	before, err := s.q.ListAssetAuthorRefs(ctx, asset.AssetID)
+	if err != nil || len(before) != 1 {
+		t.Fatalf("预置关联失败: %v %v", before, err)
+	}
+
+	name := "renamed.png"
+	if err := s.MoveAsset(ctx, asset.AssetID, MoveRequest{TargetDirectory: "moved", NewName: &name}); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := authorattach.LoadSources(ctx, s.q)
+	if err != nil || len(sources) != 1 {
+		t.Fatalf("读取片段失败: %v %v", sources, err)
+	}
+	want := "1  synthetic\n来源\nsite-a\n作品\nrenamed.png\n\n\n\n2  other\n作品\nkeep.png\n"
+	if sources[0].Content != want {
+		t.Fatalf("TXT 未由旧名替换为新名:\ngot =%q\nwant=%q", sources[0].Content, want)
+	}
+	if strings.Contains(sources[0].Content, "original.png") {
+		t.Fatal("旧文件名作品行仍残留")
+	}
+	entries, err := authorattach.LoadUploadEntries(ctx, s.q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, wantEntries := entries["f.txt"], []authoring.UploadEntry{{AuthorID: "synthetic", DisplayName: "Synthetic", Names: []string{"synthetic"}, Works: []string{"renamed.png"}}}; !reflect.DeepEqual(got, wantEntries) {
+		t.Fatalf("上传条目未随改名修剪/登记: %+v", got)
+	}
+	after, err := s.q.ListAssetAuthorRefs(ctx, asset.AssetID)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("改名破坏了作者关联/溯源: before=%+v after=%+v err=%v", before, after, err)
+	}
+	requireMoveBytes(t, filepath.Join(media, "moved", "renamed.png"), body)
+	if _, err := os.Stat(filepath.Join(media, "original.png")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("旧路径未移走", err)
+	}
+}
+
+// TestMoveTXTWriteFailureRollsBackFileAndTXT：TXT 写入失败必须连同文件移动、
+// 路径更新一起回滚，片段逐字不变。
+func TestMoveTXTWriteFailureRollsBackFileAndTXT(t *testing.T) {
+	s, asset, media, body, sub := moveFixture(t)
+	ctx := context.Background()
+	content := "1  synthetic\n来源\nsite-a\n作品\noriginal.png\n"
+	seedSyntheticAuthorTXT(t, s, asset.AssetID, content, "original.png")
+	if _, err := s.conn.Exec(`CREATE TRIGGER synthetic_txt_fail BEFORE UPDATE ON kv_settings WHEN NEW.key='imported_txt_sources' BEGIN SELECT RAISE(ABORT,'synthetic txt failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	name := "renamed.png"
+	err := s.MoveAsset(ctx, asset.AssetID, MoveRequest{NewName: &name})
+	assertMoveFailure(t, err, InternalFailure)
+	requireMoveBytes(t, filepath.Join(media, "original.png"), body)
+	if _, err := os.Stat(filepath.Join(media, "renamed.png")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("失败回滚不应留下目标文件", err)
+	}
+	row, err := s.q.GetAsset(ctx, asset.AssetID)
+	if err != nil || row.RelPath != "original.png" || row.FileName != "original.png" {
+		t.Fatalf("失败不能更新库路径: %+v %v", row, err)
+	}
+	sources, err := authorattach.LoadSources(ctx, s.q)
+	if err != nil || len(sources) != 1 || sources[0].Content != content {
+		t.Fatalf("失败回滚后 TXT 必须逐字不变: %+v %v", sources, err)
+	}
+	assertNoMoveEvent(t, sub)
+	if _, err := s.conn.Exec(`DROP TRIGGER synthetic_txt_fail`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveAsset(ctx, asset.AssetID, MoveRequest{NewName: &name}); err != nil {
+		t.Fatalf("故障排除后重试失败: %v", err)
+	}
 }

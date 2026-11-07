@@ -116,6 +116,9 @@ type ImportResult struct {
 
 	AssetsTagsReplaced *int `json:"assetsTagsReplaced,omitempty"`
 
+	// AuthorProfilesReplaced 本次因 replace 被整份替换的作者档案数；keep/未传时缺省。
+	AuthorProfilesReplaced *int `json:"authorProfilesReplaced,omitempty"`
+
 	AuthorRefsImported *int `json:"authorRefsImported,omitempty"`
 
 	AuthorRefsSkipped *int `json:"authorRefsSkipped,omitempty"`

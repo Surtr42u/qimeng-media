@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -269,6 +270,26 @@ func TestHTMLMetadataHandlesBrowserSyntaxWithoutInventingAvatar(t *testing.T) {
 		t.Fatal(p, err)
 	}
 }
+
+func TestRemarkIsValidatedAndCountsAsProfileContent(t *testing.T) {
+	p := Empty("synthetic")
+	p.Remark = strings.Repeat("备", 500)
+	if IsEmpty(p) {
+		t.Fatal("remark-only profile treated as empty")
+	}
+	if err := Validate(p.Write); err != nil {
+		t.Fatal(err)
+	}
+	p.Remark = strings.Repeat("备", 501)
+	if !errors.Is(Validate(p.Write), ErrInvalid) {
+		t.Fatal("overlong remark accepted")
+	}
+	p.Remark = "备注" + string(rune(0))
+	if !errors.Is(Validate(p.Write), ErrInvalid) {
+		t.Fatal("control character accepted")
+	}
+}
+
 func TestRSSAtomLinksAreBoundedAndSafe(t *testing.T) {
 	for _, raw := range []string{`<rss><channel><item><guid>public-1</guid><title>Work</title><link>https://example.com/1</link></item><item><guid>bad</guid><link>javascript:alert(1)</link></item><item><guid>public-1</guid><link>https://example.com/duplicate</link></item></channel></rss>`, `<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>public-1</id><title>Work</title><link href="https://example.com/1" rel="alternate"/></entry></feed>`} {
 		updates, err := parseFeed([]byte(raw))

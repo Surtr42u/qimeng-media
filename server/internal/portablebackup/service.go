@@ -25,6 +25,19 @@ const (
 	eventDwell = "dwell"
 )
 
+// 作者档案冲突处置（OpenAPI authorProfileConflict）。空串与 keep 同义。
+const (
+	AuthorProfileConflictKeep    = "keep"
+	AuthorProfileConflictReplace = "replace"
+)
+
+// ImportOptions 为可选导入策略；零值保持既有合并语义，调用方缺省无需感知。
+type ImportOptions struct {
+	// AuthorProfileConflict 作者档案（昵称/简介/主页/证据/xProfile/头像）与备份
+	// 不一致时的处置：keep/空串=保留本机（默认）；replace=以备份整份替换。
+	AuthorProfileConflict string
+}
+
 var ErrInvalidBackup = errors.New("无效备份")
 
 type invalidBackup struct{ cause error }
@@ -79,7 +92,12 @@ func New(opts Options) *Service {
 
 // Import 先完成 v2 全载荷校验，再依次执行原有分段事务。
 // 失败保留既有部分提交，返回首个阶段错误；任何已提交段均通知读侧失效。
-func (s *Service) Import(ctx context.Context, req *BackupImport) (ImportResult, error) {
+// opts 省略或 AuthorProfileConflict 缺省/keep 时保持既有合并语义。
+func (s *Service) Import(ctx context.Context, req *BackupImport, opts ...ImportOptions) (ImportResult, error) {
+	options := ImportOptions{}
+	if len(opts) > 0 {
+		options = opts[0]
+	}
 	if req.Format != Format {
 		return ImportResult{}, &invalidBackup{cause: errors.New("format 必须为 qimeng_backup")}
 	}
@@ -114,7 +132,7 @@ func (s *Service) Import(ctx context.Context, req *BackupImport) (ImportResult, 
 			}
 		}
 	}
-	imp := &backupImport{s: s, ctx: ctx}
+	imp := &backupImport{s: s, ctx: ctx, opts: options}
 	imp.matchBackupFiles(req.Data.MediaFiles)
 	imp.importTxtFragments(req.Data.TxtFragments)
 	imp.importAuthors(req.Data.Authors, req.Data.AuthorMediaRefs)
