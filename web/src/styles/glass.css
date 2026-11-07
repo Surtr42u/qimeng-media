@@ -3151,3 +3151,8 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .maintenance-folder-layout > span { padding: 14px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius); background: var(--qm-surface-soft); }
 .maintenance-folder-layout small { display: block; color: var(--qm-text-muted); margin-top: 6px; }
 @media (max-width: 640px) { .maintenance-folder-layout { grid-template-columns: 1fr; } }
+
+/* 维护任务中心（2026-11-07）：独立布局类名，避免与监控概览 .monitor-grid
+   选择器冲突（e2e 严格模式会把第二个 .monitor-grid 判为多元素）。 */
+.maintenance-job-center { display: flex; flex-direction: column; gap: var(--qm-space-3); }
+.maintenance-job-center > .chart-card { margin: 0; }

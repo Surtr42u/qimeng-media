@@ -33,7 +33,7 @@ export function MaintenanceJobCenter() {
   }
 
   return (
-    <div className="monitor-grid" aria-label="维护任务中心">
+    <div className="maintenance-job-center" aria-label="维护任务中心">
       <MaintenanceJobList
         className="chart-card monitor-span-2"
         query={list}
