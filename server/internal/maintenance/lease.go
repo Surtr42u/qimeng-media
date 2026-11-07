@@ -15,6 +15,13 @@ import (
 // absent or expired. It is an internal worker primitive: this package exposes
 // no HTTP claim endpoint. ok=false means there was nothing to claim.
 //
+// owner is the fencing token of this claim, not a long-lived instance name: the
+// worker appends a fresh random token per claim (Worker.newLeaseToken). Reusing
+// one owner string across claims (or instances) would make an expired claim and
+// its re-claim indistinguishable, allowing the old executor to keep renewing
+// and overwrite the new executor's steps. Callers must therefore pass a token
+// that is unique per claim attempt.
+//
 // Reclaiming an in-flight status (inventory/research/planned/applying/
 // verifying) whose lease expired is how a restarted worker takes a job back
 // over; the worker skips already-completed steps so no side effect repeats.
@@ -47,6 +54,9 @@ func (s *Service) Claim(ctx context.Context, kind Kind, owner string, ttl time.D
 		return Detail{}, false, nil
 	}
 	candidate := rows[0]
+	// 条件更新是领取的原子点：只有 status 可领取且租约仍为空/过期时才真正
+	// 领取；affected==0 表示扫描与更新之间被其它 worker 抢先，返回 false 让
+	// 调用方下轮重试，绝不把它当成已领取。
 	affected, err := q.ClaimMaintenanceJob(ctx, db.ClaimMaintenanceJobParams{
 		LeaseOwner:   sql.NullString{String: owner, Valid: true},
 		LeaseUntil:   sql.NullString{String: untilText, Valid: true},
@@ -71,6 +81,11 @@ func (s *Service) Claim(ctx context.Context, kind Kind, owner string, ttl time.D
 
 // Heartbeat extends a lease held by owner. ErrLeaseLost means the worker no
 // longer owns the job (expired, reassigned, cancelled or terminal).
+//
+// 未过期是硬条件：租约一旦过期，该 owner 就不再是权威持有者（任务已可被
+// 其它 worker 重领），因此旧执行器不能靠续租"复活"租约。正常执行期心跳
+// 间隔为 TTL/3，远早于过期；若单次续租失败超过 TTL，worker 会停止并由
+// 重领路径接续（completed 步骤不会重复副作用）。
 func (s *Service) Heartbeat(ctx context.Context, id, owner string, ttl time.Duration) error {
 	id, err := normalizeID(id)
 	if err != nil {
@@ -81,11 +96,13 @@ func (s *Service) Heartbeat(ctx context.Context, id, owner string, ttl time.Dura
 		return fmt.Errorf("%w: 租约 owner/ttl 不合法", ErrInvalidInput)
 	}
 	now := s.now().UTC()
+	nowText := store.FormatTimestamp(now)
 	affected, err := s.q.HeartbeatMaintenanceJob(ctx, db.HeartbeatMaintenanceJobParams{
 		LeaseUntil: sql.NullString{String: store.FormatTimestamp(now.Add(ttl)), Valid: true},
-		UpdatedAt:  store.FormatTimestamp(now),
+		UpdatedAt:  nowText,
 		ID:         id,
 		LeaseOwner: sql.NullString{String: owner, Valid: true},
+		Now:        sql.NullString{String: nowText, Valid: true},
 	})
 	if err != nil {
 		return err
@@ -99,6 +116,9 @@ func (s *Service) Heartbeat(ctx context.Context, id, owner string, ttl time.Dura
 // Complete finishes a job owned by owner. Only completed/partial/failed are
 // accepted; completed always clears the error fields. It is an internal worker
 // primitive with no HTTP endpoint in this slice.
+//
+// 终态写入同样受 owner + 未过期租约围栏：租约过期后任务已可被重领，旧执行
+// 器不得把结果写成终态覆盖新执行器。
 func (s *Service) Complete(ctx context.Context, id, owner string, status Status, errorCode, errorMessage string) (Detail, error) {
 	id, err := normalizeID(id)
 	if err != nil {
@@ -123,14 +143,16 @@ func (s *Service) Complete(ctx context.Context, id, owner string, status Status,
 		errorMessage = ""
 	}
 	now := s.now().UTC()
+	nowText := store.FormatTimestamp(now)
 	affected, err := s.q.FinishMaintenanceJob(ctx, db.FinishMaintenanceJobParams{
 		Status:       string(status),
-		FinishedAt:   sql.NullString{String: store.FormatTimestamp(now), Valid: true},
+		FinishedAt:   sql.NullString{String: nowText, Valid: true},
 		ErrorCode:    nullableString(errorCode),
 		ErrorMessage: nullableString(errorMessage),
-		UpdatedAt:    store.FormatTimestamp(now),
+		UpdatedAt:    nowText,
 		ID:           id,
 		LeaseOwner:   sql.NullString{String: owner, Valid: true},
+		Now:          sql.NullString{String: nowText, Valid: true},
 	})
 	if err != nil {
 		return Detail{}, err
@@ -147,6 +169,9 @@ func (s *Service) Complete(ctx context.Context, id, owner string, status Status,
 // which lets a recovered worker re-enter the pipeline at whatever stage the
 // ledger recorded. It is an internal primitive with no HTTP endpoint; the
 // public pause/resume/cancel transitions stay in service.go.
+//
+// owner 必须是本次领取的 fencing token，且租约未过期；租约过期后任务可被
+// 重领，旧执行器不得再推进状态。
 func (s *Service) AdvanceStatus(ctx context.Context, id, owner string, next Status) (Detail, error) {
 	id, err := normalizeID(id)
 	if err != nil {
@@ -169,7 +194,8 @@ func (s *Service) AdvanceStatus(ctx context.Context, id, owner string, next Stat
 	if err != nil {
 		return Detail{}, err
 	}
-	if !row.LeaseOwner.Valid || row.LeaseOwner.String != owner {
+	now := s.now().UTC()
+	if !leaseStillValidAt(row, owner, now) {
 		return Detail{}, ErrLeaseLost
 	}
 	if Status(row.Status) == next {
@@ -180,13 +206,13 @@ func (s *Service) AdvanceStatus(ctx context.Context, id, owner string, next Stat
 	if !Status(row.Status).CanTransitionTo(next) {
 		return Detail{}, ErrStateConflict
 	}
-	now := s.now().UTC()
 	affected, err := q.AdvanceMaintenanceJobStatus(ctx, db.AdvanceMaintenanceJobStatusParams{
-		Status:     string(next),
-		UpdatedAt:  store.FormatTimestamp(now),
-		ID:         id,
-		LeaseOwner: sql.NullString{String: owner, Valid: true},
-		Status_2:   row.Status,
+		NextStatus:    string(next),
+		UpdatedAt:     store.FormatTimestamp(now),
+		ID:            id,
+		LeaseOwner:    sql.NullString{String: owner, Valid: true},
+		CurrentStatus: row.Status,
+		Now:           sql.NullString{String: store.FormatTimestamp(now), Valid: true},
 	})
 	if err != nil {
 		return Detail{}, err
@@ -199,4 +225,15 @@ func (s *Service) AdvanceStatus(ctx context.Context, id, owner string, next Stat
 		return Detail{}, err
 	}
 	return s.Get(ctx, id)
+}
+
+// leaseStillValidAt 判断账本行的租约是否仍属于 owner 且未过期。空租约与
+// 过期租约一律视为失效：过期后任务可被其它 worker 重领，旧执行器不得再写
+// 步骤/工件/状态/终态（fencing 的 Go 侧读校验；SQL 更新条件再兜一层）。
+func leaseStillValidAt(row db.MaintenanceJob, owner string, now time.Time) bool {
+	if !row.LeaseOwner.Valid || row.LeaseOwner.String != owner {
+		return false
+	}
+	until := parseNullTimestamp(row.LeaseUntil)
+	return until != nil && !until.Before(now)
 }

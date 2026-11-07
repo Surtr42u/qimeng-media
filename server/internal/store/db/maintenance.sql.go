@@ -12,31 +12,36 @@ import (
 
 const advanceMaintenanceJobStatus = `-- name: AdvanceMaintenanceJobStatus :execrows
 UPDATE maintenance_jobs
-SET status = ?,
-    updated_at = ?
-WHERE id = ?
-  AND lease_owner = ?
-  AND status = ?
+SET status = ?1,
+    updated_at = ?2
+WHERE id = ?3
+  AND lease_owner = ?4
+  AND status = ?5
+  AND lease_until IS NOT NULL
+  AND lease_until >= ?6
 `
 
 type AdvanceMaintenanceJobStatusParams struct {
-	Status     string
-	UpdatedAt  string
-	ID         string
-	LeaseOwner sql.NullString
-	Status_2   string
+	NextStatus    string
+	UpdatedAt     string
+	ID            string
+	LeaseOwner    sql.NullString
+	CurrentStatus string
+	Now           sql.NullString
 }
 
 // Worker-facing pipeline advance. The previous status is part of the WHERE
 // clause so a concurrent pause/resume/cancel (or a second worker) cannot be
-// overwritten; lease_owner proves the caller still holds the job.
+// overwritten; lease_owner + an unexpired lease_until prove the caller still
+// holds the job (an expired lease is recoverable by another claim).
 func (q *Queries) AdvanceMaintenanceJobStatus(ctx context.Context, arg AdvanceMaintenanceJobStatusParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, advanceMaintenanceJobStatus,
-		arg.Status,
+		arg.NextStatus,
 		arg.UpdatedAt,
 		arg.ID,
 		arg.LeaseOwner,
-		arg.Status_2,
+		arg.CurrentStatus,
+		arg.Now,
 	)
 	if err != nil {
 		return 0, err
@@ -188,16 +193,18 @@ func (q *Queries) CreateMaintenanceJob(ctx context.Context, arg CreateMaintenanc
 
 const finishMaintenanceJob = `-- name: FinishMaintenanceJob :execrows
 UPDATE maintenance_jobs
-SET status = ?,
-    finished_at = ?,
+SET status = ?1,
+    finished_at = ?2,
     lease_owner = NULL,
     lease_until = NULL,
-    error_code = ?,
-    error_message = ?,
-    updated_at = ?
-WHERE id = ?
-  AND lease_owner = ?
+    error_code = ?3,
+    error_message = ?4,
+    updated_at = ?5
+WHERE id = ?6
+  AND lease_owner = ?7
   AND status NOT IN ('completed', 'partial', 'failed', 'cancelled')
+  AND lease_until IS NOT NULL
+  AND lease_until >= ?8
 `
 
 type FinishMaintenanceJobParams struct {
@@ -208,8 +215,11 @@ type FinishMaintenanceJobParams struct {
 	UpdatedAt    string
 	ID           string
 	LeaseOwner   sql.NullString
+	Now          sql.NullString
 }
 
+// Finishing is fenced by owner + unexpired lease: a worker whose lease expired
+// and was (or can be) reassigned must not write the terminal state.
 func (q *Queries) FinishMaintenanceJob(ctx context.Context, arg FinishMaintenanceJobParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, finishMaintenanceJob,
 		arg.Status,
@@ -219,6 +229,7 @@ func (q *Queries) FinishMaintenanceJob(ctx context.Context, arg FinishMaintenanc
 		arg.UpdatedAt,
 		arg.ID,
 		arg.LeaseOwner,
+		arg.Now,
 	)
 	if err != nil {
 		return 0, err
@@ -288,11 +299,13 @@ func (q *Queries) GetMaintenanceJobByIdempotencyKey(ctx context.Context, idempot
 
 const heartbeatMaintenanceJob = `-- name: HeartbeatMaintenanceJob :execrows
 UPDATE maintenance_jobs
-SET lease_until = ?,
-    updated_at = ?
-WHERE id = ?
-  AND lease_owner = ?
+SET lease_until = ?1,
+    updated_at = ?2
+WHERE id = ?3
+  AND lease_owner = ?4
   AND status NOT IN ('completed', 'partial', 'failed', 'cancelled')
+  AND lease_until IS NOT NULL
+  AND lease_until >= ?5
 `
 
 type HeartbeatMaintenanceJobParams struct {
@@ -300,14 +313,19 @@ type HeartbeatMaintenanceJobParams struct {
 	UpdatedAt  string
 	ID         string
 	LeaseOwner sql.NullString
+	Now        sql.NullString
 }
 
+// Only the current holder of a still-valid lease may renew it. An expired lease
+// is no longer authoritative: the job may already be claimable by another
+// worker, so a stale executor must not be able to revive its ownership.
 func (q *Queries) HeartbeatMaintenanceJob(ctx context.Context, arg HeartbeatMaintenanceJobParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, heartbeatMaintenanceJob,
 		arg.LeaseUntil,
 		arg.UpdatedAt,
 		arg.ID,
 		arg.LeaseOwner,
+		arg.Now,
 	)
 	if err != nil {
 		return 0, err

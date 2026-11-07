@@ -400,7 +400,7 @@ func (s *Service) RecordStep(ctx context.Context, in StepInput) error {
 	if in.FinishedAt != nil {
 		finishedAt = sql.NullString{String: store.FormatTimestamp(*in.FinishedAt), Valid: true}
 	}
-	return s.q.UpsertMaintenanceStep(ctx, db.UpsertMaintenanceStepParams{
+	params := db.UpsertMaintenanceStepParams{
 		JobID:      jobID,
 		Step:       step,
 		Status:     string(in.Status),
@@ -408,7 +408,34 @@ func (s *Service) RecordStep(ctx context.Context, in StepInput) error {
 		StartedAt:  startedAt,
 		FinishedAt: finishedAt,
 		DetailJson: string(detail),
-	})
+	}
+	leaseOwner := strings.TrimSpace(in.LeaseOwner)
+	if leaseOwner == "" {
+		// 未声明租约所有权：管理/测试写入路径，无围栏（worker 始终传 token）。
+		return s.q.UpsertMaintenanceStep(ctx, params)
+	}
+	// 有围栏写入：读取账本行与写入步骤必须在同一写事务内，否则旧实例可能在
+	// 新实例接管后覆盖步骤证据（fencing token + 未过期租约双重校验）。
+	if !checkRunes(leaseOwner, MaxLeaseOwnerRunes) {
+		return fmt.Errorf("%w: 租约 owner 不合法", ErrInvalidInput)
+	}
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer s.rollback(tx)
+	q := s.q.WithTx(tx)
+	row, err := getJobTx(ctx, q, jobID)
+	if err != nil {
+		return err
+	}
+	if !leaseStillValidAt(row, leaseOwner, s.now().UTC()) {
+		return ErrLeaseLost
+	}
+	if err := q.UpsertMaintenanceStep(ctx, params); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // AddArtifact indexes one artifact reference (internal worker primitive; no
@@ -437,14 +464,41 @@ func (s *Service) AddArtifact(ctx context.Context, in ArtifactInput) error {
 	if createdAt.IsZero() {
 		createdAt = s.now().UTC()
 	}
-	return s.q.InsertMaintenanceArtifact(ctx, db.InsertMaintenanceArtifactParams{
+	params := db.InsertMaintenanceArtifactParams{
 		JobID:     jobID,
 		Kind:      kind,
 		Uri:       uri,
 		Sha256:    sha,
 		Bytes:     in.Bytes,
 		CreatedAt: store.FormatTimestamp(createdAt),
-	})
+	}
+	leaseOwner := strings.TrimSpace(in.LeaseOwner)
+	if leaseOwner == "" {
+		// 未声明租约所有权：管理/测试写入路径，无围栏（worker 始终传 token）。
+		return s.q.InsertMaintenanceArtifact(ctx, params)
+	}
+	// 有围栏写入：同 RecordStep，读账本行与写工件索引在同一写事务内完成，
+	// 旧实例不得在接管后追加工件。
+	if !checkRunes(leaseOwner, MaxLeaseOwnerRunes) {
+		return fmt.Errorf("%w: 租约 owner 不合法", ErrInvalidInput)
+	}
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer s.rollback(tx)
+	q := s.q.WithTx(tx)
+	row, err := getJobTx(ctx, q, jobID)
+	if err != nil {
+		return err
+	}
+	if !leaseStillValidAt(row, leaseOwner, s.now().UTC()) {
+		return ErrLeaseLost
+	}
+	if err := q.InsertMaintenanceArtifact(ctx, params); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Service) rollback(tx *sql.Tx) {

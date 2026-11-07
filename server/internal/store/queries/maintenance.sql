@@ -106,34 +106,46 @@ WHERE id = ?
 -- name: AdvanceMaintenanceJobStatus :execrows
 -- Worker-facing pipeline advance. The previous status is part of the WHERE
 -- clause so a concurrent pause/resume/cancel (or a second worker) cannot be
--- overwritten; lease_owner proves the caller still holds the job.
+-- overwritten; lease_owner + an unexpired lease_until prove the caller still
+-- holds the job (an expired lease is recoverable by another claim).
 UPDATE maintenance_jobs
-SET status = ?,
-    updated_at = ?
-WHERE id = ?
-  AND lease_owner = ?
-  AND status = ?;
+SET status = sqlc.arg(next_status),
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id)
+  AND lease_owner = sqlc.arg(lease_owner)
+  AND status = sqlc.arg(current_status)
+  AND lease_until IS NOT NULL
+  AND lease_until >= sqlc.arg(now);
 
 -- name: HeartbeatMaintenanceJob :execrows
+-- Only the current holder of a still-valid lease may renew it. An expired lease
+-- is no longer authoritative: the job may already be claimable by another
+-- worker, so a stale executor must not be able to revive its ownership.
 UPDATE maintenance_jobs
-SET lease_until = ?,
-    updated_at = ?
-WHERE id = ?
-  AND lease_owner = ?
-  AND status NOT IN ('completed', 'partial', 'failed', 'cancelled');
+SET lease_until = sqlc.arg(lease_until),
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id)
+  AND lease_owner = sqlc.arg(lease_owner)
+  AND status NOT IN ('completed', 'partial', 'failed', 'cancelled')
+  AND lease_until IS NOT NULL
+  AND lease_until >= sqlc.arg(now);
 
 -- name: FinishMaintenanceJob :execrows
+-- Finishing is fenced by owner + unexpired lease: a worker whose lease expired
+-- and was (or can be) reassigned must not write the terminal state.
 UPDATE maintenance_jobs
-SET status = ?,
-    finished_at = ?,
+SET status = sqlc.arg(status),
+    finished_at = sqlc.arg(finished_at),
     lease_owner = NULL,
     lease_until = NULL,
-    error_code = ?,
-    error_message = ?,
-    updated_at = ?
-WHERE id = ?
-  AND lease_owner = ?
-  AND status NOT IN ('completed', 'partial', 'failed', 'cancelled');
+    error_code = sqlc.arg(error_code),
+    error_message = sqlc.arg(error_message),
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id)
+  AND lease_owner = sqlc.arg(lease_owner)
+  AND status NOT IN ('completed', 'partial', 'failed', 'cancelled')
+  AND lease_until IS NOT NULL
+  AND lease_until >= sqlc.arg(now);
 
 -- name: UpsertMaintenanceStep :exec
 INSERT INTO maintenance_steps (

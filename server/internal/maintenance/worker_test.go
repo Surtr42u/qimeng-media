@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -145,13 +146,14 @@ func TestWorkerClaimsExecutesAndHeartbeats(t *testing.T) {
 		t.Fatal("worker 未在期限内开始执行步骤")
 	}
 	claimed := getDetail(t, svc, job.Job.ID)
-	if claimed.Job.LeaseOwner != "worker-heartbeat" || claimed.Job.LeaseUntil == nil {
+	if !strings.HasPrefix(claimed.Job.LeaseOwner, "worker-heartbeat/") || claimed.Job.LeaseUntil == nil {
 		t.Fatalf("领取后租约异常: owner=%q until=%v", claimed.Job.LeaseOwner, claimed.Job.LeaseUntil)
 	}
 	before := *claimed.Job.LeaseUntil
 
-	// 推进 fake 时钟后心跳应把 lease_until 续到新时钟 + TTL。
-	clock.Advance(30 * time.Second)
+	// 在租约未过期窗口内推进 fake 时钟：心跳应把 lease_until 续到新时钟 +
+	// TTL（过期租约不可续租，见 TestFencedWritesRequireUnexpiredLease）。
+	clock.Advance(30 * time.Millisecond)
 	waitFor(t, 3*time.Second, "心跳续租", func() bool {
 		current := getDetail(t, svc, job.Job.ID)
 		return current.Job.LeaseUntil != nil && current.Job.LeaseUntil.After(before)
@@ -202,14 +204,14 @@ func TestWorkerResumesAfterLeaseExpiry(t *testing.T) {
 
 	workerA := newTestWorker(t, svc, clock, handler, KindAssetResearch, "worker-a", time.Second)
 	ctxA, cancelA := context.WithCancel(context.Background())
-	claimedA, ok, err := svc.Claim(ctxA, KindAssetResearch, "worker-a", time.Second)
+	claimedA, ok, err := svc.Claim(ctxA, KindAssetResearch, workerA.newLeaseToken(), time.Second)
 	if err != nil || !ok {
 		t.Fatalf("worker-a 领取失败: ok=%v err=%v", ok, err)
 	}
 	doneA := make(chan struct{})
 	go func() {
 		defer close(doneA)
-		workerA.process(ctxA, claimedA)
+		workerA.process(ctxA, claimedA, claimedA.Job.LeaseOwner)
 	}()
 	select {
 	case <-applyEntered:
@@ -234,14 +236,17 @@ func TestWorkerResumesAfterLeaseExpiry(t *testing.T) {
 	workerB := newTestWorker(t, svc, clock, handler, KindAssetResearch, "worker-b", time.Minute)
 	ctxB, cancelB := context.WithCancel(context.Background())
 	defer cancelB()
-	claimedB, ok, err := svc.Claim(ctxB, KindAssetResearch, "worker-b", time.Minute)
+	claimedB, ok, err := svc.Claim(ctxB, KindAssetResearch, workerB.newLeaseToken(), time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("worker-b 接管失败: ok=%v err=%v", ok, err)
 	}
-	if claimedB.Job.Status != StatusApplying || claimedB.Job.LeaseOwner != "worker-b" {
+	if claimedB.Job.Status != StatusApplying || !strings.HasPrefix(claimedB.Job.LeaseOwner, "worker-b/") {
 		t.Fatalf("接管结果异常: status=%s owner=%s", claimedB.Job.Status, claimedB.Job.LeaseOwner)
 	}
-	workerB.process(ctxB, claimedB)
+	if claimedB.Job.LeaseOwner == claimedA.Job.LeaseOwner {
+		t.Fatalf("接管后租约令牌未更换: %s", claimedB.Job.LeaseOwner)
+	}
+	workerB.process(ctxB, claimedB, claimedB.Job.LeaseOwner)
 
 	final := getDetail(t, svc, job.Job.ID)
 	if final.Job.Status != StatusCompleted {
@@ -267,9 +272,13 @@ func TestWorkerPauseStopsAndResumeContinues(t *testing.T) {
 	svc, clock := newTestService(t)
 	ctx := context.Background()
 	job := mustCreateKind(t, svc, KindAssetResearch, "worker-pause")
+	// 只在第一次执行 apply 时暂停：resume 后会重新执行该步骤（暂停时租约已被
+	// 清空，步骤完成写入被 fencing 拒绝，账本仍停留在 running），不能再次暂停。
+	var pauseOnce atomic.Bool
+	pauseOnce.Store(true)
 	handler := newRecordingHandler(workerTestSteps)
 	handler.hook = func(ctx context.Context, job Job, spec StepSpec, prior map[string]Step) (StepOutcome, error) {
-		if spec.Name == "apply" {
+		if spec.Name == "apply" && pauseOnce.CompareAndSwap(true, false) {
 			if _, err := svc.Pause(ctx, job.ID); err != nil {
 				return StepOutcome{}, err
 			}
@@ -287,8 +296,9 @@ func TestWorkerPauseStopsAndResumeContinues(t *testing.T) {
 	if paused.Job.LeaseOwner != "" || paused.Job.LeaseUntil != nil {
 		t.Fatalf("暂停后租约未清空: owner=%q until=%v", paused.Job.LeaseOwner, paused.Job.LeaseUntil)
 	}
-	if _, ok := findStep(paused, "apply"); !ok {
-		t.Fatal("暂停前已提交的 apply 步骤丢失")
+	applyStep, ok := findStep(paused, "apply")
+	if !ok || applyStep.Status != StepRunning {
+		t.Fatalf("暂停时进行中的 apply 步骤应保留为 running（完成写入被租约围栏拒绝）: %+v", applyStep)
 	}
 	if handler.count("verify") != 0 {
 		t.Fatal("暂停后仍执行了 verify 步骤")
@@ -305,9 +315,11 @@ func TestWorkerPauseStopsAndResumeContinues(t *testing.T) {
 	if final.Job.Status != StatusCompleted {
 		t.Fatalf("恢复后终态 = %s，期望 completed", final.Job.Status)
 	}
-	if handler.count("inventory") != 1 || handler.count("apply") != 1 {
-		t.Fatalf("已完成步骤被重复执行: inventory=%d apply=%d",
-			handler.count("inventory"), handler.count("apply"))
+	if handler.count("inventory") != 1 {
+		t.Fatalf("已完成步骤 inventory 被重复执行: %d", handler.count("inventory"))
+	}
+	if handler.count("apply") != 2 {
+		t.Fatalf("apply 执行次数 = %d，期望 2（暂停打断一次 + resume 重跑一次）", handler.count("apply"))
 	}
 	if handler.count("verify") != 1 {
 		t.Fatalf("verify 执行次数 = %d，期望 1", handler.count("verify"))
@@ -340,8 +352,9 @@ func TestWorkerCancelStops(t *testing.T) {
 	if handler.count("verify") != 0 {
 		t.Fatal("取消后仍执行了 verify 步骤")
 	}
-	if _, ok := findStep(final, "apply"); !ok {
-		t.Fatal("取消前已提交的 apply 步骤丢失")
+	applyStep, ok := findStep(final, "apply")
+	if !ok || applyStep.Status != StepRunning {
+		t.Fatalf("取消时进行中的 apply 步骤应保留为 running（完成写入被租约围栏拒绝）: %+v", applyStep)
 	}
 }
 
@@ -601,5 +614,147 @@ func TestWorkerStartProcessesAndStops(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("worker.Start 在 ctx 取消后未退出")
+	}
+}
+
+// TestWorkerIdentityAndLeaseTokenUnique 覆盖唯一实例身份与每次领取的 fencing
+// token：默认 owner 含 pid+UUID，不同实例/不同领取均不相同。
+func TestWorkerIdentityAndLeaseTokenUnique(t *testing.T) {
+	workerA := NewWorker(WorkerOptions{})
+	workerB := NewWorker(WorkerOptions{})
+	if workerA.owner == "" || workerB.owner == "" {
+		t.Fatal("默认 worker owner 为空")
+	}
+	if workerA.owner == workerB.owner {
+		t.Fatalf("两个 worker 实例共享 owner: %s", workerA.owner)
+	}
+	if !strings.HasPrefix(workerA.owner, "qimeng-worker-") {
+		t.Fatalf("owner 前缀异常: %s", workerA.owner)
+	}
+	first := workerA.newLeaseToken()
+	second := workerA.newLeaseToken()
+	if first == second {
+		t.Fatal("同一实例两次领取生成了相同租约令牌")
+	}
+	if !strings.HasPrefix(first, workerA.owner+"/") || first == workerA.owner {
+		t.Fatalf("租约令牌未带实例前缀/fencing 后缀: %s", first)
+	}
+	// 显式传入的实例前缀仍被保留，但每次领取 token 唯一。
+	explicit := NewWorker(WorkerOptions{Owner: "synthetic-instance"})
+	if !strings.HasPrefix(explicit.newLeaseToken(), "synthetic-instance/") {
+		t.Fatal("显式 owner 前缀未保留")
+	}
+}
+
+// TestWorkerLeaseTokenChangesPerClaim 覆盖同一实例连续领取两笔任务时账本
+// 记录不同租约令牌（回归「owner 字符串重复导致旧执行器继续续租」）。
+func TestWorkerLeaseTokenChangesPerClaim(t *testing.T) {
+	svc, clock := newTestService(t)
+	ctx := context.Background()
+	first := mustCreateKind(t, svc, KindAssetResearch, "worker-token-1")
+	clock.Advance(time.Second)
+	second := mustCreateKind(t, svc, KindAssetResearch, "worker-token-2")
+
+	owners := make(map[string]string)
+	var mu sync.Mutex
+	handler := newRecordingHandler([]StepSpec{{Name: "inventory", Stage: StatusInventory}})
+	handler.hook = func(ctx context.Context, job Job, spec StepSpec, prior map[string]Step) (StepOutcome, error) {
+		current := getDetail(t, svc, job.ID)
+		mu.Lock()
+		owners[job.ID] = current.Job.LeaseOwner
+		mu.Unlock()
+		return StepOutcome{}, nil
+	}
+	worker := newTestWorker(t, svc, clock, handler, KindAssetResearch, "worker-token", time.Minute)
+	if !worker.claimAndProcessOne(ctx) || !worker.claimAndProcessOne(ctx) {
+		t.Fatal("worker 未连续领取两笔任务")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(owners) != 2 {
+		t.Fatalf("记录到的租约数 = %d，期望 2", len(owners))
+	}
+	firstOwner, ok := owners[first.Job.ID]
+	if !ok || !strings.HasPrefix(firstOwner, "worker-token/") {
+		t.Fatalf("第一笔租约令牌异常: %q", firstOwner)
+	}
+	secondOwner := owners[second.Job.ID]
+	if secondOwner == firstOwner {
+		t.Fatalf("同一实例两次领取复用了租约令牌: %q", firstOwner)
+	}
+}
+
+// TestStaleLeaseCannotOverwriteTakeoverResult 覆盖 fencing 的核心回归：旧执行
+// 上下文在租约过期、任务被新实例接管并完成后，不得再写入步骤/工件/终态。
+func TestStaleLeaseCannotOverwriteTakeoverResult(t *testing.T) {
+	svc, clock := newTestService(t)
+	ctx := context.Background()
+	job := mustCreateKind(t, svc, KindAssetResearch, "worker-stale-fence")
+
+	var firstApply atomic.Bool
+	firstApply.Store(true)
+	applyEntered := make(chan struct{})
+	release := make(chan struct{})
+	var enteredOnce sync.Once
+	handler := newRecordingHandler(workerTestSteps)
+	handler.hook = func(ctx context.Context, job Job, spec StepSpec, prior map[string]Step) (StepOutcome, error) {
+		if spec.Name == "apply" && firstApply.CompareAndSwap(true, false) {
+			enteredOnce.Do(func() { close(applyEntered) })
+			<-release
+			// 旧执行器在步骤完成后仍会尝试写工件：租约围栏必须拒绝。
+			return StepOutcome{Artifacts: []ArtifactInput{{
+				Kind: "stale", URI: "stale://artifact/1",
+				SHA256: strings.Repeat("a", 64), Bytes: 1,
+			}}}, nil
+		}
+		return StepOutcome{}, nil
+	}
+	workerA := newTestWorker(t, svc, clock, handler, KindAssetResearch, "worker-stale", time.Second)
+	doneA := make(chan struct{})
+	go func() {
+		defer close(doneA)
+		workerA.claimAndProcessOne(ctx)
+	}()
+	select {
+	case <-applyEntered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("旧实例未进入 apply 步骤")
+	}
+	stale := getDetail(t, svc, job.Job.ID)
+	staleOwner := stale.Job.LeaseOwner
+	if !strings.HasPrefix(staleOwner, "worker-stale/") {
+		t.Fatalf("旧实例租约令牌异常: %q", staleOwner)
+	}
+
+	// 租约过期（超过 TTL），新实例重领并完整执行、写完终态。
+	clock.Advance(2 * time.Second)
+	workerB := newTestWorker(t, svc, clock, handler, KindAssetResearch, "worker-takeover", time.Minute)
+	if !workerB.claimAndProcessOne(ctx) {
+		t.Fatal("新实例未接管过期任务")
+	}
+	takenOver := getDetail(t, svc, job.Job.ID)
+	if takenOver.Job.Status != StatusCompleted {
+		t.Fatalf("接管后终态 = %s，期望 completed", takenOver.Job.Status)
+	}
+
+	// 放行旧执行器：它只能停止，不能覆盖新实例已提交的结果。
+	close(release)
+	select {
+	case <-doneA:
+	case <-time.After(3 * time.Second):
+		t.Fatal("旧实例未在租约丢失后退出")
+	}
+	final := getDetail(t, svc, job.Job.ID)
+	if final.Job.Status != StatusCompleted {
+		t.Fatalf("旧实例覆盖了终态: %s", final.Job.Status)
+	}
+	step, ok := findStep(final, "apply")
+	if !ok || step.Attempt != 2 || step.Status != StepCompleted {
+		t.Fatalf("旧实例覆盖了新实例的步骤证据: %+v", step)
+	}
+	for _, artifact := range final.Artifacts {
+		if artifact.URI == "stale://artifact/1" {
+			t.Fatalf("旧实例工件被写入账本: %+v", artifact)
+		}
 	}
 }

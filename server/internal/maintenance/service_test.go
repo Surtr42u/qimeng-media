@@ -688,3 +688,81 @@ func TestAdvanceStatusLeaseAndTransitions(t *testing.T) {
 		t.Fatalf("暂停后推进期望 ErrLeaseLost，得到 %v", err)
 	}
 }
+
+// TestFencedWritesRequireUnexpiredLease 覆盖账本侧租约围栏：步骤/工件写入、
+// 心跳、状态推进与终态都必须同时满足 owner 匹配且租约未过期；过期后旧
+// fencing token 不能再续租或写结果，只能由新领取者完成任务。
+func TestFencedWritesRequireUnexpiredLease(t *testing.T) {
+	svc, clock := newTestService(t)
+	ctx := context.Background()
+	job := mustCreate(t, svc, "fenced-writes")
+	claimed, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-fence/claim-1", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("Claim 失败: ok=%v err=%v", ok, err)
+	}
+	validOwner := claimed.Job.LeaseOwner
+	if validOwner != "worker-fence/claim-1" {
+		t.Fatalf("租约 owner = %q，期望 worker-fence/claim-1", validOwner)
+	}
+	started := clock.Now()
+	baseStep := StepInput{JobID: job.Job.ID, Step: "inventory", Status: StepRunning, Attempt: 1, StartedAt: &started}
+	wrongOwner := baseStep
+	wrongOwner.LeaseOwner = "worker-fence/claim-old"
+	if err := svc.RecordStep(ctx, wrongOwner); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("非持有者步骤写入期望 ErrLeaseLost，得到 %v", err)
+	}
+	goodStep := baseStep
+	goodStep.LeaseOwner = validOwner
+	if err := svc.RecordStep(ctx, goodStep); err != nil {
+		t.Fatalf("持有者步骤写入失败: %v", err)
+	}
+	sha := strings.Repeat("b", 64)
+	baseArtifact := ArtifactInput{JobID: job.Job.ID, Kind: "report", URI: "synthetic://fenced/1", SHA256: sha, Bytes: 1, CreatedAt: started}
+	wrongArtifact := baseArtifact
+	wrongArtifact.LeaseOwner = "worker-fence/claim-old"
+	if err := svc.AddArtifact(ctx, wrongArtifact); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("非持有者工件写入期望 ErrLeaseLost，得到 %v", err)
+	}
+	goodArtifact := baseArtifact
+	goodArtifact.LeaseOwner = validOwner
+	if err := svc.AddArtifact(ctx, goodArtifact); err != nil {
+		t.Fatalf("持有者工件写入失败: %v", err)
+	}
+
+	// 租约过期后：旧 token 的步骤/工件/续租/推进/完成写入全部失败。
+	clock.Advance(2 * time.Minute)
+	expiredStep := baseStep
+	expiredStep.Step = "expired-step"
+	expiredStep.LeaseOwner = validOwner
+	if err := svc.RecordStep(ctx, expiredStep); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("过期租约步骤写入期望 ErrLeaseLost，得到 %v", err)
+	}
+	expiredArtifact := baseArtifact
+	expiredArtifact.URI = "synthetic://fenced/2"
+	expiredArtifact.LeaseOwner = validOwner
+	if err := svc.AddArtifact(ctx, expiredArtifact); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("过期租约工件写入期望 ErrLeaseLost，得到 %v", err)
+	}
+	if err := svc.Heartbeat(ctx, job.Job.ID, validOwner, time.Minute); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("过期租约续租期望 ErrLeaseLost，得到 %v", err)
+	}
+	if _, err := svc.AdvanceStatus(ctx, job.Job.ID, validOwner, StatusInventory); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("过期租约推进期望 ErrLeaseLost，得到 %v", err)
+	}
+	if _, err := svc.Complete(ctx, job.Job.ID, validOwner, StatusFailed, "SYNTHETIC", "expired"); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("过期租约完成期望 ErrLeaseLost，得到 %v", err)
+	}
+
+	// 新实例重领后，旧 token 不得写终态；新 token 可以正常完成。
+	reclaimed, ok, err := svc.Claim(ctx, KindAssetResearch, "worker-fence/claim-2", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("重领失败: ok=%v err=%v", ok, err)
+	}
+	if _, err := svc.Complete(ctx, job.Job.ID, validOwner, StatusCompleted, "", ""); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("旧 token 完成期望 ErrLeaseLost，得到 %v", err)
+	}
+	done, err := svc.Complete(ctx, job.Job.ID, reclaimed.Job.LeaseOwner, StatusCompleted, "", "")
+	if err != nil || done.Job.Status != StatusCompleted {
+		t.Fatalf("新 token 完成失败: status=%v err=%v", done.Job.Status, err)
+	}
+}

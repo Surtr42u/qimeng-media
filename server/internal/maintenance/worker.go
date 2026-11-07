@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -123,8 +124,10 @@ type WorkerOptions struct {
 	PollInterval time.Duration
 	LeaseTTL     time.Duration
 	Concurrency  int
-	// Owner 是租约持有者标识；空时生成含随机 UUID 的进程内唯一值（不拼
-	// 主机名/用户名，避免环境信息进日志与库）。
+	// Owner 是 worker 实例身份前缀（不含主机名/用户名，避免敏感环境信息
+	// 进日志与库）；空时生成 "<pid>-<uuid>"。每次领取还会在该前缀后追加一个
+	// 随机 fencing token，所以即使两个实例前缀相同，它们的租约也不会互相
+	// 匹配（见 newLeaseToken）。
 	Owner string
 	// Now 时钟注入（测试固定时钟；与 Service.Now 同源时账本时间一致）。
 	Now func() time.Time
@@ -167,7 +170,8 @@ func NewWorker(opts WorkerOptions) *Worker {
 	}
 	owner := strings.TrimSpace(opts.Owner)
 	if owner == "" {
-		owner = "qimeng-worker-" + uuid.NewString()
+		// pid 便于运维在日志/租约列定位进程；uuid 保证跨进程、跨重启唯一。
+		owner = fmt.Sprintf("qimeng-worker-%d-%s", os.Getpid(), uuid.NewString())
 	}
 	handlers := make(map[Kind]Handler, len(opts.Handlers)+1)
 	if opts.Backups != nil {
@@ -186,6 +190,18 @@ func NewWorker(opts WorkerOptions) *Worker {
 		now:          now,
 		handlers:     handlers,
 	}
+}
+
+// newLeaseToken 为一次领取生成唯一租约令牌（"<实例 owner>/<随机 UUID>"）。
+//
+// 为什么不能只用实例身份：同一实例的租约若过期后被重新领取（或两个实例被
+// 误配了相同 owner），旧执行上下文仍以为自己是持有者，而心跳/完成只比较
+// owner 字符串时无法区分「旧租约」与「新租约」——两者 owner 相同，旧执行器
+// 会继续续租并与新执行器并发执行同一任务。每次领取改用新 token 后，旧租约
+// 的 owner 永远不再匹配，旧执行器的心跳/步骤/工件/终态写入都会被账本拒绝
+// （fencing），从根上消除这种并发覆盖。
+func (w *Worker) newLeaseToken() string {
+	return w.owner + "/" + uuid.NewString()
 }
 
 // Start 由组合根调用一次：启动有界并发的领取循环，ctx 取消后停止领取并等
@@ -254,7 +270,10 @@ func (w *Worker) loop(ctx context.Context) {
 // 执行器/后续版本处理，不会被本 worker 误消费。
 func (w *Worker) claimAndProcessOne(ctx context.Context) bool {
 	for _, kind := range w.registeredKinds() {
-		claimed, ok, err := w.svc.Claim(ctx, kind, w.owner, w.leaseTTL)
+		// 每次领取使用全新 fencing token：即使同一任务在本实例内过期后被
+		// 重领，旧执行上下文也无法再用旧 token 续租或写结果。
+		leaseOwner := w.newLeaseToken()
+		claimed, ok, err := w.svc.Claim(ctx, kind, leaseOwner, w.leaseTTL)
 		if err != nil {
 			if ctx.Err() == nil {
 				w.logger.Warn("领取维护任务失败（下轮重试）", "kind", kind, "error", err)
@@ -264,7 +283,7 @@ func (w *Worker) claimAndProcessOne(ctx context.Context) bool {
 		if !ok {
 			continue
 		}
-		w.process(ctx, claimed)
+		w.process(ctx, claimed, leaseOwner)
 		return true
 	}
 	return false
@@ -274,7 +293,7 @@ func (w *Worker) claimAndProcessOne(ctx context.Context) bool {
 // status 已记录为 completed 的步骤跳过（不重复副作用），其余步骤从当前
 // 状态机阶段继续；任何步骤失败即记录 failed 并终态 failed；真正执行完成
 // 才 Complete(completed/partial)。
-func (w *Worker) process(ctx context.Context, claimed Detail) {
+func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string) {
 	job := claimed.Job
 	var (
 		activeStep  StepSpec
@@ -288,7 +307,7 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 			w.logger.Error("维护任务执行 panic 已恢复（仅影响当前任务）",
 				"jobId", job.ID, "kind", job.Kind, "step", activeStep.Name,
 				"panic", p, "stack", string(debug.Stack()))
-			w.failJob(context.WithoutCancel(ctx), job, activeStep, stepAttempt, stepStarted,
+			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, activeStep, stepAttempt, stepStarted,
 				WorkerPanicCode, fmt.Sprintf("worker panic: %v", p))
 		}
 	}()
@@ -301,7 +320,7 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 	}
 	specs, err := planSteps(handler, job)
 	if err != nil {
-		w.failJob(context.WithoutCancel(ctx), job, StepSpec{}, 0, time.Time{},
+		w.failJob(context.WithoutCancel(ctx), job, leaseOwner, StepSpec{}, 0, time.Time{},
 			StepFailedCode, "步骤规划不合法: "+err.Error())
 		return
 	}
@@ -329,7 +348,7 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 			case <-hbCtx.Done():
 				return
 			case <-ticker.C:
-				if err := w.svc.Heartbeat(hbCtx, job.ID, w.owner, w.leaseTTL); err != nil {
+				if err := w.svc.Heartbeat(hbCtx, job.ID, leaseOwner, w.leaseTTL); err != nil {
 					if errors.Is(err, ErrLeaseLost) {
 						leaseLostOnce.Do(func() { close(leaseLost) })
 						return
@@ -361,28 +380,28 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 			return
 		}
 		// 步骤边界复核租约：暂停/取消会清空租约，必须在开始新副作用前发现。
-		if err := w.svc.Heartbeat(ctx, job.ID, w.owner, w.leaseTTL); err != nil {
+		if err := w.svc.Heartbeat(ctx, job.ID, leaseOwner, w.leaseTTL); err != nil {
 			if errors.Is(err, ErrLeaseLost) || ctx.Err() != nil {
 				w.logger.Info("维护任务租约已失效，停止后续步骤（保留已提交步骤）", "jobId", job.ID, "step", spec.Name)
 				return
 			}
-			w.failJob(context.WithoutCancel(ctx), job, StepSpec{}, 0, time.Time{},
+			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, StepSpec{}, 0, time.Time{},
 				StepFailedCode, "续租失败: "+err.Error())
 			return
 		}
 		next, ok := advanceStage(status, spec.Stage)
 		if !ok {
-			w.failJob(context.WithoutCancel(ctx), job, StepSpec{}, 0, time.Time{},
+			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, StepSpec{}, 0, time.Time{},
 				StepFailedCode, fmt.Sprintf("无法从 %s 推进到步骤 %q 的阶段 %s", status, spec.Name, spec.Stage))
 			return
 		}
 		if next != status {
-			if _, err := w.svc.AdvanceStatus(ctx, job.ID, w.owner, next); err != nil {
+			if _, err := w.svc.AdvanceStatus(ctx, job.ID, leaseOwner, next); err != nil {
 				if errors.Is(err, ErrLeaseLost) || ctx.Err() != nil {
 					w.logger.Info("维护任务状态推进时租约已失效，停止后续步骤", "jobId", job.ID, "step", spec.Name)
 					return
 				}
-				w.failJob(context.WithoutCancel(ctx), job, StepSpec{}, 0, time.Time{},
+				w.failJob(context.WithoutCancel(ctx), job, leaseOwner, StepSpec{}, 0, time.Time{},
 					"STATE_CONFLICT", fmt.Sprintf("状态推进 %s -> %s 失败: %v", status, next, err))
 				return
 			}
@@ -397,13 +416,17 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 		if err := w.svc.RecordStep(ctx, StepInput{
 			JobID: job.ID, Step: spec.Name, Status: StepRunning,
 			Attempt: attempt, StartedAt: &startedAt, Detail: json.RawMessage(`{}`),
+			LeaseOwner: leaseOwner,
 		}); err != nil {
 			if ctx.Err() != nil {
 				// 进程退出打断在步骤开始前：不写终态，租约过期后重跑该步骤。
 				w.logger.Info("维护任务因进程退出中止（步骤尚未开始）", "jobId", job.ID, "step", spec.Name)
 				return
 			}
-			w.failJob(context.WithoutCancel(ctx), job, spec, attempt, startedAt,
+			if w.stopOnLeaseLost(err, job.ID, "记录步骤开始") {
+				return
+			}
+			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, spec, attempt, startedAt,
 				StepFailedCode, "记录步骤开始失败: "+err.Error())
 			return
 		}
@@ -424,20 +447,24 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 				return
 			}
 			code, message := handlerFailure(execErr)
-			w.failJob(context.WithoutCancel(ctx), job, spec, attempt, startedAt, code, message)
+			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, spec, attempt, startedAt, code, message)
 			return
 		}
-		// 副作用已完成：即使租约在步骤执行期间丢失（暂停/取消/接管），也把
-		// 完成步骤与工件落账——这是「取消保留已提交步骤」和恢复时不重复副作用
-		// 的前提；落账后按 leaseLost 停止后续步骤。
+		// 副作用已完成：尝试把步骤与工件落账，并携带本次领取的 fencing token。
+		// 若租约在步骤执行期间过期/被重领/被暂停取消，账本会拒绝写入
+		// （ErrLeaseLost），旧实例只能停止，不能覆盖新持有者或终态结果。
 		for i := range outcome.Artifacts {
 			artifact := outcome.Artifacts[i]
 			artifact.JobID = job.ID
+			artifact.LeaseOwner = leaseOwner
 			if artifact.CreatedAt.IsZero() {
 				artifact.CreatedAt = w.now().UTC()
 			}
 			if err := w.svc.AddArtifact(context.WithoutCancel(ctx), artifact); err != nil {
-				w.failJob(context.WithoutCancel(ctx), job, spec, attempt, startedAt,
+				if w.stopOnLeaseLost(err, job.ID, "记录工件") {
+					return
+				}
+				w.failJob(context.WithoutCancel(ctx), job, leaseOwner, spec, attempt, startedAt,
 					StepFailedCode, "记录工件失败: "+err.Error())
 				return
 			}
@@ -455,8 +482,12 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 		if err := w.svc.RecordStep(context.WithoutCancel(ctx), StepInput{
 			JobID: job.ID, Step: spec.Name, Status: stepStatus,
 			Attempt: attempt, StartedAt: &startedAt, FinishedAt: &finishedAt, Detail: detail,
+			LeaseOwner: leaseOwner,
 		}); err != nil {
-			w.failJob(context.WithoutCancel(ctx), job, spec, attempt, startedAt,
+			if w.stopOnLeaseLost(err, job.ID, "记录步骤完成") {
+				return
+			}
+			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, spec, attempt, startedAt,
 				StepFailedCode, "记录步骤完成失败: "+err.Error())
 			return
 		}
@@ -475,12 +506,12 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 	// 完成前把状态补齐到 verifying（账本状态机要求 verifying -> completed/
 	// partial）：短流水线（末步骤阶段早于 verifying）与异常恢复都靠这里收敛，
 	// 避免出现「步骤全完成但状态停在 inventory/applying」的不可判定终态。
-	if _, settleErr := w.settleStages(ctx, job.ID, status, StatusVerifying); settleErr != nil {
+	if _, settleErr := w.settleStages(ctx, job.ID, leaseOwner, status, StatusVerifying); settleErr != nil {
 		if errors.Is(settleErr, ErrLeaseLost) || ctx.Err() != nil {
 			w.logger.Info("完成前推进状态时租约已失效，停止", "jobId", job.ID, "step", "")
 			return
 		}
-		w.failJob(context.WithoutCancel(ctx), job, StepSpec{}, 0, time.Time{},
+		w.failJob(context.WithoutCancel(ctx), job, leaseOwner, StepSpec{}, 0, time.Time{},
 			StepFailedCode, "完成前状态推进失败: "+settleErr.Error())
 		return
 	}
@@ -489,7 +520,7 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 	if skipped {
 		final = StatusPartial
 	}
-	if _, err := w.svc.Complete(context.WithoutCancel(ctx), job.ID, w.owner, final, "", ""); err != nil {
+	if _, err := w.svc.Complete(context.WithoutCancel(ctx), job.ID, leaseOwner, final, "", ""); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			w.logger.Info("完成维护任务时租约已失效（暂停/取消/接管），保留已提交步骤",
 				"jobId", job.ID, "status", final)
@@ -504,7 +535,7 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 
 // failJob 记录失败步骤并把任务收敛到 failed 终态（尽力而为：租约已失则
 // 打印后放弃，由暂停/取消/接管方决定最终状态）。
-func (w *Worker) failJob(ctx context.Context, job Job, step StepSpec, attempt int, startedAt time.Time, code, message string) {
+func (w *Worker) failJob(ctx context.Context, job Job, leaseOwner string, step StepSpec, attempt int, startedAt time.Time, code, message string) {
 	code, message = sanitizeFailure(code, message)
 	recordCtx := context.WithoutCancel(ctx)
 	if step.Name != "" {
@@ -523,12 +554,13 @@ func (w *Worker) failJob(ctx context.Context, job Job, step StepSpec, attempt in
 			if err := w.svc.RecordStep(recordCtx, StepInput{
 				JobID: job.ID, Step: step.Name, Status: StepFailed,
 				Attempt: attempt, StartedAt: started, FinishedAt: &finishedAt, Detail: detail,
+				LeaseOwner: leaseOwner,
 			}); err != nil {
 				w.logger.Warn("记录失败步骤失败", "jobId", job.ID, "step", step.Name, "error", err)
 			}
 		}
 	}
-	if _, err := w.svc.Complete(recordCtx, job.ID, w.owner, StatusFailed, code, message); err != nil {
+	if _, err := w.svc.Complete(recordCtx, job.ID, leaseOwner, StatusFailed, code, message); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			w.logger.Warn("标记任务失败时租约已失效（暂停/取消/接管），保持当前状态",
 				"jobId", job.ID, "errorCode", code)
@@ -540,6 +572,18 @@ func (w *Worker) failJob(ctx context.Context, job Job, step StepSpec, attempt in
 	}
 	w.logger.Warn("维护任务失败", "jobId", job.ID, "kind", job.Kind, "step", step.Name,
 		"errorCode", code, "errorMessage", message)
+}
+
+// stopOnLeaseLost 统一识别「写账本时租约已失效」：旧执行器的步骤/工件/状态
+// 写入被 fencing 拒绝后只记日志并停止，不把任务标成 failed（任务已由新执行
+// 器接管，或已被暂停/取消，终态由当前持有者/公开端点决定）。
+func (w *Worker) stopOnLeaseLost(err error, jobID, phase string) bool {
+	if !errors.Is(err, ErrLeaseLost) {
+		return false
+	}
+	w.logger.Info("维护任务租约已失效，停止当前执行（旧实例不覆盖新结果）",
+		"jobId", jobID, "phase", phase)
+	return true
 }
 
 // heartbeatInterval 是租约续租间隔（TTL/3）：一次自检式续租失败（DB 忙）
@@ -601,7 +645,7 @@ func advanceStage(current, target Status) (Status, bool) {
 // settleStages 把任务状态沿状态机推进到 target（当前只用于完成前的
 // verifying 收敛）：恢复后状态可能落后于已完成步骤，短流水线也可能以较早
 // 阶段收尾；逐阶段单跳推进比一次性跳跃更容易保持状态机自洽。
-func (w *Worker) settleStages(ctx context.Context, jobID string, status, target Status) (Status, error) {
+func (w *Worker) settleStages(ctx context.Context, jobID, leaseOwner string, status, target Status) (Status, error) {
 	for _, stage := range []Status{StatusInventory, StatusResearch, StatusPlanned, StatusApplying, StatusVerifying} {
 		if pipelineRank(stage) <= pipelineRank(status) || pipelineRank(stage) > pipelineRank(target) {
 			continue
@@ -610,7 +654,7 @@ func (w *Worker) settleStages(ctx context.Context, jobID string, status, target 
 		if !ok || next == status {
 			return status, fmt.Errorf("无法从 %s 推进到 %s", status, stage)
 		}
-		if _, err := w.svc.AdvanceStatus(ctx, jobID, w.owner, next); err != nil {
+		if _, err := w.svc.AdvanceStatus(ctx, jobID, leaseOwner, next); err != nil {
 			return status, err
 		}
 		status = next
