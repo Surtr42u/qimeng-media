@@ -57,7 +57,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
 | `QIMENG_API_BASE` | 网络工具必填 | `http://127.0.0.1:8420` 形式的 origin；不能带子路径、查询、片段或用户信息。`http` 只允许回环/私有地址，远程用 `https` 或既有隧道。 |
-| `QIMENG_API_TOKEN` | 网络工具必填 | 管理员 Bearer token；只从环境读取，不打印、不写日志、不写入规则包/结果。 |
+| `QIMENG_API_TOKEN` | 网络工具必填 | Bearer token：管理员会话 token 或独立 AI 客户端 token（推荐，见下节）；只从环境读取，不打印、不写日志、不写入规则包/结果。 |
 | `QIMENG_AI_DISABLED_TOOLS` | 可选 | 逗号分隔的工具 ID，单独禁用工具。 |
 | `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求前拒绝全部有副作用工具。 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
@@ -72,6 +72,36 @@ $env:QIMENG_API_TOKEN = "<admin-token>"
 
 真实值不要写进仓库、任务记录、结果包或外部模型上下文。缺配置时退出码为 2，
 错误只列变量名，不回显值。
+
+### 独立 AI 客户端 token（ADR-0057 P1，推荐）
+
+生产/受信执行端应使用独立 AI 客户端 token，而不是管理员 Bearer：
+
+```powershell
+# 在服务端本机（PC/NAS）创建；明文 token 只输出一次，不写日志/文件/数据库
+cd server
+go run ./cmd/qimeng ai-client create -config <config.yaml> -label ai-executor -scopes read,author.write -device-ids phone-main
+# list 查看公开信息（不含 token/hash）；rotate 轮换后旧 token 立即失效；revoke 撤销
+go run ./cmd/qimeng ai-client list -config <config.yaml>
+go run ./cmd/qimeng ai-client rotate -config <config.yaml> -id <clientId>
+go run ./cmd/qimeng ai-client revoke -config <config.yaml> -id <clientId>
+```
+
+把 create/rotate 输出的 token 放进执行端环境变量（变量名不变）：
+
+```powershell
+$env:QIMENG_API_TOKEN = "<ai-client-token>"
+```
+
+服务端先验管理员会话、未命中再验 AI 凭据，因此同一套工具无需改代码即可切换；管理员 Bearer 仍可全权使用，但不应长期下发给模型。AI 客户端按 scope 受限：
+- 只读工具需要 `read`（维护/备份/研究/设备等域使用 `maintenance.read`/`backup.export`/`research`/`device.apply`）；
+- 写工具按域授权：`author.write`、`asset.author.write`、`media.organize`、`maintenance.write`、`backup.export`；删除/合并需 `author.destructive`，恢复需 `backup.restore`；
+- 未映射的写请求默认 403 `FORBIDDEN_SCOPE`；可用 `-scopes` 逗号列表显式收窄（未知 scope 创建时报错）；
+- Android 后台执行器使用 `device.apply` + `-device-ids phone-main`，只能访问自己绑定的设备结果包；
+- AI 写请求会写入 `ai_audit`（含被拒绝的），审计失败不阻断业务；管理员请求不写；
+- 撤销/轮换在服务端进程缓存 TTL（约 5 秒）内生效；本地管理命令先跑幂等 migration，不需要停服。
+
+scope 与强制矩阵的权威说明见 [SECURITY「独立 AI 客户端凭据」](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p12026-11-07) 与 [ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)。本轮不改 OpenAPI/SDK，管理只走本地 CLI。
 
 ## 版本与兼容
 
@@ -224,11 +254,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
   之前按 `QIMENG_AI_GRANTED_PERMISSIONS`（或 `rules.json` `toolConfig.grantedPermissions`）
   强制拒绝未授权工具（`PERMISSION_DENIED`）。未配置时默认授予全部已声明权限只是兼容旧
   CLI；生产执行器应显式收窄并审计。看见工具≠有权执行，CLI 与 MCP 走同一检查。
-- **管理员 Bearer 绕过风险（已知边界，ADR-0056 §5、ADR-0057 方案）**：当前 `/api/v1` 仍以管理员 Bearer
-  为主，AI 工具层隐藏 token 只能约束“通过工具调用”的模型；如果模型/执行环境能拿到 token，
-  它可以直接调用 Go API 绕过工具层的计划、确认与回读。因此：token 只注入可信执行端进程
-  环境、不下发给模型；AI 写入目前只用于受信本机维护，不向不可信模型开放；正式开放前需
-  实现受限凭据（服务端 scope/最小权限）或不可绕过的执行端隔离（方案见 [Go API 缺口与 AI 客户端权限模型](../../docs/AI_PLATFORM_API_GAPS.md)、[ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)；见 toolCatalog.permissions）。
+- **受限凭据（ADR-0057 P1 已实现）**：服务端新增独立 AI 客户端凭据与 scope 强制（`qimeng ai-client` 本地管理、`ai_audit` 写审计）。生产执行端应使用 `-scopes` 收窄的 AI token，而不是管理员 Bearer；未映射写请求默认 403，删除/合并/恢复需各自高风险 scope。工具层隐藏 token 仍不能阻止“执行环境直接调 Go API”：管理员 Bearer 仍是全权凭据，只注入可信执行端进程环境、不下发给模型，AI 写入只用于受信本机维护；模型侧可见的只是工具声明。剩余边界与路线见 [Go API 缺口与 AI 客户端权限模型](../../docs/AI_PLATFORM_API_GAPS.md)、[ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)、[SECURITY](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p12026-11-07)。
 - 本机沙箱若限制系统临时目录/目录权限，测试临时目录放在被忽略的
   `tools/ai_maintenance/.test-temp/`。
 

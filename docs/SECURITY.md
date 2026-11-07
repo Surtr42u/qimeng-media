@@ -58,6 +58,39 @@
 - **签名直链**：`/media/orig/...?exp=...&sig=HMAC(路径+过期时间, 服务端密钥)`——浏览器/播放器无需带 header 即可加载，但链接有时效。**exp 窗口对齐（ADR-0027，2026-10-01 起）**：exp = 下一窗口上界 + TTL（窗长=TTL=`token_ttl` 缺省 6h，对齐 Unix 纪元整点），同一窗口内所有响应签出**逐字节相同**的 URL（浏览器 HTTP 缓存/ETag 得以命中，URL 格式与参数未变、三端零适配）；有效期恒 ∈ (6h, 12h]，**吊销粒度=窗口级**——泄露直链最长存活约 2×TTL（粗于旧「请求级 6h」，风险接受换缓存命中），总闸不变 = 删除 media-secret 文件换密钥立即吊销全部存量直链。
 - token 泄露应急（多会话模型口径）：受控设备直接 `POST /auth/logout` 吊销对应会话；**注意「自己再登录一次」不再吊销旧 token**（旧模型的挤兑行为已废除）。全部会话吊销 = 停服清空 `auth_sessions` 表（或删除数据目录重建）；直链吊销仍走删除 `media-secret` 文件。「管理端一键重置全部 token」为规划项。
 
+## 独立 AI 客户端凭据、scope 与审计（ADR-0057 P1，2026-11-07）
+
+外部 AI 执行器不再只能持有全局管理员 Bearer。新增独立 AI 客户端身份（migration 0025 的
+`ai_clients` 表），由服务端强制 scope 并把写操作记入只增审计表 `ai_audit`。管理员会话行为不变。
+
+- **凭据与生命周期**：`ai_clients` 存 id/label/`token_hash`（SHA-256，复用 `auth.TokenHash`）/scope 集合/`device_ids`/created_at/expires_at/revoked_at/last_used_at。明文 token 只在本地管理命令 `qimeng ai-client create`/`rotate` 的 stdout 输出一次，绝不写日志、文件或审计；库内任何查询都只返回哈希。过期、已撤销、scope 非法的客户端一律拒绝（未知 scope fail-closed）。
+- **管理入口**：只在服务端本机执行 `qimeng ai-client create|list|revoke|rotate`（直接用 `-config` 打开同一 SQLite，先跑幂等 migration）。**本轮不新增 HTTP 管理端点、不改 api/openapi.yaml/sdk.lock/三端**；HTTP 管理端点与审计查询留在后续阶段。
+- **鉴权顺序**：仍然只有一条 `Authorization: Bearer` 通道。服务端先按管理员会话（auth_sessions）校验，未命中再按 AI 客户端凭据校验；两者身份分离、不能互相升级。失效 token 统一 401 `UNAUTHORIZED`（不暴露"这是 AI token 但已撤销"之类的细分）。
+- **scope 强制（服务端，不依赖工具层声明）**：AI 客户端命中后按 method+path 映射所需 scope；未映射的写请求一律 403 `FORBIDDEN_SCOPE`（默认拒绝，新端点不会被 AI 自动继承）。读请求兜底要求 `read`，维护/备份/研究/设备等域使用各自 scope。管理员会话不受 scope 限制。scope 与映射（唯一权威在 `server/internal/httpapi/aiclient.go`）：
+
+| scope | 允许动作 |
+|---|---|
+| `read` | GET/HEAD 只读查询（库/资产/作者/标签/统计等） |
+| `research` | 研究网关（`/api/v1/research/*`；服务端仍默认关闭） |
+| `author.write` | 作者新建/改名/档案/来源区/导入镜像等可回读写入（不含删除/合并） |
+| `author.destructive` | `POST /authors/merge` 与 `DELETE /authors/{id}` 等不可逆动作，需单独授予 |
+| `asset.author.write` | `PUT /api/v1/assets/{id}/authors` 资产作者关联替换 |
+| `media.organize` | `POST /api/v1/assets/{id}/move` 移动/命名整理（不删除原件） |
+| `backup.export` | 快照列表/创建/删除/导出（`/api/v1/backups*`、`GET /api/v1/export/qimeng-backup`） |
+| `backup.restore` | `POST /api/v1/import/qimeng-backup` 恢复/导入（高风险，默认不授予 AI） |
+| `maintenance.read` / `maintenance.write` | 维护任务账本读 / 创建/暂停/恢复/取消 |
+| `device.apply` | 设备结果包登记/列表/详情/领取/段下载/回传/取消（受 `device_ids` 二次约束） |
+| `admin` | 管理面保留 scope；本轮没有 AI 可调用的管理端点，未映射写请求即使持有该 scope 也拒绝 |
+
+- **设备级隔离（Android 后台执行适配）**：`ai_clients.device_ids` 是 JSON 设备标签数组；`device.apply` 客户端只能：
+  - 列表查询自己绑定的 `targetDevice`；
+  - 创建 manifest 时 `targetDeviceId` 必须在绑定列表内（handler 预检，越权请求不落库）；
+  - 详情/领取/段下载/回传/取消先读任务再校验 `targetDeviceId`，越权请求不改变任务状态。
+  未绑定任何设备的客户端不能使用设备端点；管理员会话不受设备级限制。设备标签仍是不透明标签（真实设备配对属于 G6，后续阶段）。
+- **审计**：AI 客户端的所有写请求（含被 403 拒绝的）追加一行 `ai_audit`：client_id/method/path/action/status_code/request_id/created_at；不记录请求体/响应体。action 默认是所需 scope，设备域补充操作与目标（如 `device.apply:claim:phone-main`、`device.apply:result:applied`），便于追踪哪台手机领取/回传了什么。request_id 优先取 `X-Request-Id`（有界可打印 ASCII），否则服务端随机生成。审计写失败只记错误日志、不阻断业务；管理员会话不写该表。
+- **缓存生效窗口**：服务端内存缓存客户端最多 `DefaultCacheTTL = 5s`；本地 CLI 在另一进程改库后，撤销/轮换/新建最多约 5 秒生效。`last_used_at` 按分钟节流 best-effort 更新。鉴权缓存刷新失败按 401 处理（fail-closed），不让陈旧缓存继续放行。
+- **已知边界/未实现**：无 HTTP 管理端点与 OpenAPI 协议（`FORBIDDEN_SCOPE` 尚未进协议，三端 SDK 不需要处理 403 新码）；无按客户端限流/费用预算（G8）；无审计查询 API/UI；设备身份仍是标签非认证（G6）；管理员 Bearer 仍是全权凭据，AI 工具层应使用受限客户端 token。
+
 ## 开发模式（红线 5 的受限例外）
 
 - **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。
@@ -203,6 +236,7 @@ SQLite 默认 WAL/FULL：通过连接 DSN 对每条连接设置同步，优先�
 4. 超大 body、超限分页 → 413/400
 5. 白名单外扩展名、伪造扩展名（.jpg 实为 .exe）→ 400
 6. 删除资产 → 文件出现在回收站而非消失
+7. AI 客户端：缺少 scope / 未映射写请求 → 403 `FORBIDDEN_SCOPE`；过期、撤销、轮换后的旧 token → 401；AI 写请求（含被拒绝）落 `ai_audit`，管理员请求不落；设备端点按 `device_ids` 越权 → 403 且不改变任务状态
 
 ## 已知安全边界（2026-09-17 全检审计记档，均为风险接受而非遗漏）
 

@@ -1,6 +1,6 @@
 # Go 业务 API 缺口与 AI 客户端权限模型（方案）
 
-> 状态：2026-11-07 用户追加长期架构要求后的**方案文档**（本 PR 只收尾现有代码与测试，不重构 Go 接口）。
+> 状态：2026-11-07 用户追加长期架构要求后的**方案文档**。P0 只收尾现有代码与测试；**P1 首批（AI 客户端凭据/scope/审计/设备级绑定）已于 2026-11-07 落地**（管理走本地 CLI，协议不变，见 4.5 与 SECURITY）；其余阶段按第 6 节推进。
 > 决策记录见 [ADR-0057](adr/0057-AI客户端凭据与细粒度权限模型.md)。现行协议仍以 [api/openapi.yaml](../api/openapi.yaml) 为准；本文不替代协议、领域或安全专题。
 > 原则：Go 业务 API 是稳定、完整、可组合的业务底座；独立 AI 工具平台（[`tools/ai_maintenance/`](../tools/ai_maintenance/README.md)）只做工具适配、发现、规则与编排，不复制领域逻辑；权限最终由 Go 强制。
 
@@ -32,8 +32,8 @@
 
 | 编号 | 缺口 | 现状与影响 | 建议（最小必要） | 优先级 |
 |---|---|---|---|---|
-| G1 | AI 客户端凭据与 scope | 只有管理员 Bearer/用户会话；AI 执行器必须持有全局管理员 token，无法最小授权、按工具限制或按实例撤销 | 新增 AI 客户端概念：客户端 ID + 可轮换密钥哈希 + scope 集合 + 过期/撤销 + 最后使用时间；独立鉴权中间件与审计；token 与用户会话表分离 | P1（下一阶段） |
-| G2 | 业务操作审计与归属 | 仅 client-logs/系统指标；作者/媒体写入没有按 AI 客户端归因的审计，无法追责或回滚线索 | 追加只增审计表（actor/客户端/动作/目标/结果/时间/请求 ID），写路径同事务或异步可回读；管理端只读查询 | P1（与 G1 同批） |
+| G1 | AI 客户端凭据与 scope | 只有管理员 Bearer/用户会话；AI 执行器必须持有全局管理员 token，无法最小授权、按工具限制或按实例撤销。**2026-11-07 P1 首批已实现**：`ai_clients` 凭据 + scope 服务端强制 + 设备级绑定，管理走 `qimeng ai-client` 本地 CLI（HTTP 管理端点/OpenAPI/SDK 待后续） | 新增 AI 客户端概念：客户端 ID + 可轮换密钥哈希 + scope 集合 + 过期/撤销 + 最后使用时间；独立鉴权中间件与审计；token 与用户会话表分离 | P1（首批已交付） |
+| G2 | 业务操作审计与归属 | 仅 client-logs/系统指标；作者/媒体写入没有按 AI 客户端归因的审计，无法追责或回滚线索。**2026-11-07 P1 首批已实现**：`ai_audit` 只增写审计（AI 写请求含被拒绝；管理员不写），审计查询 API/UI 待后续 | 追加只增审计表（actor/客户端/动作/目标/结果/时间/请求 ID），写路径同事务或异步可回读；管理端只读查询 | P1（首批已交付，查询面待后续） |
 | G3 | 服务端强制高风险确认 | 当前“需确认/计划指纹”只在 AI 工具层；若持有 token 可绕过工具层直调 Go | 高风险端点支持显式确认凭据（短期确认 token/幂等键绑定动作与目标）或独立 scope（如 `author.delete` 与 `author.write` 分离）；不改变低风险自动执行 | P2 |
 | G4 | 外部执行器领取协议 | 维护任务 Claim/Heartbeat/Complete 仅包内原语；外部 AI 执行器无受控领取通道 | 在账本之上设计受限领取/续租/完成通道（客户端凭据 + 任务绑定 + 幂等），先内部 Worker 桥接；不向普通客户端开放 | P2 |
 | G5 | 外部 AI 大批量组合操作 | 资产移动/作者关联为单对象端点；批量需循环，冲突/部分失败由调用方处理 | 优先保持单对象基础操作（AI 可组合）；仅在真实批量场景出现性能/一致性问题时加批量端点（复用领域服务，不复制逻辑） | P3 |
@@ -78,6 +78,16 @@
 - 本阶段方案落地前，AI 工具层 token 仍须保存在可信执行端、绝不进入模型上下文；管理员 Bearer 不得作为长期授权方式。
 - 方案落地后：日常 AI 使用受限客户端凭据；管理员 token 仅保留给人工管理与一次性迁移。
 - 风险已知并记录（见 [ADR-0056](adr/0056-独立AI接入平台架构.md) §5、`rules.json` `toolCatalog.permissions.adminBearerRisk`）：仅隐藏 token 不能阻止模型直调 Go，必须由 G1–G3 服务端强制。
+
+
+### 4.5 已实现（P1 首批，2026-11-07）
+
+- 凭据：migration 0025 的 `ai_clients`（token_hash 唯一、scopes_json、device_ids_json、expires_at/revoked_at/last_used_at）；明文 token 只在本地管理命令输出一次。
+- 鉴权：管理员会话优先、AI 客户端凭据其次，共用一个 Bearer 通道且不能互相升级；AI 命中后按 method+path 强制 scope，未映射写请求 403 `FORBIDDEN_SCOPE`（默认拒绝）。
+- 审计：`ai_audit` 记录 AI 写请求（含被拒绝）的 clientId/method/path/action/statusCode/requestId/时间，不记录正文；审计失败不阻断业务。管理员请求不写。
+- 管理：`qimeng ai-client create|list|revoke|rotate -config <yaml>`（服务端本机执行，直接打开同一 SQLite，先跑幂等 migration）。**本轮不改 OpenAPI/sdk.lock/三端，也不新增 HTTP 管理端点**；协议化管理端点、审计查询与按客户端限流（G8）留后续阶段。
+- 设备级隔离：`device.apply` + `device_ids`，设备结果包各端点校验 `targetDevice`/`targetDeviceId`；管理员不受限；真实设备配对仍是 G6。
+- 细节与边界以 [SECURITY](SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p12026-11-07) 为准；实现路径见 [ADR-0057](adr/0057-AI客户端凭据与细粒度权限模型.md)。
 
 ## 5. 与 AI 工具平台的分工
 

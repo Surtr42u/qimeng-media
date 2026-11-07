@@ -91,6 +91,16 @@ func main() {
 	// 在此之前出错也得有地方可看（stderr 直写）。
 	bootLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
+	// 本地管理子命令（ADR-0057：AI 客户端凭据管理不做 HTTP 端点，只在
+	// 服务端本机执行；明文 token 只经 stdout 输出一次，绝不进日志）。
+	if len(os.Args) > 1 && os.Args[1] == aiClientCommand {
+		if err := runAIClientCommand(os.Args[2:], os.Stdout, bootLogger); err != nil {
+			bootLogger.Error("AI 客户端管理失败", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	configPath := flag.String("config", "config.yaml", "配置文件路径（yaml，可不存在；环境变量始终优先于文件）")
 	showVersion := flag.Bool("version", false, "输出构建身份 JSON 后退出；不加载配置、不创建数据目录")
 	flag.Parse()
