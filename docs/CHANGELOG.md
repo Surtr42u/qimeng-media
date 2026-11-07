@@ -1,5 +1,13 @@
 
 
+## fix(app): 设备领取本地前置与 claimed 恢复收尾、worker 测试 lint 修复（2026-11-08 第七百一十四笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理；android-client 只读复核与实现）
+
+- Android 设备领取复核（task-19）后修复：新增 DeviceApplyPreconditions，claim 前校验登录会话→维护根→所有文件访问，缺项只记录本机提示并结束、任务保持 pending（不再消耗成 failed 终态），授权后可「立即应用」重试；Remote 增 listByStatus，Runner 同查 pending+claimed（claimed 未过期按 claim 幂等继续/对账，终态跳过），Policy 按过期时间筛选；设置页令牌只显示已配置/替换清除，不回填明文 state；docs/api/device、android/README、docs/android-background-execution 修正未登录不领取、claimed 恢复、本机单机模式无令牌创建通道等口径；补 Preconditions/Policy JVM 测试。
+- 修复 CI run 42389606438 服务端 lint 失败：worker_test.go:671 `||` 两侧相同表达式 SA4000，改为先赋值再判断，语义不变（ad5cf3da）。
+- 验证：go test 定向 lint 用例通过；Android 复核/编译由子代理与 CI 复验；未跑全量、未真机/安装。
+
 ## docs(ai): 本轮收尾：9 项修复、AI 凭据 P1、Android 后台 Worker 与验证边界（2026-11-08 第七百一十三笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理）
@@ -274,11 +282,3 @@
 - 按用户澄清，App/Web资料页默认只读，统一X资料、基础资料、账号来源和作品订阅四块，逐块进入编辑；保存/取消返回概览，脏草稿确认、冲突保留及完整修订保护沿用。完整核验说明与检查记录折叠，候选核对独立显示受影响字段。实际窄屏核验发现刷新悬浮按钮遮挡保存，补侧向留白、纵向操作及无重叠回归。
 - Android使用全屏单块编辑页、滚动正文与固定保存区，并处理键盘/安全区；code28真机核验确认键盘上方保存区可用，随后修正独立窗口系统栏图标对比，安装序号29。新增分组隔离、取消草稿及候选保存后回只读的行为回归，验证和出包继续云端。
 - 文档影响为GUIDE_UI、两端README及HANDOVER，原作者来源与作品订阅语义保持。bd9cef43/code27已安装，122份X原文已保存电脑；本次UI候选门禁与安装待完成。
-
-## feat(author): X原文与独立资料及作品分区（2026-11-05 第六百八十四笔）
-
-执行 AI：完整型号未知（主代理；当前会话未提供可核实的完整型号与变体元数据）。
-
-- 附属档案增加可选xProfile，X简介原文与整理说明分开保存，旧客户端省略保留。便携导入为同账号的既有核实档案补缺省原文，已有人工字段与原文保留，重复导入幂等。SDK及锁由云端生成。
-- 主卡仅保留X简介和X入口，完整平台、ID、核验与维护进入独立资料子页；下方区分本地作品和作者新作，暂无可靠作品订阅时提供发布入口。Android安装序号27。
-- 文档影响覆盖API、作者/迁移专题、安全、两端入口、GUIDE_UI、HANDOVER和研究方法。当前源码云端门禁、出包与实际部署待完成。
