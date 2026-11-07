@@ -668,7 +668,9 @@ func TestWorkerLeaseTokenChangesPerClaim(t *testing.T) {
 		return StepOutcome{}, nil
 	}
 	worker := newTestWorker(t, svc, clock, handler, KindAssetResearch, "worker-token", time.Minute)
-	if !worker.claimAndProcessOne(ctx) || !worker.claimAndProcessOne(ctx) {
+	firstClaim := worker.claimAndProcessOne(ctx)
+	secondClaim := worker.claimAndProcessOne(ctx)
+	if !firstClaim || !secondClaim {
 		t.Fatal("worker 未连续领取两笔任务")
 	}
 	mu.Lock()
