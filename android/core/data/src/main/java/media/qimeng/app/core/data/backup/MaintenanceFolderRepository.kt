@@ -33,6 +33,16 @@ import org.json.JSONObject
 interface MaintenanceBackupWriter {
     suspend fun writeIfManaged(dirUri: String, kind: BackupFileKind): Long?
     suspend fun readKind(dirUri: String, kind: BackupFileKind): BackupFileKind = kind
+
+    /**
+     * 读取备份槽（2026-11-07 task-13）：维护目录内历史份跨目录解析——两代布局「上次」在
+     * `上次/备份/影库备份.json`，旧 flat3 历史份是同目录旧名文件；含摘要前置核对。
+     * null = 该 dirUri 不由维护目录托管（SAF 旧目录由 [BackupDirAccess] 直读）。
+     */
+    suspend fun readManagedBackup(dirUri: String, kind: BackupFileKind): ManagedBackupFile? = null
+
+    /** 备份槽元数据（状态行/存在性判断），不读整份文件；null 语义同 [readManagedBackup]。 */
+    suspend fun managedBackupStatus(dirUri: String, kind: BackupFileKind): BackupFileStatus? = null
 }
 
 /**
@@ -107,6 +117,34 @@ class MaintenanceFolderRepository @Inject constructor(
             BackupFileKind.CURRENT
         } else {
             kind
+        }
+    }
+
+    /**
+     * 历史/当前备份槽读取（2026-11-07 task-13）：两代布局的「上次」在独立目录、旧 flat3
+     * 历史份在旧目录旧名文件，必须按槽解析真实文件，不能由调用方用「当前目录 + 历史固定名」
+     * 拼路径。只读：不创建目录、不移动/删除文件；摘要不符或超限按读取失败返回 null。
+     */
+    override suspend fun readManagedBackup(dirUri: String, kind: BackupFileKind): ManagedBackupFile? {
+        val path = root.first() ?: return null
+        return withContext(Dispatchers.IO) {
+            val layout = maintenanceLayout(File(path))
+            // 旧 flat3 目录（升级前保存的偏好）内固定名文件由 dirAccess 直读，这里不重复解析。
+            if (dirUri != layout.currentBackupUri) return@withContext null
+            val slot = resolveMaintenanceBackupSlot(layout.root, kind) ?: return@withContext null
+            val bytes = readMaintenanceBackupSlot(slot) ?: return@withContext null
+            ManagedBackupFile(slot.name, bytes)
+        }
+    }
+
+    /** 历史备份槽元数据：语义同 [readManagedBackup]，用于状态行/「有没有此份」判断。 */
+    override suspend fun managedBackupStatus(dirUri: String, kind: BackupFileKind): BackupFileStatus? {
+        val path = root.first() ?: return null
+        return withContext(Dispatchers.IO) {
+            val layout = maintenanceLayout(File(path))
+            if (dirUri != layout.currentBackupUri) return@withContext null
+            val slot = resolveMaintenanceBackupSlot(layout.root, kind)?.takeIf { it.isFile } ?: return@withContext null
+            BackupFileStatus(slot.length(), slot.lastModified())
         }
     }
 

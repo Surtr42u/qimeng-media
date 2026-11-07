@@ -75,13 +75,13 @@ class MaintenanceViewModel @Inject constructor(
         // An externally replaced pending import is protected by its checksum.
         folders.export(automatic = true)
         loadDocuments()
-        _state.update { it.copy(message = "维护目录已设置，已生成备份和作者资料，最多保留三代") }
+        _state.update { it.copy(message = "维护目录已设置，已生成备份和作者资料，保留当前/上次两代") }
     }
 
     fun export() = operation {
         folders.export()
         loadDocuments()
-        _state.update { it.copy(message = "已更新最新备份和作者资料，最多保留三代") }
+        _state.update { it.copy(message = "已更新当前备份和作者资料，上次代保留可回退") }
     }
 
     fun prepareDocument(filename: String) = operation {
