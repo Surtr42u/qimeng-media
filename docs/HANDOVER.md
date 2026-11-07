@@ -111,7 +111,7 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 ### 9.2 本机验证与云端 CI
 
 - 本机实际执行：`python -m unittest discover -s tools -p 'test_*.py'`（142 项）、AI toolkit/MCP/命名/迁移工具单测、`check_docs.py`（142 文件 0 错误）、`check_privacy.py --mode worktree`（passed）、server 下 `go build ./...`、`go vet ./...`、定向 `go test`（maintenance/authorattach/filing/store/search/httpapi 相关）、sqlc v1.31.1 重新生成比对；Web 侧 vitest（维护库/任务中心）与 `tsc --noEmit`；Android 未构建（云端 CI 为编译门禁）。
-- **云端 CI**：待推送后补记（CI 通过前不得把源码交付写成已完成验收）。
+- **云端 CI（HEAD ed712fcd）**：[ci 42376690218](https://github.com/Surtr42u/qimeng-media/actions/runs/42376690218) 七 job 全绿（服务端 go vet/golangci-lint/go test -race/go build、Web tsc/build/vitest/Playwright、Android assembleDebug+单测+Lint、SDK 生成链、桌面壳、Windows 原生文件操作、redocly）；[文档 42376690202](https://github.com/Surtr42u/qimeng-media/actions/runs/42376690202) 与 [依赖安全 42376690209](https://github.com/Surtr42u/qimeng-media/actions/runs/42376690209) 通过。基础交付 d1ef39f9 的 ci 42370683863 亦全绿。
 - 未执行：全量 `go test ./...`（按仓库约定走云端 CI）、Android Gradle 构建/单测、vite build、真实服务端联调。
 
 ### 9.3 未安装与未验收边界
