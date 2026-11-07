@@ -56,6 +56,7 @@ task-17 在 Android 侧新增了设备结果包 Worker（源码路径 `android/c
 - 指标来源为导入响应的服务端权威计数，不臆造未返回的指标；`expectedReadback` 按段与对应指标比较，不拿整包平铺对象比较。
 - 单段包 `readback` 平铺，如 `{"authors":3,"assetAuthorRefs":4}`；双段包按段嵌套，如 `{"masterTxt":{...},"v2Backup":{...}}`，避免同名键互相覆盖。
 - 当前可映射键：masterTxt 的 `authors`/`authorsImported`、`assetAuthorRefs`/`filesMatched`；v2Backup 的 `viewEvents`/`eventsReplayed`、`authors`/`authorsImported`、`assetAuthorRefs`/`authorRefsImported`、`tags`/`tagsImported`、`assetsMatched`、`mediaFilesTotal`。包声明了本端不认识的键时按「回读不符」处理（partial），不静默忽略。
+- **计数为增量口径**：上述指标来自本次导入响应（如重复导入的事件回放为 0），不是应用后的库内绝对值；PC 侧声明 `expectedReadback` 时应按「本次期望增量」或可容忍幂等重放的语义设计，否则幂等重放会显示为回读不符（partial）。后续可扩展为调用只读查询端点回读实际状态。
 
 ### 失败、重试与幂等
 
@@ -69,7 +70,7 @@ task-17 在 Android 侧新增了设备结果包 Worker（源码路径 `android/c
 
 - 未安装到现装手机；未在 `qimeng_api35` 或真机验证后台周期触发、Doze/厂商限制、进程被杀后恢复、后台拉起内嵌 FGS、SAF/共享存储授权撤回与两代备份写入。
 - 短码/二维码配对、设备证明、包清理 GC、Web 任务中心、段级进度持久化仍未实现。
-- 已跑 `:core:data:testDebugUnitTest` 的 device 包（34 项 JVM 单测：目标筛选、段校验、授权缺失、回读比较、结果映射、两代路径、设置持久化），并编译通过 `:feature:manage:compileDebugKotlin`/`:app:compileDebugKotlin`；未跑全量 Gradle、Lint、设备验收。
+- device 包 JVM 单测 40 项（2026-11-08 task-21 后新增领取前登录/维护根/全文件访问前置、pending+claimed 过期过滤与 claimed 恢复过滤；其中 37 项纯逻辑已在开发机 kotlinc+JUnit 实跑通过，设置持久化 3 项依赖 DataStore 运行时由 Gradle 单测执行）。`:feature:manage:compileDebugKotlin`/`:app:compileDebugKotlin` 此前编译通过；本次 task-21 改动后需云端 CI 重新编译验证。未跑全量 Gradle、Lint、设备验收。
 
 ## 包结构（manifest）
 
