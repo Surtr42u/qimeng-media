@@ -23,7 +23,10 @@ task-17 在 Android 侧新增了设备结果包 Worker（源码路径 `android/c
 
 ### 设备级授权与令牌
 
-- 设备标签（`targetDeviceId`）与**专用设备 AI 令牌**保存在 App 的 client_prefs DataStore；令牌只用于 `device.apply` 设备端点（列表/领取/详情/段下载/回传）。导入作者 TXT / v2 备份与两代备份导出仍使用当前登录会话；未登录时周期任务不排，Worker 也不会先领取一个无法应用的任务。
+- 设备标签（`targetDeviceId`）与**专用设备 AI 令牌**保存在 App 的 client_prefs DataStore；令牌只用于 `device.apply` 设备端点（列表/领取/详情/段下载/回传）。导入作者 TXT / v2 备份与两代备份导出仍使用当前登录会话。
+- **领取前先校验本地前置**（2026-11-08 task-21 P2-1）：登录会话、已持久化维护根、所有文件访问任一缺失时，客户端只记录本机提示并结束，**不发 claim**；任务保持 pending，用户在设置/维护页修复后点「立即应用」即可继续，不消耗任务、不产生误导性 failed。
+- 设置面只显示令牌「已配置/未配置」状态，**不回显明文**；可输入新令牌替换或清除已保存令牌。
+- **本机内嵌单机模式暂无令牌创建通道**：`qimeng ai-client create` 直接改服务端本机 SQLite，没有 HTTP/Android 管理入口；手机内嵌服务的库在手机上，无法由 PC 侧命令写入。因此后台领取当前仅在连接 PC/NAS 服务端（远端模式，令牌由该服务端生成）时可用；纯单机内嵌模式需后续补凭据管理通道。
 - 未配置令牌时不提供「回退登录会话 token」路径：设置页明确提示登录会话 token 不能用于设备级授权。导入作者 TXT / v2 备份仍使用当前登录会话（本机内嵌实例或用户连接的 NAS），与设备令牌是两套凭据。
 - 服务端在 ADR-0057 P1 起校验 AI 客户端 `device.apply` scope 与 `ai_clients.device_ids`；管理命令示例：`qimeng ai-client create -label phone-main -scopes device.apply -device-ids phone-main`（明文令牌只输出一次）。未绑定设备的客户端不能使用设备端点。
 - 令牌明文落盘的威胁模型与登录 token 相同（单用户内网/已解锁设备不在防御范围）；不打日志、不写进结果包、不进导航参数。撤销/轮换走 `qimeng ai-client revoke/rotate`，服务端缓存窗口内生效。
@@ -38,9 +41,9 @@ task-17 在 Android 侧新增了设备结果包 Worker（源码路径 `android/c
 ### 固定流程
 
 1. 读取设置；设备标签/令牌不完整则不发起任何设备端点请求。
-2. `GET /api/v1/device/apply-tasks?targetDevice=...&status=pending`，客户端再按目标与 pending 二次过滤。
-3. `POST /{id}/claim` → `GET /{id}`；校验目标、协议版本（仅 1）、规则指纹格式、段清单（1–2 段、kind 不重复、bytes/sha256 格式）。
-4. 维护目录门禁：必须是用户已持久化的维护根且具备共享存储写权限；不满足时回传 `failed`，提示到资料备份与归档授权。
+2. 本地前置门禁（登录会话 + 已持久化维护根 + 所有文件访问）——**在 claim 之前**；不满足只记录本机提示并结束，任务保持 pending，用户修复后「立即应用」重试（不消耗任务、不回传 failed）。
+3. 同时查询 `GET /api/v1/device/apply-tasks?targetDevice=...&status=pending` 与 `status=claimed`：claimed 且未过期=上次领取后进程被杀/回传持续失败的可恢复任务（服务端 claim 对已 claimed 幂等 200）；客户端再按目标/状态/到期二次过滤，终态跳过。
+4. `POST /{id}/claim`（pending 领取或 claimed 幂等恢复）→ `GET /{id}`；校验目标、协议版本（仅 1）、规则指纹格式、段清单（1–2 段、kind 不重复、bytes/sha256 格式）。
 5. 下载全部段到 App 缓存，复核声明 bytes 与 SHA-256；任一段不符即回传 `failed`，不应用任何段、不做「尽量应用」。
 6. 先调用本机维护目录导出「当前/上次」两代备份；失败即中止，不写业务数据。
 7. `masterTxt` → `POST /api/v1/authors/import-txt`（文件名固定为 `作者总表.txt`，同名片段覆盖并由服务端统一重建）；409 冲突不自动选择 keep/remove，回传 `partial/failed` 并提示用户到作者主表页处理。
@@ -59,8 +62,8 @@ task-17 在 Android 侧新增了设备结果包 Worker（源码路径 `android/c
 - 网络/服务端 5xx/本机服务未就绪：WorkManager retry（最多 2 次退避），耗尽后等待下一周期；不把周期链标 failure 造成永久停摆。
 - 设备令牌 401/403：记录本机状态并停止（不重试），等待用户在设置页轮换令牌。
 - 结果回传 409：先 `GET /{id}` 对账；任务已终态说明此前某次执行已回传，按完成处理，不覆盖既有结果。
-- 进程被杀后的重放依赖服务端幂等（同名 TXT 重建、v2 事件身份幂等）；**不持久化段级进度**，重试会重新下载并重放整包。
-- 缺维护目录授权/写失败在 claim 后回传 `failed`；应用成功但应用后刷新本机两代备份失败回传 `partial`，提示用户在维护页重新导出。
+- 进程被杀/回传持续失败后的恢复：下一次运行会同时查询 pending 与 claimed，claimed 未过期则幂等 claim 后重新下载、应用与回传；已终态任务跳过。**不持久化段级进度**，恢复靠重新下载并重放整包（服务端同名 TXT 重建、v2 事件身份幂等）。
+- 登录会话/维护根/所有文件访问在 claim 前校验，不满足不 claim；应用过程中授权被撤或写失败才回传 `failed`；应用成功但应用后刷新本机两代备份失败回传 `partial`，提示用户在维护页重新导出。
 
 ### 未实现与待真机验证
 
@@ -240,7 +243,8 @@ Worker 重试建议：领取 409 时用详情确认是否已终态/过期；回�
 
 ## 未实现项
 
-- **Android Worker 真机验证**：源码已有 WorkManager 周期拉取/立即执行、回读/临时包清理；但未安装、未真机验证，且按用户本轮要求只加 `CONNECTED` 约束（未加充电/未计费 Wi-Fi），Worker 不强制前台服务。
+- **Android Worker 真机验证**：源码已有 WorkManager 周期拉取/立即执行、领取前本地前置校验、pending+claimed 恢复、回读/临时包清理；但未安装、未真机验证。网络约束：远端 `CONNECTED`，本机回环模式 `NOT_REQUIRED`（内嵌服务不依赖系统网络状态）；未加充电/未计费 Wi-Fi 约束，Worker 不强制前台服务。
+- **本机内嵌单机模式设备令牌创建**：管理命令只改服务端本机 SQLite、无 HTTP/Android 入口；手机单机内嵌库无法由 PC 侧命令写入，当前仅远端模式可用，后续可加凭据管理通道。
 - **配对与设备身份**：短码/二维码配对、设备证明与领取者字段仍未实现；设备级授权由 ADR-0057 P1 的 `device.apply` scope + `ai_clients.device_ids` 承载，`targetDeviceId` 仍是不透明标签。
 - **真机同步**：未在 `qimeng_api35` 或用户真机验证后台领取/应用/回传。
 - **包清理**：取消/过期/回传后不删除段文件；无磁盘配额/GC。
@@ -254,4 +258,4 @@ Worker 重试建议：领取 409 时用详情确认是否已终态/过期；回�
 - migration `0024_device_apply_tasks` 只新增 `device_apply_tasks`/`device_apply_segments` 两表与索引，不改历史迁移。
 - 测试使用临时 SQLite、临时包目录与合成字节（含 1KB 段），覆盖创建/段 SHA/超限/指纹不符、列表过滤与游标、领取幂等/过期、段下载头与路径安全、回传终态/重复回传、取消、404/409/413；不访问 8420 真库、真实设备或真实维护目录。
 - 本地未跑业务 `go test`（仓库规定走云端 CI）；已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet` 与文档/隐私/迁移检查。实际测试结果以云端 CI 为准。
-- Android Worker：JVM 单测 34 项通过（`android/core/data` 的 device 包：目标筛选、段 size/SHA-256、授权缺失、回读比较、结果映射、两代路径、设置持久化）；`:feature:manage:compileDebugKotlin` 与 `:app:compileDebugKotlin` 编译通过。未安装、未跑全量 Gradle/Lint、未在 `qimeng_api35` 或真机验收，也未访问真实维护目录/8420 真库。
+- Android Worker：device 包 JVM 单测 40 项（2026-11-08 task-21 后：目标筛选、领取前登录/维护根/全文件访问前置、pending+claimed 过期过滤、段 size/SHA-256、授权缺失、回读比较、结果映射、两代路径、设置持久化）；其中 37 项纯逻辑用例已在开发机用 kotlinc+JUnit 实跑通过（设置持久化 3 项依赖 DataStore 运行时，由 Gradle 单测执行）。`:feature:manage:compileDebugKotlin` 与 `:app:compileDebugKotlin` 编译通过。未安装、未跑全量 Gradle/Lint、未在 `qimeng_api35` 或真机验收，也未访问真实维护目录/8420 真库。

@@ -18,10 +18,21 @@ import media.qimeng.app.core.data.device.DeviceApplyPolicy
 import media.qimeng.app.core.data.device.DeviceApplyScheduler
 import media.qimeng.app.core.data.device.DeviceApplySettingsRepository
 
-/** 设备领取设置页 UI 状态；lastMessage 只显示本机最近一次运行摘要，不代表服务端账本。 */
+/** 已持久化令牌的检查占位（只用于纯校验，不进入 UI state/日志）。 */
+private const val CONFIGURED_TOKEN_MARKER = "\u00b7"
+
+/**
+ * 设备领取设置页 UI 状态；lastMessage 只显示本机最近一次运行摘要，不代表服务端账本。
+ *
+ * 令牌安全口径（2026-11-08 task-21 P3-2）：已保存的令牌**不回填**到 state/输入框，
+ * 只暴露 [tokenConfigured] 布尔状态；输入框只承载「新令牌草稿」，保存即替换。
+ */
 data class DeviceApplyUiState(
     val targetDeviceId: String = "",
-    val deviceToken: String = "",
+    /** 新令牌草稿（空=不改变已有令牌）；已保存明文不进入 UI state。 */
+    val deviceTokenDraft: String = "",
+    /** 是否已保存过设备令牌（只显示状态，不显示令牌本体）。 */
+    val tokenConfigured: Boolean = false,
     val backgroundEnabled: Boolean = false,
     val saving: Boolean = false,
     val error: String? = null,
@@ -29,16 +40,25 @@ data class DeviceApplyUiState(
     val lastMessage: String? = null,
     val lastRunAtMillis: Long? = null,
 ) {
+    /** 草稿或已保存令牌至少一个存在。 */
+    val deviceTokenProvided: Boolean
+        get() = deviceTokenDraft.isNotBlank() || tokenConfigured
+
+    /** 纯校验用有效令牌（已保存时用占位符，仅判断非空）。 */
+    private val effectiveTokenForCheck: String
+        get() = deviceTokenDraft.trim().ifEmpty { if (tokenConfigured) CONFIGURED_TOKEN_MARKER else "" }
+
     val configured: Boolean
-        get() = DeviceApplyAuthorization.check(targetDeviceId, deviceToken) is
+        get() = DeviceApplyAuthorization.check(targetDeviceId, effectiveTokenForCheck) is
             DeviceApplyAuthorization.AuthorizationState.Ready
 }
 
 /**
- * 设备结果包设置页 ViewModel（task-17）。
+ * 设备结果包设置页 ViewModel（task-17；2026-11-08 task-21 改令牌展示口径）。
  *
  * 只负责表单、校验、持久化与手动触发；领取/下载/应用/回传全部在 core:data 的 Worker/Runner。
- * 令牌只写 [DeviceApplySettingsRepository]（client_prefs），不进入日志、结果包或导航参数。
+ * 令牌只写 [DeviceApplySettingsRepository]（client_prefs），不进入日志、结果包、导航参数
+ * 或 UI state 回填；本类仅保留内存态 [persistedToken] 以便「只改标签/开关时保留原令牌」。
  */
 @HiltViewModel
 class DeviceApplyViewModel @Inject constructor(
@@ -49,13 +69,18 @@ class DeviceApplyViewModel @Inject constructor(
     private val _state = MutableStateFlow(DeviceApplyUiState())
     val state: StateFlow<DeviceApplyUiState> = _state.asStateFlow()
 
+    /** 只驻留内存：保存标签/开关时保留已存令牌用；不写日志、不进 UI state。 */
+    private var persistedToken: String = ""
+
     init {
         viewModelScope.launch {
             val saved = settingsRepository.settings.first()
+            persistedToken = saved.deviceToken
             _state.update {
                 it.copy(
                     targetDeviceId = saved.targetDeviceId,
-                    deviceToken = saved.deviceToken,
+                    // 不回填明文：只暴露「已配置」状态。
+                    tokenConfigured = saved.deviceToken.isNotBlank(),
                     backgroundEnabled = saved.backgroundEnabled,
                     lastMessage = saved.lastMessage,
                     lastRunAtMillis = saved.lastRunAtMillis,
@@ -78,7 +103,8 @@ class DeviceApplyViewModel @Inject constructor(
     }
 
     fun onDeviceTokenChange(value: String) {
-        _state.update { it.copy(deviceToken = value, error = null) }
+        // 输入新令牌视为替换草稿；保存后才写入持久层。
+        _state.update { it.copy(deviceTokenDraft = value, error = null) }
     }
 
     fun onBackgroundEnabledChange(enabled: Boolean) {
@@ -93,6 +119,21 @@ class DeviceApplyViewModel @Inject constructor(
 
     /** 保存表单；即使未配置令牌也允许保存（用于清空/稍后补令牌），但后台开关会被强制关闭。 */
     fun save() {
+        viewModelScope.launch { persistDraft() }
+    }
+
+    /** 清除已保存令牌并关闭后台领取（标签保留）；立即落盘，不等待点保存。 */
+    fun clearToken() {
+        persistedToken = ""
+        _state.update {
+            it.copy(
+                deviceTokenDraft = "",
+                tokenConfigured = false,
+                backgroundEnabled = false,
+                error = null,
+                notice = "已清除设备令牌",
+            )
+        }
         viewModelScope.launch { persistDraft() }
     }
 
@@ -114,10 +155,12 @@ class DeviceApplyViewModel @Inject constructor(
         if (_state.value.saving) return PersistOutcome.Busy
         _state.update { it.copy(saving = true, error = null, notice = null) }
         val target = _state.value.targetDeviceId.trim()
-        val token = _state.value.deviceToken.trim()
-        val authorization = DeviceApplyAuthorization.check(target, token)
+        val draftToken = _state.value.deviceTokenDraft.trim()
+        // 草稿为空=保留已保存令牌；否则用新草稿替换（P3-2：不回填明文但仍可整体替换）。
+        val effectiveToken = draftToken.ifEmpty { persistedToken }
+        val authorization = DeviceApplyAuthorization.check(target, effectiveToken)
         // 允许「标签与令牌都为空」保存为清空；只填了令牌却没有标签是不完整配置。
-        if (target.isEmpty() && token.isNotEmpty()) {
+        if (target.isEmpty() && effectiveToken.isNotEmpty()) {
             _state.update {
                 it.copy(
                     saving = false,
@@ -137,16 +180,19 @@ class DeviceApplyViewModel @Inject constructor(
         }
         val enabled = _state.value.backgroundEnabled && authorization is DeviceApplyAuthorization.AuthorizationState.Ready
         return try {
-            settingsRepository.save(target, token, enabled)
+            settingsRepository.save(target, effectiveToken, enabled)
+            persistedToken = effectiveToken
             val notice = when {
                 authorization is DeviceApplyAuthorization.AuthorizationState.Missing -> authorization.message
+                draftToken.isNotEmpty() -> "已保存新设备令牌；后台领取" + (if (enabled) "已开启" else "未开启")
                 enabled -> "已保存；后台领取已开启（系统省电可能延迟）"
                 else -> "已保存；后台领取未开启"
             }
             _state.update {
                 it.copy(
                     targetDeviceId = target,
-                    deviceToken = token,
+                    deviceTokenDraft = "",
+                    tokenConfigured = effectiveToken.isNotBlank(),
                     backgroundEnabled = enabled,
                     saving = false,
                     notice = notice,

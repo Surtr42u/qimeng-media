@@ -58,13 +58,27 @@ class DeviceApplyRemoteFactory @Inject constructor() {
  */
 class DeviceApplyRemote internal constructor(private val api: DefaultApi) {
 
-    fun listPending(targetDeviceId: String, limit: Int = 100): List<DeviceApplySummary> =
-        api.apiV1DeviceApplyTasksGet(
+    /**
+     * 按状态查询本机目标摘要（2026-11-08 task-21）：Runner 分别查 pending 与 claimed，
+     * claimed 用于恢复「领取后进程被杀/回传失败」的任务（服务端 claim 幂等）。
+     */
+    fun listByStatus(
+        targetDeviceId: String,
+        status: DeviceTaskStatus,
+        limit: Int = 100,
+    ): List<DeviceApplySummary> {
+        val sdkStatus = when (status) {
+            DeviceTaskStatus.PENDING -> DeviceApplyTaskStatus.DeviceApplyStatusPending
+            DeviceTaskStatus.CLAIMED -> DeviceApplyTaskStatus.DeviceApplyStatusClaimed
+            else -> return emptyList()
+        }
+        return api.apiV1DeviceApplyTasksGet(
             targetDevice = targetDeviceId,
-            status = DeviceApplyTaskStatus.DeviceApplyStatusPending,
+            status = sdkStatus,
             limit = limit,
             cursor = null,
         ).items.map { it.toDomain() }
+    }
 
     fun claim(taskId: String): DeviceApplyDetail =
         api.apiV1DeviceApplyTasksIdClaimPost(UUID.fromString(taskId)).toDomain()
@@ -96,6 +110,8 @@ private fun DeviceApplyTaskSummary.toDomain(): DeviceApplySummary = DeviceApplyS
     status = status.toDomain(),
     protocolVersion = protocolVersion,
     rulesFingerprint = rulesFingerprint,
+    // 领取前客户端再过滤一次过期（服务端已惰性标记，旧服务端/响应替换时防御）。
+    expiresAtMillis = expiresAt.toInstant().toEpochMilli(),
 )
 
 private fun DeviceApplyTask.toDomain(): DeviceApplyDetail = DeviceApplyDetail(

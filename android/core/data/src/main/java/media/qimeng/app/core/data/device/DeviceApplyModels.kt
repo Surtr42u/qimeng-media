@@ -39,13 +39,20 @@ enum class DeviceTaskStatus {
 /** 回传终态（openapi DeviceApplyResultStatus）。 */
 enum class DeviceResultStatus { APPLIED, PARTIAL, FAILED }
 
-/** 列表摘要（不含段清单/结果正文）。 */
+/**
+ * 列表摘要（不含段清单/结果正文）。
+ *
+ * [expiresAtMillis] 来自服务端账本到期时刻：只用于客户端领取前二次过滤（服务端已惰性
+ * 标记过期并默认不返回过期任务，这里防御旧服务端/响应被替换）。默认 [Long.MAX_VALUE]
+ * 兼容既有构造点（测试替身不显式声明到期时视为不过期）。
+ */
 data class DeviceApplySummary(
     val id: String,
     val targetDeviceId: String,
     val status: DeviceTaskStatus,
     val protocolVersion: Int,
     val rulesFingerprint: String,
+    val expiresAtMillis: Long = Long.MAX_VALUE,
 )
 
 /** manifest 声明的段（bytes/sha256 来自服务端登记账本，expectedReadback 原样透传）。 */

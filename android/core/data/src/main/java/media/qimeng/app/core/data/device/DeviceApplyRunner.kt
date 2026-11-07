@@ -31,14 +31,17 @@ import media.qimeng.sdk.infrastructure.ServerException
  * 固定顺序（与 docs/AI_MAINTENANCE_P0.md §4.5 一致）：
  * 1. 读本机设置，仅使用专用设备 AI 令牌；未配置不发起任何设备端点请求；
  * 2. 本机回环模式先 ensureStartedIfLocalMode + 等端口就绪；
- * 3. list targetDevice=pending（再按目标/状态二次过滤）→ claim → 详情；
- * 4. 整包校验（目标/协议/指纹/段清单）→ 维护目录门禁（已持久化根 + 所有文件访问）；
- * 5. 下载全部段、复核 bytes/sha256（不通过不应用任何段）；
- * 6. 先 export(automatic=true) 保存本机「当前/上次」两代，失败即中止；
- * 7. 应用 masterTxt → POST /authors/import-txt（同名片段覆盖、服务端统一重建）；
+ * 3. 本地前置门禁（登录会话 + 已持久化维护根 + 所有文件访问）——**在 claim 之前**校验，
+ *    缺项只记录本机提示并结束，任务保持 pending，用户授权后可重试（task-21 P2-1）；
+ * 4. list targetDevice= pending + claimed（claimed 未过期=上次领取后中断，claim 幂等继续）
+ *    → claim → 详情（task-21 P2-2）；
+ * 5. 整包校验（目标/协议/指纹/段清单）；
+ * 6. 下载全部段、复核 bytes/sha256（不通过不应用任何段）；
+ * 7. 先 export(automatic=true) 保存本机「当前/上次」两代，失败即中止；
+ * 8. 应用 masterTxt → POST /authors/import-txt（同名片段覆盖、服务端统一重建）；
  *    v2Backup → BackupValidator 真校验链 → POST /import/qimeng-backup；
- * 8. 按 manifest expectedReadback 与导入响应逐段比较 → 回传 result；
- * 9. 应用后再 export 一次刷新「当前」；无论成功失败都在 finally 删除下载临时文件。
+ * 9. 按 manifest expectedReadback 与导入响应逐段比较 → 回传 result；
+ * 10. 应用后再 export 一次刷新「当前」；无论成功失败都在 finally 删除下载临时文件。
  *
  * 不使用前台服务；本机模式替身服务仍由既有 EmbeddedServerService 拉起（后台 FGS
  * 限制见文档）。进程内 Mutex 让周期链与手动链串行；进程死亡后的重放依赖服务端
@@ -98,9 +101,28 @@ class DeviceApplyRunner @Inject constructor(
             }
         }
 
+        // P2-1（task-21）：本地前置必须在 claim 之前校验。登录会话/维护根/全文件访问都是
+        // 用户可修复条件；缺一项时只记录本机提示并返回，任务保持 pending，授权后可重试。
+        val localSessionReady = !serverConfig.currentToken().isNullOrBlank()
+        val maintenanceRoot = maintenance.root.first()
+        val hasAllFilesAccess = withContext(ioDispatcher) { staging.hasAllFilesAccess() }
+        when (val preconditions = DeviceApplyPreconditions.evaluate(localSessionReady, maintenanceRoot, hasAllFilesAccess)) {
+            is PreconditionState.Blocked -> return@withLock record(
+                manual,
+                preconditions.message,
+                DeviceApplyRunResult.Completed(preconditions.message),
+            )
+            PreconditionState.Ready -> Unit
+        }
+
         val remote = remoteFactory.create(serverUrl, settings.deviceToken)
         val listed = try {
-            withContext(ioDispatcher) { remote.listPending(settings.targetDeviceId) }
+            withContext(ioDispatcher) {
+                // P2-2（task-21）：claimed 是「上次领取后进程被杀/回传失败」的可恢复态；
+                // 服务端 claim 对已 claimed 未过期任务幂等 200，重跑可收敛。
+                remote.listByStatus(settings.targetDeviceId, DeviceTaskStatus.PENDING) +
+                    remote.listByStatus(settings.targetDeviceId, DeviceTaskStatus.CLAIMED)
+            }
         } catch (e: ClientException) {
             return@withLock when (e.statusCode) {
                 HTTP_UNAUTHORIZED, HTTP_FORBIDDEN -> {
@@ -119,7 +141,11 @@ class DeviceApplyRunner @Inject constructor(
             return@withLock retry(manual, "设备结果包列表网络失败，稍后重试")
         }
 
-        val targets = DeviceApplyPolicy.pendingForDevice(listed, settings.targetDeviceId)
+        val targets = DeviceApplyPolicy.resumeOrClaimForDevice(
+            listed,
+            settings.targetDeviceId,
+            nowMillis = System.currentTimeMillis(),
+        )
         if (targets.isEmpty()) {
             return@withLock record(manual, "没有待领取的设备结果包", DeviceApplyRunResult.NoOp("没有待领取的设备结果包"))
         }
@@ -181,16 +207,9 @@ class DeviceApplyRunner @Inject constructor(
             return failWithReport(remote, task, validation.message ?: "结果包校验失败")
         }
 
-        // 维护目录门禁放在下载前：未授权时尽早回传 failed，不浪费 64MiB 流量。
-        val rootPath = maintenance.root.first()
-        val gate = DeviceApplyLocalBackup.gate(
-            rootPath,
-            hasAllFilesAccess = withContext(ioDispatcher) { staging.hasAllFilesAccess() },
-        )
-        if (gate is LocalWriteGate.Blocked) {
-            return failWithReport(remote, task, gate.message)
-        }
-        val root = File(requireNotNull(rootPath))
+        // 本地前置已在 run() 中于 claim 前校验（task-21 P2-1），这里只取根路径做两代布局
+        // 核对；应用过程中根被清除属于异常，回传 failed 让 PC 可见。
+        val root = File(requireNotNull(maintenance.root.first()) { "维护根在应用过程中被清除" })
 
         val downloaded = mutableListOf<DownloadedSegment>()
         return try {

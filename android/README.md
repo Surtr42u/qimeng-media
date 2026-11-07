@@ -161,11 +161,11 @@ Android本机模式选择统一根目录时，以master镜像模式绑定当前/
 
 ## 设备结果包后台领取（task-17，源码已交付）
 
-数据管理 → 资料备份与归档 → 「设备领取」提供最小设置面：设备标签、专用设备 AI 令牌（口令式）与后台领取开关，另有「立即应用」手动触发。设备令牌只用于设备结果包端点（device.apply + ai_clients.device_ids）；导入与两代备份导出仍要当前登录会话，未登录时周期任务不排。未配置设备令牌时明确提示登录会话 token 不能用于设备级授权，不提供回退。令牌与登录 token 同存于 client_prefs DataStore（明文落盘的既有威胁模型），不打日志、不写入结果包。
+数据管理 → 资料备份与归档 → 「设备领取」提供最小设置面：设备标签、专用设备 AI 令牌（口令式）与后台领取开关，另有「立即应用」手动触发。设备令牌只用于设备结果包端点（device.apply + ai_clients.device_ids）；导入与两代备份导出仍要当前登录会话。令牌保存后只显示「已配置」状态、不回显明文，可输入新令牌替换或清除；未配置时明确提示登录会话 token 不能用于设备级授权，不提供回退。令牌与登录 token 同存于 client_prefs DataStore（明文落盘的既有威胁模型），不打日志、不写入结果包。**本机内嵌单机模式暂无手机侧令牌创建通道**（qimeng ai-client create 只改服务端主机 SQLite），当前仅连接 PC/NAS 服务端的远端模式可用，后续可加凭据管理通道。
 
-WorkManager 周期链 15 分钟 + 一次性立即链，unique work 各自串行；远端要求 CONNECTED，本机回环模式放宽为 NOT_REQUIRED；Worker 本身不升级前台服务。执行体先读设置，本机模式调用 EmbeddedServerController.ensureStartedIfLocalMode 并等端口就绪，然后 list pending（二次按目标/状态过滤）→ claim → 详情 → 校验目标/协议/规则指纹/段清单 → 已持久化维护目录与所有文件访问门禁 → 下载全部段并复核 bytes/SHA-256 → 先导出「当前/上次」两代 → 主表 TXT 走 /authors/import-txt、v2 备份走 BackupValidator + /import/qimeng-backup → 按 manifest expectedReadback 逐段比较 → 回传 applied/partial/failed + readback + deviceLocalHashes + message → 应用后刷新当前代 → 清理 App 缓存临时文件。缺维护目录授权/写失败在领取后回传 failed 并提示去维护页授权；结果回传 409 先对账终态，不覆盖既有结果。进程被杀后的重试依赖服务端幂等（同名 TXT 重建、v2 事件身份幂等），不持久化段级进度。
+WorkManager 周期链 15 分钟 + 一次性立即链，unique work 各自串行；远端要求 CONNECTED，本机回环模式放宽为 NOT_REQUIRED；Worker 本身不升级前台服务。执行体先读设置与本机模式拉起（EmbeddedServerController.ensureStartedIfLocalMode + 等端口就绪），再在 **claim 之前**校验本地前置（登录会话、已持久化维护根、所有文件访问）：任一缺失只记录本机提示并结束，任务保持 pending，用户修复后「立即应用」重试，不消耗任务、不回传误导性 failed。随后同时 list pending 与 claimed（claimed 未过期=上次领取后进程被杀/回传失败的可恢复态，claim 对已 claimed 幂等）→ 二次按目标/状态/到期过滤 → claim → 详情 → 校验目标/协议/规则指纹/段清单 → 下载全部段并复核 bytes/SHA-256 → 先导出「当前/上次」两代 → 主表 TXT 走 /authors/import-txt、v2 备份走 BackupValidator + /import/qimeng-backup → 按 manifest expectedReadback 逐段比较（导入响应计数口径）→ 回传 applied/partial/failed + readback + deviceLocalHashes + message → 应用后刷新当前代 → 清理 App 缓存临时文件。应用过程中授权被撤/写失败才回传 failed；结果回传 409 先对账终态，不覆盖既有结果。进程被杀后的恢复靠重新查询 claimed 并重放整包（服务端同名 TXT 重建、v2 事件身份幂等），不持久化段级进度。
 
-JVM 单测覆盖目标筛选、段 size/SHA-256、授权缺失、回读比较、结果映射与两代路径，已跑 :core:data:testDebugUnitTest 的 device 包（34 项通过）。**未安装、未在 qimeng_api35 或真机验证**：Doze/厂商后台限制、后台拉起内嵌 FGS、SAF/共享存储授权撤回、真实结果包端到端与断网/进程重启恢复均待后续；未跑全量 Gradle/设备验收。 详细系统限制与待验证清单见[Android 后台执行分析](../docs/android-background-execution.md)。
+JVM 单测覆盖目标筛选、领取前登录/维护根/全文件访问前置、pending+claimed 过期过滤、段 size/SHA-256、授权缺失、回读比较、结果映射、两代路径与设置持久化（device 包 40 项；其中 37 项纯逻辑已用本机 kotlinc+JUnit 实跑通过，设置持久化 3 项依赖 DataStore 运行时由 Gradle 单测执行）。**未安装、未在 qimeng_api35 或真机验证**：Doze/厂商后台限制、后台拉起内嵌 FGS、SAF/共享存储授权撤回、真实结果包端到端与断网/进程重启恢复均待后续；未跑全量 Gradle/设备验收。 详细系统限制与待验证清单见[Android 后台执行分析](../docs/android-background-execution.md)。
 
 内嵌服务启动时由Android系统时区注入QIMENG_TIMEZONE，Go在启动数据库及后台任务前将time.Local设为该IANA时区，避免Android运行时默认UTC导致每日统计错位。PC/NAS可用time_zone或同名环境变量显式设置，缺省沿宿主本地时区；非法时区阻止启动。切换时区后的日物化统计通过现有v2导入从原事件重建。
 

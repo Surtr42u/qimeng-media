@@ -97,9 +97,9 @@ fun DeviceApplyScreen(
 
                 Text("设备 AI 令牌", style = MaterialTheme.typography.labelMedium)
                 QimengCapsuleTextField(
-                    value = state.deviceToken,
+                    value = state.deviceTokenDraft,
                     onValueChange = viewModel::onDeviceTokenChange,
-                    placeholder = "只显示一次的专用令牌",
+                    placeholder = if (state.tokenConfigured) "已配置；输入新令牌可替换" else "只显示一次的专用令牌",
                     singleLine = true,
                     enabled = !state.saving,
                     visualTransformation = PasswordVisualTransformation(),
@@ -110,10 +110,20 @@ fun DeviceApplyScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "只保存在本机；登录会话 token 不能替代设备级授权。",
+                    "只保存在本机且不回显明文：保存后仅显示「已配置」，输入新令牌保存即替换。登录会话 token 不能替代设备级授权。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (state.tokenConfigured) {
+                    OutlinedButton(
+                        onClick = viewModel::clearToken,
+                        enabled = !state.saving,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("清除设备令牌")
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -131,13 +141,17 @@ fun DeviceApplyScreen(
                     Switch(
                         checked = state.backgroundEnabled,
                         onCheckedChange = viewModel::onBackgroundEnabledChange,
-                        enabled = !state.saving && state.deviceToken.isNotBlank(),
+                        enabled = !state.saving && state.deviceTokenProvided,
                     )
                 }
 
                 if (!state.configured) {
                     Text(
-                        DeviceApplyAuthorization.SESSION_TOKEN_NOT_DEVICE_AUTH_MESSAGE,
+                        if (state.deviceTokenProvided) {
+                            DeviceApplyAuthorization.MISSING_TARGET_DEVICE_MESSAGE
+                        } else {
+                            DeviceApplyAuthorization.SESSION_TOKEN_NOT_DEVICE_AUTH_MESSAGE
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )

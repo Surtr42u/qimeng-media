@@ -46,6 +46,25 @@ object DeviceApplyPolicy {
     }
 
     /**
+     * 可领取/可恢复的摘要（2026-11-08 task-21 修复 P2-2）：同时接受 pending 与 claimed
+     * 且未过期的任务。claimed 是「上次进程在领取后被杀/回传持续失败」的可恢复态——
+     * 服务端 claim 对已 claimed 未过期任务幂等返回 200（docs/api/device.md），因此重跑
+     * 领取→下载→应用→回传可以收敛；终态（applied/partial/failed/cancelled/expired）
+     * 一律跳过，不重复应用。
+     *
+     * [nowMillis] 由调用方注入（JVM 单测可控），避免客户端依赖系统时钟做业务判断。
+     */
+    fun resumeOrClaimForDevice(
+        items: List<DeviceApplySummary>,
+        targetDeviceId: String,
+        nowMillis: Long,
+    ): List<DeviceApplySummary> = items.filter { item ->
+        item.targetDeviceId == targetDeviceId &&
+            (item.status == DeviceTaskStatus.PENDING || item.status == DeviceTaskStatus.CLAIMED) &&
+            item.expiresAtMillis > nowMillis
+    }
+
+    /**
      * 领取后、下载段前的整包校验。失败即不应用任何段，回传 failed。
      * 返回 [DeviceTaskValidation.ok] + 中文原因（服务端 ledger/旧客户端可读）。
      */

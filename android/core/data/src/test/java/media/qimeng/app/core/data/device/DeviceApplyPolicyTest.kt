@@ -121,6 +121,42 @@ class DeviceApplyPolicyTest {
     }
 
     @Test
+    fun `可恢复摘要同时接受 pending 与未过期 claimed`() {
+        val now = 1_000L
+        val items = listOf(
+            summary(id = "pending", status = DeviceTaskStatus.PENDING).copy(expiresAtMillis = now + 10),
+            summary(id = "claimed", status = DeviceTaskStatus.CLAIMED).copy(expiresAtMillis = now + 10),
+            // 已到期（边界相等也算过期）不领取。
+            summary(id = "expired-claimed", status = DeviceTaskStatus.CLAIMED).copy(expiresAtMillis = now),
+            summary(id = "expired-pending", status = DeviceTaskStatus.PENDING).copy(expiresAtMillis = now - 1),
+            // 终态一律跳过，避免重复应用。
+            summary(id = "applied", status = DeviceTaskStatus.APPLIED).copy(expiresAtMillis = now + 10),
+            summary(id = "failed", status = DeviceTaskStatus.FAILED).copy(expiresAtMillis = now + 10),
+            summary(id = "other", target = "phone-b", status = DeviceTaskStatus.CLAIMED)
+                .copy(expiresAtMillis = now + 10),
+        )
+        assertEquals(
+            listOf("pending", "claimed"),
+            DeviceApplyPolicy.resumeOrClaimForDevice(items, "phone-main", now).map { it.id },
+        )
+        // 保持服务端返回顺序（createdAt 倒序），不重排。
+        assertTrue(
+            DeviceApplyPolicy.resumeOrClaimForDevice(items.asReversed(), "phone-main", now)
+                .map { it.id } == listOf("claimed", "pending"),
+        )
+    }
+
+    @Test
+    fun `默认到期时间视为不过期兼容旧构造点`() {
+        val item = summary(id = "legacy", status = DeviceTaskStatus.CLAIMED)
+        assertEquals(Long.MAX_VALUE, item.expiresAtMillis)
+        assertEquals(
+            listOf("legacy"),
+            DeviceApplyPolicy.resumeOrClaimForDevice(listOf(item), "phone-main", Long.MAX_VALUE - 1).map { it.id },
+        )
+    }
+
+    @Test
     fun `远端需要网络约束而本机回环放宽`() {
         assertTrue(DeviceApplyWorkSpec.requiresConnectedNetwork(localMode = false))
         assertFalse(DeviceApplyWorkSpec.requiresConnectedNetwork(localMode = true))
