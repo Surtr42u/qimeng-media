@@ -9,7 +9,7 @@ import { SkeletonGrid } from '@/components/ui/skeleton-grid'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { panelAssetParams, usePanelFilters } from '@/hooks/use-panel-filters'
 import {
-  assetToCard,
+  searchAssetToCard,
   useAssetsInfinite,
   useAssetsTotal,
   type AssetListParams,
@@ -92,6 +92,14 @@ export default function SearchPage() {
   const { data: pages, isLoading, isFetchingNextPage, isPlaceholderData, fetchNextPage, hasNextPage } = useAssetsInfinite(listParams, q !== '')
   const items = useMemo(() => pages?.pages.flatMap((pg) => pg.items ?? []) ?? [], [pages])
 
+  // 换词待定态：useAssetsInfinite 的 keepPreviousData 在换键时保留旧词结果
+  // （筛选切换刻意保留旧列表不闪，E1 口径），但换搜索词时把旧词结果当新词结果
+  // 展示会误导读屏与视觉。settledQ 记录当前列表所属搜索词：placeholder 且词未
+  // 落定期间遮住旧网格显示加载态；新词数据到货的同一帧恢复（不额外请求）。
+  const [settledQ, setSettledQ] = useState(q)
+  const newSearchPending = isPlaceholderData && settledQ !== q
+  if (!isPlaceholderData && settledQ !== q) setSettledQ(q)
+
   // E3 无感加载哨兵：enabled 与原 pill 的 when 同口径（q==='' 不挂不拉）。
   // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
   // （useAssetsInfinite 已配 keepPreviousData，换词占位期间守卫真实生效）。
@@ -162,12 +170,17 @@ export default function SearchPage() {
       />
       {q === '' ? (
         <p className="grid-empty">在顶部搜索框输入关键词开始搜索</p>
+      ) : newSearchPending ? (
+        <>
+          <p className="grid-empty" role="status" aria-live="polite">正在搜索「{q}」…</p>
+          <SkeletonGrid count={12} />
+        </>
       ) : isLoading && items.length === 0 ? (
         <SkeletonGrid count={12} />
       ) : items.length ? (
         <div className="grid">
           {items.map((a) => (
-            <MediaCard key={a.id} {...assetToCard(a)} onOpen={openCard} />
+            <MediaCard key={a.id} {...searchAssetToCard(a)} onOpen={openCard} />
           ))}
         </div>
       ) : (
@@ -180,7 +193,7 @@ export default function SearchPage() {
         hasNextPage={hasNextPage}
         itemCount={items.length}
         sentinelRef={sentinelRef}
-        sentinelActive={q !== ''}
+        sentinelActive={q !== '' && !newSearchPending}
       />
     </div>
   )

@@ -91,10 +91,10 @@ export function BackupCard({ folderMode = false, directoryLoading = false }: { f
         <span className="rank-note">当前库全量（文件清单/作者/标签/统计/收藏点赞），可导入本项目其他实例；不含媒体原件</span>
       </div>
       {folderMode && <div className="upload-queue-actions" style={{ marginTop: 12 }}>
-        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(0)}>恢复最新备份</button>
+        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(0)}>恢复当前备份</button>
         <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(1)}>恢复上次备份</button>
-        <button className="pill" type="button" disabled={busy} onClick={() => void readFolderBackup(2)}>恢复上上次备份</button>
       </div>}
+      {folderMode && <p className="rank-note">两代布局只保留「当前」与「上次」（各带独立 .sha256）；迁移前的旧「上上次」文件不会自动删除，可用下方「选择备份文件导入恢复」直接选择旧文件。</p>}
       <div
         className={`upload-drop${busy ? ' disabled' : ''}`}
         role="button"

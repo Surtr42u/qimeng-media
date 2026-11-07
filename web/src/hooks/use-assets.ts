@@ -25,6 +25,7 @@ export type { AssetFacets, FacetBucket, Partition }
 import { getEventLedger } from '@/lib/ledger-instance'
 import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapOffsetPage, unwrapSdkResult } from '@/lib/api-client'
+import { searchResultTitle } from '@/lib/search-mapping'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { deviceTzOffsetMinutes, formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
 import { offsetPageItems } from '@/lib/pagination'
@@ -208,6 +209,15 @@ export function assetToCard(a: AssetSummary): MediaCardProps {
     up: formatCardUp(a.authorNames, a.source),
     date: formatShortDate(a.modifiedAt),
   }
+}
+
+/**
+ * 搜索结果卡：标题取完整文件名（作品编号/组图页码可见），单行省略 + 完整名提示。
+ * 搜索页专用；首页/相册/收藏等浏览网格继续 assetToCard 的 cosWork 优先口径。
+ */
+export function searchAssetToCard(a: AssetSummary): MediaCardProps {
+  const fileName = searchResultTitle(a)
+  return { ...assetToCard(a), title: fileName, fullTitle: fileName, singleLineTitle: true }
 }
 
 /** 资产详情（签名原件直链/编码信息/标签作者——详情页与播放兼容性判断数据源）。
