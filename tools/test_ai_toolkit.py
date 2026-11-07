@@ -281,7 +281,7 @@ class RulepackTest(unittest.TestCase):
             second = rulepack.build_rulepack()
         self.assertEqual(first["platformVersion"], "1.0.0")
         self.assertEqual(first["toolContractVersion"], "1.0.0")
-        self.assertEqual(first["rulepackVersion"], "2026-11-07.4")
+        self.assertEqual(first["rulepackVersion"], "2026-11-07.5")
         self.assertNotEqual(first["platformVersion"], first["rulepackVersion"])
         self.assertEqual(rulepack.dumps_pack(first), rulepack.dumps_pack(second))
         self.assertEqual(len(first["tools"]), len(registry.TOOLS))
@@ -756,7 +756,7 @@ class CliToolTest(StubServerTest):
         self.assertEqual(0, status)
         payload = json.loads(stdout)
         self.assertEqual("1.0.0", payload["platformVersion"])
-        self.assertEqual("2026-11-07.4", payload["rulepackVersion"])
+        self.assertEqual("2026-11-07.5", payload["rulepackVersion"])
         self.assertIn("sha256", payload["openapi"])
         status, stdout, stderr = self.run_cli(["tools", "list", "--json"])
         self.assertEqual(0, status)
@@ -932,7 +932,9 @@ class MediaOrganizeTest(StubServerTest):
         self.assertFalse([item for item in StubHandler.seen if item["method"] == "POST"])
 
     def test_engine_missing_keeps_tools_planned(self):
-        with patch.object(tools_media, "engine_module", return_value=None):
+        # 惰性加载后引擎存在性由 registry 的 find_spec 探测；mock 探测函数即可模拟未安装。
+        with patch.object(registry, "_engine_available", return_value=False), \
+                patch.object(registry, "_engine_version", return_value=""):
             document, _raw = openapi.parse_file(OPENAPI)
             for tool_id in ("media.organize.prepare", "media.organize.apply"):
                 self.assertEqual("planned",

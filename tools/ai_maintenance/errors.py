@@ -67,6 +67,28 @@ def tool_not_implemented(tool_id: str, reason: str) -> ToolError:
     )
 
 
+def permission_denied(tool_id: str, required: str, granted: list[str]) -> ToolError:
+    return ToolError(
+        "PERMISSION_DENIED",
+        f"工具 {tool_id} 需要权限 {required}，当前可信执行端未授予",
+        category="permission",
+        exit_code=2,
+        recovery="由可信执行端通过 QIMENG_AI_GRANTED_PERMISSIONS 授予所需权限；仅看见工具不代表有权执行。",
+        details={"required": required, "granted": granted},
+    )
+
+
+def tool_deprecated(tool_id: str, reason: str, replaced_by: str = "") -> ToolError:
+    return ToolError(
+        "TOOL_DEPRECATED",
+        f"工具 {tool_id} 已废弃：{reason}",
+        category="capability",
+        exit_code=2,
+        recovery=("改用 " + replaced_by + "。") if replaced_by else "改用当前受支持工具；旧工具不再获得修复。",
+        details={"replacedBy": replaced_by},
+    )
+
+
 def invalid_input(message: str, details=None) -> ToolError:
     return ToolError(
         "INVALID_INPUT",

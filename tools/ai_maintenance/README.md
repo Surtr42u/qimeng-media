@@ -30,6 +30,7 @@
 | `cli.py` | 统一入口：兼容旧只读子命令 + `version`/`tools`/`tool call`。 |
 | `mcp_server.py` | stdio MCP 适配器（JSON-RPC 2.0 最小子集），与 CLI 共用注册表与 dispatch。 |
 | [test_ai_maintenance.py](../test_ai_maintenance.py) | 规则包/旧 CLI 合同回归（合成数据、127.0.0.1 stub）。 |
+| [test_ai_catalog.py](../test_ai_catalog.py) | 扩展性回归：精简领域目录/按需 describe+rules、惰性模块加载、模块缺失/废弃/禁用、权限与发现分离、并发、CLI/MCP 一致性（18 项）。 |
 | [test_ai_toolkit.py](../test_ai_toolkit.py) | 分块解析、能力降级、注册表/禁用、计划指纹、作者/清理/合并/资产流程。 |
 | [test_ai_mcp.py](../test_ai_mcp.py) | 两个独立合成 MCP 客户端的协议、超时、取消与脱敏回归。 |
 | [test_media_naming.py](../test_media_naming.py) | 命名引擎纯函数回归（工作编号/页码/补图/缺页/锁/回读）。 |
@@ -62,6 +63,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
 | `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
 | `QIMENG_AI_LOCK_DIR` | 可选 | media.organize.apply 的命名锁目录（默认系统临时目录）；受限沙箱下可指向可写目录。 |
+| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/media.organize/admin.maintenance 或 all）。未配置=授予全部已声明权限（兼容旧 CLI）；生产执行器应显式收窄。工具可见≠有权执行，execute_tool 在调用前强制检查。 |
 
 ```powershell
 $env:QIMENG_API_BASE = "http://127.0.0.1:8420"
@@ -116,6 +118,36 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.prepare --in
 的结果含 `planFingerprint`/`idempotencyKey`/`steps`/`readback`。`--input-json -`
 或 `--input-file -` 从 stdin 读取。
 
+### 精简目录与按需发现（工具数增长时优先）
+
+工具数量增长后，不建议把完整规则包和全部工具 Schema 一次性塞进模型上下文。
+平台提供三层按需发现，CLI 与 MCP 共用同一注册表/执行器：
+
+```powershell
+# 1) 精简领域目录：工具 id/版本/摘要/状态/权限，不含 Schema（默认隐藏已废弃工具）
+python -X utf8 tools/ai_maintenance/cli.py catalog
+python -X utf8 tools/ai_maintenance/cli.py catalog --domain author --json
+python -X utf8 tools/ai_maintenance/cli.py tools list --compact --json
+
+# 2) 按需取单个工具的完整 Schema/示例/规则摘录/Go API 依赖
+python -X utf8 tools/ai_maintenance/cli.py tools show author.profile.prepare
+
+# 3) 按需读取规则节，不加载完整 rules.json
+python -X utf8 tools/ai_maintenance/cli.py tool call platform.rules --input-json '{"sections":["mediaNaming","permissions"]}'
+```
+
+- 领域：author/media/research/backup/device/maintenance/system；目录按领域分组并给
+  tools 扁平列表，toolCount/domains 由注册表实时计算。
+- 元工具 platform.catalog / platform.tool.describe / platform.rules 与业务工具同一
+  dispatch、同一权限与禁用检查；MCP tools/list 仍返回完整工具清单（标准协议兼容），
+  客户端也可调用元工具做分类发现；descriptor 的 _meta.domain 便于客户端分组。
+- 惰性加载：注册表只保有 module:handler 引用，目录/状态计算不导入实现模块；首次
+  执行/描述时才导入对应 tools_*.py / media_naming.py。实现模块缺失时工具状态为
+  unavailable，执行返回 TOOL_NOT_IMPLEMENTED，不会假装成功。
+- 权限与发现分离：catalog/describe 只声明权限；execute_tool 按
+  QIMENG_AI_GRANTED_PERMISSIONS 或 rules.json toolConfig.grantedPermissions 在
+  Schema/计划前强制拒绝（PERMISSION_DENIED），CLI 与 MCP 同一条路径。
+
 ### 退出码
 
 | 退出码 | 含义 |
@@ -129,8 +161,8 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.prepare --in
 
 ## 工具目录
 
-工具完整声明（Schema/权限/超时/错误码/能力核对明细）以 `tools list --json` 为准；
-这里是用途摘要。
+工具数较多时先用 catalog 取精简领域目录，再 tools show <id> 按需取完整 Schema/示例/
+规则摘录；tools list --json 保留完整清单（MCP tools/list 同源）。这里是用途摘要。
 
 | 工具 | 状态 | 说明 |
 | --- | --- | --- |
@@ -149,6 +181,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.prepare --in
 | `media.organize.prepare` / `media.organize.apply` | supported（apply 需确认） | 组图命名规划/校验/执行/回读；算法唯一实现 `media_naming.py`（随本发行物提供），prepare 只读计划、apply 校验计划指纹+前置文件名指纹+并发锁并逐步 move 后回读，服务端自动改名判失败。 |
 | `backup.export` | planned | 大响应/落盘摘要/预算未实现，不假装执行。 |
 | `device.apply.prepare/submit/status` | planned | 服务端结果包 API 已有，Android Worker/配对未实现。 |
+| `platform.catalog` / `platform.tool.describe` / `platform.rules` | supported | 精简领域目录、按需工具 Schema/示例/规则摘录（纯本地、只读；不写业务数据）。 |
 
 ## 计划与受控写入
 
@@ -184,6 +217,15 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - 未确认计划不得执行；`QIMENG_AI_READONLY=1` 或 `rules.json` `toolConfig.readOnlyMode`
   可在本地一刀关闭全部副作用工具。
 - 8420 真库禁止测试写入；测试只用临时目录、合成数据与 127.0.0.1 stub。
+- **权限与发现分离**：catalog/describe 只声明权限；`execute_tool` 在 Schema/计划/远程请求
+  之前按 `QIMENG_AI_GRANTED_PERMISSIONS`（或 `rules.json` `toolConfig.grantedPermissions`）
+  强制拒绝未授权工具（`PERMISSION_DENIED`）。未配置时默认授予全部已声明权限只是兼容旧
+  CLI；生产执行器应显式收窄并审计。看见工具≠有权执行，CLI 与 MCP 走同一检查。
+- **管理员 Bearer 绕过风险（已知边界，ADR-0056 §5、ADR-0057 方案）**：当前 `/api/v1` 仍以管理员 Bearer
+  为主，AI 工具层隐藏 token 只能约束“通过工具调用”的模型；如果模型/执行环境能拿到 token，
+  它可以直接调用 Go API 绕过工具层的计划、确认与回读。因此：token 只注入可信执行端进程
+  环境、不下发给模型；AI 写入目前只用于受信本机维护，不向不可信模型开放；正式开放前需
+  实现受限凭据（服务端 scope/最小权限）或不可绕过的执行端隔离（方案见 [Go API 缺口与 AI 客户端权限模型](../../docs/AI_PLATFORM_API_GAPS.md)、[ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)；见 toolCatalog.permissions）。
 - 本机沙箱若限制系统临时目录/目录权限，测试临时目录放在被忽略的
   `tools/ai_maintenance/.test-temp/`。
 
@@ -201,6 +243,10 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - 不注册任意 shell/Python/文件执行工具；不新增写入通道；写工具仍走计划/确认/
   执行/回读。
 - token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
+- 工具分类发现：标准 `tools/list` 仍返回全部工具与 `inputSchema`；工具较多时客户端可先
+  调用 `platform.catalog`（精简领域目录），再 `platform.tool.describe` 取单个工具 Schema/
+  示例，用 `platform.rules` 按需读规则节；descriptor 附带 `_meta.domain` 便于分组展示。
+- `initialize` 的 instructions 已提示“先 catalog 后 describe”的发现顺序与权限边界。
 
 ### MCP 客户端配置示例（占位符，不含真实 token）
 
@@ -235,8 +281,11 @@ python -X utf8 tools/check_docs.py
 版本/指纹稳定、工具列举/禁用/只读模式、输入 Schema 非法、计划指纹与版本校验、
 人工字段保护、409 传播、清理多信号候选、原子合并指纹确认、资产作者关联、旧 CLI
 合同、旧脚本转发统一实现、MCP 两客户端协议与脱敏、media.organize 端到端
-（11 (1)..(4) 作品编号/页码、锁内执行、回读失败与篡改计划拒绝）。全部使用合成数据
-与回环 stub；命名引擎自身另跑 `python -m unittest test_media_naming`。
+（11 (1)..(4) 作品编号/页码、锁内执行、回读失败与篡改计划拒绝），以及扩展性回归
+（精简目录不含 Schema 且显著小于完整清单、120 个合成工具仍有界、按需 describe/rules、
+惰性模块加载与缺失模块降级、废弃/禁用工具、权限与发现分离、规则版本变化、24 路并发、
+CLI/MCP 目录与完整 tools list 一致）。全部使用合成数据与回环 stub；命名引擎自身另跑
+`python -m unittest test_media_naming`。当前 tools 全套 205 项通过。
 
 ## 组图命名集成（media.organize.*）
 
@@ -259,3 +308,5 @@ python -X utf8 tools/check_docs.py
 - `backup.export`：大响应、落盘摘要与预算流程未实现。
 - `device.apply.*`：服务端结果包 API 已存在，Android Worker/配对/真机后台同步未实现。
 - 标签写入、任意 SQL/文件/shell 执行、通用插件市场、远程 HTTP AI API。
+- 服务端最小权限/受限凭据与独立执行端隔离：当前管理员 Bearer 仍可绕过工具层（见安全
+  边界与 rules.json toolCatalog.permissions.adminBearerRisk），需在正式开放 AI 写入前落地。

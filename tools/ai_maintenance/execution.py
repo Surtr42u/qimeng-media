@@ -23,18 +23,26 @@ DISABLED_TOOLS_ENV = "QIMENG_AI_DISABLED_TOOLS"
 READONLY_ENV = "QIMENG_AI_READONLY"
 OPENAPI_ENV = "QIMENG_AI_OPENAPI"
 RULES_ENV = "QIMENG_AI_RULES"
+GRANTED_PERMISSIONS_ENV = "QIMENG_AI_GRANTED_PERMISSIONS"
 
 
 class RuntimeConfig:
     """一次调用使用的规则/OpenAPI/禁用配置快照（运行中不热加载）。"""
 
     def __init__(self, *, openapi_path: Path, rules_path: Path, rules: dict,
-                 disabled: frozenset[str] = frozenset(), read_only_mode: bool = False):
+                 disabled: frozenset[str] = frozenset(), read_only_mode: bool = False,
+                 granted_permissions: frozenset[str] | None = None):
         self.openapi_path = openapi_path
         self.rules_path = rules_path
         self.rules = rules
         self.disabled = disabled
         self.read_only_mode = read_only_mode
+        # 权限与能力发现分离（2026-11-07 扩展性补充）：默认未显式限制时授予全部
+        # 已声明权限（保持既有 CLI 行为）；QIMENG_AI_GRANTED_PERMISSIONS 或
+        # rules.json toolConfig.grantedPermissions 可收窄。可信执行端必须据此
+        # 在调用前强制拒绝，而不是依赖模型自觉不调用 Go。
+        self.granted_permissions = (frozenset(registry.PERMISSIONS.keys())
+                                    if granted_permissions is None else granted_permissions)
         self._document = None
         self._openapi_sha256 = ""
         self._openapi_paths: list[str] = []
@@ -91,9 +99,37 @@ def load_config(env=None) -> RuntimeConfig:
         raise errors.configuration_error("禁用列表包含未知工具 ID：" + ", ".join(unknown))
     read_only_mode = bool(tool_config.get("readOnlyMode")) or \
         env.get(READONLY_ENV, "").strip().lower() in TRUE_VALUES
+    granted = _parse_granted_permissions(env, tool_config)
     return RuntimeConfig(openapi_path=Path(openapi_path), rules_path=Path(rules_path),
                          rules=rules, disabled=frozenset(disabled),
-                         read_only_mode=read_only_mode)
+                         read_only_mode=read_only_mode, granted_permissions=granted)
+
+
+def _parse_granted_permissions(env, tool_config: dict) -> frozenset[str]:
+    """解析可信执行端授予的权限；未配置=全部已声明权限（兼容旧行为）。"""
+    raw = env.get(GRANTED_PERMISSIONS_ENV, "").strip()
+    configured = tool_config.get("grantedPermissions")
+    if raw:
+        values = [item.strip() for item in raw.replace(";", ",").split(",") if item.strip()]
+    elif isinstance(configured, list):
+        values = [str(item).strip() for item in configured if str(item).strip()]
+    else:
+        return frozenset(registry.PERMISSIONS.keys())
+    if values == ["all"]:
+        return frozenset(registry.PERMISSIONS.keys())
+    unknown = sorted(item for item in values if item not in registry.PERMISSIONS)
+    if unknown:
+        raise errors.configuration_error(
+            "授予列表包含未知权限：" + ", ".join(unknown) +
+            "（合法值：" + ", ".join(sorted(registry.PERMISSIONS.keys())) + "）")
+    return frozenset(values)
+
+
+def permission_reason(spec: registry.ToolSpec, config: RuntimeConfig) -> str:
+    """返回未授予权限的说明；空串表示允许执行。权限声明≠有权限，必须执行端强制。"""
+    if spec.permission in config.granted_permissions:
+        return ""
+    return spec.permission
 
 
 def disabled_reason(spec: registry.ToolSpec, config: RuntimeConfig) -> str:
@@ -131,9 +167,15 @@ def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | Non
     spec = registry.get(tool_id)
     if spec is None:
         raise errors.unknown_tool(tool_id)
+    if spec.deprecated:
+        raise errors.tool_deprecated(tool_id, spec.deprecated_reason, spec.replaced_by)
     reason = disabled_reason(spec, config)
     if reason:
         raise errors.tool_disabled(tool_id, reason)
+    missing_permission = permission_reason(spec, config)
+    if missing_permission:
+        raise errors.permission_denied(tool_id, missing_permission,
+                                       sorted(config.granted_permissions))
     problems = schema.validate(payload, spec.input_schema)
     if problems:
         raise errors.invalid_input("工具输入不符合 Schema", details=problems)
@@ -157,6 +199,13 @@ def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | Non
         except errors.ToolError:
             document = None
     client = _client_context(spec, env) if spec.network else None
+    try:
+        handler = registry.resolve_handler(spec)
+    except (ImportError, AttributeError, ValueError):
+        raise errors.tool_not_implemented(
+            tool_id, "实现模块/函数缺失：" + (spec.handler_ref or "handler")) from None
+    if not callable(handler):
+        raise errors.tool_not_implemented(tool_id, "实现缺失：" + (spec.handler_ref or "handler"))
     context = ToolContext(
         client=client,
         document=document,
@@ -164,8 +213,12 @@ def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | Non
         rulepack_version=config.rulepack_version,
         target=client.target if client is not None else "",
         env=dict(env),
+        rules=config.rules,
+        disabled_tools=config.disabled,
+        read_only_mode=config.read_only_mode,
+        granted_permissions=config.granted_permissions,
     )
-    result = spec.handler(context, payload)
+    result = handler(context, payload)
     output_problems = schema.validate(result, spec.output_schema)
     if output_problems:
         raise errors.internal_error("工具输出不符合声明的 outputSchema",
@@ -203,6 +256,13 @@ def tool_listing(config: RuntimeConfig | None = None) -> dict:
         "rulepackVersion": config.rulepack_version,
         "openapi": {"sha256": config.openapi_sha256, "pathCount": len(config.openapi_paths)},
         "permissions": registry.PERMISSIONS,
+        "domains": list(registry.DOMAINS),
+        "discovery": {
+            "catalog": "platform.catalog",
+            "describe": "platform.tool.describe",
+            "rules": "platform.rules",
+            "note": "工具数量增长时先取 platform.catalog 精简目录，再按需 describe；FULL tools list 仍保留完整 Schema 供 MCP tools/list。",
+        },
         "tools": tools,
         "disabledTools": sorted(config.disabled),
         "readOnlyMode": config.read_only_mode,

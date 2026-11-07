@@ -75,13 +75,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     tools = sub.add_parser("tools", help="工具注册表：list / show（纯本地）")
     tools_sub = tools.add_subparsers(dest="tools_command", required=True)
-    tools_list = tools_sub.add_parser("list", help="列出工具、状态、能力核对与 Schema", parents=[json_parent])
+    tools_list = tools_sub.add_parser(
+        "list", help="列出工具、状态、能力核对与 Schema；--compact/--domain 输出精简领域目录", parents=[json_parent])
     tools_list.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
     tools_list.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
-    tools_show = tools_sub.add_parser("show", help="查看单个工具的完整声明", parents=[json_parent])
+    tools_list.add_argument("--compact", action="store_true",
+                            help="只输出精简目录（无 Schema；工具多时优先）")
+    tools_list.add_argument("--domain", metavar="DOMAIN",
+                            help="只看某个领域：author/media/research/backup/device/maintenance/system")
+    tools_list.add_argument("--include-deprecated", action="store_true", help="包含已废弃工具")
+    tools_show = tools_sub.add_parser(
+        "show", help="按需查看单个工具完整声明（Schema/示例/规则摘录）", parents=[json_parent])
     tools_show.add_argument("tool_id", metavar="TOOL_ID")
     tools_show.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
     tools_show.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
+
+    catalog = sub.add_parser(
+        "catalog", help="精简能力目录：按领域分组的工具元数据（无 Schema，纯本地）", parents=[json_parent])
+    catalog.add_argument("--domain", metavar="DOMAIN",
+                         help="只看某个领域：author/media/research/backup/device/maintenance/system")
+    catalog.add_argument("--include-deprecated", action="store_true", help="包含已废弃工具")
+    catalog.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
+    catalog.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
 
     tool = sub.add_parser("tool", help="通用工具调用（机器可读入口）")
     tool_sub = tool.add_subparsers(dest="tool_command", required=True)
@@ -368,6 +383,37 @@ def _human_tool_list(listing: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _human_catalog(catalog: dict) -> str:
+    lines = [
+        f"平台版本 {catalog.get('platformVersion')}；工具契约 {catalog.get('toolContractVersion')}；"
+        f"规则包 {catalog.get('rulepackVersion')}；工具 {catalog.get('toolCount')} 个；"
+        f"领域 {len(catalog.get('domains') or [])} 个",
+        "先用 catalog 找工具，再 tools show <id> 取 Schema/示例/规则摘录；看见不等于有权执行。",
+    ]
+    if catalog.get("readOnlyMode"):
+        lines.append("只读模式开启：全部有副作用工具已禁用。")
+    tools_by_id = {tool["id"]: tool for tool in catalog.get("tools") or []}
+    for domain in catalog.get("domains") or []:
+        ids = [tool_id for tool_id in domain.get("tools") or [] if tool_id in tools_by_id]
+        if not ids:
+            continue
+        lines.append(f"[{domain['label']}] {domain['id']}（{len(ids)}）")
+        for tool_id in ids:
+            tool = tools_by_id[tool_id]
+            flags = []
+            if tool.get("readOnly"):
+                flags.append("只读")
+            if tool.get("requiresConfirmation"):
+                flags.append("需确认")
+            if not tool.get("enabled", True):
+                flags.append("已禁用")
+            if tool.get("deprecated"):
+                flags.append("已废弃")
+            reason = f"；{tool['reason']}" if tool.get("reason") else ""
+            lines.append(f"  - {tool_id} [{tool['status']}] {'/'.join(flags)}{reason}")
+    return "\n".join(lines) + "\n"
+
+
 def _read_stdin_text() -> str:
     return sys.stdin.read()
 
@@ -417,9 +463,37 @@ def _run_version(args, env) -> int:
     return 0
 
 
+def _catalog_payload(args) -> dict:
+    payload = {}
+    domain = getattr(args, "domain", None)
+    if domain:
+        payload["domain"] = domain
+    if getattr(args, "include_deprecated", False):
+        payload["includeDeprecated"] = True
+    return payload
+
+
+def _run_catalog(args, env) -> int:
+    config = _runtime_config(args, env)
+    _, catalog = execution.execute_tool("platform.catalog", _catalog_payload(args), config=config)
+    if getattr(args, "json", False):
+        _print_json(catalog, sys.stdout)
+    else:
+        sys.stdout.write(_human_catalog(catalog))
+    return 0
+
+
 def _run_tools(args, env) -> int:
     config = _runtime_config(args, env)
     if args.tools_command == "list":
+        if getattr(args, "compact", False) or getattr(args, "domain", None):
+            _, catalog = execution.execute_tool("platform.catalog", _catalog_payload(args),
+                                                config=config)
+            if getattr(args, "json", False):
+                _print_json(catalog, sys.stdout)
+            else:
+                sys.stdout.write(_human_catalog(catalog))
+            return 0
         listing = execution.tool_listing(config)
         if getattr(args, "json", False):
             _print_json(listing, sys.stdout)
@@ -429,7 +503,9 @@ def _run_tools(args, env) -> int:
     spec = registry.get(args.tool_id)
     if spec is None:
         raise errors.unknown_tool(args.tool_id)
-    _print_json(registry.tool_summary(spec, config.document()), sys.stdout)
+    described = registry.describe_spec(
+        spec, config.document(), execution.disabled_reason(spec, config), rules=config.rules)
+    _print_json(described, sys.stdout)
     return 0
 
 
@@ -483,6 +559,8 @@ def main(argv=None) -> int:
         env = dict(os.environ)
         if args.command == "version":
             return _run_version(args, env)
+        if args.command == "catalog":
+            return _run_catalog(args, env)
         if args.command == "tools":
             return _run_tools(args, env)
         if args.command == "tool":

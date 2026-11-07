@@ -81,6 +81,9 @@ def _tool_descriptor(spec: registry.ToolSpec, document) -> dict:
             "idempotentHint": not spec.side_effects,
             "openWorldHint": spec.network,
         },
+        # MCP 允许的 _meta：领域/版本用于客户端分组展示，不改变标准 tools/list 行为。
+        "_meta": {"domain": spec.domain, "toolVersion": spec.version,
+                  "requiresConfirmation": spec.requires_confirmation},
     }
 
 
@@ -154,9 +157,11 @@ class McpServer:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": (
-                "绮梦影库 AI 工具平台。先调用 project.context 读取规则包与工具状态；"
-                "写入工具必须先 prepare 计划、人工确认后带 confirm=true 与计划指纹调用 apply。"
-                "不得声称执行了 planned 工具；不得在参数中放 token。"
+                "绮梦影库 AI 工具平台。工具较多时先调用 platform.catalog 取精简领域目录（无 Schema），"
+                "再用 platform.tool.describe 按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节；"
+                "tools/list 仍保留完整工具清单供标准客户端使用。写入工具必须先 prepare 计划、人工确认后"
+                "带 confirm=true 与计划指纹调用 apply。看见工具不代表有权执行（权限由可信执行端强制）；"
+                "不得声称执行了 planned/已禁用工具；不得在参数中放 token。"
             ),
         }
 

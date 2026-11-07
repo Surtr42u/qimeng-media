@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-07.4",
+  "rulesVersion": "2026-11-07.5",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1173,7 +1173,7 @@
       "数据库审计、迁移、备份恢复、环境诊断保持独立管理员工具，不进入 AI 工具注册表。"
     ]
   },
-  "rulepackVersion": "2026-11-07.4",
+  "rulepackVersion": "2026-11-07.5",
   "platform": {
     "platformVersion": "1.0.0",
     "toolContractVersion": "1.0.0",
@@ -1248,5 +1248,32 @@
       "usage": "apply：取现状→校验→加锁→锁内重新取现状并双检→逐步 move→回读；锁只保护一次 apply，不跨请求。",
       "failure": "lock_timeout/lock_stale 均按冲突终止，不自动删除 stale 锁文件；锁目录可用 QIMENG_AI_LOCK_DIR 覆盖。"
     }
+  },
+  "toolCatalog": {
+    "version": "1.0.0",
+    "domains": [
+      {"id": "author", "label": "作者", "description": "作者身份/档案/来源/清理/合并与作者关联"},
+      {"id": "media", "label": "媒体", "description": "媒体库/资产查询、混合媒体命名整理"},
+      {"id": "research", "label": "研究", "description": "可选研究网关（默认关闭，不含默认外网抓取）"},
+      {"id": "backup", "label": "备份", "description": "便携备份导出等管理员能力"},
+      {"id": "device", "label": "设备", "description": "手机结果包登记/回传/状态（配对未实现）"},
+      {"id": "maintenance", "label": "后台维护", "description": "维护任务账本查询与清点"},
+      {"id": "system", "label": "平台", "description": "上下文/版本/能力目录与平台元工具"}
+    ],
+    "discovery": {
+      "catalog": "platform.catalog",
+      "describe": "platform.tool.describe",
+      "rules": "platform.rules",
+      "policy": "工具数量增长时外部 AI 先取精简领域目录（无 Schema），再按需 describe/rules；MCP tools/list 保留完整清单供标准客户端；新增工具只增声明与实现模块，不改统一入口。",
+      "lazyLoading": "注册表只保存 module:handler 引用，首次执行/描述时才导入实现模块；目录与状态计算不导入 tools_* / media_naming 实现。",
+      "versioning": "工具声明 toolVersion 与规则 rulepackVersion 分离；废弃工具用 deprecated/replacedBy 标记并从精简目录默认隐藏。"
+    },
+    "permissions": {
+      "model": "发现与权限分离：catalog/describe 只声明权限；execution 在调用前按 QIMENG_AI_GRANTED_PERMISSIONS 或 toolConfig.grantedPermissions 强制拒绝未授权工具。",
+      "default": "未显式配置时授予全部已声明权限（兼容既有本地 CLI）；生产执行器应显式收窄并审计。",
+      "adminBearerRisk": "当前 /api/v1 仍以管理员 Bearer 为主：工具层隐藏 token 不能阻止模型直接调用 Go API；正式开放 AI 写入前需要受限凭据或不可绕过执行端隔离（ADR-0056 §5）。",
+      "skillsVsPermission": "catalog 可见不等于有权执行：权限检查在 execute_tool 内先于 Schema/计划执行，MCP/CLI 共用同一检查。"
+    },
+    "examples": "示例随 platform.tool.describe 按需返回（registry.TOOL_EXAMPLES），不进入默认 tools list。"
   }
 }

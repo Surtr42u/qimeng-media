@@ -23,3 +23,9 @@ class ToolContext:
     target: str = ""
     env: Mapping[str, str] | None = None
     extras: dict | None = None
+    # 扩展性优化（2026-11-07）：按需发现的元工具需要读取当前规则节与执行端
+    # 权限/禁用/只读决策；这些字段只供本地 meta 工具使用，不传给远程 API。
+    rules: Mapping[str, object] | None = None
+    disabled_tools: frozenset[str] = frozenset()
+    read_only_mode: bool = False
+    granted_permissions: frozenset[str] = frozenset()
