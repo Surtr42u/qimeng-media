@@ -1,5 +1,73 @@
 
 
+## docs(ai): 本轮收尾：9 项修复、AI 凭据 P1、Android 后台 Worker 与验证边界（2026-11-08 第七百一十三笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理）
+
+- 汇总并同步本轮交付：9 个 PR #44 Codex inline finding/用户报告问题的修复（工具层 5 项、Web 两代备份、Android 历史备份、Worker 租约、MCP 取消）、工具层按需工作流 `platform.playbook` 与 MCP 异步化、Go 侧 ADR-0057 P1 首批（AI 客户端凭据/scope/审计/设备级隔离/本地 CLI）、Android 后台设备结果包 Worker 源码。
+- 文档：taskbook 增 §4.5（按需模板/独立部署）与 §9.6（Android 后台执行与 AI 权限适配）、§13 状态与 §14 矩阵；CAPABILITY_MAP 增 AI 凭据/设备级隔离与 Android Worker 行；ADR-0057 状态与实现补充、ADR INDEX；HANDOVER §9.1/§9.3 交付与边界；新增 [独立 AI 平台部署升级边界](AI_PLATFORM_OPERATIONS.md) 与 [Android 后台执行分析](android-background-execution.md)；tools/ai_maintenance/README、docs/SECURITY、docs/AI_PLATFORM_API_GAPS、docs/api/device、android/README 随各提交同步。
+- 验证边界：本机定向通过（AI 工具 regression 12/catalog 22/MCP 11；Web vitest 24、tsc；Android JVM 34 + compileDebugKotlin、备份 28；Go build/vet + maintenance 定向；check_docs 147 文件 0 错误、check_privacy passed）；**未跑全量测试/云端 CI/真实库/真机/安装**，未合并 PR、未部署。待集中验收清单见 HANDOVER §9.2/§9.3。
+
+## fix(server): 维护 worker 租约丢失取消在途 handler、续租错误分类、Claim 失败释放租约（2026-11-08 第七百一十二笔）
+
+执行 AI：DeepSeek V4.1 Flash（子代理 go-worker2）
+
+- 依据 go-worker 对 7ce3bc79 的只读复核修复残余窗口：process 为每笔任务建 jobCtx，心跳 ErrLeaseLost/连续非租约失败/租约余量过小时 cancel，handler.Execute 改用 jobCtx；Execute 返回后按 jobCtx 判定 interrupted，不写终态、不误标 failed，已提交步骤保留、重领后重跑未完成步骤（P2-1）。
+- 步骤边界心跳非租约错误不再 failJob（warn+cancel+停止本槽，等 TTL 重领）；AdvanceStatus/settleStages 临时错误同策略（P2-2）。Claim 提交后 Get 失败时新增 ReleaseMaintenanceLease 尽力释放本次租约再返回错误（P3-3）。main 等待 worker 收敛加 shutdownTimeout，超时记录后继续关库（P3-5）。
+- 新增测试：Start+Concurrency=2+阻塞 handler+Pause/Resume 取消、瞬时心跳错误不 failed、领取后详情失败可立即重领；go build/vet/maintenance 定向测试通过。残余：取消依赖心跳发现（最长一个心跳间隔）；立即 resume 的极短窗口仍未完全消除，需后续协调/可重试语义评估；未改 API/协议/migration。
+
+## feat(app): Android 后台设备结果包 Worker、设备级令牌与 SAF/权限适配（2026-11-08 第七百一十一笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；独立子代理实现与 JVM 验证）
+
+- 复用设备结果包协议与维护账本实现后台 Worker：core/data/device 14 个文件（Runner 编排领取-校验-应用-回读-回传；Worker/Scheduler/WorkSpec 15min 周期+一次性、CONNECTED、unique work+Mutex；Remote/Policy/Authorization/SegmentVerifier/ResultPlanner/LocalBackup/Readback/SettingsRepository/Models）；feature/manage 设备领取页/VM 与维护页入口（设备标签、口令式设备令牌、后台开关、立即应用、最近摘要）。
+- 设备授权：专用 AI 令牌（device.apply + device_ids）只用于设备端点，无令牌不回退会话 token；本机模式先拉起内嵌服务；维护根+所有文件访问门禁，缺失回 failed 并提示 UI 授权；先导出两代备份再 import-txt/qimeng-backup，按 expectedReadback 回读比较后回传 result，清理临时段；409 先对账终态不覆盖。
+- 验证：:core:data:testDebugUnitTest device.* 34 tests 通过、feature:manage/app compileDebugKotlin 通过、check_docs 0 错误、check_privacy passed。未安装、未真机；Doze/厂商后台、后台拉起内嵌 FGS、SAF/存储授权撤回、PC→手机端到端、断网/进程被杀恢复待验证；无段级进度持久化，进程强杀可能重下整包。
+
+## feat(server): 独立 AI 客户端凭据、scope 强制校验与写审计（2026-11-08 第七百一十笔）
+
+执行 AI：DeepSeek V4.1 Flash（子代理 go-worker 实现与本地定向验证）
+
+- ADR-0057 P1 首批（不改 OpenAPI/sdk.lock/三端、不加 HTTP 管理端点）：migration 0025 只增 ai_clients（token_hash 唯一、scopes_json/device_ids_json、expires/revoked/last_used）与 ai_audit（只增、无外键）；新包 server/internal/aiauth（scope 白名单/未知拒绝、token 生成+auth.TokenHash、过期/撤销 fail-closed、5s 缓存+Reload、审计、Create/List/Revoke/Rotate）。
+- httpapi：管理员会话先行验证（行为不变），未命中再验 AI 凭据；AI 按 method+path 强制 scope（GET/HEAD 兜底 read，维护/备份/研究/设备各自 scope，未映射写默认 403 FORBIDDEN_SCOPE），管理员不受限；AI 写请求含被拒写审计；设备级隔离 device.apply + ai_clients.device_ids，列表/详情/领取/段/回传/取消校验 targetDevice，越权不改状态。
+- 管理入口：qimeng ai-client create|list|revoke|rotate -config，直接打开同一 SQLite（先幂等 migration），明文 token 只 stdout 一次；撤销幂等、轮换旧 token 立即失效。验证：go build/vet、aiauth/httpapi/cmd 定向测试通过；未跑全量/CI/真实库。边界：协议化 scope、HTTP 管理端点、限流预算、审计查询、设备配对未实现；异地撤销约 5s 缓存生效。
+
+## fix(server): 维护 worker 租约改为每次领取唯一 fencing token 并校验未过期租约（2026-11-08 第七百零九笔）
+
+执行 AI：DeepSeek V4.1 Flash（子代理 go-worker2）
+
+- 根因：Worker 实例 owner 跨领取复用，Claim/Heartbeat/Complete/Advance 只比较 owner 字符串；租约过期被重领后旧执行上下文仍可续租/覆盖步骤工件终态，同任务可并发执行。修复：实例身份 qimeng-worker-<pid>-<uuid> + 每次领取唯一 fencing token；Heartbeat/Finish/Advance SQL 增 lease_until 未过期条件；StepInput/ArtifactInput 增 LeaseOwner，在同一 _txlock=immediate 事务内校验 owner+未过期后写步骤/工件；ErrLeaseLost 只停止不误标 failed，暂停/取消进行中步骤保留 running。
+- 验证：go test ./internal/maintenance/ -count=2、go vet、go build、gofmt、sqlc 重生成稳定；新增身份/token 唯一、同实例两次领取 token 不同、旧实例接管后不得覆盖、过期租约全链路围栏测试。未加 migration、未改 API/SDK/业务语义。
+
+## fix(web): 两代备份写入中断恢复与轮换幂等（2026-11-08 第七百零八笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 web-client 实现与定向验证）
+
+- 根因：先整代轮换当前→上次再写新当前且无事务标记；中断后重复轮换/半成品被当上次代/正文摘要分开写导致永久摘要不符或丢失完整旧代。修复：新增 maintenance-generation.ts 两代写入原语与恢复判定；写快照前落 .两代轮换状态.json（old/next 摘要），整代轮换（相同跳过、缺摘要补）、写新当前（正文先摘要后）、最后删状态；下次写入按断点自愈，不可判定拒绝并保留现场；相同数据重复导出只刷新当前并修复过期摘要；旧 flat3 只读兼容不变。
+- 验证：maintenance-folder.test.ts 24/24、tsc --noEmit、oxlint 0；未跑全量 vitest/Playwright/vite build/真实服务端。待测：真实浏览器崩溃中断自愈、真实 FS removeEntry 失败、跨浏览器差异。
+
+## fix(app): 修复两代布局历史备份恢复读取（上次代跨目录/旧 flat3 只读回退）（2026-11-08 第七百零七笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 android-client 实现与 JVM 验证）
+
+- 根因：上次代在独立目录 上次/备份/影库备份.json，恢复入口仍按当前目录+影库备份（上次）.json 拼路径，历史恢复永远读不到；偏好改指当前代后旧 flat3 历史文件也不可达。修复：新增纯 JVM MaintenanceBackupSlots 按槽解析真实文件（两代优先/旧 flat3 只读回退/摘要核对）；MaintenanceFolderRepository 增 readManagedBackup+managedBackupStatus；AutoBackupRunner.readBackup 返回真实文件名+字节，BackupViewModel 以真实名进 v2 校验链并按上次/上上次分槽提示；维护/备份页三代文案改两代。
+- 验证：本机 kotlinc+JUnit 28 项 JVM 通过（临时目录）；未跑 Gradle/CI/真机。待测：恢复上次成功路径、旧 flat3 回退、64MB 摘要、SAF 旧目录回退；UI 历史列表/迁移入口未接线。
+
+## fix(tools): 修复计划实例绑定、删除前复检、合并参数、作者名回读与媒体目录筛选（2026-11-08 第七百零六笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 ai-core 实现与定向验证）
+
+- 对应 PR #44 Codex inline finding/用户报告 1/2/4/5/6：1) 媒体目录筛选改用 GET /assets directory（精确、不递归、空串=库根），修正 AssetSummary 无 relPath 导致的子目录恒空/根目录误选；_directory 拒绝绝对路径/盘符/反斜杠/空段/./..，media 能力声明补 directory。2) plans.verify_plan 增 instance 校验，跨实例计划抛 PRECONDITION_FAILED(instance_mismatch)，profile/cleanup/asset apply 传 ctx.target，media apply 等价校验。3) cleanup apply 的 inventory 签名扩展 profile revision/status/empty/hasXProfile+sources，执行前整体复检、delete 前逐项复检，变化拒绝并保留已执行步骤。4) cleanup merge 分支不再无条件读 authorId，按动作读取必填参数修复 KeyError。5) asset.authors apply 回读按服务端别名保守归一与 PUT 前作者索引识别按名解析/复用作者，其余额外 id 仍 READBACK_MISMATCH。
+- 验证：新增 test_ai_regressions 12 项 + 受影响 24 项通过；未跑全套/CI/真实库。
+
+## feat(tools): 按需工作流模板 platform.playbook、MCP 调用异步化与独立部署文档（2026-11-08 第七百零五笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理）
+
+- 用户 2026-11-07 补充要求：统一管理操作提示词/业务规范/工作流、减少对源码与完整文档依赖、MCP 调用期间处理取消、平台独立部署与版本。新增 platform.playbook（按领域列模板或按名取单个，规则节选有界，模板可选不强制路径）；rules.json 增 playbooks（author.profile/media.organize/author.cleanup/maintenance.jobs/backup.rotate）与 toolCatalog.discovery，版本升 2026-11-07.6；CLI 增 playbook 子命令，MCP initialize 指引更新。
+- MCP serve_forever 改为 tools/call 独立线程 dispatch + 写锁 + 并发上限（QIMENG_AI_MCP_MAX_CONCURRENCY，默认 4）+ 有副作用工具全局串行；取消通知在调用期间可处理，只读工具立即 -32800、有副作用工具等真实结果（避免误以为未执行）；完成后清理取消标记防 request id 复用误判；新增/更新 MCP 取消与串行化测试。新增 docs/AI_PLATFORM_OPERATIONS.md（CLI/MCP 独立启动停止、配置、版本兼容、升级、NAS 边界）。
+- 验证：test_ai_catalog 22、test_ai_mcp 11、test_ai_toolkit 47、test_ai_maintenance 31 通过；未跑全量与 CI。
+
 ## docs(ai): Go 业务 API 缺口与 AI 客户端权限模型方案（2026-11-07 第七百零四笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理）
@@ -214,86 +282,3 @@
 - 附属档案增加可选xProfile，X简介原文与整理说明分开保存，旧客户端省略保留。便携导入为同账号的既有核实档案补缺省原文，已有人工字段与原文保留，重复导入幂等。SDK及锁由云端生成。
 - 主卡仅保留X简介和X入口，完整平台、ID、核验与维护进入独立资料子页；下方区分本地作品和作者新作，暂无可靠作品订阅时提供发布入口。Android安装序号27。
 - 文档影响覆盖API、作者/迁移专题、安全、两端入口、GUIDE_UI、HANDOVER和研究方法。当前源码云端门禁、出包与实际部署待完成。
-
-## feat(ui): 作者头像列表与资料显示层次（2026-11-05 第六百八十三笔）
-
-执行 AI：完整型号未知（主代理；当前会话未提供可核实的完整型号与变体元数据）。
-
-- App/Web作者管理接入认证头像、独立卡片及单独COS标记，头像读取跟随可见项。Android浅灰页底与白卡分层，深色页底同步加强对比。
-- 作者档案默认显示简介首段，ID、完整核验信息与平台链接按需展开；未配置动态时隐藏空卡。Web媒体详情作者卡补头像，设置按钮底边对齐左侧界面卡片。
-- 安装序号递增26；用户追加反馈后，作者卡收紧边界，关注改紧凑描边，来源/改名/删除菜单显式卡面色、圆角、图标与删除分隔。文档影响覆盖GUIDE_UI、两端README、HANDOVER，以及用户明确授权截图反搜的安全边界和离线头像交付方法；云端与实际安装结果待补齐。
-
-## feat(server): 离线头像迁移与作者研究交接（2026-11-05 第六百八十二笔）
-
-执行 AI：完整型号未知（主代理；当前会话未提供可核实的完整型号与变体元数据）。
-
-- v2作者段增加可选Base64头像图片，写前校验2MiB和图片类型；同来源既有档案可幂等补图，普通资料JSON排除图片正文，来源变更清图。认证头像接口优先读持久图片；KV档案身份迁移和删除沿用原事务。Android安装序号递增至24。
-- 新增通用作者资料研究指南，整理平台入口、互链判定、稳定 ID、错误候选、历史纠错、头像校验及网络排查方法，维护工具入口提供导航。
-- 真实研究资料继续保留在忽略的本地目录，增加来源摘要索引和逐人待复核交接包，明确研究、审核与实际应用的边界。公开文档只保留通用方法。
-- 用户追加后经现装手机 App 的 v2 作者段入口完成资料同步，留存结果与样页证据，原手动备份摘要一致且目录选择恢复。手机样页的公开头像源访问超时，网络显示验证仍有缺项。
-- 文档影响覆盖 tools 指南、入口与 HANDOVER 当前状态；同步备份协议、作者/迁移领域、SECURITY与模块入口，增加离线读取、补图幂等、人工字段保留、来源失效和坏图写前拒绝回归。云端SDK生成、检查与手机新包验证待执行。本轮交接范围、文件摘要、本地链接、文档与只读隐私门禁通过。按近期条目上限完整归档既有第六百五十二笔并同步历史索引。
-
-## feat(app): 作者档案分区与公开动态浏览（2026-11-05 第六百八十一笔）
-
-执行 AI：完整型号未知（主代理；当前会话没有可核实的完整型号与变体元数据）。
-
-- Android 作者作品页按身份/主页、维护摘要、公开动态、本地作品分区，复用中性设置卡面；简介与核验详情独立展开。关注、维护设置和候选审核入口明确；动态默认三条、展开全部后点 HTTPS 原帖，不推断未读、收藏或入库状态。
-- 编辑按公开资料、身份维护、动态追踪分组，取消核实同时关闭自动维护和追踪，追踪启用条件对齐服务端。保留 revision、失败草稿、离开确认和原作品分页导航；过滤计数明确为筛选结果，不当作者总数。
-- 文档影响：GUIDE_UI 与 Android 入口同步当前交互；无协议、数据库、平台采集器或下载能力变更。增加空状态呈现回归，区分未配源、关闭、未检查、失败和空记录。静态差异/文档检查通过，b95b03db完整云端CI/安全/文档通过；qimeng_api35以重签核验副本验证作者页/维护弹层/草稿联动与离开确认。非空动态因模拟服务及夹具写入命令被自动审批拒绝，未完成可视验证；未更新手机。详情见HANDOVER。
-
-## chore(app): 云端包静默安装电脑与手机（2026-11-04～05 第六百八十笔）
-
-执行 AI：完整型号未知（主代理；当前会话未提供可核实的完整型号与变体）。
-
-- 按用户本轮要求，以3525cb6a完成云端PC编译并核对同源完整CI、安全、文档；ZIP与116份产物摘要一致。正常停服后整体更新服务端与115份Web，隐藏启动、无浏览器弹出并保持服务运行。
-- 先在隔离快照验证schema20→22、12张关键表内容与数据库完整性；保留本次迁移涉及的数据库/sidecar、媒体签名密钥、配置/启动脚本与旧包。正式升级后health/ready均200，实际HTTP逐文件一致，升级前业务原行和媒体签名密钥保持。没有复制整库媒体或向真库写合成测试，副本不冒称异机灾备。
-- 自动审批拒绝进程内存环境读取后改用现有启动配置，未执行或绕过；安装尾部临时句柄导致的只读核验中断已独立补齐，未重复安装或迁移。作者研究不再调度，本轮未填充真实资料；11月4日PC更新时手机暂缓；11月5日追加手机安装见下条。
-- 11月5日按用户追加要求，将原真机同签名保留数据覆盖code21→23，来源c33392a1/Release41841846710，同源门禁通过；包名/版本/证书/内嵌三件套与Go身份核对，回拉APK摘要一致（`437225afd0c277582afc97ded7fc84883522cabd4ce0e17be6d3543d1cb1b940`），首次安装时间、UID及数据目录保持。未启动Activity，安装后保持停止；未启动内嵌或验证真实库迁移/SAF，不将电脑结果外推为手机验收。
-- 文档影响：HANDOVER记录电脑实际安装及手机已装未启动；Android/Web入口区分两端来源，能力地图同步档案部署边界。安装证据只留忽略目录；后补文档不重标已装来源，不自动合并PR或扩展清理。
-
-## feat(app): 作者档案双端原位集成与备份导入保护（2026-11-04 第六百七十九笔）
-
-执行 AI：完整型号未知（主代理与工程子代理；当前会话无可核实的完整型号/变体）；GPT-6 Luna（公开作者身份研究子代理，用户明确指定）。
-
-- App/Web 作者作品页原位整合附属资料、候选审核、人工编辑及可选公开资料检查；普通/COS 以各自内部身份定位，不新增底部 Tab，不改 TXT 来源或作者关联。Web 保存与退出放在右侧推荐偏好卡片下方，窄屏随内容排列，不吸附遮挡。
-- 协议新增档案/刷新/认证头像代理，附属资料使用既有 KV；0021 清理已删除作者档案，0022 保留跨删除重建的版本代际。便携 v2 可选携带档案，恢复保护本端资料并关闭外部维护开关；来源采集有界且拒绝内网/代理/重定向，HTML 使用官方 x/net/html，Go1.27.3修复证书验证漏洞。Android新包序号23，实际安装另记。
-- 浏览趋势按用户澄清定位PC导出→App导入的单向问题：修复App到期自动备份覆盖待导入同名PC文件的真实机制，自动改用独立文件，恢复来源显式选择，读盘/校验先置忙且取消可重试。未将该机制冒称为那次现场的已确认根因；事件序列化保留原日期/身份的回归与双隔离Go实例导入、趋势一致、不重复验证分别记录。
-- 按后续截图将存储明细改为独立页面，客户端异常直接打开全部日志，移除设置顶部重复分类入口；保留既有资源口径、错误重试和数据获取分层。作者研究已按用户要求移交，真实档案写入0，报告与审核清单仅在忽略目录。
-- 文档影响：作者领域/API、安全、架构、备份专题、各端入口、UI 约束、监控与交接；真实作者研究材料不入仓库。
-- 最终代码81042304完整CI、安全、文档通过；Web355项单元/41项浏览器回归通过并核验最终截图，PC候选116文件摘要及版本核对通过。c33392a1的code23 Release候选已过同源门禁；各来源与网络/趋势隔离实测见HANDOVER。本轮未部署日常服务、未安装手机，未向真库写合成测试或启动默认Android设备；后补文档不重标产物来源。
-
-## docs(app): 合并后归档交付记录并收尾产物清理（2026-10-31 第六百七十八笔）
-
-执行 AI：opencode-go-chat/deepseek-v4.1-flash（主代理；工具 ZCode）。
-
-- [PR #33](https://github.com/Surtr42u/qimeng-media/pull/33)已合入master为258185d5，PR head a652b3b6的完整CI、安全与文档门禁通过；本地只留master并与origin同步，已完成用途的任务分支清空。合并与纯文档提交不重标已装包来源，仍为576b32dd/code21。
-- HANDOVER的已结项记录、旧候选与安装状态原样迁入[2026-10-26～31交付归档](history/DELIVERY-20261026-20261031.md)，当前交接只留现状、安装记录与边界；同步README、Android入口、架构、能力地图、API files与历史索引，链接和章节可达。
-- 本地清理4,930个文件、4,963,049,993字节（约4.62GiB）已完成并留审计摘要；当前程序/Web、运行日志、安装核验、校时改前记录、内容摘要与数据库保留，旧包不再作为回退材料。
-- 云端过时产物按计划333份收尾：本轮删除剩余179份，累计7,667,974,082字节（约7.14GiB），复核333份均不可达；保留实际安装来源PC artifact13032136003与Release artifact13032530835，两者仍可下载且未过期。
-- 本次不重新构建、不安装、不操作设备，真实媒体、历史、配置与密钥保留。文档影响：交接、交付归档、变更历史、历史索引、能力地图、README、Android入口、架构与API files；无OpenAPI/schema变化。
-- 提交前文档检查（tools/check_docs.py）0项错误；云端门禁随本次推送执行，结果以实际运行为准。
-
-## fix(app): 上传与归档使用本次上传时间（2026-10-31 第六百七十七笔）
-
-- 首次上传固定入队时间，归档副本同刻，归档再传保留，忽略下载器旧日期；旧在途任务和重试时间保持。补首次/归档再传、归档去重与回退路径回归。
-- 增加仅本地显式小批日期校正，先报告、数量/版本/路径保护、归档内容比对，用户范围仅最新一批作者Liepraag七项；实际为10月31日凌晨入库，按作者关联及完整内容摘要唯一匹配后，两端物理时间与数据库已对齐手机原入库时间，另五项不变。
-- 干净来源576b32dd的完整CI/安全/文档16项及PC/Release出包全部通过。原手机同签名保留数据覆盖到code21、签名/内嵌来源/已装字节一致；电脑正常停服后更新服务端与111份Web，HTTP逐文件、health/ready及七项校正核对通过。恢复手机原NAS连接、清理手机维护临时文件；完整证据见HANDOVER，不外推为NAS硬件或新增性能验收。
-- 文档影响：Android入口、文件领域、服务端入口、安全边界与交接；无协议/schema变化。执行 AI：完整型号未知（主代理，当前会话未提供可核实完整型号与变体）。
-
-## chore(app): 准备局域网连接双端保留数据安装（2026-10-31 第六百七十六笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 用户明确安装电脑和原手机，不再测试；连接功能不变，仅递增安装序号19→20，版本0.2.1/schema20保持，为同源PC及签名arm64 Release包准备云端来源。
-- 不新增业务测试，不卸载或清除日常手机数据，不主动启动App；安装只核对云端来源/既有门禁、签名、包字节及配置保留。云端打包自带检查继续执行，不修改流水线来绕过。
-- 文档影响：HANDOVER区分发布准备和最终装机证据；本笔不改变UI/协议/领域/持久化规则，Android已有安装序号单源说明继续适用。实际部署结果后补，不把候选或旧包算新安装。
-
-## feat(app): 本机与NAS双模式连接、局域网发现及五地址记忆（2026-10-31 第六百七十五笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 登录页重做为本机/NAS双模式按钮、连接卡片、可滚动布局与折叠手填入口；服务器设置可回到NAS查找。NAS先按成功历史顺序单播寻找，均不通再广播当前网卡；单候选自动填入、多候选选择，不自动提交密码或迁移旧会话。
-- DataStore保留最近5个去重成功NAS地址，本机登录/未确认预置不覆盖；兼容旧单槽，适应Wi-Fi/网线往返。显式选择/手填不被迟到候选覆盖，离开前台/切本机取消搜索。自动发现等待冷启动权限处理后再启动，主动动作走原权限门。
-- 服务端独立有界IPv4 UDP发现，不缓存网卡IP或访问业务库；回环内嵌不开放。换网瞬间单包/旧IP路由失败不阻断后续查找；AI调试工具提供JSON输出。只用标准库，无新运行时依赖，选型复查/退役条件见server入口。
-- 验证：代码c04a9890的完整CI/安全/文档16项通过。云端APK摘要核对后在qimeng_api35独立初始数据/只读会话核验模式、搜索/空态、手填和浅深色；现场确认旧窗口adjustPan，最终显式adjustResize后状态栏不再重叠，键盘保留可滚动到主操作。会话已关闭；未更新日常PC/手机，真实切网、API37权限弹窗及NAS硬件另验，不宣称安装完成。
-- 文档影响：Android/server入口、UI、安全、架构、能力地图、部署与工具说明同批同步；HTTP OpenAPI/SDK和数据库schema未变。NAS bridge/host网络条件与来源证据见HANDOVER；后补验证文档保留c04a9890产物身份。

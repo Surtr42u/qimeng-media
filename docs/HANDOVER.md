@@ -106,6 +106,7 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 | R4 | `tools/ai_maintenance/mcp_server.py` stdio MCP 适配器：JSON-RPC 2.0 子集（initialize/notifications/ping/tools.list/tools.call/取消与超时），与 CLI 共用同一 dispatch 与工具 Schema；协议层用两个独立合成客户端验证；**真实 AI 客户端（Codex/Claude 等）接入未实测**，README 已如实说明。扩展性增量（2026-11-07 用户补充）：精简领域目录 `platform.catalog`、按需 `platform.tool.describe`/`platform.rules`、注册表只存惰性 `module:handler` 引用、模块缺失/废弃/禁用降级、权限与发现分离（`QIMENG_AI_GRANTED_PERMISSIONS` 在 `execute_tool` 强制）、MCP 完整 `tools/list` 保留；管理员 Bearer 绕过风险已在 README/ADR/rules 记录为正式开放 AI 写入前的隔离前置项 |
 | R5 | `server/internal/maintenance` Go worker：按注册 handler 的 kind 领取、租约 TTL+心跳、有界并发、逐步骤记录、暂停/取消后停止并保留已提交步骤、租约过期/重启后从已完成步骤续跑不重复副作用、panic 兜底、`backup_export` 内置 handler（复用 `backup.Manager`）与工件记录；同幂等键不同载荷指纹返回 409；由 `cmd/qimeng` 组合根以 `safego.Go` 启动，参数为具名配置/`QIMENG_*`；无 handler 的 kind 保持 queued 供未来外部 AI 执行器，未开放 HTTP 领取端点 |
 | R7 | 两代备份布局：`server/internal/authorattach` 作者镜像在 `path` 祖先目录为 `当前`/`current` 时按同根兄弟 `上次`/`previous` 推导上一代，两代独立摘要、先提交当前再写新当前、相同数据不轮换、上次代摘要不符/不可读拒覆盖、旧 flat3 行为不变；`tools/migrate_backup_layout.py` 默认只读核对、`--apply` 复制生成两代、绝不删除；Web `maintenance-folder.ts` 与 Android `MaintenanceFolderRepository` 同约定两代轮换并保留旧布局只读兼容；文档见 [作者镜像两代分代目录](api/authors.md#作者总表镜像的两代分代目录2026-11-07) |
+| 追加需求 2（2026-11-07 第二轮） | 9 个已报告问题修复（PR #44 Codex inline finding）：媒体目录筛选改用 GET /assets directory、计划绑定/校验实例、作者删除前复检档案/来源、cleanup merge 参数、按作者名回读、MCP 取消与写串行、Android 两代历史备份读取、Worker 租约 fencing（每次领取唯一 token + 未过期校验 + 步骤/工件事务围栏）；工具层按需工作流 `platform.playbook` 与 MCP async；Go 侧 ADR-0057 P1 首批（migration 0025 ai_clients/ai_audit、aiauth scope/审计、设备级 device.apply+device_ids、本地 `qimeng ai-client` 管理）；Android 后台设备结果包 Worker（WorkManager、设备令牌、SAF/所有文件访问门禁、领取/下载/应用/回读/回传）源码与 JVM 测试 |
 | 追加需求 | 组图命名与作品编号（§6.6）：Go 命名解析纯函数（`server/internal/filing/workname.go`）区分主作品编号与组内页码、`/assets/name-suggestions` 对组图页建议下一作品编号；AI 工具层 `media_naming.py` 规划/校验/回读引擎与 `media.organize.prepare/apply` 适配（计划确认后才执行，自动改名判失败）；搜索语义与文件名显示（§6.7）：共享 Go 谓词 `qimeng_search_token`（数字按独立数字段、组图页码 `(n)` 定位、列表/计数/分面同口径），Web 搜索结果完整文件名/换词加载态/详情复制与 Android 搜索缩略图下短名/详情完整名+复制（Lead 直接实现并补 JVM 单测）同批交付 |
 
 ### 9.2 本机验证与云端 CI
@@ -117,7 +118,8 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 ### 9.3 未安装与未验收边界
 
 - 本轮**未部署**到现装 PC/手机；两代维护目录未迁移真实维护目录（迁移工具只在合成目录验证）；组图命名与媒体整理未在真实媒体库执行；AI 工具未对真实实例运行写入；MCP 未接真实 AI 客户端；Android 搜索文件名/详情复制未真机走查；搜索修复未在真实大库与内嵌模式做性能/行为验收。
-- 服务端仍只有管理员 Bearer：AI 工具层凭据隔离与权限声明不等于服务端最小权限；正式开放 AI 写入前需另行评审受限凭据或不可绕过执行端隔离（ADR-0056 §5）。
-- 外部 AI 执行器的「可信领取/续租/完成」协议仍未定稿；Android 设备配对/后台 Worker 未实现；NAS 执行器与目标硬件未验。
-- Go 细粒度权限与 AI 客户端凭据仅完成方案（[缺口与权限模型](AI_PLATFORM_API_GAPS.md)、[ADR-0057](adr/0057-AI客户端凭据与细粒度权限模型.md)）：当前主 API 仍只有管理员 Bearer/用户会话，P1 起按阶段实现只增 migration/OpenAPI/鉴权/审计；本轮未改 Go 协议或行为。
+- **9 个已报告问题的修复均只在本机做定向验证**：AI 工具 5 项（新增 test_ai_regressions 12 项）、Web 两代备份 24 项、Android 历史备份 28 项、Worker fencing 定向 go test；未跑全量、未接真实库/真实维护目录。
+- **Go AI 客户端凭据（ADR-0057 P1 首批）源码已交付但未安装**：`qimeng ai-client` 本地管理、scope/审计/设备级隔离代码与定向 go test 通过；HTTP 管理端点、OpenAPI/sdk.lock、协议化 scope、按客户端限流/预算、审计查询 API/UI 仍未实现；服务端进程缓存使异地撤销/轮换约 5 秒生效。
+- **Android 后台 Worker 源码已交付但未安装/未真机验收**：JVM 单测 34 项与 compileDebugKotlin 通过；Doze/厂商后台限制、后台拉起内嵌 FGS、SAF/所有文件访问授权撤回、真实 PC→手机端到端、断网/进程被杀恢复均未验证；无段级进度持久化，进程强杀可能重下整包；设备令牌依赖服务端 ADR-0057 P1（旧服务端会 401，本实现不回退会话 token）。
+- 外部 AI 执行器的「可信领取/续租/完成」协议仍未定稿；Android 设备配对（短码/二维码）未实现；NAS 执行器与目标硬件未验；Web/Android 未安装更新，现装仍为 796d813f。
 
