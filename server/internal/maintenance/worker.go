@@ -475,8 +475,7 @@ func (w *Worker) process(ctx context.Context, claimed Detail) {
 	// 完成前把状态补齐到 verifying（账本状态机要求 verifying -> completed/
 	// partial）：短流水线（末步骤阶段早于 verifying）与异常恢复都靠这里收敛，
 	// 避免出现「步骤全完成但状态停在 inventory/applying」的不可判定终态。
-	status, settleErr := w.settleStages(ctx, job.ID, status, StatusVerifying)
-	if settleErr != nil {
+	if _, settleErr := w.settleStages(ctx, job.ID, status, StatusVerifying); settleErr != nil {
 		if errors.Is(settleErr, ErrLeaseLost) || ctx.Err() != nil {
 			w.logger.Info("完成前推进状态时租约已失效，停止", "jobId", job.ID, "step", "")
 			return
