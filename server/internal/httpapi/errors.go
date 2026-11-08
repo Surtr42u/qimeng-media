@@ -61,6 +61,22 @@ const (
 	codeRateLimited        = "RATE_LIMITED"
 	codeBackupInProgress   = "BACKUP_IN_PROGRESS"
 	codeBackupUnavailable  = "BACKUP_UNAVAILABLE"
+	// 研究流水线（ADR-0053）：RESEARCH_DISABLED=整体关闭；sidecar 三类分别
+	// 对应未配置/不可达（503）、超时（504）、异常响应（502）。
+	codeResearchDisabled           = "RESEARCH_DISABLED"
+	codeResearchSidecarDisabled    = "RESEARCH_SIDECAR_DISABLED"
+	codeResearchSidecarUnavailable = "RESEARCH_SIDECAR_UNAVAILABLE"
+	codeResearchSidecarTimeout     = "RESEARCH_SIDECAR_TIMEOUT"
+	codeResearchSidecarError       = "RESEARCH_SIDECAR_ERROR"
+	// 持久维护任务账本（ADR-0054）：非法状态迁移/终态不可变更。
+	codeStateConflict = "STATE_CONFLICT"
+	// 独立 AI 客户端凭据（ADR-0057 P1）：身份有效但缺少目标动作所需 scope，
+	// 或动作尚未向 AI 开放（需管理员会话）。2026-11-08 起已纳入 OpenAPI
+	// （Forbidden 响应）；语义细节见 SECURITY「独立 AI 客户端凭据」节。
+	codeForbiddenScope = "FORBIDDEN_SCOPE"
+	// 外部执行器租约失效（过期/暂停/取消/终态/被重领）：执行器必须停止，
+	// 不得继续写步骤或终态（ADR-0058 fencing 语义）。
+	codeLeaseLost = "LEASE_LOST"
 )
 
 // contentTypeJSON 全部 JSON 响应的 Content-Type 唯一取值（charset 显式

@@ -1,0 +1,961 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qimeng.local/schemas/research-kit-results.schema.json",
+  "title": "research_kit JSONL contracts",
+  "description": "Contracts for tools/research_kit inputs and outputs. Every file is local evidence only; do not commit real author names, media paths or tokens. Tools do not validate against this file at runtime (no third-party dependencies).",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/job"
+    },
+    {
+      "$ref": "#/$defs/lensResult"
+    },
+    {
+      "$ref": "#/$defs/yandexResult"
+    },
+    {
+      "$ref": "#/$defs/saucenaoResult"
+    },
+    {
+      "$ref": "#/$defs/authorResult"
+    },
+    {
+      "$ref": "#/$defs/mediaProbe"
+    },
+    {
+      "$ref": "#/$defs/dhashReport"
+    },
+    {
+      "$ref": "#/$defs/avatarManifest"
+    },
+    {
+      "$ref": "#/$defs/pipelineResult"
+    }
+  ],
+  "$defs": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "partial",
+        "not_found",
+        "blocked",
+        "rate_limited",
+        "timeout",
+        "error",
+        "skipped"
+      ]
+    },
+    "shortText": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "job": {
+      "type": "object",
+      "description": "Input line shared by lens_batch/pipeline (avatar_fetch uses {id,url}).",
+      "required": [
+        "id",
+        "file"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rid": {
+          "type": "string",
+          "description": "Optional public research hint: @handle, x:handle, post:<id>, kemono:<service>:<creator>[:postId]."
+        }
+      },
+      "additionalProperties": true
+    },
+    "lensResult": {
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "topTitles",
+        "topDomains",
+        "citesCount",
+        "resultUrl",
+        "ts"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "not_found",
+            "blocked",
+            "timeout",
+            "upload_rejected",
+            "error",
+            "skipped"
+          ]
+        },
+        "topTitles": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "title",
+              "domain"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "domain": {
+                "type": "string",
+                "maxLength": 100
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "topDomains": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string"
+          }
+        },
+        "citesCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resultUrl": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "string"
+        },
+        "frameSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "cacheHit": {
+          "type": "boolean"
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "elapsedMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blockedSignals": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string"
+          }
+        },
+        "errorCode": {
+          "type": "string",
+          "maxLength": 60
+        }
+      },
+      "additionalProperties": true
+    },
+    "yandexResult": {
+      "type": "object",
+      "required": [
+        "status",
+        "imageSha256",
+        "queriedAt",
+        "sites",
+        "similar",
+        "tags"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "imageSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "queriedAt": {
+          "type": "string"
+        },
+        "cbirId": {
+          "type": "string"
+        },
+        "resultUrl": {
+          "type": "string"
+        },
+        "sites": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": [
+              "title",
+              "domain",
+              "url"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "domain": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "url": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "snippet": {
+                "type": "string",
+                "maxLength": 160
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "similar": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "url",
+              "domain"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "domain": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "alt": {
+                "type": "string",
+                "maxLength": 120
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "notes": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "maxLength": 120
+          }
+        },
+        "cacheHit": {
+          "type": "boolean"
+        },
+        "errorCode": {
+          "type": "string",
+          "maxLength": 60
+        }
+      },
+      "additionalProperties": true
+    },
+    "saucenaoResult": {
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "ts"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "low_confidence",
+            "no_match",
+            "blocked",
+            "rate_limited",
+            "timeout",
+            "error",
+            "skipped"
+          ]
+        },
+        "similarity": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "creator": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "index": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "extUrls": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "ts": {
+          "type": "string"
+        },
+        "cacheHit": {
+          "type": "boolean"
+        },
+        "errorCode": {
+          "type": "string",
+          "maxLength": 60
+        }
+      },
+      "additionalProperties": true
+    },
+    "authorResult": {
+      "type": "object",
+      "description": "fxtwitter_probe or kemono_probe output (trimmed).",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "author",
+            "post",
+            "kemono"
+          ]
+        },
+        "handle": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "bio": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "bannerUrl": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "website": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "joined": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "followers": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "following": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tweets": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "links": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "object"
+          }
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "authorHandle": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "authorName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "authorId": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "photos": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "service": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "creator": {
+          "type": "object"
+        },
+        "posts": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object"
+          }
+        },
+        "cdn": {
+          "type": "object"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fetchedAt": {
+          "type": "string"
+        },
+        "cacheHit": {
+          "type": "boolean"
+        },
+        "errorCode": {
+          "type": "string",
+          "maxLength": 60
+        }
+      },
+      "additionalProperties": true
+    },
+    "mediaProbe": {
+      "type": "object",
+      "required": [
+        "name",
+        "bytes",
+        "sha256",
+        "status",
+        "tags",
+        "frames"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "path": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "partial",
+            "error"
+          ]
+        },
+        "container": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "durationSec": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "width": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "height": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "fps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "videoCodec": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "audioCodec": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "tagsFound": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "frames": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": [
+              "pct",
+              "crop",
+              "file",
+              "bytes"
+            ],
+            "properties": {
+              "pct": {
+                "type": "number"
+              },
+              "crop": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "width": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "height": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "errorCode": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "probedAt": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "dhashReport": {
+      "type": "object",
+      "required": [
+        "tool",
+        "hashSize",
+        "threshold",
+        "refs",
+        "matches",
+        "stats"
+      ],
+      "properties": {
+        "tool": {
+          "const": "dhash_compare"
+        },
+        "hashSize": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 16
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "thresholds": {
+          "type": "object"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "ref",
+              "candidate",
+              "distance",
+              "hit",
+              "verdict"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "candidate": {
+                "type": "string"
+              },
+              "distance": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "hit": {
+                "type": "boolean"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "same_frame",
+                  "manual_review",
+                  "different"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "stats": {
+          "type": "object"
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "avatarManifest": {
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "sourceUrl",
+        "format",
+        "width",
+        "height",
+        "bytes",
+        "sha256",
+        "savedAs",
+        "ts"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "blocked",
+            "not_found",
+            "rate_limited",
+            "timeout",
+            "error",
+            "skipped"
+          ]
+        },
+        "sourceUrl": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "finalUrl": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "jpeg",
+            "png",
+            "gif",
+            "webp",
+            ""
+          ]
+        },
+        "width": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "height": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "savedAs": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "jpeg": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "jpegBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ts": {
+          "type": "string"
+        },
+        "errorCode": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "additionalProperties": true
+    },
+    "pipelineResult": {
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "kind",
+        "ts"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "partial",
+            "failed",
+            "skipped"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "image",
+            "video"
+          ]
+        },
+        "media": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "durationSec": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "width": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "height": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "tagsFound": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "lens": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "topDomains": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "string"
+              }
+            },
+            "citesCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "hit": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "yandex": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "sites": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "domains": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "string"
+              }
+            },
+            "hit": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "saucenao": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "similarity": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "creator": {
+              "type": "string"
+            },
+            "index": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "author": {
+          "type": "object"
+        },
+        "notes": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          }
+        },
+        "ts": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

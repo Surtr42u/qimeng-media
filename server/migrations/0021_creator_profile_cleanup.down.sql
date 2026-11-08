@@ -1,0 +1,1 @@
+DROP TRIGGER creator_profile_author_deleted;

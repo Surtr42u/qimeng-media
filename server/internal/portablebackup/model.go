@@ -9,11 +9,13 @@ type AppPrefs struct {
 }
 
 type Author struct {
-	AuthorId        string `json:"authorId"`
-	CreatedAtMillis *int64 `json:"createdAtMillis,omitempty"`
-	DisplayName     string `json:"displayName"`
+	AuthorId        string  `json:"authorId"`
+	AvatarData      *string `json:"avatarData,omitempty"`
+	CreatedAtMillis *int64  `json:"createdAtMillis,omitempty"`
+	DisplayName     string  `json:"displayName"`
 
 	Origin          *string `json:"origin,omitempty"`
+	ProfileJson     *string `json:"profileJson,omitempty"`
 	UpdatedAtMillis *int64  `json:"updatedAtMillis,omitempty"`
 }
 
@@ -33,6 +35,7 @@ type BackupData struct {
 	AlbumRules *[]map[string]interface{} `json:"albumRules,omitempty"`
 
 	AppPrefs        *AppPrefs         `json:"appPrefs,omitempty"`
+	AuthorMasterTxt *string           `json:"authorMasterTxt,omitempty"`
 	AuthorMediaRefs *[]AuthorMediaRef `json:"authorMediaRefs,omitempty"`
 	Authors         *[]Author         `json:"authors,omitempty"`
 	CosWorks        *[]CosWork        `json:"cosWorks,omitempty"`
@@ -112,6 +115,9 @@ type ImportResult struct {
 	AssetsMatched *int `json:"assetsMatched,omitempty"`
 
 	AssetsTagsReplaced *int `json:"assetsTagsReplaced,omitempty"`
+
+	// AuthorProfilesReplaced 本次因 replace 被整份替换的作者档案数；keep/未传时缺省。
+	AuthorProfilesReplaced *int `json:"authorProfilesReplaced,omitempty"`
 
 	AuthorRefsImported *int `json:"authorRefsImported,omitempty"`
 

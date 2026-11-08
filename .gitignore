@@ -70,6 +70,9 @@ Thumbs.db
 !.env.template
 !.env.sample
 *.pem
+# 研究 sidecar 本地凭据（只从环境/忽略文件注入，禁止入库）
+sidecar.token
+sidecar.env
 *.key
 *.jks
 *.p12

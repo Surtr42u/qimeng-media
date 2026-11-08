@@ -58,6 +58,7 @@ export function UploadQueueList({
         {(item.status === 'uploading' || item.status === 'queued' || item.status === 'needs-file' && item.percent > 0) && <progress className="upload-task-progress" max={100} value={item.percent} aria-label={`${item.name} 上传进度`} />}
         {item.status === 'needs-file' && <p className="rank-note">{needsFileHint(item)}</p>}
         {item.errorText && <p className="upload-err">{item.errorText}</p>}
+        {item.archiveNote && <p className="rank-note">{item.archiveNote}</p>}
         {item.status === 'needs-file' && <div className="upload-queue-actions"><Pill onClick={() => onResumePick?.(item.id)} title="重新选择同名文件后恢复该条上传">重选文件</Pill><Pill onClick={() => onRemoveItem?.(item.id)} title="从队列移除该条（含持久化记录）">移除</Pill></div>}
       </li>
     })}

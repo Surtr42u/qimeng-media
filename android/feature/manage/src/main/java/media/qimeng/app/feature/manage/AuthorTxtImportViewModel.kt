@@ -37,6 +37,7 @@ data class AuthorTxtImportUiState(
     val mirrorPath: String = "",
     /** 镜像目标片段（留空=最近导入的片段） */
     val mirrorFragmentFilename: String = "",
+    val mirrorMode: String = "fragment",
     /** 镜像保存进行中 */
     val mirrorSaving: Boolean = false,
 ) {
@@ -83,6 +84,7 @@ class AuthorTxtImportViewModel @Inject constructor(
                         files = names,
                         mirrorPath = mirror.path,
                         mirrorFragmentFilename = mirror.fragmentFilename,
+                        mirrorMode = mirror.mode,
                     )
                 }
             } catch (e: CancellationException) {
@@ -208,6 +210,7 @@ class AuthorTxtImportViewModel @Inject constructor(
                     AuthorMirrorConfig(
                         path = _uiState.value.mirrorPath.trim(),
                         fragmentFilename = _uiState.value.mirrorFragmentFilename.trim(),
+                        mode = _uiState.value.mirrorMode,
                     )
                 )
                 _uiState.update {
@@ -215,6 +218,7 @@ class AuthorTxtImportViewModel @Inject constructor(
                         mirrorSaving = false,
                         mirrorPath = saved.path,
                         mirrorFragmentFilename = saved.fragmentFilename,
+                        mirrorMode = saved.mode,
                         noticeMessage = NOTICE_MIRROR_SAVED,
                     )
                 }

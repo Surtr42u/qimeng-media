@@ -97,7 +97,7 @@ export function UploadWorkbench({ libraries, targetsReady = true }: { libraries:
         : []
     const allowed = inputs.filter((input) => !overLimit.includes(input))
     if (allowed.length > 0) {
-      queue.enqueue(allowed.map(toUploadInput), { libraryId: libId, dir })
+      queue.enqueue(allowed.map(toUploadInput), { libraryId: libId, libraryName: libraries.find(library => library.id === libId)?.name, dir })
     }
     setBlockMsg(
       overLimit.length > 0

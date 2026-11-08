@@ -142,6 +142,17 @@ interface DataModule {
     @Singleton
     fun bindBackupDirAccess(impl: media.qimeng.app.core.data.backup.SafBackupDirAccess): media.qimeng.app.core.data.backup.BackupDirAccess
 
+    // 设备结果包 Worker 的本机设置（2026-11-07 task-17）：targetDeviceId + 专用设备 AI 令牌
+    @Binds
+    @Singleton
+    fun bindDeviceApplySettingsRepository(
+        impl: media.qimeng.app.core.data.device.DataStoreDeviceApplySettingsRepository,
+    ): media.qimeng.app.core.data.device.DeviceApplySettingsRepository
+
+    @Binds
+    fun bindMaintenanceBackupWriter(impl: media.qimeng.app.core.data.backup.MaintenanceFolderRepository): media.qimeng.app.core.data.backup.MaintenanceBackupWriter
+
+
     @Binds
     @Singleton
     fun bindSystemInfoRepository(impl: media.qimeng.app.core.data.repository.SdkSystemInfoRepository): media.qimeng.app.core.data.repository.SystemInfoRepository

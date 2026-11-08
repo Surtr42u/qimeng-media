@@ -24,12 +24,13 @@ class EmbeddedServerConfigTest {
     }
 
     @Test
-    fun `环境变量六键齐备且路径直指 nativeLibraryDir 成品`() {
+    fun `环境变量与手机时区齐备且路径直指 nativeLibraryDir 成品`() {
         val secret = "test-secret-value"
         val env = EmbeddedServerConfig.environment(
             dataDir = "$filesDir/server",
             nativeLibraryDir = nativeDir,
             devSharedSecret = secret,
+            timeZoneId = "Asia/Shanghai",
         )
         assertEquals("127.0.0.1:18430", env["QIMENG_LISTEN"])
         assertEquals("$filesDir/server", env["QIMENG_DATA_DIR"])
@@ -38,6 +39,7 @@ class EmbeddedServerConfigTest {
         assertEquals(File(nativeDir, "libffmpeg_cli.so").absolutePath, env["QIMENG_THUMBNAIL_FFMPEG_PATH"])
         assertEquals(File(nativeDir, "libffprobe_cli.so").absolutePath, env["QIMENG_THUMBNAIL_FFPROBE_PATH"])
         assertEquals("1", env["QIMENG_AUTH_DEV_MODE"])
+        assertEquals("Asia/Shanghai", env["QIMENG_TIMEZONE"])
         // 批A：密钥键与 server config.go 同名同源，值=传入值（环境变量与内存槽同源不分叉）
         assertEquals(secret, env["QIMENG_AUTH_DEV_SHARED_SECRET"])
     }

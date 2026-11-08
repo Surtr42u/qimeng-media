@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/authoring"
@@ -28,13 +30,18 @@ func authorFromListRow(row db.ListAuthorsRow) gen.Author {
 	fileCount := int(row.FileCount)
 	viewCount := toInt(row.ViewCount) // toInt 抹平 sqlc interface{}
 	followed := row.Followed == 1
+	var createdAt *int64
+	if stamp, err := time.Parse(time.RFC3339Nano, row.CreatedAt); err == nil {
+		createdAt = ptr(stamp.UnixMilli())
+	}
 	return gen.Author{
-		Id:          &row.ID,
-		DisplayName: &row.DisplayName,
-		Type:        &t,
-		FileCount:   &fileCount,
-		Followed:    &followed,
-		ViewCount:   ptr(viewCount),
+		AddedAtMillis: createdAt,
+		Id:            &row.ID,
+		DisplayName:   &row.DisplayName,
+		Type:          &t,
+		FileCount:     &fileCount,
+		Followed:      &followed,
+		ViewCount:     ptr(viewCount),
 	}
 }
 
@@ -53,9 +60,9 @@ func (s *Server) findAuthorRow(ctx context.Context, id string) (db.ListAuthorsRo
 	return db.ListAuthorsRow{}, false, nil
 }
 
-// writeAuthorManageErr 作者管理端点（新建/改名/删除）的哨兵错误映射：
+// writeAuthorManageErr 作者管理端点（新建/改名/删除/合并）的哨兵错误映射：
 // 不存在 404；COS 作者 400（由目录扫描自动管理）；身份撞名 409（不合并）；
-// 非法名/显示名不自洽 400（留痕说明，客户端可直接透出）。
+// 非法名/显示名不自洽/合并自身 400（留痕说明，客户端可直接透出）。
 func (s *Server) writeAuthorManageErr(w http.ResponseWriter, what string, err error) {
 	switch {
 	case errors.Is(err, authorattach.ErrAuthorNotFound):
@@ -66,6 +73,8 @@ func (s *Server) writeAuthorManageErr(w http.ResponseWriter, what string, err er
 		writeErr(w, http.StatusConflict, codeConflict, "目标名字已存在作者（本端点不做合并，请先处理既有作者）")
 	case errors.Is(err, authorattach.ErrInvalidAuthorName):
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "作者名非法（规范化后无有效别名）")
+	case errors.Is(err, authorattach.ErrAuthorMergeSelf):
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "sourceAuthorId 与 targetAuthorId 不能相同")
 	case errors.Is(err, authorattach.ErrDisplayNameIdentityMismatch):
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "该作者显示名与身份不自洽，请先改名再操作")
 	default:
@@ -134,6 +143,49 @@ func (s *Server) PutApiV1AuthorsAuthorId(w http.ResponseWriter, r *http.Request,
 	// 镜像已由用例在提交成功后刷新，这里不重复刷。
 	s.invalidateRecommendCache()
 	s.writeAuthorOrInternal(r.Context(), w, "修改作者显示名", ref.ID)
+}
+
+// PostApiV1AuthorsMerge 原子合并重复作者（不可撤销）：source 身份删除并并入
+// target。事务、片段手术、关联迁移去重、关注并集、档案取舍、上传条目改指与
+// 镜像刷新全部由 authoredit 用例持有；本 handler 只做协议校验、哨兵映射与
+// 响应装配。两个 ID 均必填且不同；COS/不存在沿用作者管理错误映射。
+func (s *Server) PostApiV1AuthorsMerge(w http.ResponseWriter, r *http.Request) {
+	var body gen.PostApiV1AuthorsMergeJSONRequestBody
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	sourceID := strings.TrimSpace(body.SourceAuthorId)
+	targetID := strings.TrimSpace(body.TargetAuthorId)
+	if sourceID == "" || targetID == "" {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "sourceAuthorId 与 targetAuthorId 不能为空")
+		return
+	}
+	if sourceID == targetID {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "sourceAuthorId 与 targetAuthorId 不能相同")
+		return
+	}
+	result, err := s.authorEdit.MergeAuthors(r.Context(), sourceID, targetID)
+	if err != nil {
+		s.writeAuthorManageErr(w, "合并作者", err)
+		return
+	}
+	// 作者集合与资产关联都变了：推荐输入失效（确定性动作）；镜像已由用例
+	// 在事务提交成功后刷新，这里不重复刷。
+	s.invalidateRecommendCache()
+	writeJSON(w, http.StatusOK, gen.AuthorMergeResult{
+		SourceAuthorId:         result.SourceAuthorID,
+		TargetAuthorId:         result.TargetAuthorID,
+		AssetsMoved:            result.AssetsMoved,
+		AssociationsDeduped:    result.AssociationsDeduped,
+		WorksMerged:            result.WorksMerged,
+		SourcesMerged:          result.SourcesMerged,
+		AliasesMerged:          result.AliasesMerged,
+		FollowsMerged:          result.FollowsMerged,
+		ProfileMoved:           result.ProfileMoved,
+		SourceProfileDiscarded: result.SourceProfileDiscarded,
+		UploadEntriesMoved:     result.UploadEntriesMoved,
+		DeletedSource:          result.DeletedSource,
+	})
 }
 
 // DeleteApiV1AuthorsAuthorId 删除作者（TXT 块 + 关联 + 作者行三清；媒体文件

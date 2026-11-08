@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { Pill } from '@/components/ui/pill'
@@ -13,6 +13,8 @@ import {
   type MediaType,
 } from '@/hooks/use-assets'
 import { useAuthors } from '@/hooks/use-authors'
+import { CreatorNewWorks } from '@/components/author/CreatorNewWorks'
+import { CreatorProfileCard } from '@/components/author/CreatorProfileCard'
 import { useTags } from '@/hooks/use-tags'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { assetDetail } from '@/lib/route-keys'
@@ -48,6 +50,9 @@ function stripCosSuffix(name: string): string {
 export default function CollectionPage() {
   const navigate = useNavigate()
   const { kind = 'tag', name = '' } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const showNewWorks = searchParams.get('section') === 'updates'
+  const requestedAuthorId = searchParams.get('authorId')
   const isAuthor = kind === 'author'
   const kindLabel = isAuthor ? '作者' : '标签'
 
@@ -67,9 +72,10 @@ export default function CollectionPage() {
   // 「 ·COS」后缀匹配——数据页/榜单行经 authorDisplayName 渲染，COS 作者名带
   // 「 ·COS」后缀，原精确匹配恒失败 → 空态（2026-09-05 反馈③的根因）。
   const tag = isAuthor ? undefined : tags?.find((t) => t.name === name)
+  const authorMatches = authors?.filter(a => a.displayName === name || a.displayName === stripCosSuffix(name)) ?? []
   const author = isAuthor
-    ? (authors?.find((a) => a.displayName === name) ??
-      authors?.find((a) => a.displayName === stripCosSuffix(name)))
+    ? requestedAuthorId ? authors?.find(a => a.id === requestedAuthorId)
+      : authorMatches.length === 1 ? authorMatches[0] : undefined
     : undefined
   const found = isAuthor ? author : tag
 
@@ -181,11 +187,18 @@ export default function CollectionPage() {
   return (
     <div className="page" id="page-collection">
       <div className="page-head">
-        <h2>{name}</h2>
+        <h2>{isAuthor ? '作者主页' : name}</h2>
         <p>
           {kindLabel} · {count} 个文件
         </p>
       </div>
+      {isAuthor && author?.id && <CreatorProfileCard key={author.id} author={{ ...author, id: author.id }} />}
+      {isAuthor && !requestedAuthorId && authorMatches.length > 1 && <p role="alert">存在同名作者，请从作者管理中选择明确的作者身份。</p>}
+      {isAuthor && author?.id && <div className="creator-content-tabs" role="group" aria-label="作者内容分区">
+        <Pill active={!showNewWorks} onClick={() => { const next = new URLSearchParams(searchParams); next.delete('section'); setSearchParams(next, { replace: true }) }}>本地作品</Pill>
+        <Pill active={showNewWorks} onClick={() => { const next = new URLSearchParams(searchParams); next.set('section', 'updates'); setSearchParams(next, { replace: true }) }}>作者新作</Pill>
+      </div>}
+      {isAuthor && author?.id && showNewWorks ? <CreatorNewWorks key={author.id} authorId={author.id} /> : <>
       {isAuthor && author ? (
         <section className="filter-card" aria-label="文件筛选">
           {/* 维度行：徽标=各维候选数（不含「全部/收起」——旧版芯片文字口径） */}
@@ -269,6 +282,7 @@ export default function CollectionPage() {
         sentinelRef={sentinelRef}
         sentinelActive={!!found}
       />
+      </>}
     </div>
   )
 }

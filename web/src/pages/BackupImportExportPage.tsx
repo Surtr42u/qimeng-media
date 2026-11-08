@@ -1,17 +1,27 @@
+import { useSearchParams, Link } from 'react-router'
 import { BackupCard } from '@/components/manage/BackupCard'
+import { TxtAuthorImportCard } from '@/components/manage/TxtAuthorImportCard'
+import { MaintenanceFolderCard } from '@/components/manage/MaintenanceFolderCard'
 import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
+import { useMaintenanceFolder } from '@/hooks/use-maintenance-folder'
+import { MAINTENANCE_UPLOAD_PATH } from '@/lib/route-keys'
 
-/**
- * 备份导入导出子页（数据管理 hub「备份导入导出」卡 →
- * /app/maintenance/files/backup）：BackupCard 原样搬移挂载（2026-09-17
- * hub 拆分零改动），卡片职责见组件自身注释。
- */
 export default function BackupImportExportPage() {
-  return (
-    <div className="page manage-workspace" id="page-maintenance-files-backup">
-      <ManagePageHeader title="备份导入导出" description="先传媒体原件，再合并当前 v2 的记录与关联；备份文件不包含媒体本体" />
-
-      <BackupCard />
-    </div>
-  )
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') ?? 'backup'
+  const { root, loading } = useMaintenanceFolder()
+  return <div className="page manage-workspace" id="page-maintenance-files-backup">
+    <ManagePageHeader title="资料备份与归档" description="一个目录管理作者资料、完整备份和上传归档" />
+    <MaintenanceFolderCard />
+    <nav className="maintenance-tabs" aria-label="资料维护任务">
+      {[['backup', '备份恢复'], ['authors', '作者TXT'], ['archive', '上传归档']].map(([value, label]) =>
+        <button className="pill" type="button" key={value} aria-pressed={tab === value} onClick={() => setParams({ tab: value }, { replace: true })}>{label}</button>)}
+    </nav>
+    {tab === 'authors' ? <TxtAuthorImportCard folderMode={root !== null} /> : tab === 'archive' ?
+      <section className="rank-card"><h3>上传归档</h3>
+        <p>{root ? `${root.name} / 上传归档` : '选择维护根目录后启用上传原件副本归档。'}</p>
+        <p className="rank-note">按库及目标目录归档。同名文件保留并提示，归档失败会单独显示在上传任务中。浏览器选择的原文件继续保留。</p>
+        <Link className="pill" to={MAINTENANCE_UPLOAD_PATH}>前往上传文件</Link>
+      </section> : <BackupCard folderMode={root !== null} directoryLoading={loading} />}
+  </div>
 }

@@ -118,6 +118,8 @@ HMAC 签名直链；
 `q`（FTS5 全文）与全部筛选参数同时生效。实现状态：M2 已实现（2026-08-29）——迁移 0002 建 FTS5 trigram 索引+聚合视图+触发器全集自动同步，`internal/search` 负责关键词解析与索引重建；
 详细语义见 DOMAIN_RULES §3 全文搜索口径
 
+2026-11-07 修订数字编号语义（用户反馈搜索「朱诺 11」返回 110/2011 等不相关内容）：纯数字关键词按独立数字段匹配（命中位置前后非 ASCII 数字），裸数字不命中组图页码，`(2)` 等括号页码词定位组图页；非数字关键词保持子串匹配。列表、`totalMatched`、`dateCounts` 与 facets 共用同一 `qimeng_search_token` 谓词（实现 `internal/store/searchtoken`），不接受客户端或其它服务端路径旁路。
+
 ## 出处/角色富化
 
 （M3）：扫描入库与移动/重命名时服务端按文件名匹配 130 组内置出处表（`internal/sourcematcher`），写 `assets.source` 与 `asset_characters`；

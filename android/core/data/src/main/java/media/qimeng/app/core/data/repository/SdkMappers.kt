@@ -102,6 +102,8 @@ internal object SdkMappers {
         fileCount = author.fileCount,
         followed = author.followed ?: false,
         viewCount = author.viewCount,
+        addedAtMillis = author.addedAtMillis,
+        txtOrder = author.txtOrder,
     )
 
     fun toNameSuggestion(suggestion: SearchSuggestion): NameSuggestion = NameSuggestion(

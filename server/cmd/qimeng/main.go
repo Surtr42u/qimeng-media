@@ -30,11 +30,14 @@ import (
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/buildinfo"
 	"qimeng-media/server/internal/config"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
 	"qimeng-media/server/internal/landiscovery"
 	"qimeng-media/server/internal/libraryrevision"
+	"qimeng-media/server/internal/maintenance"
 	"qimeng-media/server/internal/mediawrite"
+	"qimeng-media/server/internal/research"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
@@ -88,6 +91,16 @@ func main() {
 	// 在此之前出错也得有地方可看（stderr 直写）。
 	bootLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
+	// 本地管理子命令（ADR-0057：AI 客户端凭据管理不做 HTTP 端点，只在
+	// 服务端本机执行；明文 token 只经 stdout 输出一次，绝不进日志）。
+	if len(os.Args) > 1 && os.Args[1] == aiClientCommand {
+		if err := runAIClientCommand(os.Args[2:], os.Stdout, bootLogger); err != nil {
+			bootLogger.Error("AI 客户端管理失败", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	configPath := flag.String("config", "config.yaml", "配置文件路径（yaml，可不存在；环境变量始终优先于文件）")
 	showVersion := flag.Bool("version", false, "输出构建身份 JSON 后退出；不加载配置、不创建数据目录")
 	flag.Parse()
@@ -102,6 +115,10 @@ func main() {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		bootLogger.Error("加载配置失败", "error", err, "configPath", *configPath)
+		os.Exit(1)
+	}
+	if err := configureLocalTimeZone(cfg.TimeZone); err != nil {
+		bootLogger.Error("配置本地时区失败", "error", err)
 		os.Exit(1)
 	}
 
@@ -248,8 +265,44 @@ func main() {
 	})
 	syncService := syncchannel.New(syncchannel.Options{Config: cfg, Queries: queries, Writes: writeService,
 		TXT: txtService, Mirror: mirrorWriter, Logger: logger, Now: time.Now})
+	creatorProfiles := creatorprofile.New(conn, queries, time.Now, logger)
+	// 媒体研究流水线（ADR-0053）：服务端 provider 网关 + 本机 Lens sidecar。
+	// 默认关闭（嵌入式/Android 同样默认关闭，不新增监听面）；启用时 provider
+	// 出口只走内建安全 HTTP 客户端，Lens 只转发给 loopback sidecar。端点/凭据
+	// 不合法在构造期报错——与配置校验同口径，拒绝带病启动。
+	researchService, err := research.New(research.Options{
+		Config: cfg.Research, DataDir: cfg.DataDir, Logger: logger, Now: time.Now,
+	})
+	if err != nil {
+		logger.Error("组装研究流水线失败", "error", err)
+		os.Exit(1)
+	}
+	if cfg.Research.Enabled {
+		logger.Info("媒体研究流水线已启用",
+			"sidecar", cfg.Research.SidecarEndpoint != "",
+			"lensPerHour", cfg.Research.LensPerHour,
+			"lensPerDay", cfg.Research.LensPerDay,
+			"providerPerMinute", cfg.Research.ProviderPerMinute)
+	}
+	// 持久维护任务账本 + 内置 worker（ADR-0054 2026-11-07 实现补充）：HTTP
+	// 端点与 worker 共用同一 Service/sql.DB，不建第二套权威状态。worker 默认
+	// 启用但只领取已注册 handler 的 kind（当前仅 backup_export，复用上面同一个
+	// backupMgr，与定时/手动备份共享防重入闸）；未注册 kind（asset_research/
+	// author_cleanup/custom）保持 queued 供外部 AI 执行器。
+	maintenanceService := maintenance.New(maintenance.Options{
+		Conn: conn, Queries: queries, Logger: logger, Now: time.Now,
+	})
+	maintenanceWorker := maintenance.NewWorker(maintenance.WorkerOptions{
+		Service:      maintenanceService,
+		Backups:      backupMgr,
+		Logger:       logger,
+		PollInterval: cfg.MaintenanceWorker.PollInterval,
+		LeaseTTL:     cfg.MaintenanceWorker.LeaseTTL,
+		Concurrency:  cfg.MaintenanceWorker.Concurrency,
+	})
 	apiSrv, err := httpapi.New(httpapi.Deps{
-		Revision: revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
+		CreatorProfiles: creatorProfiles,
+		Revision:        revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
 		Conn:        conn,
 		Queries:     queries,
 		Bus:         bus,
@@ -259,6 +312,7 @@ func main() {
 		SysStatus:   newSysStatusAdapter(sysCollector, queries, cfg.DataDir, version).snapshot,
 		Metrics:     sysmon.Default.Handler(),
 		Backup:      backupMgr,
+		Maintenance: maintenanceService,
 		MediaSecret: secret,
 		TokenTTL:    cfg.TokenTTL,
 		Logger:      logger,
@@ -269,6 +323,7 @@ func main() {
 		Attach:     attachService,
 		Mirror:     mirrorWriter,
 		AuthorEdit: authorEditService,
+		Research:   researchService,
 	})
 	if err != nil {
 		logger.Error("组装 HTTP 服务失败", "error", err)
@@ -310,6 +365,18 @@ func main() {
 
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	creatorDone := make(chan struct{})
+	safego.Go(logger, "作者公开资料维护", func() { defer close(creatorDone); creatorProfiles.Run(ctx) })
+	// 维护任务 worker：默认启用；panic 由 worker 内层兜底（只影响单任务），
+	// 进程退出时停止领取并在关库前等在途任务收敛（maintenanceDone）。
+	maintenanceDone := make(chan struct{})
+	if cfg.MaintenanceWorker.Enabled {
+		safego.Go(logger, "维护任务 worker", func() { defer close(maintenanceDone); maintenanceWorker.Start(ctx) })
+	} else {
+		// 未启用：视为已收敛，下方统一等待无需再分支。
+		close(maintenanceDone)
+		logger.Info("维护任务 worker 已禁用（QIMENG_MAINTENANCE_WORKER_ENABLED=false）")
+	}
 	defer stop()
 	closeDiscovery, discoveryErr := landiscovery.Start(cfg.Listen, logger)
 	if discoveryErr != nil {
@@ -388,6 +455,19 @@ func main() {
 	// 工作池先收：等在途缩略图任务排空；再关总线让 SSE 订阅者收流结束，
 	// 最后关库连接——顺序反了会出现"关库后任务/总线还在投递"的竞态窗口。
 	apiSrv.CloseRecommendCache()
+	<-creatorDone
+	// 等 worker 退出再关库：worker 停止领取后仍在途的步骤可能写账本，先于
+	// conn.Close 收敛可避免「写已关闭连接」的噪声失败。用独立超时（shutdownCtx
+	// 可能已被 HTTP 优雅关闭耗尽）：若未来 handler 不响应 ctx 导致在途步骤不
+	// 收敛，记录后继续关库而不是挂死；任务保持原状态，租约到期后重领续跑。
+	workerWaitCtx, workerWaitCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	select {
+	case <-maintenanceDone:
+	case <-workerWaitCtx.Done():
+		logger.Warn("等待维护任务 worker 收敛超时，继续关闭数据库（在途步骤可能中断，租约到期后重领）",
+			"error", workerWaitCtx.Err())
+	}
+	workerWaitCancel()
 	if err := apiSrv.WaitThumbnailWarmup(shutdownCtx); err != nil {
 		logger.Warn("等待缩略图及图片尺寸回填退出超时", "error", err)
 	}

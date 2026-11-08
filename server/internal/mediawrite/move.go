@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/store"
@@ -57,6 +58,7 @@ func (s *Service) MoveAsset(ctx context.Context, assetID string, req MoveRequest
 	if err := s.enrichAsset(ctx, row.LibraryID, row.AssetID); err != nil {
 		s.logger.Warn("移动后重算出处失败（可重扫自愈）", "err", err, "assetId", row.AssetID)
 	}
+	(&authorattach.MirrorWriter{Logger: s.logger}).Refresh(ctx, s.q)
 	s.PublishLibraryChanged(events.LibraryChangeScope{LibraryID: row.LibraryID, AssetID: row.AssetID})
 	return nil
 }
@@ -89,6 +91,12 @@ func (s *Service) commitMove(ctx context.Context, row db.GetAssetWithLibraryRow,
 	if err := root.MkdirAll(filepath.FromSlash(path.Dir(newRel)), dirPerm); err != nil {
 		return fail(InternalFailure, "创建目标目录", err)
 	}
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fail(InternalFailure, "开始移动资料事务", err)
+	}
+	defer s.rollback(tx, "移动文件及作者TXT")
+	qtx := s.q.WithTx(tx)
 	sourceRel, targetRel := filepath.FromSlash(row.RelPath), filepath.FromSlash(newRel)
 	if err := s.renameFile(root, sourceRel, targetRel); err != nil {
 		if errors.Is(err, filing.ErrMoveTargetExists) {
@@ -96,16 +104,25 @@ func (s *Service) commitMove(ctx context.Context, row db.GetAssetWithLibraryRow,
 		}
 		return fail(InternalFailure, "移动文件", err)
 	}
-	if _, err := s.q.MoveAssetPath(ctx, db.MoveAssetPathParams{
+	_, updateErr := qtx.MoveAssetPath(ctx, db.MoveAssetPathParams{
 		RelPath: newRel, FileName: name, UpdatedAt: store.FormatTimestamp(s.now()), AssetID: row.AssetID,
-	}); err != nil {
+	})
+	if updateErr == nil {
+		// 改名=替换 TXT 作品行，不是追加：旧文件名行必须与路径更新同事务
+		// 消失，否则下次统一重建会把旧行当成无文件可匹配的污染（ADR-0024
+		// 片段本体唯一真相）。oldFileName 必须在 MoveAssetPath 之前取。
+		updateErr = (&authorattach.Service{Logger: s.logger}).RenameAssetWorks(
+			ctx, qtx, s.now(), row.AssetID, path.Base(row.RelPath), name)
+	}
+	if updateErr == nil {
+		updateErr = tx.Commit()
+	}
+	if updateErr != nil {
 		if rollbackErr := s.renameFile(root, targetRel, sourceRel); rollbackErr != nil {
-			// 新落点可能是唯一原件，原路径也可能已有外部新文件；保留两者，绝不清理或覆盖。
-			s.logger.Error("更新资产路径失败且回滚失败（原件保留，需恢复核对）",
-				"err", err, "rollbackErr", rollbackErr, "assetId", row.AssetID)
-			return fail(InternalFailure, "更新资产路径并回滚", errors.Join(err, fmt.Errorf("回滚移动: %w", rollbackErr)))
+			s.logger.Error("更新移动资料失败且文件回滚失败（原件保留）", "err", updateErr, "rollbackErr", rollbackErr, "assetId", row.AssetID)
+			return fail(InternalFailure, "更新移动资料并回滚", errors.Join(updateErr, fmt.Errorf("回滚移动: %w", rollbackErr)))
 		}
-		return fail(InternalFailure, "更新资产路径", err)
+		return fail(InternalFailure, "更新移动资料", updateErr)
 	}
 	return nil
 }

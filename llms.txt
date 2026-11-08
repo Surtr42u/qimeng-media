@@ -8,6 +8,9 @@
 - [AI_README_FIRST.md](AI_README_FIRST.md)：按任务读取的协作、验证和文档维护规范
 - [README.md](README.md)：产品总览与常用命令
 - [HANDOVER](docs/HANDOVER.md)：当前形态、工作事项与验证边界
+- [外部AI接入平台统一任务书 V2](docs/AI_PLATFORM_TASKBOOK.md)：现行执行清单（R0–R8：审计、工具核心与版本、受控写入、CLI/MCP、维护 Worker、跨端与两代备份）
+- [R0 平台审计](docs/AI_PLATFORM_AUDIT.md)：脚本清单、复用/退役映射与规则漂移证据
+- [外部AI维护任务书（历史）](docs/AI_MAINTENANCE_TASKBOOK.md)：用户场景与需求来源，执行清单已由 V2 取代
 - [性能与质量改进任务书](docs/OPTIMIZATION_TASKBOOK_20261025.md)：已实施范围、逐项验收缺口、基线审查记录与待选产品；不新增默认必读项
 - [此前代码质量任务书](docs/CODE_QUALITY_TASKBOOK.md)：此前职责整理的范围、参考代码和验收标准；交付状态查 HANDOVER，不重复立项
 
@@ -41,6 +44,9 @@
 - [作者/词表](docs/api/authors.md)
 - [上传/整理/回收站](docs/api/files.md)
 - [便携迁移/库快照](docs/api/backup.md)
+- [研究/核验](docs/api/research.md)：provider 网关与 Lens sidecar（默认关闭）
+- [维护任务队列](docs/api/maintenance.md)：持久账本、状态机、幂等、Go worker 与幂等冲突保护（源码已实现，未安装；外部执行器领取协议未定稿）
+- [设备结果包](docs/api/device.md)：PC→手机结果包登记/领取/段下载/回传/取消（服务端已实现未安装，Android Worker/配对待做）
 - [Makefile](Makefile)：构建与检查命令
 - [服务端](server/README.md)
 - [Web](web/README.md)

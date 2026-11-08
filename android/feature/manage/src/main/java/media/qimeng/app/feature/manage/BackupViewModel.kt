@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.backup.AutoBackupRunner
+import media.qimeng.app.core.data.backup.BackupFileKind
 import media.qimeng.app.core.data.backup.BackupFileStatus
 import media.qimeng.app.core.data.backup.BackupValidator
 import media.qimeng.app.core.data.backup.ValidatedBackupPayload
@@ -88,58 +90,64 @@ class BackupViewModel @Inject constructor(
      * （导出对象在备份目录里，目录未设时连 GET /export 都不发）；写入失败→错误横幅。
      */
     fun exportToBackupDir() {
-        if (_uiState.value.exporting) return
+        if (fileOperationBlocked()) return
         if (_uiState.value.autoBackupDirUri == null) {
             _uiState.update { it.copy(errorMessage = ERROR_NO_BACKUP_DIR) }
             return
         }
         _uiState.update { it.copy(exporting = true, errorMessage = null, noticeMessage = null) }
         viewModelScope.launch {
-            val written = runCatching { autoBackupRunner.writeNow() }.getOrNull()
-            _uiState.update {
-                if (written == null) {
-                    it.copy(exporting = false, errorMessage = ERROR_EXPORT_WRITE)
-                } else {
-                    it.copy(
-                        exporting = false,
-                        noticeMessage = NOTICE_EXPORT.format((written / BYTES_PER_KB).roundToInt()),
-                    )
+            try {
+                val written = autoBackupRunner.writeNow()
+                _uiState.update {
+                    if (written == null) it.copy(errorMessage = ERROR_EXPORT_WRITE)
+                    else it.copy(noticeMessage = NOTICE_EXPORT.format((written / BYTES_PER_KB).roundToInt()))
                 }
-            }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (_: Exception) { _uiState.update { it.copy(errorMessage = ERROR_EXPORT_WRITE) }
+            } finally { _uiState.update { it.copy(exporting = false) } }
         }
     }
 
-    /**
-     * 导入：直读备份目录的 qimeng_backup.json → 与文件导入完全相同的前置校验→确认弹窗→
-     * 幂等导入链路（[onFilePicked] 单源口径）。目录未设/无文件→可读横幅不出网。
-     */
-    fun importFromBackupDir() {
-        if (_uiState.value.importing) return
+    private fun fileOperationBlocked(): Boolean = _uiState.value.let { it.importing || it.exporting || it.pendingImport != null }
+
+    /** 恢复槽缺失文案（自动/上次/上上次/当前分别可辨认，避免一律报「还没有备份文件」）。 */
+    private fun missingBackupMessage(kind: BackupFileKind): String = when (kind) {
+        BackupFileKind.AUTOMATIC -> "备份目录还没有本机自动备份文件"
+        BackupFileKind.PREVIOUS -> "还没有上次备份文件（两代布局保留当前/上次两代）"
+        BackupFileKind.OLDER -> "还没有上上次备份文件（旧三代布局的「（上上次）」可只读恢复）"
+        else -> ERROR_NO_BACKUP_FILE
+    }
+
+    /** 显式读取所选槽；读盘和解析前即置忙，不能与手动导出交错。 */
+    fun importFromBackupDir(kind: BackupFileKind = BackupFileKind.MANUAL) {
+        if (fileOperationBlocked()) return
         if (_uiState.value.autoBackupDirUri == null) {
             _uiState.update { it.copy(errorMessage = ERROR_NO_BACKUP_DIR) }
             return
         }
+        _uiState.update { it.copy(importing = true, errorMessage = null, noticeMessage = null) }
         viewModelScope.launch {
-            // 先查状态再读字节：状态 null=目录里没有备份文件（文案口径），有状态但读
-            // 失败=授权被回收/IO 异常（区分文案，避免「没有文件」误导）
-            val status = runCatching { autoBackupRunner.readFileStatus() }.getOrNull()
-            if (status == null) {
-                _uiState.update { it.copy(errorMessage = ERROR_NO_BACKUP_FILE) }
-                return@launch
-            }
-            val bytes = runCatching { autoBackupRunner.readBackupBytes() }.getOrNull()
-            if (bytes == null) {
-                _uiState.update { it.copy(errorMessage = ERROR_READ_FILE) }
-                return@launch
-            }
-            // 校验下 Default 线程（2026-09-20 全库审查 P1）：64MB 上限的字节→字符串→
-            // 双次 Moshi 解析是页内最重的 CPU 活，Main 线程执行是 ANR 风险——R2 已修
-            // 导出侧（AutoBackupRunner 序列化段同口径），导入/校验侧此处补齐。
-            // onFilePicked 的同步入口仅供小体量直调/测试，生产大文件路径恒走本链。
-            val result = withContext(Dispatchers.Default) {
-                BackupValidator.validate(AutoBackupRunner.BACKUP_FILE_NAME, bytes)
-            }
-            stageValidation(result)
+            try {
+                val status = autoBackupRunner.readFileStatus(kind)
+                if (status == null) {
+                    _uiState.update { it.copy(errorMessage = missingBackupMessage(kind)) }
+                    return@launch
+                }
+                // 用解析后的真实文件名进入校验链：两代布局上次代是独立目录里的影库备份.json，
+                // 旧 flat3 才是「影库备份（上次）.json」，确认弹窗不能展示槽别名。
+                val backup = autoBackupRunner.readBackup(kind)
+                if (backup == null) {
+                    _uiState.update { it.copy(errorMessage = ERROR_READ_FILE) }
+                    return@launch
+                }
+                val result = withContext(Dispatchers.Default) {
+                    BackupValidator.validate(backup.fileName, backup.bytes)
+                }
+                stageValidation(result)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (_: Exception) { _uiState.update { it.copy(errorMessage = ERROR_READ_FILE) }
+            } finally { _uiState.update { it.copy(importing = false) } }
         }
     }
 
@@ -151,7 +159,7 @@ class BackupViewModel @Inject constructor(
      * 「检测到备份数据…」语义）。
      */
     fun onFilePicked(fileName: String, bytes: ByteArray) {
-        if (_uiState.value.importing) return
+        if (fileOperationBlocked()) return
         stageValidation(BackupValidator.validate(fileName, bytes))
     }
 
@@ -177,12 +185,17 @@ class BackupViewModel @Inject constructor(
      * 2026-10-03 撤 :sdk 直依赖批），确认时原样递回 Repository 发网。
      */
     fun confirmImport() {
+        if (_uiState.value.importing || _uiState.value.exporting) return
         val pending = _uiState.value.pendingImport ?: return
         _uiState.update { it.copy(pendingImport = null, importing = true, errorMessage = null) }
         viewModelScope.launch {
             try {
+                autoBackupRunner.snapshotBeforeImport()
                 val result = backupRepository.importBackup(pending.payload)
-                val warnings = result.warnings.orEmpty()
+                val warnings = result.warnings.orEmpty().toMutableList()
+                try { autoBackupRunner.refreshAfterImport() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { warnings.add("导入已完成，但最新备份写回失败：${failure.message ?: failure.javaClass.simpleName}") }
                 _uiState.update {
                     it.copy(
                         importing = false,
@@ -197,9 +210,10 @@ class BackupViewModel @Inject constructor(
                         warnings = warnings,
                     )
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(importing = false, errorMessage = ERROR_IMPORT) }
-            }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(errorMessage = ERROR_IMPORT) }
+            } finally { _uiState.update { it.copy(importing = false) } }
         }
     }
 

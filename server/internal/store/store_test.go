@@ -28,6 +28,29 @@ func openTestDB(t testing.TB) (*sql.DB, *db.Queries) {
 	return conn, db.New(conn)
 }
 
+// latestMigrationVersion 返回当前库已应用的最新迁移版本；回退步数按最新版本
+// 动态计算，新增 migration 后无需再手改固定步数（只允许改期望版本断言）。
+func latestMigrationVersion(t testing.TB, conn *sql.DB) int64 {
+	t.Helper()
+	var version int64
+	if err := conn.QueryRow("SELECT MAX(version) FROM schema_migrations").Scan(&version); err != nil {
+		t.Fatalf("读取迁移版本失败: %v", err)
+	}
+	return version
+}
+
+// migrateDownTo 回退到 targetVersion（不含）：按最新版本动态计算步数。
+func migrateDownTo(t testing.TB, conn *sql.DB, targetVersion int64) {
+	t.Helper()
+	steps := int(latestMigrationVersion(t, conn) - targetVersion)
+	if steps <= 0 {
+		t.Fatalf("当前版本不高于目标版本 %d，无需回退", targetVersion)
+	}
+	if err := MigrateDown(conn, steps); err != nil {
+		t.Fatalf("回退到 %d（%d 步）失败: %v", targetVersion, steps, err)
+	}
+}
+
 // newLibrary 建一个测试库并返回 id。
 func newLibrary(t *testing.T, q *db.Queries) string {
 	t.Helper()
@@ -276,6 +299,23 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
+	if !objExists(t, conn, "trigger", "creator_profile_revision_deleted") {
+		t.Fatal("0022 version floor trigger missing")
+	}
+	// 先回退到 0021（新增 migration 时步数随最新版本变化）。
+	migrateDownTo(t, conn, 21)
+	if objExists(t, conn, "trigger", "creator_profile_revision_deleted") {
+		t.Fatal("0022 trigger not rolled back")
+	}
+	if !objExists(t, conn, "trigger", "creator_profile_author_deleted") {
+		t.Fatal("0021 档案清理触发器未创建")
+	}
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatal(err)
+	}
+	if objExists(t, conn, "trigger", "creator_profile_author_deleted") {
+		t.Fatal("0021 未回退")
+	}
 	if !objExists(t, conn, "table", "upload_receipts") {
 		t.Fatal("0020 完成凭据表未创建")
 	}
@@ -590,12 +630,10 @@ func TestLegacyAliasAuthorPrune(t *testing.T) {
 
 	t.Run("空壳行全删", func(t *testing.T) {
 		conn, _ := openTestDB(t)
-		// 回退 0020+0019+0018+0017 复现升级前形态（0018 是纯索引迁移，回退只删索引；
+		// 回退 0021+0020+0019+0018+0017 复现升级前形态（0018 是纯索引迁移，回退只删索引；
 		// 再 up 会把 0017 的 DELETE 重新执行一遍），再种入 6 个历史空壳
 		// （无关联 + origin=import）。
-		if err := MigrateDown(conn, 4); err != nil {
-			t.Fatalf("MigrateDown(0020+0019+0018+0017) 失败: %v", err)
-		}
+		migrateDownTo(t, conn, 16)
 		now := FormatTimestamp(time.Now())
 		for _, id := range legacyIDs {
 			insertAuthor(t, conn, id, "import", now)
@@ -622,9 +660,7 @@ func TestLegacyAliasAuthorPrune(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("UpsertAsset 失败: %v", err)
 		}
-		if err := MigrateDown(conn, 4); err != nil {
-			t.Fatalf("MigrateDown(0020+0019+0018+0017) 失败: %v", err)
-		}
+		migrateDownTo(t, conn, 16)
 		// 白名单 id 但仍有文件关联 → 保留（重建后零关联作者行的既有形态，
 		// 与 DELETE /authors/import-txt 的「作者行保留」语义一致）。
 		insertAuthor(t, conn, "therealzoh", "import", now)

@@ -4,9 +4,29 @@
 
 ## 作者
 
+### 作者公开档案与维护
+
+`GET/PUT /authors/{authorId}/profile` 为普通/COS作者提供独立附属档案，不改变作者ID、显示名、TXT来源或作品关联。首次未配置档案返回revision=0；删除后同ID重建返回空字段及保留的更高版本，不能以revision是否0判断有无资料。PUT显式提交当前revision，过期版本409且不覆盖新资料；状态区分empty/candidate/verified，verified需HTTPS主页与非空有效证据链接。研究结果须以candidate写入供审阅，同名不等于同人。
+
+档案新增可选 `remark`（特殊情况备注，≤500 字，缺省为空）：**仅用于特殊情况**——作者已退圈、X/Patreon 等官方账号全部删除、身份证据只能来自 Wayback 等存档；常规作者留空。写入省略或 null 时保留已有值（兼容未升级客户端），显式空字符串清空；该字段随 v2 备份 `profileJson` 原样同步。
+
+| 字段 | 上限 | 使用规则 |
+|---|---|---|
+| `remark`（特殊情况备注） | 500 字（按 rune） | 仅用于上述特殊情况，常规作者留空；省略/null 保留原值，空字符串清空。 |
+
+`POST /authors/{authorId}/profile/refresh` 从保存主页读取公开HTML元数据生成candidate，绝不自动覆盖人工昵称/简介/头像；不把og:image宣传图当作者头像。失败保留原资料、旧候选和最近成功时间，在lastError明示；刷新期间编辑导致revision变化时拒绝迟到结果。用户审阅候选并显式PUT才应用。需要登录/API凭据、跳转或无可用元数据时明确失败，不声称取得X/Pixiv完整资料。
+
+autoRefresh默认关闭，开启需verified与明确主页；main每小时检查一次，每作者至少24小时检查间隔，串行遍历、全局最多2次外部读取。trackUpdates默认关闭，开启需verified及明确RSS/Atom feedUrl，返回最多30个去重公开条目；无订阅源的平台不能仅凭开关产生动态，不自动下载媒体。关闭追踪时清空已显示条目。手动刷新只访问已保存地址。外部请求边界见[安全专题](../SECURITY.md#作者公开资料出站访问)。
+
+头像通过认证`GET /authors/{authorId}/profile/avatar`读取保存图片或来源地址，无任意URL参数；响应`Cache-Control: no-store`，避免修改头像后复用旧HTTP缓存，类型只接受PNG/JPEG/GIF/WebP，失败502或无头像404。客户端不得把源avatarUrl直接嵌入页面产生跨站请求。v2备份可选profileJson保存档案，导入默认只填本端空档案并关闭维护；显式 `authorProfileConflict=replace` 时以备份整份覆盖，见[备份专题](../domain/migration.md#作者公开档案)。
+
+v2备份还可携带离线头像图片；认证头像接口优先读本地持久图片，缺图时才读取保存来源。普通档案JSON不含图片正文，改换或清空头像来源会清除旧图。已有档案可按来源一致条件补图，具体预算与保留语义见上述备份专题。
+
+### 作者核心与TXT
+
 TXT 导入/保护/移除/统一重建事务在 authorimport，手动、备份与本机同步入口共用；HTTP 只校验参数、映射领域结果和冲突载荷，协议字段不变。
 
-端点：GET /authors、**POST /authors、PUT/DELETE /authors/{id}**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow
+端点：GET /authors、**POST /authors、PUT/DELETE /authors/{id}、POST /authors/merge**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow
 
 作者 TXT 手动导入沿用普通 JSON 请求 **1 MiB** 上限（`httpapi.maxJSONBody`），不是同步通道或便携备份上限；限制包含 filename/content/conflictResolution 的整个 UTF-8 JSON 及转义开销。Android 在数据层先校验文件名/声明大小，再按原始字节上限+1 截止并核对实际 SDK 序列化大小；Web 读前检查 File 大小、出网前核对 JSON 字节。超限不提交片段，失败可重选。保留各端既有 UTF-8 解码策略，不增加编码支持；服务端拒绝仍为最后防线。本项澄清已有上限，不新增协议字段/schema 或限制。
 
@@ -36,6 +56,7 @@ append=并入去重永不覆盖〔上传流程自动挂靠语义〕〕〔无块=
 导出内容往返可再导入不触发 409）；
 `GET/PUT /authors/mirror`（{path, fragmentFilename}；
 path 空=关闭（默认）、非空必须绝对路径否则 400；
+path 祖先目录遵循「当前/current → 上次/previous」约定时按两代目录轮换，否则保持旧三代同目录行为（见下「作者总表镜像的两代分代目录」）；
 fragmentFilename 空=最近导入的片段；
 PUT 成功即尝试一次镜像刷新；
 SECURITY.md「作者总表镜像」）；
@@ -50,6 +71,16 @@ SECURITY.md「作者总表镜像」）；
 格式 C 不触发（不存片段）；
 关注布尔；
 2026-09-03 响应加 viewCount（作者作品累计浏览次数）
+
+### 作者合并（2026-11-06）
+
+`POST /authors/merge`（body `{sourceAuthorId, targetAuthorId}`）把重复身份 source 原子并入 target：**不可撤销**——合并即删除 source 身份，没有撤销端点，也不保留可恢复的源身份快照。两端都必须是常规作者且存在、不能相同：COS 作者 400 INVALID_PARAM（目录扫描自动管理）、任一不存在 404 NOT_FOUND、同 ID/空 ID 400 INVALID_PARAM。
+
+语义（同一事务，任一步失败整体回滚）：source 在全部 TXT 片段中的块移除，块内别名/作品行/来源词按「target 现有顺序 + source 未出现者」保序去重并入 target 块（target 块留在目标片段原位置；target 无块时在首个 source 块所在片段新建目标块）；`asset_authors` 中 source→target，同一资产双端都关联时保留 target 原有行（origin/created_at 不动）、删除 source 行，其余迁移行保留原 origin/created_at（ADR-0032 不伪造溯源）；target.followed = target.followed OR source.followed；附属档案 target 有非空档案时完整保留，源档案非空则不合并、随源删除并置 `sourceProfileDiscarded=true`（不静默覆盖人工资料）；target 无档案/空档案而源非空则把源档案迁到 target（revision 递增、`profileMoved=true`）；`imported_txt_upload_entries` 的 source 条目改指 target 并随目标块所在片段合并去重（Names/DisplayName 同步），避免重导入误报 409；删除 source 作者行，媒体文件与资产本体保留。提交成功后刷新作者镜像。
+
+响应 `AuthorMergeResult` 含 sourceAuthorId/targetAuthorId、assetsMoved、associationsDeduped、worksMerged、sourcesMerged、aliasesMerged、followsMerged、profileMoved、sourceProfileDiscarded、uploadEntriesMoved、deletedSource；计数均为本次实际变更量（去重后）。重复调用（source 已删）→ 404；并发改名撞身份仍走改名端点 409，本端点不新建身份。
+
+**与 author.cleanup 的关系**：任务书/ADR-0052 设计的 `author.cleanup.prepare`（只读候选、影响数量、计划指纹）与 `author.cleanup.apply` 目前仍是 planned，本批规则包/CLI 只提供只读查询、未实现 cleanup 工具。确认计划后由本端点一次原子执行，不得用「删除 + 改名 + 改挂」拼装模拟事务性合并。本端点没有 dry-run 参数，调用前的影响预览只能由只读查询（或未来的 prepare）给出；作者管理页应在调用前向用户明示「源身份将删除、不可撤销」。
 
 ## 详情面关联溯源 `origin`/`createdAtMillis`
 
@@ -79,6 +110,31 @@ App 上传单文件 201 后客户端依次调 `PUT /assets/{id}/authors`（autho
 来源建议唯一数据源=通用来源词表（服务端手动维护小清单，个人片段来源区词表退出建议场景）；
 来源仅记录永不参与匹配，与资产出处分区（SourceMatcher/custom_sources）互不相干（DOMAIN_RULES §6）。**重导入保护**：同文件名重导入新内容缺登记条目→缺省 409 二选一（keep 自动并回/remove 明示移除，见「作者」行）；
 保护范围=上传写入条目 + 2026-10-11 起编辑写入的作品行（见上「kv 上传条目修剪与登记」）。**镜像**：GET/PUT /authors/mirror 配置本地 txt 绝对路径，服务端→本地单向投影、临时文件+rename 原子写、尽力而为（失败仅告警绝不阻塞核心操作，SECURITY.md「作者总表镜像」；
-挂点含资产作者/来源编辑保存后、TXT 导入落库后、片段删除后、镜像配置保存后、备份导入的 TXT 片段段后、本机同步通道 TXT 导入后）。**已知缺口**：资产改名/移动不自动回写片段作品行（匹配不到的残留行由统一重建重新关联兜底；
-2026-10-11 起对改名资产再保存一次编辑页会以当前文件名补写新行）；
+挂点含资产作者/来源编辑保存后、TXT 导入落库后、片段删除后、镜像配置保存后、备份导入的 TXT 片段段后、本机同步通道 TXT 导入后）。**改名/移动/物理删除的 TXT 回写（2026-11-08 起）**：服务端在文件与库行变更的同一事务内把作品行由旧文件名替换为新文件名（物理删除时移除）；旧「已知缺口①」已消除，重建不再依赖残留行兜底；
 同片段跨块同名作者 RemoveWorks 只清首遇块（与解析器身份口径一致）
+
+## 作者加入顺序与记录时间
+
+作者列表保留默认名称顺序，新增的加入顺序使用服务端返回的`txtOrder`。该值按已存片段数组及块的首次出现顺序生成，复用TXT解析器和内部身份规则，忽略排版编号与重复作者。COS及未出现在片段中的作者不提供该值，客户端在有清单顺序的作者之后按记录创建时间、ID稳定排序，倒序分别反转清单及记录时间组，未入清单及未知时间仍置后。
+
+`addedAtMillis`是作者记录首次入库时刻，重导入与改名不重置。历史批量导入时间不能当作作者原始加入日期，资料页分别展示清单顺序和入库记录时间，并注明历史边界。新建作者自然记录实际创建时刻，无需补造历史日期。
+
+### 合成作者总表镜像
+
+GET/PUT authors/mirror增加mode字段。master按现存常规作者、全部TXT片段及实际资产关联生成单一总表，fragment使用指定片段原文。新统一目录使用master，不要求事先存在某个固定片段。v2导出data.authorMasterTxt与其他段共用只读快照，导入以原始片段和作者/资产关联为准。
+
+### 作者总表镜像的两代分代目录（2026-11-07）
+
+维护目录的两代布局为 `资料维护/当前/{作者资料,备份}` 与 `资料维护/上次/{作者资料,备份}`：每代独立保存正文与同目录 `.sha256`，当前与上次不共用路径（依据 [AI_MAINTENANCE_P0](../AI_MAINTENANCE_P0.md) 4.4 与 [任务书](../AI_PLATFORM_TASKBOOK.md) 9.4）。**本轮不新增协议字段**（未改 OpenAPI/SDK）：上一代写点仍由唯一配置 `path` 按目录命名约定推导。
+
+- **适用模式**：两代目录轮换只作用于 master 模式（合成作者总表）；fragment 模式是片段原文导出，仍按单文件原子写，不轮换。
+- **推导规则**：`path` 必须是绝对路径，且其祖先目录**恰好有一段**名为 `当前` 或 `current`；把该段替换为同文种兄弟段 `上次` / `previous`，其余路径不变。例如 `…/资料维护/当前/作者资料/作者总表.txt` 的上一代为 `…/资料维护/上次/作者资料/作者总表.txt`。推导结果用 `filepath.Clean` 与相对路径比较确认仍在同一维护根内。相对路径、没有代目录段、代目录段多于一段（歧义）、代目录直接位于盘符/共享根（维护根越界）或推导越界时**不推导**，回退旧行为并只打 debug 日志。
+- **旧 flat3 兼容**：不遵循上述约定的配置（含现有三代同目录用户）行为不变——仍在配置文件同目录轮换 `作者总表.txt` / `（上次）` / `（上上次）` 及其摘要；改动只对采用新路径的配置生效，回退 = 把 `path` 改回旧位置。
+- **两代轮换**：内容变化时先把当前代正文（按正文复算摘要，每代独立）提交为上次代，成功后再写新当前代；相同数据重导出只刷新当前代，不轮换、不挤掉上次代。写入沿用临时文件+rename 原子写；首次需要轮换时按约定创建 `上次/` 目录。
+- **拒覆盖与外部编辑保护**：上次目标已存在且正文与待提交内容不同时，只有该正文自带可复算匹配的 `.sha256` 才覆盖；摘要缺失/不符或正文不可读时拒绝轮换并 slog.Warn——绝不删除或覆盖来历不明的文件，由用户核对后手工处理。当前代外部编辑保护保持不变：正文既不是本次导出的总表也不属于已导入片段、且与当前 `.sha256` 不符时拒绝写回，需先导入主表。
+- **失败语义**：镜像仍是尽力而为单向投影，全部写入失败只 slog.Warn，不阻塞/回滚作者编辑、TXT 导入等核心操作；路径恢复后下一次变更自动补写。
+- **迁移与回退点**：旧三代布局用 [tools/migrate_backup_layout.py](../../tools/migrate_backup_layout.py) 处理——`python -X utf8 tools/migrate_backup_layout.py --root <维护根>` 默认只读核对（可读性、`.sha256` 复算、新旧对应建议，输出机器可读 JSON）；确认后追加 `--apply` 复制生成 `当前/`（旧最新）与 `上次/`（旧「上次」），旧「上上次」只列入可清理清单、不复制。工具**绝不删除**旧文件：迁移后把 `PUT /authors/mirror` 的 path 切到 `…/当前/作者资料/作者总表.txt` 并观察一个导出周期，再由用户决定是否清理旧文件；清理前的回退 = 恢复旧 path（必要时改回旧 flat3 路径），旧文件与旧配置都保留，数据不丢。
+
+## 面向AI的规则发现规划
+
+用户要求工具能主动解释作者身份、完整PUT、revision、头像地址/离线数据、来源链接、原文及中文译文的写法。目标契约与合成教程见[任务书](../AI_MAINTENANCE_TASKBOOK.md#5-让ai理解规范的规则包)。实际字段与上限继续以OpenAPI为准，新规则发现和写入工具待实现。

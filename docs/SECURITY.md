@@ -58,6 +58,52 @@
 - **签名直链**：`/media/orig/...?exp=...&sig=HMAC(路径+过期时间, 服务端密钥)`——浏览器/播放器无需带 header 即可加载，但链接有时效。**exp 窗口对齐（ADR-0027，2026-10-01 起）**：exp = 下一窗口上界 + TTL（窗长=TTL=`token_ttl` 缺省 6h，对齐 Unix 纪元整点），同一窗口内所有响应签出**逐字节相同**的 URL（浏览器 HTTP 缓存/ETag 得以命中，URL 格式与参数未变、三端零适配）；有效期恒 ∈ (6h, 12h]，**吊销粒度=窗口级**——泄露直链最长存活约 2×TTL（粗于旧「请求级 6h」，风险接受换缓存命中），总闸不变 = 删除 media-secret 文件换密钥立即吊销全部存量直链。
 - token 泄露应急（多会话模型口径）：受控设备直接 `POST /auth/logout` 吊销对应会话；**注意「自己再登录一次」不再吊销旧 token**（旧模型的挤兑行为已废除）。全部会话吊销 = 停服清空 `auth_sessions` 表（或删除数据目录重建）；直链吊销仍走删除 `media-secret` 文件。「管理端一键重置全部 token」为规划项。
 
+## 独立 AI 客户端凭据、scope 与审计（ADR-0057 P1/P2，2026-11-08）
+
+外部 AI 执行器不再只能持有全局管理员 Bearer。新增独立 AI 客户端身份（migration 0025 的
+`ai_clients` 表），由服务端强制 scope 并把写操作记入只增审计表 `ai_audit`。管理员会话行为不变。
+2026-11-08 P2 增补：HTTP 凭据管理/审计查询端点、写面 scope 扩展、按客户端限流与外部执行器
+受控领取通道（ADR-0058）。
+
+- **凭据与生命周期**：`ai_clients` 存 id/label/`token_hash`（SHA-256，复用 `auth.TokenHash`）/scope 集合/`device_ids`/created_at/expires_at/revoked_at/last_used_at。明文 token 只在创建/轮换响应或 `qimeng ai-client create|rotate` 的 stdout 输出一次，绝不写日志、文件或审计；库内任何查询都只返回哈希。过期、已撤销、scope 非法的客户端一律拒绝（未知 scope fail-closed）。
+- **管理入口**：`GET/POST /api/v1/ai-clients`、`DELETE /api/v1/ai-clients/{clientId}`、`POST /api/v1/ai-clients/{clientId}/rotate` 与 `GET /api/v1/ai-audit` 只接受**管理员会话**；AI 客户端 Bearer 在这些路径上一律 403 `FORBIDDEN_SCOPE`（即使持有 `admin` scope，避免 AI 给自己发凭据/读审计）。本地 CLI `qimeng ai-client create|list|revoke|rotate` 继续可用（直接打开同一 SQLite）。
+- **鉴权顺序**：仍然只有一条 `Authorization: Bearer` 通道。服务端先按管理员会话（auth_sessions）校验，未命中再按 AI 客户端凭据校验；两者身份分离、不能互相升级。失效 token 统一 401 `UNAUTHORIZED`（不暴露"这是 AI token 但已撤销"之类的细分）。
+- **scope 强制（服务端，不依赖工具层声明）**：AI 客户端命中后按 method+path 映射所需 scope；未映射的写请求一律 403 `FORBIDDEN_SCOPE`（默认拒绝，新端点不会被 AI 自动继承）。读请求兜底要求 `read`，维护/备份/研究/设备等域使用各自 scope。管理员会话不受 scope 限制。scope 与映射（唯一权威在 `server/internal/httpapi/aiclient.go`）：
+
+| scope | 允许动作 |
+|---|---|
+| `read` | GET/HEAD 业务只读查询（库/资产/作者/标签/统计/回收站列表等）；不含 `/metrics`、`/api/v1/client-logs`、`/api/v1/config`、`/api/v1/system/status` 等管理/诊断面 |
+| `research` | 研究网关（`/api/v1/research/*`；服务端仍默认关闭） |
+| `author.write` | 作者新建/改名/档案/来源区/导入镜像等可回读写入（不含删除/合并） |
+| `author.destructive` | `POST /authors/merge` 与 `DELETE /authors/{id}` 等不可逆动作，需单独授予 |
+| `asset.author.write` | `PUT /api/v1/assets/{id}/authors` 资产作者关联替换 |
+| `asset.write` | 资产元数据编辑、标签关联、点赞/收藏/进度、时间轴标签、浏览事件；不含删除 |
+| `asset.upload` | 上传通道（`POST /assets/upload`、`/uploads*` 会话/分片/完成/取消） |
+| `asset.delete` | 删除资产（先进回收站）与回收站永久删除/清空（不可逆，需单独授予） |
+| `tag.write` | 标签定义创建/删除 |
+| `source.write` | 来源自定义词表与分组维护 |
+| `library.write` | 库注册/扫描/启停/移除 |
+| `media.organize` | `POST /api/v1/assets/{id}/move` 移动/命名整理、`POST /dirs` 建目录（不删除原件） |
+| `trash.restore` | `POST /api/v1/trash/{id}/restore` 从回收站恢复（不删除/不清空） |
+| `backup.export` | 快照列表/创建/删除/导出（`/api/v1/backups*`、`GET /api/v1/export/qimeng-backup`） |
+| `backup.restore` | `POST /api/v1/import/qimeng-backup` 恢复/导入（高风险，默认不授予 AI） |
+| `maintenance.read` / `maintenance.write` | 维护任务账本读 / 创建/暂停/恢复/取消/触发本机同步 |
+| `maintenance.execute` | 外部执行器受控通道：领取/续租/步骤/工件/终态（受租约 fencing 约束，见下） |
+| `device.apply` | 设备结果包登记/列表/详情/领取/段下载/回传/取消（受 `device_ids` 二次约束） |
+| `admin` | 管理面保留 scope；不开放任何业务路由，AI 即使持有也不能管理凭据/读审计 |
+
+- **按客户端限流**：AI 客户端请求经过进程内令牌桶（默认 600 次/分钟、突发 120；`QIMENG_AI_RATE_LIMIT_PER_MINUTE` / `QIMENG_AI_RATE_LIMIT_BURST`，0 = 关闭）。超限返回 429 `RATE_LIMITED` + `Retry-After`（整数秒）；被拒绝的探测请求同样消耗配额。限流是单实例内存实现；多实例共享限流未实现，不能把它当成跨实例配额。
+- **外部执行器租约（ADR-0058）**：`/api/v1/maintenance/executor/*` 的领取由服务端生成每次唯一的 fencing `leaseToken`（客户端不得自选）；续租/写步骤/工件/终态都必须携带该 token。暂停、取消、终态、租约过期或任务被重新领取后旧 token 一律 409 `LEASE_LOST`，旧执行器不能再续租或写任何证据。租约 30–1800 秒（默认 120）；`completedSteps` 返回账本全量已完成/跳过步骤名，执行器按名跳过副作用（详情端点的 50 条窗口不用于恢复判断）。
+- **设备级隔离（Android 后台执行适配）**：`ai_clients.device_ids` 是 JSON 设备标签数组；`device.apply` 客户端只能：
+  - 列表查询自己绑定的 `targetDevice`；
+  - 创建 manifest 时 `targetDeviceId` 必须在绑定列表内（handler 预检，越权请求不落库）；
+  - 详情/领取/段下载/回传/取消先读任务再校验 `targetDeviceId`，越权请求不改变任务状态。
+  未绑定任何设备的客户端不能使用设备端点；管理员会话不受设备级限制。设备标签仍是不透明标签（真实设备配对属于 G6，后续阶段）。Android 本机模式的设备令牌由 App 用**本机管理员会话**调用 `POST /api/v1/ai-clients` 生成（label `android-local-<device>`、scope `device.apply`、`deviceIds` 绑定），明文只落 App DataStore，不回显、不写日志；不得把会话 token 当设备 token 使用。
+- **审计**：AI 客户端的所有写请求（含被 403 拒绝的）追加一行 `ai_audit`：client_id/method/path/action/status_code/request_id/created_at；不记录请求体/响应体。action 默认是所需 scope，设备域补充操作与目标（如 `device.apply:claim:phone-main`、`device.apply:result:applied`），便于追踪哪台手机领取/回传了什么。request_id 优先取 `X-Request-Id`（有界可打印 ASCII），否则服务端随机生成。审计写失败只记错误日志、不阻断业务；管理员会话不写该表。`GET /api/v1/ai-audit` 支持 clientId/action 前缀/keyset 分页，仅管理员会话可读。
+- **缓存生效窗口**：服务端内存缓存客户端最多 `DefaultCacheTTL = 5s`；本地 CLI 在另一进程改库后，撤销/轮换/新建最多约 5 秒生效。`last_used_at` 按分钟节流 best-effort 更新。鉴权缓存刷新失败按 401 处理（fail-closed），不让陈旧缓存继续放行。
+- **设备结果包权威回读**：manifest 可选 `expectedState`（绝对计数，键限定 assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents）；回传时服务端读取库内真实计数、与期望比较，并核对手机回传的段摘要。验证快照写入独立的可空列 `verification_json`（migration 0026），不参与 `result_json` 的幂等重放比较；旧任务/旧客户端不受影响。
+- **已知边界/未实现**：无 Web 管理/审计 UI（HTTP 端点与 CLI 已有）；无多实例共享限流；高风险动作仍靠独立 scope，未加动作级确认凭据（G3）；设备身份仍是标签非认证（G6）；管理员 Bearer 仍是全权凭据，AI 工具层应使用受限客户端 token；`ai_audit` 只增、无自动裁剪/归档（容量随写请求增长，当前单机规模接受，后续可加保留策略）；真实设备/模拟器后台执行与 NAS 部署仍未验收。
+
 ## 开发模式（红线 5 的受限例外）
 
 - **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。
@@ -147,7 +193,19 @@ Android 持久上传任务在入队固化服务器 base URL；分片会话把手
 - **路径由用户显式配置**：`GET/PUT /api/v1/authors/mirror` 配置镜像目标（持久化 kv_settings `author_mirror`）；path 空=关闭（默认），非空必须是**绝对路径**（相对路径 400 INVALID_PARAM），PUT 走既有 Bearer 门禁。**能力口径（2026-10-17 审计修正）**：配置生效后，服务端确实获得「向该绝对路径原子覆写 UTF-8 文本」的能力——这是本项目服务端写「数据目录/媒体库之外」路径的唯一例外，属**认证后的高权限原语**（等价于可覆盖任意文本文件），不是"仅在数据目录内"的受限功能；因此镜像路径必须只指向本机 TXT 数据文件，**禁止指向可执行文件/启动脚本/配置文件/`authorized_keys` 等敏感目标**。无配置即无写点，配置动作本身有鉴权；token 保护等级按最高档执行（见「token 泄露应急」）。
 - **写法与故障语义**：镜像单向（服务端→本地），本地 txt 手改会被下一次服务端变更覆盖；写入=临时文件+rename 原子落盘，**尽力而为**——失败仅 slog Warn，绝不阻塞/回滚资产作者/来源编辑、TXT 导入等核心操作；未配置或目标片段不存在时跳过，路径恢复后下一次变更自动补写。刷新挂点=资产作者/来源编辑保存后（ADR-0024，上传挂靠入口已退役）/TXT 导入落库后（含 keep/remove 结果）/片段删除后/镜像配置保存后/**备份导入的 TXT 片段段后/本机同步通道 TXT 导入后**（后两处 2026-10-11 补齐，见 CHANGELOG 第五百二十五笔——此前这两条写入路径不刷镜像，桌面镜像会长期落后于片段真相）/（rebuild 不改片段不挂）。
 
+## 作者公开资料出站访问
+
+一次性研究资料填充使用`tools/import_creator_profiles.py`：默认离线dry-run，仅显式apply经指定API写入；Bearer只取环境，不读凭据文件、禁代理/重定向。写前核对所有候选的ID、原名、普通/COS类型，已有档案/人工字段不覆盖，revision冲突单独计数。子代理自标verified不构成确认，默认写candidate；只有主代理复核的本地ID名单才可标verified，且另有显式开关才启用维护。研究报告/名单保留忽略目录，日志仅计数/固定错误类别；不得把真实作者清单、链接、token或上游响应正文写日志/仓库。
+
+主页、证据与头像只允许无userinfo/fragment的HTTPS URL及标准443端口，拒绝localhost、私有/回环/链路本地/共享地址、文档/基准网段与特殊IPv6转换范围。读取时禁环境代理与重定向，每次连接先解析并校验全部地址，再直接拨已验证IP（TLS仍校验原域名），防DNS重绑。无平台凭据时只读取可直接访问公开页，不绕登录、付费或访问限制。
+
+公开页/RSS每次最多1MiB、头像2MiB、15秒总超时；主页与头像共享最多2并发，维护串行且每作者至少24小时检查一次，停机取消并等待退出。HTML使用官方golang.org/x/net/html的HTML5 tokenizer提取meta候选，不执行脚本，不把og:image宣传图当头像；RSS/Atom最多30条且不解析外部实体。失败保留人工字段。认证头像代理读取已保存的本地图片或来源地址，嗅探确认PNG/JPEG/GIF/WebP并设nosniff，不转发cookie/用户令牌，不自动下载作品。研究清单与现场报告只放忽略的本地审计目录，不入库；外部研究默认仅发送公开名称/主页；用户明确授权指定作品截图反向搜图时，可将该范围截图上传到指定检索服务，并在忽略的本地证据中保存授权范围、文件摘要及检索结果。浏览记录、令牌与私有配置仍不外传。v2恢复不启用维护，须人工核实后另行开启。
+
+作者v2备份的可选离线头像仅接受标准Base64，编码长度与解码后2MiB预算、PNG/JPEG/GIF/WebP嗅探及同条档案的头像来源均在业务写入前校验。图片内嵌保存在作者附属档案，普通资料响应排除正文；认证头像接口可直接返回本地图片，缺图时沿用公开来源出站校验。既有资料仅在来源相同且缺图时补图，改换来源即清旧图；身份迁移、删除和版本冲突保护沿用同一档案事务。备份请求64MiB总预算继续适用，规则见[迁移专题](domain/migration.md#作者公开档案)。
+
 ## 依赖与供应链
+
+本次作者公开资料增加 HTTPS 出站后，云端安全门禁确认现有 Go 1.27.2 命中 [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) 的证书验证问题；工具链最低版本提高到官方修复版本 1.27.3，各云端构建继续读取 go.mod，不关闭或忽略扫描。仅补丁版本修复，不扩展为依赖批量升级。
 
 - 日常 PC 更新由 build-pc.yml 云端生成 Windows 服务端、Web 与逐文件发布清单；AI 核对来源提交的完整门禁、artifact 摘要和清单哈希后部署，不包含或上传用户配置与数据。日常启动链只运行已安装程序，不再本地编译；该出包通道不自动部署、不替代完整门禁，操作与兼容边界见 deploy/README 和 RESTORE。
 - PHP 风险适用性（2026-10-22）：[php2shell-checker](https://github.com/openai/php2shell-checker) 只依据 PHP 版本判断补丁状态，隐藏版本返回 UNKNOWN，不能用没有 PHP 响应头证明安全。本项目服务端为 Go，Web 为静态 React，Android 内嵌 Go 与 ffmpeg/ffprobe；源码、依赖及部署定义没有 PHP/PHP-FPM/FastCGI 运行链，媒体上传白名单不接受 PHP，故当前交付形态不适用该 PHP 风险。此结论不覆盖宿主上其他 PHP 应用、未来另加的 PHP 代理或其他类型漏洞；引入这些组件须重新核对。
@@ -191,6 +249,7 @@ SQLite 默认 WAL/FULL：通过连接 DSN 对每条连接设置同步，优先�
 4. 超大 body、超限分页 → 413/400
 5. 白名单外扩展名、伪造扩展名（.jpg 实为 .exe）→ 400
 6. 删除资产 → 文件出现在回收站而非消失
+7. AI 客户端：缺少 scope / 未映射写请求 → 403 `FORBIDDEN_SCOPE`；过期、撤销、轮换后的旧 token → 401；AI 写请求（含被拒绝）落 `ai_audit`，管理员请求不落；设备端点按 `device_ids` 越权 → 403 且不改变任务状态；按客户端限流超限 → 429 `RATE_LIMITED` + `Retry-After`；外部执行器租约失效 → 409 `LEASE_LOST` 且不能续租/写步骤/回传终态；AI 客户端访问凭据管理/审计端点 → 403（仅管理员会话）
 
 ## 已知安全边界（2026-09-17 全检审计记档，均为风险接受而非遗漏）
 
@@ -227,3 +286,29 @@ Go 1.27.2 的导出格式要求升级 lint 至 v2.15.0；新增 G703 污点检�
 IPv4 UDP18421仅在HTTP通配IPv4监听时开放，内嵌回环服务不回应；不携带主机名、库名、路径、凭据或业务数据。96字节定长随机标记请求、小于请求的回应、私网/链路本地/回环来源及每进程20回应/秒限制反射和资源占用；没有按来源无限增长的状态表。发现出错记录警告，HTTP不因此停止。不要把该端口映射到公网。
 
 发现回包与历史IP均不构成服务身份验证。App只填候选，用户确认后走原登录链；不根据发现自动转发旧token/密码、切换已登录会话、离线事件或上传目标。历史仅保留5个成功地址于原客户端DataStore，不保存密码；退出登录仍保留地址，与旧行为一致。AI调试工具只发发现包、不访问媒体库；输出含现场地址，不得提交，报告放忽略目录。协议与范围见[服务端说明](../server/README.md#局域网发现)。
+
+X简介原文通过xProfile绑定已核对的HTTPS X/Twitter账号主页，原文1000字符、中文译文2000字符且绑定同一原文，账号路径校验排除帖子、搜索与站内功能路径。简介作为文本展示，旧客户端省略保留原值；便携补充要求与本端已核实账号对应。电脑公开资料采集的原文、账号ID复核和失败证据保留在忽略的本地审计目录。
+
+
+## 设备资料目录
+
+统一维护目录是用户选择的设备本地目录，备份含私有资料与离线头像，不进入源码或公开构建产物。Android复用所有文件访问授权，只允许主共享存储内的现存子目录；固定子目录及输出名逐一校验，canonical路径不得经链接越界。派生备份URI、上传归档位置及维护根同时提交偏好，旧SAF备份仍支持。目录编排串行，单文件AtomicFile写入，失败保留错误；单文件成功不能当作整轮全部成功，完整v2可用于恢复资料。TXT与备份读取沿原字节预算。
+
+Web只操作浏览器明确授权的DirectoryHandle，句柄限当前origin并用IndexedDB完成事务确认。导出前校验全部TXT文件名与重复名，保留原文；自动槽不写手动槽，片段索引限定当前有效片段。浏览器缺少目录能力或拒绝授权时保留文件下载/导入流程。上传完成后的本地原件副本独立记结果，同名拒绝覆盖，不把归档失败变成上传重试。媒体原件由既有上传、归档和回收站边界维护。
+
+Android本机模式选择统一根目录时，以master镜像模式绑定作者资料/作者总表.txt，先导入TXT再选目录及以后更换目录都将当前作者和实际关联写到新位置。原目录文件保留。远程连接不把手机路径写给远端。偏好提交失败会恢复先前镜像配置，补偿失败与原错误一并保留。主表摘要识别尚未导入的外部编辑，自动写回暂停并提示先导入；确认导入后的原文可由服务端片段识别，继续合成主表。
+
+目录SHA-256按备份原始字节计算，校验文件上限1KiB。摘要为文件一致性检查，不能认证备份来源。导入前本机状态保存失败则不提交导入，保存按「当前/上次」两代目录轮换（旧 flat3 三代布局兼容读取）；自动备份通过摘要拒绝覆盖被外部替换的待导入文件。Web自动写回只查询已有授权，不在后台弹权限；单文件提交及摘要分开，未完成的配对由读前校验拒绝，不宣称目录跨文件原子性。
+
+Android目录编排的镜像配置同步SDK调用及路径解析均在IO上下文内执行，主线程只呈现状态；导入前快照沿同一边界。
+
+## 外部AI维护与本地权限的已确认需求
+
+2026-11-06第二批需求调整了原方向，[ADR-0052](adr/0052-外部AI维护需求修订.md)取代ADR-0051的标签加密部分：取消标签加密、外部代号与AI标签维护，标签维持现行明文存储、FTS5与UNIQUE约束，搜索、筛选、排序及关联语义不变；不新增加密、代号、密钥与迁移工作，标签隐私增强不再列入范围。实施规范见[任务书](AI_MAINTENANCE_TASKBOOK.md)（标签范围见第1、3节；本地权限与无前台桥接见第6节）。
+
+- **本地维护权限**：PC/NAS上的可信执行端可只读访问服务端数据目录（`qimeng-data/`的SQLite/WAL与备份快照），用于核对与备份，读取不授权改写运行中的库；可在用户授权的资料维护目录内读写。业务数据写入一律走正式API（Bearer admin，凭据只放忽略的本地配置），不开放数据库直写，不向外部模型导出密钥/令牌，8420真库禁止测试写入。
+- **无前台跨端通道（PC→手机单向）**：手机本机模式与PC 8420是两个独立实例，没有服务端→手机单机库的在线回写通道。手机后台worker（WorkManager，必要时带通知的前台服务）在充电与Wi-Fi约束下主动拉取PC任务：先自动导出两代备份与摘要 → 校验版本/指纹 → 分段应用主表TXT对齐或v2导入 → 回读核对 → 回传结果。不需要手机前台、不需要USB；手机主动连电脑，手机不新增监听面；离线、授权失效或进程被杀后可恢复，状态含`waiting_authorization`、`waiting_device`。
+- **导入语义与保护**：主表TXT只含作品与来源，不含头像、简介和译文；完整资料必须走v2导入。v2分段合并维持现有语义（事件身份、收藏/关注并集、作者档案保留本端并补缺、TXT keep重建、appPrefs覆盖；标签组时间裁决沿用现行迁移规则）。导入前先导出是规范保护，桥接必须自动执行，保存失败即中止。
+- **数据处理**：外部网页、文件名、媒体元数据与模型输出均按不可信数据处理，模型输出先过结构校验与允许动作清单再进入正式API；任务授权绑定实例、输入根、动作、字段与出站样本范围，实际外发字段逐项记录，现有鉴权、路径、回收站、原件及隧道边界继续适用。
+
+实施前现行机制不变：当前装机仍是三代备份、标签明文与无桥接，上述权限、桥接与两代布局尚待实现（详见任务书与[ADR-0052](adr/0052-外部AI维护需求修订.md)）。

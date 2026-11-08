@@ -16,14 +16,15 @@ import javax.inject.Singleton
  * 后台任务必然失败——「打开应用即自动备份」才是本形态的有效口径（旧版同为应用内写）。
  *
  * 任务S 2026-09-19 两卡收敛：本执行器同时是备份页「导入导出」卡的读写执行体——导出/
- * 导入直接读写备份目录的固定名文件（不弹 SAF 选择器），与自动判定共用同一条写链路
- * 与同一份授权；SAF 读写细节在 [BackupDirAccess] 端口单源收口（Context 依赖随之移出）。
+ * 导入读取用户明确选择的固定名文件（不弹 SAF 选择器），手动与自动共用写入实现但文件槽隔离
+ * 与同一份授权；自动输出使用独立文件，绝不改写待导入的手动/PC文件。SAF 读写细节在 [BackupDirAccess] 端口单源收口（Context 依赖随之移出）。
  */
 @Singleton
 class AutoBackupRunner @Inject constructor(
     private val backupRepository: BackupRepository,
     private val prefs: BackupAutoPrefsRepository,
     private val dirAccess: BackupDirAccess,
+    private val maintenance: MaintenanceBackupWriter,
 ) {
 
     /** 判定 + 执行；返回是否实际写入了备份（调用方仅记日志，不打扰用户） */
@@ -32,7 +33,7 @@ class AutoBackupRunner @Inject constructor(
         if (!st.enabled) return false
         val dirUri = st.dirUri ?: return false
         if (st.lastRunMillis > 0 && now - st.lastRunMillis < MIN_INTERVAL.toMillis()) return false
-        val ok = writeToDir(dirUri) != null
+        val ok = writeToDir(dirUri, BackupFileKind.AUTOMATIC) != null
         if (ok) prefs.setLastRunMillis(now)
         return ok
     }
@@ -44,21 +45,50 @@ class AutoBackupRunner @Inject constructor(
      */
     suspend fun writeNow(): Long? {
         val dirUri = prefs.state.first().dirUri ?: return null
-        val written = writeToDir(dirUri) ?: return null
+        val written = writeToDir(dirUri, BackupFileKind.MANUAL) ?: return null
         prefs.setLastRunMillis(System.currentTimeMillis())
         return written
     }
 
-    /** 读备份目录内固定名备份文件全量字节（备份页「导入」数据源）；未设目录/无文件/读失败返回 null */
-    suspend fun readBackupBytes(): ByteArray? {
-        val dirUri = prefs.state.first().dirUri ?: return null
-        return dirAccess.readBytes(dirUri)
+    /** A failed safety snapshot prevents the caller from starting the merge. */
+    suspend fun snapshotBeforeImport() {
+        val dirUri = prefs.state.first().dirUri ?: return
+        check(writeToDir(dirUri, BackupFileKind.PRE_IMPORT) != null) { "导入前快照保存失败，请检查备份目录" }
     }
 
-    /** 读备份目录内固定名备份文件状态（备份页状态行数据源）；未设目录/无文件/查询失败返回 null */
-    suspend fun readFileStatus(): BackupFileStatus? {
+    /** Only a managed folder participates in three-generation refresh after a merge. */
+    suspend fun refreshAfterImport() {
+        val dirUri = prefs.state.first().dirUri ?: return
+        maintenance.writeIfManaged(dirUri, BackupFileKind.MANUAL)
+    }
+
+    /**
+     * 读取备份槽（2026-11-07 task-13 修复）：维护目录先由 [MaintenanceBackupWriter.readManagedBackup]
+     * 按两代布局/旧 flat3 解析**真实文件**——上次代在独立目录 `上次/备份/影库备份.json`，
+     * 旧 flat3 历史份是同目录旧名文件，不能再用「当前目录 + 历史固定名」拼路径（用户报障根因）。
+     * 非托管目录（SAF 旧目录）仍走 dirAccess 固定名。返回真实文件名 + 已核对摘要的字节，
+     * 确认弹窗与 v2 校验链以真实名为准；未设目录/无文件/读取或摘要核对失败返回 null。
+     */
+    suspend fun readBackup(kind: BackupFileKind = BackupFileKind.MANUAL): ManagedBackupFile? {
         val dirUri = prefs.state.first().dirUri ?: return null
-        return dirAccess.fileStatus(dirUri)
+        maintenance.readManagedBackup(dirUri, kind)?.let { return it }
+        val bytes = dirAccess.readBytes(dirUri, maintenance.readKind(dirUri, kind)) ?: return null
+        return ManagedBackupFile(kind.fileName, bytes)
+    }
+
+    /** 读备份字节（兼容入口，语义同 [readBackup]）；未设目录/无文件/读失败返回 null */
+    suspend fun readBackupBytes(kind: BackupFileKind = BackupFileKind.MANUAL): ByteArray? =
+        readBackup(kind)?.bytes
+
+    /**
+     * 读备份槽状态（备份页状态行/「有没有此份」判断数据源，2026-11-07 task-13）：维护目录先
+     * 解析历史槽真实文件（含旧 flat3 回退），否则退回 dirAccess 固定名；
+     * 未设目录/无文件/查询失败返回 null。
+     */
+    suspend fun readFileStatus(kind: BackupFileKind = BackupFileKind.MANUAL): BackupFileStatus? {
+        val dirUri = prefs.state.first().dirUri ?: return null
+        maintenance.managedBackupStatus(dirUri, kind)?.let { return it }
+        return dirAccess.fileStatus(dirUri, maintenance.readKind(dirUri, kind))
     }
 
     /**
@@ -67,9 +97,10 @@ class AutoBackupRunner @Inject constructor(
      * （任务R reviewer P2 纪律：序列化段离调用协程的主线程池；磁盘段在
      * [BackupDirAccess] 实现的 IO 池）。
      */
-    private suspend fun writeToDir(dirUri: String): Long? {
+    private suspend fun writeToDir(dirUri: String, kind: BackupFileKind): Long? {
+        maintenance.writeIfManaged(dirUri, kind)?.let { return it }
         val json = backupRepository.exportJson()
-        return dirAccess.writeBytes(dirUri, json)
+        return dirAccess.writeBytes(dirUri, json, kind)
     }
 
     companion object {
@@ -77,6 +108,7 @@ class AutoBackupRunner @Inject constructor(
         val MIN_INTERVAL: Duration = Duration.ofHours(24)
 
         const val BACKUP_FILE_NAME = "qimeng_backup.json"
+        const val AUTO_BACKUP_FILE_NAME = "qimeng_backup.auto.json"
 
         /** SAF 树 URI 授权持久化标志（目录选择后由调用方 takePersistableUriPermission） */
         const val TREE_PERMISSION_FLAGS =

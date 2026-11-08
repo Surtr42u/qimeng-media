@@ -65,3 +65,5 @@ go test ./internal/store/db -run 'TestHotAggregates|TestCandidateAggregate' -ben
 - **零命中 / 仍歧义 / 未携带 fileName** → 维持既有「已删资产迟到事件」口径：事件入库（真相源 `view_events`）、统计跳过（物化外键拒绝）、202 响应 `outcome=unmatched`。
 - **与 §10 备份导入匹配的差异**：导入通道同名多命中取**最早入库行**宽松兜底（legacy 批量通道的历史约束）；实时通道**从严——歧义不猜、宁少勿错**（误配会把甲文件的浏览计到乙文件，污染推荐输入，少计优于误配）。
 - **会话去重、幂等键口径不因重映射改变**：去重键 = **重映射后的目标资产**（同会话同 target 的第二发被会话去重挡下，回复 ok、不双计）；clientEventId 幂等命中同样回复 ok。响应 outcome 只透出处置结果、不落库。
+
+内嵌服务启动时由Android系统时区注入QIMENG_TIMEZONE，Go在启动数据库及后台任务前将time.Local设为该IANA时区，避免Android运行时默认UTC导致每日统计错位。PC/NAS可用time_zone或同名环境变量显式设置，缺省沿宿主本地时区；非法时区阻止启动。切换时区后的日物化统计通过现有v2导入从原事件重建。

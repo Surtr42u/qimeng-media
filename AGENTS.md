@@ -18,6 +18,7 @@
 | 当前形态、进行中事项、接手未完任务 | `docs/HANDOVER.md`，无需先读里程碑 |
 | API/SDK | `api/openapi.yaml` 对应 path/schema + `docs/GUIDE_API.md` 对应专题 |
 | 算法、筛选、统计、作者、迁移、缩略图等业务 | `docs/DOMAIN_RULES.md` 目录 → 命中专题，禁止整本默认必读 |
+| 识图/作品归属与作者核实 | `tools/IMAGE_RESEARCH.md` → `tools/AUTHOR_RESEARCH.md` |
 | Go 服务端/模块边界 | `server/README.md`；边界变化另读 `docs/ARCHITECTURE.md` §5/§5.1 |
 | Web / Android / desktop UI | 对应 `web/README.md` / `android/README.md` / `desktop/README.md` + `docs/GUIDE_UI.md` 对应部分 |
 | 数据库/身份 | ADR 索引定位 0003/0004/0011；相关 migration/查询规则 |
@@ -28,6 +29,8 @@
 | 新功能/能力评估 | `docs/CAPABILITY_MAP.md` 对应域 + ADR 索引相关决策 |
 | 架构缘由/历史/里程碑 | `docs/adr/INDEX.md` / `docs/history/INDEX.md` / `docs/PROJECT_PLAN.md`，仅命中时读 |
 | 文档组织/维护 | `AI_README_FIRST.md`「文档维护」；完整导航见 `llms.txt` |
+| 外部AI接入平台、工具契约/CLI/MCP、受控写入 | `docs/AI_PLATFORM_TASKBOOK.md`（现行执行清单）、`docs/AI_PLATFORM_AUDIT.md`、`tools/ai_maintenance/README.md`；决策见 ADR-0056（历史来源：`docs/AI_MAINTENANCE_TASKBOOK.md` 第4–6/11节、ADR-0052） |
+| 维护任务队列/Worker、设备结果包、两代备份布局 | `docs/api/maintenance.md`、`docs/api/device.md`；ADR-0054/0055/0056；两代目录约定见 `docs/api/authors.md` mirror 章节 |
 | 代码/PR 审查 | 本文件「Review guidelines」；再按改动域读取上表对应专题 |
 
 ## 工作尺度

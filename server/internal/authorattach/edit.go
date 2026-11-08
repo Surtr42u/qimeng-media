@@ -67,6 +67,21 @@ func (s *Service) ResolveRegularAuthors(ctx context.Context, q *db.Queries, auth
 // resolveRegularAuthors 是两个 Resolve* 的共用实现：一次 ListAuthors 完成
 // 存在性与类型双校验。
 func resolveRegularAuthors(ctx context.Context, q *db.Queries, authorIDs []string) (map[string]string, error) {
+	rows, err := resolveRegularAuthorRows(ctx, q, authorIDs)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(authorIDs))
+	for _, id := range authorIDs {
+		names[id] = rows[id].DisplayName
+	}
+	return names, nil
+}
+
+// resolveRegularAuthorRows 一次 ListAuthors 完成存在性/类型双校验并返回
+// 整行（作者合并还需要 followed 等列，不能只取显示名；与 Resolve* 共用
+// 同一校验口径，禁止在合并路径另写一套判定）。重复 id 按一次处理。
+func resolveRegularAuthorRows(ctx context.Context, q *db.Queries, authorIDs []string) (map[string]db.ListAuthorsRow, error) {
 	rows, err := q.ListAuthors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("authorattach: 查询作者表: %w", err)
@@ -75,7 +90,7 @@ func resolveRegularAuthors(ctx context.Context, q *db.Queries, authorIDs []strin
 	for _, row := range rows {
 		byID[row.ID] = row
 	}
-	names := make(map[string]string, len(authorIDs))
+	out := make(map[string]db.ListAuthorsRow, len(authorIDs))
 	for _, id := range authorIDs {
 		row, ok := byID[id]
 		if !ok {
@@ -84,9 +99,9 @@ func resolveRegularAuthors(ctx context.Context, q *db.Queries, authorIDs []strin
 		if row.Type != authoring.AuthorTypeRegular {
 			return nil, ErrAuthorNotRegular
 		}
-		names[id] = row.DisplayName
+		out[id] = row
 	}
-	return names, nil
+	return out, nil
 }
 
 // ResolveOrCreateAuthors 把编辑端点的 newAuthorNames 解析成作者引用（调用方

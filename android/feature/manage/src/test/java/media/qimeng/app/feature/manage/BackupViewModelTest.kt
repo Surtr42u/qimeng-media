@@ -2,6 +2,7 @@ package media.qimeng.app.feature.manage
 
 import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.backup.BackupDirAccess
+import media.qimeng.app.core.data.backup.BackupFileKind
 import media.qimeng.app.core.data.backup.BackupFileStatus
 import media.qimeng.app.core.data.backup.BackupValidator
 import media.qimeng.app.core.data.backup.ValidatedBackupPayload
@@ -18,6 +19,8 @@ import media.qimeng.app.core.data.repository.BackupRepository
 import media.qimeng.app.core.model.LegacyImportSummary
 import media.qimeng.app.core.testing.MainDispatcherRule
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
@@ -71,7 +74,7 @@ class BackupViewModelTest {
         repository: FakeBackupRepository = FakeBackupRepository(),
         queue: ViewEventQueue = ViewEventQueue(FakeEventDao(), FakeEventSender(fail = false), clock = FixedEventClock),
         prefs: BackupAutoPrefsRepository = FakeBackupAutoPrefs(),
-        dirAccess: FakeBackupDirAccess = FakeBackupDirAccess(),
+        dirAccess: BackupDirAccess = FakeBackupDirAccess(),
     ) = Pair(
         BackupViewModel(
             backupRepository = repository,
@@ -92,11 +95,15 @@ class BackupViewModelTest {
         repository: BackupRepository,
         prefs: BackupAutoPrefsRepository,
         dirAccess: BackupDirAccess,
+        maintenance: media.qimeng.app.core.data.backup.MaintenanceBackupWriter = object : media.qimeng.app.core.data.backup.MaintenanceBackupWriter {
+            override suspend fun writeIfManaged(dirUri: String, kind: BackupFileKind): Long? = null
+        },
     ): AutoBackupRunner {
         val injected = mapOf(
             "backupRepository" to repository,
             "prefs" to prefs,
             "dirAccess" to dirAccess,
+            "maintenance" to maintenance,
         )
         val unsafeField = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe")
         unsafeField.isAccessible = true
@@ -161,6 +168,31 @@ class BackupViewModelTest {
         assertEquals("备份目录还没有备份文件，请先在源端导出", viewModel.uiState.value.errorMessage)
         assertTrue(repository.importCalls.isEmpty())
         assertNull(viewModel.uiState.value.pendingImport)
+    }
+
+    @Test
+    fun `历史恢复槽缺失按上次代提示且不出网`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 两代布局历史槽由维护仓库跨目录解析；这里锁定「没有此份」时的专用文案与零出网。
+        val dir = object : BackupDirAccess {
+            override suspend fun fileStatus(dirUri: String, kind: BackupFileKind): BackupFileStatus? = null
+            override suspend fun readBytes(dirUri: String, kind: BackupFileKind): ByteArray? = null
+            override suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind): Long? = null
+        }
+        val (viewModel, repository) = newViewModel(dirAccess = dir)
+        viewModel.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+
+        viewModel.importFromBackupDir(BackupFileKind.PREVIOUS)
+        advanceUntilIdle()
+        assertEquals("还没有上次备份文件（两代布局保留当前/上次两代）", viewModel.uiState.value.errorMessage)
+        viewModel.importFromBackupDir(BackupFileKind.OLDER)
+        advanceUntilIdle()
+        assertEquals(
+            "还没有上上次备份文件（旧三代布局的「（上上次）」可只读恢复）",
+            viewModel.uiState.value.errorMessage,
+        )
+        assertNull(viewModel.uiState.value.pendingImport)
+        assertTrue(repository.importCalls.isEmpty())
     }
 
     @Test
@@ -443,6 +475,73 @@ class BackupViewModelTest {
         assertEquals("content://tree/primary%3Abackup", vm.uiState.value.autoBackupDirUri)
     }
 
+    @Test
+    fun `自动备份不覆盖PC待导入文件且两个恢复入口明确分开`() = runTest(mainDispatcherRule.testDispatcher) {
+        val original = validBytes.copyOf()
+        val dir = FakeBackupDirAccess().apply { file = original.copyOf() }
+        val prefs = FakeBackupAutoPrefs()
+        prefs.setEnabled(true)
+        prefs.setDirUri("content://tree/primary%3Abackup")
+        val repository = FakeBackupRepository()
+        val runner = newAutoBackupRunner(repository, prefs, dir)
+        assertTrue(runner.runIfDue(now = 100_000L))
+        assertTrue(original.contentEquals(dir.file!!))
+        assertEquals(listOf(BackupFileKind.AUTOMATIC), dir.writtenKinds)
+        assertNotNull(dir.automaticFile)
+        assertTrue(original.contentEquals(runner.readBackupBytes(BackupFileKind.MANUAL)!!))
+        assertTrue(dir.automaticFile!!.contentEquals(runner.readBackupBytes(BackupFileKind.AUTOMATIC)!!))
+
+        val (vm, _) = newViewModel(repository = repository, prefs = prefs, dirAccess = dir)
+        vm.importFromBackupDir(BackupFileKind.AUTOMATIC)
+        awaitUntil { vm.uiState.value.pendingImport != null }
+        assertEquals(AutoBackupRunner.AUTO_BACKUP_FILE_NAME, vm.uiState.value.pendingImport!!.summary.fileName)
+        assertEquals(0, vm.uiState.value.pendingImport!!.summary.authors)
+        vm.dismissImport()
+        vm.importFromBackupDir(BackupFileKind.MANUAL)
+        awaitUntil { vm.uiState.value.pendingImport != null }
+        assertEquals(AutoBackupRunner.BACKUP_FILE_NAME, vm.uiState.value.pendingImport!!.summary.fileName)
+        assertEquals(1, vm.uiState.value.pendingImport!!.summary.authors)
+        assertTrue(original.contentEquals(dir.file!!))
+        assertTrue(repository.importCalls.isEmpty())
+    }
+
+    @Test
+    fun `慢速读取期间禁止手动导出和重复导入直到校验结束`() = runTest(mainDispatcherRule.testDispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val dir = FakeBackupDirAccess().apply { file = validBytes; readGate = gate }
+        val (vm, repository) = newViewModel(dirAccess = dir)
+        vm.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+        vm.importFromBackupDir()
+        assertTrue(vm.uiState.value.importing)
+        vm.exportToBackupDir()
+        vm.importFromBackupDir()
+        advanceUntilIdle()
+        assertEquals(1, dir.reads)
+        assertTrue(repository.exportCalls.isEmpty())
+        assertTrue(dir.writtenJsons.isEmpty())
+        gate.complete(Unit)
+        awaitUntil { vm.uiState.value.pendingImport != null && !vm.uiState.value.importing }
+        assertEquals(1, vm.uiState.value.pendingImport!!.summary.authors)
+        assertTrue(repository.importCalls.isEmpty())
+    }
+
+    @Test
+    fun `读取取消释放忙状态并可重新导入`() = runTest(mainDispatcherRule.testDispatcher) {
+        val dir = FakeBackupDirAccess().apply { file = validBytes; readCancellation = true }
+        val (vm, _) = newViewModel(dirAccess = dir)
+        vm.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+        vm.importFromBackupDir()
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.importing)
+        assertNull(vm.uiState.value.pendingImport)
+        assertNull(vm.uiState.value.errorMessage)
+        dir.readCancellation = false
+        vm.importFromBackupDir()
+        awaitUntil { vm.uiState.value.pendingImport != null && !vm.uiState.value.importing }
+    }
+
     /** 预置一条未上传事件（幂等键合规，避免触发懒回填路径干扰断言）；文件身份可选手填 */
     private suspend fun FakeEventDao.seed(
         rowId: String,
@@ -455,6 +554,49 @@ class BackupViewModelTest {
             fileName = fileName, relPath = relPath,
         ),
     )
+
+    @Test
+    fun `managed manual export uses the joint writer without rewriting a legacy file`() = runTest {
+        val prefs = FakeBackupAutoPrefs()
+        prefs.setDirUri("file:///synthetic/备份")
+        val kinds = mutableListOf<BackupFileKind>()
+        val writer = object : media.qimeng.app.core.data.backup.MaintenanceBackupWriter {
+            override suspend fun writeIfManaged(dirUri: String, kind: BackupFileKind): Long {
+                kinds += kind
+                return 123L
+            }
+        }
+        val runner = newAutoBackupRunner(FakeBackupRepository(), prefs, FakeBackupDirAccess(), writer)
+        assertEquals(123L, runner.writeNow())
+        assertEquals(listOf(BackupFileKind.MANUAL), kinds)
+    }
+
+    @Test
+    fun `confirmed import saves a separate snapshot and retains the incoming manual file`() = runTest {
+        val prefs = FakeBackupAutoPrefs()
+        prefs.setDirUri("file:///synthetic/备份")
+        val directory = FakeBackupDirAccess().apply { file = validBytes }
+        val (vm, repository) = newViewModel(prefs = prefs, dirAccess = directory)
+        vm.onFilePicked("qimeng_backup.json", validBytes)
+        vm.confirmImport()
+        driveIdle()
+        assertEquals(listOf(BackupFileKind.PRE_IMPORT), directory.writtenKinds)
+        assertTrue(directory.file!!.contentEquals(validBytes))
+        assertEquals(1, repository.importCalls.size)
+    }
+
+    @Test
+    fun `snapshot failure prevents confirmed import`() = runTest {
+        val prefs = FakeBackupAutoPrefs()
+        prefs.setDirUri("file:///synthetic/备份")
+        val directory = FakeBackupDirAccess().apply { writeError = true }
+        val (vm, repository) = newViewModel(prefs = prefs, dirAccess = directory)
+        vm.onFilePicked("qimeng_backup.json", validBytes)
+        vm.confirmImport()
+        driveIdle()
+        assertTrue(repository.importCalls.isEmpty())
+        assertNotNull(vm.uiState.value.errorMessage)
+    }
 
 }
 
@@ -580,24 +722,44 @@ private class FakeBackupAutoPrefs : BackupAutoPrefsRepository {
     }
 }
 
-/** 备份目录访问替身（任务S 两卡收敛）：内存单文件（null=无文件），读写记录与可编程读失败 */
+/** 备份目录访问替身（任务S 两卡收敛）：手动/自动两个内存文件（null=无文件），读写记录与可编程慢读/失败 */
 private class FakeBackupDirAccess : BackupDirAccess {
     var file: ByteArray? = null
+    var automaticFile: ByteArray? = null
+    var preImportFile: ByteArray? = null
+    var writeError: Boolean = false
     var readError: Boolean = false
+    var readGate: CompletableDeferred<Unit>? = null
+    var readCancellation: Boolean = false
+    var reads = 0
+    val writtenKinds = mutableListOf<BackupFileKind>()
     val writtenJsons = mutableListOf<String>()
 
-    override suspend fun fileStatus(dirUri: String): BackupFileStatus? =
-        file?.let { BackupFileStatus(sizeBytes = it.size.toLong(), lastModifiedMillis = 1_000L) }
+    override suspend fun fileStatus(dirUri: String, kind: BackupFileKind): BackupFileStatus? =
+        (if (kind == BackupFileKind.AUTOMATIC) automaticFile else file)
+            ?.let { BackupFileStatus(sizeBytes = it.size.toLong(), lastModifiedMillis = 1_000L) }
 
-    override suspend fun readBytes(dirUri: String): ByteArray? {
+    override suspend fun readBytes(dirUri: String, kind: BackupFileKind): ByteArray? {
+        reads++
+        readGate?.await()
+        if (readCancellation) throw CancellationException("synthetic cancel")
         if (readError) return null
-        return file
+        return if (kind == BackupFileKind.AUTOMATIC) automaticFile else file
     }
 
-    override suspend fun writeBytes(dirUri: String, json: String): Long? {
+    override suspend fun writeBytes(dirUri: String, json: String, kind: BackupFileKind): Long? {
         writtenJsons.add(json)
+        writtenKinds.add(kind)
+        if (writeError) return null
         val bytes = json.toByteArray(Charsets.UTF_8)
-        file = bytes
+        when (kind) {
+            BackupFileKind.AUTOMATIC -> automaticFile = bytes
+            BackupFileKind.MANUAL -> file = bytes
+            BackupFileKind.PRE_IMPORT -> preImportFile = bytes
+            else -> file = bytes
+        }
         return bytes.size.toLong()
     }
+
+
 }

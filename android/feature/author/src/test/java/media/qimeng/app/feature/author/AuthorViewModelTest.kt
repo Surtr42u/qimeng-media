@@ -75,7 +75,7 @@ class AuthorViewModelTest {
         }
     }
 
-    private fun viewModel(repo: FakeAuthorRepository) = AuthorViewModel(repo, FakeOrigUrlResolver())
+    private fun viewModel(repo: FakeAuthorRepository) = AuthorViewModel(repo, FakeOrigUrlResolver(), UnavailableCreatorProfiles)
 
     @Test
     fun `新建成功：关闭对话框、透传名字、重拉列表并提示`() = runTest {

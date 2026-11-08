@@ -1,5 +1,8 @@
 package media.qimeng.app.feature.detail
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,14 +20,21 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import media.qimeng.app.core.ui.component.QimengAuthorAvatar
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,6 +50,7 @@ import media.qimeng.app.core.ui.glass.GlassSurface
 import media.qimeng.app.core.ui.glass.pressScale
 import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 import media.qimeng.app.core.ui.icon.ChevronRightIcon
+import media.qimeng.app.core.ui.icon.CopyIcon
 import media.qimeng.app.core.ui.icon.EditPencilIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -71,7 +82,12 @@ internal fun DetailInfoSheet(asset: AssetDetail, onDismiss: () -> Unit) {
                 text = stringResource(R.string.detail_info_sheet_title),
                 style = MaterialTheme.typography.titleLarge,
             )
-            InfoRow(label = stringResource(R.string.detail_info_filename), value = asset.fileName)
+            // 文件名行提供复制（2026-11-07 用户需求）：完整名不截断，复制便于与磁盘/研究记录核对。
+            InfoRow(
+                label = stringResource(R.string.detail_info_filename),
+                value = asset.fileName,
+                copyValue = asset.fileName,
+            )
             // 作品（X3 补行）：cosWork 非空才显示——title=cosWork??fileName 是下滑区标题
             // 口径，Sheet 作品行按旧版规格独立展示 cosWork 原值
             asset.cosWork?.takeIf { it.isNotEmpty() }?.let { work ->
@@ -119,20 +135,47 @@ internal fun DetailInfoSheet(asset: AssetDetail, onDismiss: () -> Unit) {
     }
 }
 
-/** 信息弹窗行（label 小字次色 + value 正文主色；旧版 addInfoRow 的两段式同构） */
+/**
+ * 信息弹窗行（label 小字次色 + value 正文主色；旧版 addInfoRow 的两段式同构）。
+ * [copyValue] 非空时在值右侧显示复制按钮（当前仅文件名行使用）：写入系统剪贴板并用 Toast
+ * 确认；value 本身不截断（完整文件名/路径按行内换行完整展示）。
+ */
 @Composable
-private fun InfoRow(label: String, value: String) {
+private fun InfoRow(label: String, value: String, copyValue: String? = null) {
+    val context = LocalContext.current
+    val copiedText = stringResource(R.string.detail_info_filename_copied)
     Column(modifier = Modifier.padding(top = QimengDimens.SpaceM)) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(top = QimengDimens.SpaceXS),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = QimengDimens.SpaceXS),
+            )
+            if (copyValue != null) {
+                IconButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        if (clipboard != null) {
+                            clipboard.setPrimaryClip(ClipData.newPlainText(label, copyValue))
+                            Toast.makeText(context, copiedText, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                ) {
+                    Icon(
+                        imageVector = CopyIcon,
+                        contentDescription = stringResource(R.string.detail_info_copy_filename),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -242,6 +285,12 @@ internal fun DetailAuthorSheet(
     onEdit: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val avatars: DetailAuthorAvatarViewModel = hiltViewModel()
+    val images by avatars.state.collectAsStateWithLifecycle()
+    val authorIds = authors.map { it.id }
+    val currentServer = avatars.currentServerScope()
+    val visibleImages = if (images.ids == authorIds.toSet() && images.server == currentServer) images.loaded else emptyMap()
+    LaunchedEffect(authorIds, currentServer) { avatars.load(authorIds) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         // 三个缺省行为陷阱的处置沿革与现口径（S1b 点外关闭已恢复）见上 KDoc（alpha15 短内容 sheet P1 实证）
@@ -339,20 +388,13 @@ internal fun DetailAuthorSheet(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    modifier = Modifier.size(36.dp),
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = DetailAuthorIcon,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                }
+                                QimengAuthorAvatar(
+                                    name = author.displayName,
+                                    bytes = visibleImages[author.id],
+                                    loading = !visibleImages.containsKey(author.id),
+                                    cacheKey = "${images.scope}|${author.id}",
+                                    size = 44.dp,
+                                )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {

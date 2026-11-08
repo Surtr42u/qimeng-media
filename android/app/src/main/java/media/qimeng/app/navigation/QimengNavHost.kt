@@ -69,14 +69,12 @@ import media.qimeng.app.feature.detail.DetailScreen
 import media.qimeng.app.feature.favorite.FavoriteScreen
 import media.qimeng.app.feature.history.HistoryScreen
 import media.qimeng.app.feature.login.LoginScreen
-import media.qimeng.app.feature.manage.AuthorTxtImportScreen
-import media.qimeng.app.feature.manage.BackupScreen
+import media.qimeng.app.feature.manage.MaintenanceScreen
 import media.qimeng.app.feature.manage.DataManageScreen
 import media.qimeng.app.feature.manage.LibraryManageScreen
 import media.qimeng.app.feature.manage.ThumbnailCacheScreen
 import media.qimeng.app.feature.manage.VocabularyEditScreen
 import media.qimeng.app.feature.search.SearchScreen
-import media.qimeng.app.feature.settings.InboxSettingsScreen
 import media.qimeng.app.feature.settings.ServerSettingsScreen
 import media.qimeng.app.feature.stats.StatsDetailRoutes
 import media.qimeng.app.feature.stats.StatsDetailScreen
@@ -476,8 +474,10 @@ fun QimengNavHost(
             // 下载收件箱设置子页（2026-09-25 暂存区重做）：设置页「下载收件箱」入口行进本页；
             // pushed 覆盖页——底栏隐藏与幕帘由既有 currentRoute 机制自动生效
             composable(Routes.INBOX) {
-                InboxSettingsScreen(
+                MaintenanceScreen(
                     onBack = { navController.popBackStack() },
+                    onOpenUpload = { navController.navigate(Routes.UPLOAD) },
+                    initialTab = 2,
                 )
             }
             // 数据管理 hub（U10-6）：我的页「数据管理」合并入口二级页；上传行复用既有
@@ -490,10 +490,8 @@ fun QimengNavHost(
                     onBack = { navController.popBackStack() },
                     onOpenUpload = { navController.navigate(Routes.UPLOAD) },
                     onOpenLibraryManage = { navController.navigate(Routes.LIBRARY_MANAGE) },
-                    onOpenAuthorTxt = { navController.navigate(Routes.AUTHOR_TXT_IMPORT) },
                     onOpenBackup = { navController.navigate(Routes.BACKUP) },
                     onOpenThumbCache = { navController.navigate(Routes.THUMBNAIL_CACHE) },
-                    onOpenInbox = { navController.navigate(Routes.INBOX) },
                     // 词表维护（ADR-0035）：数据管理 hub「词表维护」入口行；词表合并同步
                     // 入口在备份页 VocabularyMergeSyncCard（同 ADR，无独立路由）
                     onOpenVocabularyEdit = { navController.navigate(Routes.VOCABULARY_EDIT) },
@@ -508,15 +506,18 @@ fun QimengNavHost(
             // 作者 TXT 导入子页（U10-6b）：片段列表 + 选 TXT 导入 + 移除/重放
             // （Web TxtAuthorImportCard 对齐物）
             composable(Routes.AUTHOR_TXT_IMPORT) {
-                AuthorTxtImportScreen(
+                MaintenanceScreen(
                     onBack = { navController.popBackStack() },
+                    onOpenUpload = { navController.navigate(Routes.UPLOAD) },
+                    initialTab = 1,
                 )
             }
             // 备份导入导出子页（U10-6b）：全量备份导出 + qimeng_backup.json 幂等导入恢复
             // （Web BackupCard 对齐物，DOMAIN_RULES §10）
             composable(Routes.BACKUP) {
-                BackupScreen(
+                MaintenanceScreen(
                     onBack = { navController.popBackStack() },
+                    onOpenUpload = { navController.navigate(Routes.UPLOAD) },
                 )
             }
             // 缩略图缓存子页（2026-09-16 用户反馈）：缩略图生成进度 + 缓存上限档位合并页

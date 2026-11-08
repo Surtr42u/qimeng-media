@@ -3,6 +3,7 @@ package portablebackup
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/authorimport"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/store/db"
 )
 
@@ -22,6 +24,19 @@ const (
 	eventPlay  = "play"
 	eventDwell = "dwell"
 )
+
+// 作者档案冲突处置（OpenAPI authorProfileConflict）。空串与 keep 同义。
+const (
+	AuthorProfileConflictKeep    = "keep"
+	AuthorProfileConflictReplace = "replace"
+)
+
+// ImportOptions 为可选导入策略；零值保持既有合并语义，调用方缺省无需感知。
+type ImportOptions struct {
+	// AuthorProfileConflict 作者档案（昵称/简介/主页/证据/xProfile/头像）与备份
+	// 不一致时的处置：keep/空串=保留本机（默认）；replace=以备份整份替换。
+	AuthorProfileConflict string
+}
 
 var ErrInvalidBackup = errors.New("无效备份")
 
@@ -77,14 +92,47 @@ func New(opts Options) *Service {
 
 // Import 先完成 v2 全载荷校验，再依次执行原有分段事务。
 // 失败保留既有部分提交，返回首个阶段错误；任何已提交段均通知读侧失效。
-func (s *Service) Import(ctx context.Context, req *BackupImport) (ImportResult, error) {
+// opts 省略或 AuthorProfileConflict 缺省/keep 时保持既有合并语义。
+func (s *Service) Import(ctx context.Context, req *BackupImport, opts ...ImportOptions) (ImportResult, error) {
+	options := ImportOptions{}
+	if len(opts) > 0 {
+		options = opts[0]
+	}
 	if req.Format != Format {
 		return ImportResult{}, &invalidBackup{cause: errors.New("format 必须为 qimeng_backup")}
 	}
 	if err := validatePortableBackup(req); err != nil {
 		return ImportResult{}, &invalidBackup{cause: err}
 	}
-	imp := &backupImport{s: s, ctx: ctx}
+	for _, author := range sliceOrEmpty(req.Data.Authors) {
+		if author.AvatarData != nil && author.ProfileJson == nil {
+			return ImportResult{}, &invalidBackup{cause: errors.New("离线头像缺少作者档案")}
+		}
+		if author.ProfileJson != nil {
+			var profile creatorprofile.Profile
+			if len(*author.ProfileJson) > 262144 {
+				return ImportResult{}, &invalidBackup{cause: errors.New("作者档案超限")}
+			}
+			if err := json.Unmarshal([]byte(*author.ProfileJson), &profile); err != nil {
+				return ImportResult{}, &invalidBackup{cause: err}
+			}
+			if profile.AuthorID != author.AuthorId {
+				return ImportResult{}, &invalidBackup{cause: errors.New("作者档案身份不匹配")}
+			}
+			if err := creatorprofile.ValidateProfile(profile); err != nil {
+				return ImportResult{}, &invalidBackup{cause: err}
+			}
+			if author.AvatarData != nil {
+				if profile.AvatarURL == "" {
+					return ImportResult{}, &invalidBackup{cause: errors.New("离线头像缺少来源")}
+				}
+				if _, err := creatorprofile.DecodeAvatar(*author.AvatarData); err != nil {
+					return ImportResult{}, &invalidBackup{cause: err}
+				}
+			}
+		}
+	}
+	imp := &backupImport{s: s, ctx: ctx, opts: options}
 	imp.matchBackupFiles(req.Data.MediaFiles)
 	imp.importTxtFragments(req.Data.TxtFragments)
 	imp.importAuthors(req.Data.Authors, req.Data.AuthorMediaRefs)

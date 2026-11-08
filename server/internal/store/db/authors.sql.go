@@ -97,6 +97,42 @@ func (q *Queries) CopyAuthorWithNewID(ctx context.Context, arg CopyAuthorWithNew
 	return result.RowsAffected()
 }
 
+const countAssetAuthorsByAuthorID = `-- name: CountAssetAuthorsByAuthorID :one
+SELECT COUNT(*) FROM asset_authors WHERE author_id = ?
+`
+
+// Author merge step 1a: total source links before migration. The merge
+// compares this with CountSharedAssetAuthors to report moved vs deduped.
+func (q *Queries) CountAssetAuthorsByAuthorID(ctx context.Context, authorID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAssetAuthorsByAuthorID, authorID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSharedAssetAuthors = `-- name: CountSharedAssetAuthors :one
+SELECT COUNT(*)
+FROM asset_authors src
+JOIN asset_authors dst ON dst.asset_id = src.asset_id
+WHERE src.author_id = ?1
+  AND dst.author_id = ?2
+`
+
+type CountSharedAssetAuthorsParams struct {
+	SourceAuthorID string
+	TargetAuthorID string
+}
+
+// Author merge step 1b: assets already linked to BOTH identities. Their
+// target row is kept verbatim (origin/created_at preserved) and only the
+// source row is deleted.
+func (q *Queries) CountSharedAssetAuthors(ctx context.Context, arg CountSharedAssetAuthorsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSharedAssetAuthors, arg.SourceAuthorID, arg.TargetAuthorID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteAssetAuthorsByAssetID = `-- name: DeleteAssetAuthorsByAssetID :exec
 DELETE FROM asset_authors WHERE asset_id = ?
 `
@@ -105,6 +141,18 @@ DELETE FROM asset_authors WHERE asset_id = ?
 // delete-then-insert, same overwrite semantics as asset_characters).
 func (q *Queries) DeleteAssetAuthorsByAssetID(ctx context.Context, assetID string) error {
 	_, err := q.db.ExecContext(ctx, deleteAssetAuthorsByAssetID, assetID)
+	return err
+}
+
+const deleteAssetAuthorsByAuthorID = `-- name: DeleteAssetAuthorsByAuthorID :exec
+DELETE FROM asset_authors WHERE author_id = ?
+`
+
+// Author merge step 3: drop the deduped source rows left behind by
+// MergeAssetAuthors (and any source row should the target row disappear
+// concurrently). Author delete itself uses DeleteAssetAuthorsByAuthorIds.
+func (q *Queries) DeleteAssetAuthorsByAuthorID(ctx context.Context, authorID string) error {
+	_, err := q.db.ExecContext(ctx, deleteAssetAuthorsByAuthorID, authorID)
 	return err
 }
 
@@ -271,7 +319,7 @@ WITH asset_views AS (
       AND ve.asset_id IN (SELECT asset_id FROM asset_authors)
     GROUP BY ve.asset_id
 )
-SELECT au.id, au.display_name, au.type, au.followed,
+SELECT au.id, au.display_name, au.type, au.followed, au.created_at,
        COUNT(aa.asset_id) AS file_count,
        COALESCE(SUM(av.opens), 0) AS view_count
 FROM authors au
@@ -286,6 +334,7 @@ type ListAuthorsRow struct {
 	DisplayName string
 	Type        string
 	Followed    int64
+	CreatedAt   string
 	FileCount   int64
 	ViewCount   interface{}
 }
@@ -322,6 +371,7 @@ func (q *Queries) ListAuthors(ctx context.Context) ([]ListAuthorsRow, error) {
 			&i.DisplayName,
 			&i.Type,
 			&i.Followed,
+			&i.CreatedAt,
 			&i.FileCount,
 			&i.ViewCount,
 		); err != nil {
@@ -374,6 +424,27 @@ func (q *Queries) ListNormalAssetsForAuthorMatch(ctx context.Context) ([]ListNor
 		return nil, err
 	}
 	return items, nil
+}
+
+const mergeAssetAuthors = `-- name: MergeAssetAuthors :exec
+UPDATE OR IGNORE asset_authors SET author_id = ?1
+WHERE author_id = ?2
+`
+
+type MergeAssetAuthorsParams struct {
+	TargetAuthorID string
+	SourceAuthorID string
+}
+
+// Author merge step 2: move non-conflicting source links to the target.
+// UPDATE OR IGNORE leaves the target's existing row (and its provenance)
+// untouched when the same asset is already linked to the target; a
+// follow-up DeleteAssetAuthorsByAuthorID removes those leftover source
+// rows. Non-conflicting rows keep created_at/origin (ADR-0032: never
+// fabricate provenance during a merge).
+func (q *Queries) MergeAssetAuthors(ctx context.Context, arg MergeAssetAuthorsParams) error {
+	_, err := q.db.ExecContext(ctx, mergeAssetAuthors, arg.TargetAuthorID, arg.SourceAuthorID)
+	return err
 }
 
 const renameAssetAuthors = `-- name: RenameAssetAuthors :execrows

@@ -110,7 +110,8 @@
 | `statsread` | 统计总览/日维度/浏览回顾只读装载与共用窗口；精确全量数，客户端不反推 | HTTP/SDK 类型、写入、重复领域公式 |
 | `sourcematcher` | 出处/角色匹配引擎（130 组内置检索表 + 前缀匹配） | **任何 IO**（纯函数；内置表数据文件除外） |
 | `authoring` | 作者 TXT 三格式解析、作者-文件匹配规则、authorId 生成 | **任何 IO**（纯函数） |
-| `authorattach` | 作者挂靠编辑与本地镜像编排（上传挂靠参数已随 ADR-0024 退役；ADR-0023/0024，ADR-0019 首个新流程落地）：TXT 片段存取单一来源 + 挂靠写入与资产作者/来源编辑编排（编辑走 edit.go，在调用方事务内）+ 重导入保护元数据 + 本地总表镜像（尽力而为原子写）；依赖 store/authoring，被 httpapi 调用 | 绕过调用方事务自行提交；片段本体之外的第二真相存储 |
+| `authorattach` | 作者挂靠编辑与本地镜像编排（上传挂靠参数已随 ADR-0024 退役；ADR-0023/0024，ADR-0019 首个新流程落地）：TXT 片段存取单一来源 + 挂靠写入与资产作者/来源编辑编排（编辑走 edit.go，在调用方事务内）+ 重导入保护元数据 + 本地总表镜像及合成主表（尽力而为原子写）；依赖 store/authoring/creatorprofile的已保存链接读取，被 httpapi、portablebackup、mediawrite、authoredit 调用 | 绕过调用方事务自行提交；片段本体之外的第二真相存储 |
+| `creatorprofile` | 独立公开档案、revision保护、待审候选、安全公开来源读取与有界维护；main装配并取消收齐，作者改名事务迁移，0021删除资料、0022推进独立版本墓碑，v2恢复关闭维护 | TXT/作者核心身份、HTTP/SDK依赖、按同名合并或自动覆盖人工资料 |
 | `authoredit` | 作者编辑类用例的事务宿主（2026-10-24 Q1 事务下沉）：词表预填、作者来源区替换/并入、作者建/改名/删除、资产作者整体替换六个用例，单事务内组合 authorattach 原语并在 Commit 成功后刷新镜像；哨兵仅新增资产不存在/不支持库类型两个，其余原样透传 authorattach 身份 | HTTP/SDK 依赖、协议校验（留 httpapi）、重复刷新镜像或新增库事件/修订号变化 |
 | `filing` | 上传、移动、重命名、回收站 | 绕过路径安全校验 |
 | `store` | sqlc 生成代码、migrations 与只读装载策略（推荐输入的计划选择/标签装载） | SQL 字符串拼接、领域评分、HTTP 依赖 |
@@ -217,3 +218,40 @@ SQLite 业务库默认 WAL/FULL（ADR-0048），以每次提交同步 WAL 换取
 便携 JSON 迁移不含媒体原件，只合并目标库既有资产。当前导出 v2，以原始事件身份合并；旧v1导入已按ADR-0050退役，删除聚合回放/批次锚，v2映射/去重边界定义在 [迁移专题](domain/migration.md)。TXT 片段随备份 keep 合并，先行传输原件。禁止声称旧聚合身份可逆或所有迁移均零损失；必须同步升级客户端与服务端。
 
 eventstats 编排在写事务内读取真相并重建派生统计；stats/materialize 保持纯函数。回收站恢复在原资产事务内调用单资产重建；portable_backup.go 适配既有导入/导出，migration 0019 只加无键身份旁表与触发器（ADR-0040）。缩略图表示版本贯通 URL/磁盘/客户端预取，规则见 [缩略图专题](domain/thumbnails.md)。
+## 外部 AI 接入平台与维护执行面
+
+用户按 ADR-[0051](adr/0051-外部AI维护与标签隐私.md)、[0052](adr/0052-外部AI维护需求修订.md) 确认外部工具、规则包、持久后台执行与本地维护权限方向；2026-11-07 统一下发[外部 AI 接入平台统一任务书 V2](AI_PLATFORM_TASKBOOK.md)，并以 ADR-[0056](adr/0056-独立AI接入平台架构.md) 冻结分层。原[外部 AI 维护任务书](AI_MAINTENANCE_TASKBOOK.md)与 [P0 底稿](AI_MAINTENANCE_P0.md)转为历史需求来源，不再作为并行执行清单。
+
+```text
+外部 AI（Codex / 其他工具型 AI / 未来模型）
+        │  CLI / MCP stdio（可选未来 HTTP：独立契约，不入三端 OpenAPI）
+        ▼
+独立 AI 工具层  tools/ai_maintenance/（Python 3.13 标准库，可独立启动/更新）
+  rules.json 规则源 → rulepack/context 能力核对 → tool registry
+  → plans/确认/执行/回读 → 结构化报告；凭据只在此进程环境
+        │  正式业务 API /api/v1（管理员 Bearer 由可信执行端持有）
+        ▼
+Go 业务核心（领域服务唯一实现：作者、文件、备份、维护账本、研究网关）
+        ▼
+SQLite / TXT / 媒体文件 / 备份
+
+Web / Windows / Android ──→ 同一 /api/v1（不强制经过 AI 工具层）
+```
+
+边界（ADR-0056）：
+
+- **两层接口独立**：AI 工具名/参数/工作流/版本可独立演进；主 API 仍由 [OpenAPI](../api/openapi.yaml) 定义。AI 工具层只做适配、计划、安全与核验，不复制业务规则，不直写 SQLite/TXT，不建第二事实。新增普通 AI 工具不改三端。
+- **规则与版本分离**：规则源 `rules.json` + 生成器 `rulepack.py` + CLI/MCP 共用同一 dispatch；平台版本、工具契约版本、规则包版本、OpenAPI 来源指纹各自独立；工具按声明的端点+方法+字段独立核对，缺失即 unavailable/incompatible，路径存在不等于可用。
+- **受控写入**：查询现状 → 生成计划（影响数量/旧新值/证据/前置版本/指纹/幂等键/预期回读）→ 确认 → 正式 API 执行 → 回读 → 结构化报告；作者链复用既有原子合并端点与档案 revision 语义，人工字段优先保护；高风险操作先预览影响。工具层声明权限不等于服务端已实现最小权限，正式开放 AI 写入前仍需评审受限凭据或不可绕过的执行端隔离。
+- **后台任务唯一账本**：复用 `server/internal/maintenance` + migration 0023 + `/api/v1/maintenance/jobs`；Go 内部 worker 仅领取已注册 handler 的 kind（`backup_export`），有界并发、租约/心跳、逐步记录、暂停/取消恢复、重启续跑不重复副作用；无 handler 的 kind 保持 queued 供未来外部 AI 执行器，不向普通客户端开放领取端点，不建第二套任务库。同幂等键不同载荷指纹返回 409。
+- **跨设备结果包**：复用 `server/internal/deviceapply` + migration 0024 + `/api/v1/device/apply-tasks`；手机充电+Wi-Fi 主动拉取、导入前先导出完整备份、校验设备/协议/规则指纹/段摘要、应用后回读回传；`targetDeviceId` 目前仅为标签，设备绑定/配对/Android 后台 Worker 未实现前不宣称真机自动应用。
+- **两代备份布局**：维护目录统一为 `当前/` 与 `上次/`（各含作者资料与完整备份及独立摘要）；服务端作者镜像按已配置 path 的祖先目录命名（`当前`/`current`）推导上一代 `上次`/`previous` 同根兄弟路径，推导失败保持旧 flat3 三代语义并保留回退；Web/Android 使用同一约定；旧布局迁移只读核对+复制，不自动删除历史文件。
+- **组图命名与作品编号**：作品编号按作品递增、组内页码独立（`作品名 11 (1).ext` … `11 (n).ext`，一组只占一个作品编号）；命名解析是共享 Go 纯函数（文件族/主编号/页号），AI 工具层负责计划、预览与执行校验；写入后回读实际文件名，服务端自动改名不得当作成功。组图内部页码不进入作品编号序列。
+- **搜索语义**：共享 Go 搜索层对「名称 + 合同编号」按独立数字段匹配，`(n)` 定位组图页码；非数字关键词保持既有文件名/文件夹/标签/作者/角色/出处多字段子串搜索；Web/Android 使用同一 API 语义，客户端不重复实现匹配规则。
+- **研究边界**：本地历史探针退役；Go provider/Lens 网关为可选能力且默认关闭；不为 Fake-IP 放行地址段、不放宽 SSRF、不新增默认外网抓取；Lens sidecar 未使用不自动运行。外部 AI 自身联网研究优先，结果只通过受控业务工具写入。
+
+实施状态（已验证/已安装分开记录，详见 [HANDOVER](HANDOVER.md)）：AI 工具层核心、工具注册与版本/兼容核对、统一 CLI、作者链受控写入、`backup.export` 与组图命名引擎、MCP stdio 适配器、维护 worker、两代布局（服务端/Web/Android）、搜索语义与双端文件名显示为 2026-11-07 源码交付并随云端 CI 验证；未安装到现装 PC/手机，MCP 仅在协议层用合成客户端验证，Android 真机、设备配对、NAS 与真实媒体整理仍未验收。
+
+### 维护任务账本与设备结果包（2026-11-07 已落地）
+
+migration 0023 新增 `maintenance_jobs`/`maintenance_steps`/`maintenance_artifacts`，migration 0024 新增 `device_apply_tasks`/`device_apply_segments`（均为只增表，不改既有表）。维护队列账本记录状态机、幂等键、租约与步骤/工件索引，对外提供 `/api/v1/maintenance/jobs` 族端点；设备结果包账本只存清单、摘要与状态，段字节落 `<dataDir>/device-apply-packages/<taskId>/`，由 `/api/v1/device/apply-tasks` 族端点登记、领取与回传。两个领域包（`server/internal/maintenance`、`server/internal/deviceapply`）只依赖 store/领域包、不依赖 httpapi；Go worker 已在 maintenance 包内实现并随组合根启动（仅处理已注册 kind），业务写入仍走正式 API。设备配对、Android 后台 Worker 与 Web 任务中心按 HANDOVER 记录分别推进。

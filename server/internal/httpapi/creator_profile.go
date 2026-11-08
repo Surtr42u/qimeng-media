@@ -1,0 +1,129 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"qimeng-media/server/internal/creatorprofile"
+)
+
+// 协议 CreatorProfileWrite 原有字段必填，xProfile/remark 可选：指针区分缺失/null
+// 与显式清空或关闭。翻译字段的缺省由领域保存逻辑按账号和原文判断是否保留；
+// remark 省略时为兼容未升级客户端保留原值，显式空字符串才清空。
+type creatorProfileWriteRequest struct {
+	Revision     *int64          `json:"revision"`
+	Nickname     *string         `json:"nickname"`
+	Biography    *string         `json:"biography"`
+	Remark       *string         `json:"remark"`
+	AvatarURL    *string         `json:"avatarUrl"`
+	HomepageURL  *string         `json:"homepageUrl"`
+	EvidenceURLs *[]string       `json:"evidenceUrls"`
+	Status       *string         `json:"status"`
+	AutoRefresh  *bool           `json:"autoRefresh"`
+	FeedURL      *string         `json:"feedUrl"`
+	TrackUpdates *bool           `json:"trackUpdates"`
+	XProfile     json.RawMessage `json:"xProfile,omitempty"`
+}
+
+type creatorXProfileWriteRequest struct {
+	URL         *string         `json:"url"`
+	Biography   *string         `json:"biography"`
+	BiographyZh json.RawMessage `json:"biographyZh,omitempty"`
+}
+
+func (s *Server) creatorProfileErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, creatorprofile.ErrNotFound):
+		writeErr(w, http.StatusNotFound, codeNotFound, "作者或头像不存在")
+	case errors.Is(err, creatorprofile.ErrConflict):
+		writeErr(w, http.StatusConflict, codeConflict, err.Error())
+	case errors.Is(err, creatorprofile.ErrInvalid):
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, err.Error())
+	default:
+		s.internalErr(w, "作者档案", err)
+	}
+}
+func (s *Server) GetApiV1AuthorsAuthorIdProfile(w http.ResponseWriter, r *http.Request, authorId string) {
+	p, err := s.creatorProfiles.Get(r.Context(), authorId)
+	if err != nil {
+		s.creatorProfileErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+func (s *Server) PutApiV1AuthorsAuthorIdProfile(w http.ResponseWriter, r *http.Request, authorId string) {
+	var body creatorProfileWriteRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Revision == nil || body.Nickname == nil || body.Biography == nil ||
+		body.AvatarURL == nil || body.HomepageURL == nil || body.EvidenceURLs == nil ||
+		body.Status == nil || body.AutoRefresh == nil || body.FeedURL == nil || body.TrackUpdates == nil {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "作者档案须显式提供全部字段，且不能为 null")
+		return
+	}
+	var xProfile *creatorprofile.XProfile
+	if len(body.XProfile) > 0 {
+		var source *creatorXProfileWriteRequest
+		if err := json.Unmarshal(body.XProfile, &source); err != nil || source == nil || source.URL == nil || source.Biography == nil {
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "X资料须同时提供账号链接与简介原文")
+			return
+		}
+		xProfile = &creatorprofile.XProfile{URL: *source.URL, Biography: *source.Biography}
+		if len(source.BiographyZh) > 0 {
+			if err := json.Unmarshal(source.BiographyZh, &xProfile.BiographyZh); err != nil || xProfile.BiographyZh == nil {
+				writeErr(w, http.StatusBadRequest, codeInvalidParam, "中文译文须为字符串")
+				return
+			}
+		}
+	}
+	remark := ""
+	if body.Remark != nil {
+		remark = *body.Remark
+	} else {
+		// 旧客户端不认识新字段；省略 remark 时保留原值，避免编辑其他资料时清空备注。
+		current, err := s.creatorProfiles.Get(r.Context(), authorId)
+		if err != nil {
+			s.creatorProfileErr(w, err)
+			return
+		}
+		remark = current.Remark
+	}
+	p, err := s.creatorProfiles.Save(r.Context(), authorId, creatorprofile.Write{
+		Revision: *body.Revision, Nickname: *body.Nickname, Biography: *body.Biography, Remark: remark,
+		AvatarURL: *body.AvatarURL, HomepageURL: *body.HomepageURL, EvidenceURLs: *body.EvidenceURLs,
+		Status: *body.Status, AutoRefresh: *body.AutoRefresh, FeedURL: *body.FeedURL, TrackUpdates: *body.TrackUpdates,
+		XProfile: xProfile,
+	})
+	if err != nil {
+		s.creatorProfileErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+func (s *Server) PostApiV1AuthorsAuthorIdProfileRefresh(w http.ResponseWriter, r *http.Request, authorId string) {
+	p, err := s.creatorProfiles.Refresh(r.Context(), authorId)
+	if err != nil {
+		s.creatorProfileErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+func (s *Server) GetApiV1AuthorsAuthorIdProfileAvatar(w http.ResponseWriter, r *http.Request, authorId string) {
+	// 固定代理 URL 对应可变来源；不让浏览器缓存绕过客户端的档案修订失效。
+	w.Header().Set("Cache-Control", "no-store")
+	data, kind, err := s.creatorProfiles.Avatar(r.Context(), authorId)
+	if err != nil {
+		if errors.Is(err, creatorprofile.ErrNotFound) {
+			s.creatorProfileErr(w, err)
+		} else {
+			writeErr(w, http.StatusBadGateway, codeInvalidParam, "头像来源暂不可用")
+		}
+		return
+	}
+	w.Header().Set("Content-Type", kind)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if _, err = w.Write(data); err != nil {
+		s.logger.Debug("写出作者头像失败", "err", err)
+	}
+}

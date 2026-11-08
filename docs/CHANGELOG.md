@@ -1,3 +1,237 @@
+
+## feat(tools): AI 工具平台 1.1.0：43 工具、执行器/设备/研究/回收站能力（2026-11-08 第七百二十一笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 工具注册表 29→43：新增 `maintenance.claim/heartbeat/step.record/artifact.record/complete`、`research.image.pipeline/search`、`research.author.probe/media.probe/avatar.fetch`、`trash.list/restore`、`asset.trash`、`asset.tags.replace`；`backup.export` 与 `device.apply.prepare/submit/status` 由 planned 转 supported。`platformVersion`/`toolContractVersion` 升 1.1.0，`rulesVersion`/`rulepackVersion` 升 `2026-11-08.2`。
+- 错误目录新增 `PERMISSION_DENIED`/`TOOL_DEPRECATED`/`FORBIDDEN_SCOPE`/`LEASE_LOST`；工具权限与 Go scope 对齐（asset.write/asset.upload/asset.delete/tag.write/source.write/library.write/trash.restore/maintenance.execute），执行器工具以 `leaseToken` 作为能力凭据，只在 claim 结果出现。
+- 文档：`tools/ai_maintenance/README`、`rules.json`、`docs/AI_PLATFORM_OPERATIONS`、`docs/AI_PLATFORM_API_GAPS` 与 HANDOVER §10、CAPABILITY_MAP 同批。验证：Python 164 项通过；未接真实 AI 客户端、未安装、未对真实库执行写入。
+
+## fix(app): 设备任务全量翻页与本机模式设备令牌自助生成（2026-11-08 第七百二十笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 领取/待办列表改为沿 `nextCursor` 读到底（100 条/页，20 页硬上限 2000），修复只读第一页导致第 51 条之后任务永远轮不到；本地/远端共用同一 runner。
+- 本机单机模式新增「生成本机设备令牌」：用内嵌实例管理员会话先 `GET /ai-clients` 复用/轮换，必要时创建 `android-local-<device>`（device.apply + deviceIds 绑定），明文 token 只写设置存储，不回填 UI/日志/state；远端模式不提供该入口。
+- 设置页新增只读「最近设备任务」卡（20 条，设备令牌），不参与领取/应用；README 同步边界。
+- 验证：`:core:data` device/token 测试 50 项通过，`:feature:manage`/`:app` `compileDebugKotlin` + `hiltJavaCompileDebug` 成功。未安装、未真机/模拟器验证；Doze/FGS/SAF 仍未验。
+
+## feat(server): 设备结果包服务端权威状态校验（2026-11-08 第七百一十九笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- manifest 新增可选 `expectedState`（assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents，非负整数；未知键/负数 400）；回传结果时服务端读库内绝对计数逐键比较，并核对 `deviceLocalHashes` 与登记段摘要（少报/不符记 `hashVerified=false`，不改变回传状态码）。
+- 结果新增 `authoritativeState`/`expectedStateMatches`/`expectedStateDiff`/`hashVerified`；migration `0026_device_apply_verification` 只增 nullable `verification_json`，`result_json` 仍是幂等重放比较基准，相同结果重放不重算、不产生 409，旧行保持 NULL。
+- 文档：`docs/api/device.md`、OpenAPI/SDK 由同批提交维护。验证：deviceapply/httpapi 定向测试（临时 SQLite、合成包）。未安装、未真机、未向真实库回传。
+
+## feat(server): 维护任务外部执行器受控通道与 worker 恢复修复（2026-11-08 第七百一十八笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 新增 `POST /api/v1/maintenance/executor/claim`（无任务 204）与 `jobs/{id}/heartbeat|steps|artifacts|complete` 五个端点，scope `maintenance.execute`；服务端每次领取生成 fencing `leaseToken`（30–1800 秒，默认 120），暂停/取消/终态/租约过期/重领后旧 token 一律 409 `LEASE_LOST`，步骤/工件在租约事务内校验后写。
+- claim 返回**完整** `completedSteps`（步骤详情仍限 50 条）；worker 恢复按完整已完成/跳过步骤名跳过，修复 >50 步任务重跑已完成步骤的副作用。
+- 文档：`docs/api/maintenance.md` 与 OpenAPI/SDK 同批。验证：maintenance/httpapi 定向 `go test`。未跑全量/race/云端 CI，未接真实外部执行器或 NAS。
+
+## feat(server): AI 客户端按客户端令牌桶限流（2026-11-08 第七百一十七笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 每客户端默认 600 次/分、突发 120；`QIMENG_AI_RATE_LIMIT_PER_MINUTE`/`QIMENG_AI_RATE_LIMIT_BURST` 可调，0 关闭。超限 429 `RATE_LIMITED` + `Retry-After`；限流在 scope 检查之前，写请求照常记审计。
+- 限流为进程内单实例实现（空闲桶 10 分钟回收）；重启清零，多实例共享配额未实现。
+- 验证：aiauth/httpapi 定向测试；未安装、未做真实客户端压测。
+
+## feat(server): AI 客户端 HTTP 管理、审计查询与写 scope 扩展（2026-11-08 第七百一十六笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 新增 scope `asset.write`/`asset.upload`/`asset.delete`/`tag.write`/`source.write`/`library.write`/`trash.restore`/`maintenance.execute`；method+path 映射扩展到上传、标签、来源、库、回收站与执行器端点，未映射写请求仍默认 deny。
+- 新增 `GET/POST /api/v1/ai-clients`、`DELETE /api/v1/ai-clients/{id}`、`POST /{id}/rotate` 与 `GET /api/v1/ai-audit`：仅管理员会话可用，AI token 即使带 admin scope 也返回 403 `FORBIDDEN_SCOPE`；明文 token 只在创建/轮换响应出现一次，审计按客户端/动作/目标/结果/请求 ID 记录；撤销/轮换经 5 秒缓存生效。
+- 文档：OpenAPI/SDK/`api/sdk.lock`、`docs/AI_PLATFORM_API_GAPS`、SECURITY 由同批提交维护。验证：aiauth/httpapi 定向 `go test`。未安装、未跑全量/CI、未接真实 AI 客户端；Web 管理 UI 未做。
+
+## merge: 合并 PR #44 外部 AI 平台与 PR #45 作者 TXT 硬约束（2026-11-08 第七百一十五笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- PR #44（外部 AI 接入平台、维护执行面、Android Worker 源码）与 PR #45（作者 TXT 作品行硬约束、研究工具包）合并入 master；唯一文档冲突 `docs/domain/migration.md` 按两代备份口径 + `authorProfileConflict=replace` 解析。
+- 合并后本轮增量见第七百一十六～七百二十一笔；现装仍为 796d813f，新代码未构建安装，合并后云端 CI 待跑。
+
+## fix(app): 设备领取本地前置与 claimed 恢复收尾、worker 测试 lint 修复（2026-11-08 第七百一十四笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理；android-client 只读复核与实现）
+
+- Android 设备领取复核（task-19）后修复：新增 DeviceApplyPreconditions，claim 前校验登录会话→维护根→所有文件访问，缺项只记录本机提示并结束、任务保持 pending（不再消耗成 failed 终态），授权后可「立即应用」重试；Remote 增 listByStatus，Runner 同查 pending+claimed（claimed 未过期按 claim 幂等继续/对账，终态跳过），Policy 按过期时间筛选；设置页令牌只显示已配置/替换清除，不回填明文 state；docs/api/device、android/README、docs/android-background-execution 修正未登录不领取、claimed 恢复、本机单机模式无令牌创建通道等口径；补 Preconditions/Policy JVM 测试。
+- 修复 CI run 42389606438 服务端 lint 失败：worker_test.go:671 `||` 两侧相同表达式 SA4000，改为先赋值再判断，语义不变（ad5cf3da）。
+- 验证：go test 定向 lint 用例通过；Android 复核/编译由子代理与 CI 复验；未跑全量、未真机/安装。
+
+## docs(ai): 本轮收尾：9 项修复、AI 凭据 P1、Android 后台 Worker 与验证边界（2026-11-08 第七百一十三笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理）
+
+- 汇总并同步本轮交付：9 个 PR #44 Codex inline finding/用户报告问题的修复（工具层 5 项、Web 两代备份、Android 历史备份、Worker 租约、MCP 取消）、工具层按需工作流 `platform.playbook` 与 MCP 异步化、Go 侧 ADR-0057 P1 首批（AI 客户端凭据/scope/审计/设备级隔离/本地 CLI）、Android 后台设备结果包 Worker 源码。
+- 文档：taskbook 增 §4.5（按需模板/独立部署）与 §9.6（Android 后台执行与 AI 权限适配）、§13 状态与 §14 矩阵；CAPABILITY_MAP 增 AI 凭据/设备级隔离与 Android Worker 行；ADR-0057 状态与实现补充、ADR INDEX；HANDOVER §9.1/§9.3 交付与边界；新增 [独立 AI 平台部署升级边界](AI_PLATFORM_OPERATIONS.md) 与 [Android 后台执行分析](android-background-execution.md)；tools/ai_maintenance/README、docs/SECURITY、docs/AI_PLATFORM_API_GAPS、docs/api/device、android/README 随各提交同步。
+- 验证边界：本机定向通过（AI 工具 regression 12/catalog 22/MCP 11；Web vitest 24、tsc；Android JVM 34 + compileDebugKotlin、备份 28；Go build/vet + maintenance 定向；check_docs 147 文件 0 错误、check_privacy passed）；**未跑全量测试/云端 CI/真实库/真机/安装**，未合并 PR、未部署。待集中验收清单见 HANDOVER §9.2/§9.3。
+
+## fix(server): 维护 worker 租约丢失取消在途 handler、续租错误分类、Claim 失败释放租约（2026-11-08 第七百一十二笔）
+
+执行 AI：DeepSeek V4.1 Flash（子代理 go-worker2）
+
+- 依据 go-worker 对 7ce3bc79 的只读复核修复残余窗口：process 为每笔任务建 jobCtx，心跳 ErrLeaseLost/连续非租约失败/租约余量过小时 cancel，handler.Execute 改用 jobCtx；Execute 返回后按 jobCtx 判定 interrupted，不写终态、不误标 failed，已提交步骤保留、重领后重跑未完成步骤（P2-1）。
+- 步骤边界心跳非租约错误不再 failJob（warn+cancel+停止本槽，等 TTL 重领）；AdvanceStatus/settleStages 临时错误同策略（P2-2）。Claim 提交后 Get 失败时新增 ReleaseMaintenanceLease 尽力释放本次租约再返回错误（P3-3）。main 等待 worker 收敛加 shutdownTimeout，超时记录后继续关库（P3-5）。
+- 新增测试：Start+Concurrency=2+阻塞 handler+Pause/Resume 取消、瞬时心跳错误不 failed、领取后详情失败可立即重领；go build/vet/maintenance 定向测试通过。残余：取消依赖心跳发现（最长一个心跳间隔）；立即 resume 的极短窗口仍未完全消除，需后续协调/可重试语义评估；未改 API/协议/migration。
+
+## feat(app): Android 后台设备结果包 Worker、设备级令牌与 SAF/权限适配（2026-11-08 第七百一十一笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；独立子代理实现与 JVM 验证）
+
+- 复用设备结果包协议与维护账本实现后台 Worker：core/data/device 14 个文件（Runner 编排领取-校验-应用-回读-回传；Worker/Scheduler/WorkSpec 15min 周期+一次性、CONNECTED、unique work+Mutex；Remote/Policy/Authorization/SegmentVerifier/ResultPlanner/LocalBackup/Readback/SettingsRepository/Models）；feature/manage 设备领取页/VM 与维护页入口（设备标签、口令式设备令牌、后台开关、立即应用、最近摘要）。
+- 设备授权：专用 AI 令牌（device.apply + device_ids）只用于设备端点，无令牌不回退会话 token；本机模式先拉起内嵌服务；维护根+所有文件访问门禁，缺失回 failed 并提示 UI 授权；先导出两代备份再 import-txt/qimeng-backup，按 expectedReadback 回读比较后回传 result，清理临时段；409 先对账终态不覆盖。
+- 验证：:core:data:testDebugUnitTest device.* 34 tests 通过、feature:manage/app compileDebugKotlin 通过、check_docs 0 错误、check_privacy passed。未安装、未真机；Doze/厂商后台、后台拉起内嵌 FGS、SAF/存储授权撤回、PC→手机端到端、断网/进程被杀恢复待验证；无段级进度持久化，进程强杀可能重下整包。
+
+## feat(server): 独立 AI 客户端凭据、scope 强制校验与写审计（2026-11-08 第七百一十笔）
+
+执行 AI：DeepSeek V4.1 Flash（子代理 go-worker 实现与本地定向验证）
+
+- ADR-0057 P1 首批（不改 OpenAPI/sdk.lock/三端、不加 HTTP 管理端点）：migration 0025 只增 ai_clients（token_hash 唯一、scopes_json/device_ids_json、expires/revoked/last_used）与 ai_audit（只增、无外键）；新包 server/internal/aiauth（scope 白名单/未知拒绝、token 生成+auth.TokenHash、过期/撤销 fail-closed、5s 缓存+Reload、审计、Create/List/Revoke/Rotate）。
+- httpapi：管理员会话先行验证（行为不变），未命中再验 AI 凭据；AI 按 method+path 强制 scope（GET/HEAD 兜底 read，维护/备份/研究/设备各自 scope，未映射写默认 403 FORBIDDEN_SCOPE），管理员不受限；AI 写请求含被拒写审计；设备级隔离 device.apply + ai_clients.device_ids，列表/详情/领取/段/回传/取消校验 targetDevice，越权不改状态。
+- 管理入口：qimeng ai-client create|list|revoke|rotate -config，直接打开同一 SQLite（先幂等 migration），明文 token 只 stdout 一次；撤销幂等、轮换旧 token 立即失效。验证：go build/vet、aiauth/httpapi/cmd 定向测试通过；未跑全量/CI/真实库。边界：协议化 scope、HTTP 管理端点、限流预算、审计查询、设备配对未实现；异地撤销约 5s 缓存生效。
+
+## fix(server): 维护 worker 租约改为每次领取唯一 fencing token 并校验未过期租约（2026-11-08 第七百零九笔）
+
+执行 AI：DeepSeek V4.1 Flash（子代理 go-worker2）
+
+- 根因：Worker 实例 owner 跨领取复用，Claim/Heartbeat/Complete/Advance 只比较 owner 字符串；租约过期被重领后旧执行上下文仍可续租/覆盖步骤工件终态，同任务可并发执行。修复：实例身份 qimeng-worker-<pid>-<uuid> + 每次领取唯一 fencing token；Heartbeat/Finish/Advance SQL 增 lease_until 未过期条件；StepInput/ArtifactInput 增 LeaseOwner，在同一 _txlock=immediate 事务内校验 owner+未过期后写步骤/工件；ErrLeaseLost 只停止不误标 failed，暂停/取消进行中步骤保留 running。
+- 验证：go test ./internal/maintenance/ -count=2、go vet、go build、gofmt、sqlc 重生成稳定；新增身份/token 唯一、同实例两次领取 token 不同、旧实例接管后不得覆盖、过期租约全链路围栏测试。未加 migration、未改 API/SDK/业务语义。
+
+## fix(web): 两代备份写入中断恢复与轮换幂等（2026-11-08 第七百零八笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 web-client 实现与定向验证）
+
+- 根因：先整代轮换当前→上次再写新当前且无事务标记；中断后重复轮换/半成品被当上次代/正文摘要分开写导致永久摘要不符或丢失完整旧代。修复：新增 maintenance-generation.ts 两代写入原语与恢复判定；写快照前落 .两代轮换状态.json（old/next 摘要），整代轮换（相同跳过、缺摘要补）、写新当前（正文先摘要后）、最后删状态；下次写入按断点自愈，不可判定拒绝并保留现场；相同数据重复导出只刷新当前并修复过期摘要；旧 flat3 只读兼容不变。
+- 验证：maintenance-folder.test.ts 24/24、tsc --noEmit、oxlint 0；未跑全量 vitest/Playwright/vite build/真实服务端。待测：真实浏览器崩溃中断自愈、真实 FS removeEntry 失败、跨浏览器差异。
+
+## fix(app): 修复两代布局历史备份恢复读取（上次代跨目录/旧 flat3 只读回退）（2026-11-08 第七百零七笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 android-client 实现与 JVM 验证）
+
+- 根因：上次代在独立目录 上次/备份/影库备份.json，恢复入口仍按当前目录+影库备份（上次）.json 拼路径，历史恢复永远读不到；偏好改指当前代后旧 flat3 历史文件也不可达。修复：新增纯 JVM MaintenanceBackupSlots 按槽解析真实文件（两代优先/旧 flat3 只读回退/摘要核对）；MaintenanceFolderRepository 增 readManagedBackup+managedBackupStatus；AutoBackupRunner.readBackup 返回真实文件名+字节，BackupViewModel 以真实名进 v2 校验链并按上次/上上次分槽提示；维护/备份页三代文案改两代。
+- 验证：本机 kotlinc+JUnit 28 项 JVM 通过（临时目录）；未跑 Gradle/CI/真机。待测：恢复上次成功路径、旧 flat3 回退、64MB 摘要、SAF 旧目录回退；UI 历史列表/迁移入口未接线。
+
+## fix(tools): 修复计划实例绑定、删除前复检、合并参数、作者名回读与媒体目录筛选（2026-11-08 第七百零六笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 ai-core 实现与定向验证）
+
+- 对应 PR #44 Codex inline finding/用户报告 1/2/4/5/6：1) 媒体目录筛选改用 GET /assets directory（精确、不递归、空串=库根），修正 AssetSummary 无 relPath 导致的子目录恒空/根目录误选；_directory 拒绝绝对路径/盘符/反斜杠/空段/./..，media 能力声明补 directory。2) plans.verify_plan 增 instance 校验，跨实例计划抛 PRECONDITION_FAILED(instance_mismatch)，profile/cleanup/asset apply 传 ctx.target，media apply 等价校验。3) cleanup apply 的 inventory 签名扩展 profile revision/status/empty/hasXProfile+sources，执行前整体复检、delete 前逐项复检，变化拒绝并保留已执行步骤。4) cleanup merge 分支不再无条件读 authorId，按动作读取必填参数修复 KeyError。5) asset.authors apply 回读按服务端别名保守归一与 PUT 前作者索引识别按名解析/复用作者，其余额外 id 仍 READBACK_MISMATCH。
+- 验证：新增 test_ai_regressions 12 项 + 受影响 24 项通过；未跑全套/CI/真实库。
+
+## feat(tools): 按需工作流模板 platform.playbook、MCP 调用异步化与独立部署文档（2026-11-08 第七百零五笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理）
+
+- 用户 2026-11-07 补充要求：统一管理操作提示词/业务规范/工作流、减少对源码与完整文档依赖、MCP 调用期间处理取消、平台独立部署与版本。新增 platform.playbook（按领域列模板或按名取单个，规则节选有界，模板可选不强制路径）；rules.json 增 playbooks（author.profile/media.organize/author.cleanup/maintenance.jobs/backup.rotate）与 toolCatalog.discovery，版本升 2026-11-07.6；CLI 增 playbook 子命令，MCP initialize 指引更新。
+- MCP serve_forever 改为 tools/call 独立线程 dispatch + 写锁 + 并发上限（QIMENG_AI_MCP_MAX_CONCURRENCY，默认 4）+ 有副作用工具全局串行；取消通知在调用期间可处理，只读工具立即 -32800、有副作用工具等真实结果（避免误以为未执行）；完成后清理取消标记防 request id 复用误判；新增/更新 MCP 取消与串行化测试。新增 docs/AI_PLATFORM_OPERATIONS.md（CLI/MCP 独立启动停止、配置、版本兼容、升级、NAS 边界）。
+- 验证：test_ai_catalog 22、test_ai_mcp 11、test_ai_toolkit 47、test_ai_maintenance 31 通过；未跑全量与 CI。
+
+## docs(ai): Go 业务 API 缺口与 AI 客户端权限模型方案（2026-11-07 第七百零四笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理）
+
+- 按用户 2026-11-07 追加长期架构要求落方案：[Go API 缺口与 AI 客户端权限模型](AI_PLATFORM_API_GAPS.md) 复核作者/媒体/文件/备份/任务既有接口（结论：基础操作完整，缺口集中在 AI 客户端身份/权限/审计），列 G1–G8 缺口（AI 客户端凭据+scope 撤销审计、业务审计归属、服务端高风险确认、外部执行器领取、批量能力、设备配对、作品/剧集模型、限流预算）与分阶段计划；新增 [ADR-0057](adr/0057-AI客户端凭据与细粒度权限模型.md) 与索引。
+- 权限模型：AI 客户端凭据与用户会话分离、可轮换/撤销、scope 集合（read/research/author.write/asset.author.write/media.organize/backup.export/maintenance.read|write 与高风险 author.destructive/backup.restore/admin.*）；低风险写可在授权范围内自动执行，高风险单独 scope+动作级确认；权限由 Go 中间件与服务层强制，审计按客户端/动作/目标/结果/请求 ID 归属；拒绝任意 SQL/文件/shell；长任务复用维护账本；NAS 底座与 AI 平台独立升级。
+- 本 PR 只收尾现有代码与测试，不改 Go/OpenAPI/migration；ADR-0056 补充工具目录/惰性加载/权限分离；taskbook §4.4/§5.4、CAPABILITY_MAP、HANDOVER §9.3、tools README 同步。验证：check_docs 0 错误、tools 单测 205 项本机通过（扩展性 18 项）、check_privacy passed；Go 与三端未改；云端 CI 见 HANDOVER §9.2。未安装、Go 权限实现未开始（P1+）。
+
+## feat(tools): 工具目录按需发现、惰性模块加载与权限分离（2026-11-07 第七百零三笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理）
+
+- 按用户 2026-11-07 扩展性要求做最小增量（仅 tools/ai_maintenance/ 与文档，不改 Go /api/v1、OpenAPI、schema、三端）：新增 platform.catalog 精简领域目录（author/media/research/backup/device/maintenance/system，28 个工具；无 Schema，默认隐藏已废弃工具）、platform.tool.describe 按需返回单个工具 Schema/示例/规则摘录/Go API 能力依赖、platform.rules 按节/领域读取有界规则（不加载完整 rules.json）；CLI 增 catalog 与 tools list --compact/--domain，tools show 输出按需描述；MCP tools/list 仍返回完整清单并新增 _meta.domain 与 catalog 指引。
+- 注册表改为惰性 module:handler 引用：目录/状态计算不导入 tools_*.py / media_naming.py，首次执行/描述才导入；实现模块缺失→unavailable/TOOL_NOT_IMPLEMENTED；新增 deprecated/replacedBy（目录默认隐藏、执行 TOOL_DEPRECATED）；rules.json 增 toolCatalog 规则节（领域/发现策略/惰性加载/权限模型/管理员 Bearer 绕过风险评估）并升 rulesVersion/rulepackVersion 2026-11-07.5。
+- 权限与发现分离：execution 按 QIMENG_AI_GRANTED_PERMISSIONS 或 toolConfig.grantedPermissions 在 Schema/计划/网络前强制拒绝（PERMISSION_DENIED）；未配置默认授予全部声明权限仅为兼容旧 CLI。管理员 Bearer 绕过风险已写入 README/ADR-0056/rules：工具层隐藏 token 不能阻止模型直接调用 Go API，正式开放 AI 写入前需受限凭据或执行端隔离。
+- 示例与规则摘录集中在 registry（TOOL_EXAMPLES/TOOL_RULES_REFS），describe 有界返回；目录 JSON 约为完整 tools list 的 1/11（28 工具实测），120 个合成工具仍有界；新增 tools/test_ai_catalog.py 18 项与既有回归，tools 全套 205 项本机通过、check_docs 0 错误、check_privacy passed；云端 CI 见 HANDOVER §9.2。未安装、未接真实 AI 客户端。
+
+## feat(web/app): 维护任务中心与两代布局、双端搜索结果文件名显示（2026-11-07 第七百零二笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- Web 维护任务中心（只读）：新增 `lib/maintenance-jobs.ts`(+test)、`hooks/use-maintenance-jobs.ts`、`components/maintenance/`（任务中心/列表/详情），维护页追加任务列表（状态筛选/cursor 分页/刷新）、详情（类型/状态/进度/步骤/工件元数据/错误码）与取消（二次确认后刷新）；不展示 payload/budget 与工件正文，未写「实时」承诺。
+- Web 两代维护目录：`lib/maintenance-folder.ts`(+test) 与目录卡/备份卡/hook 改为 `当前/上传归档 → 上次` 两代整代轮换，每代独立 .sha256，createWritable 原子替换，摘要不符/缺摘要/不可读拒覆盖并保留现场；旧 flat3 只读兼容并可列提示、绝不删除；恢复入口改为当前/上次，旧「上上次」改文件导入说明。
+- Web 搜索：搜索结果标题取完整文件名（COS 结果亦可见作品编号/组图页码）单行省略、悬停/读屏完整名，普通浏览网格保持 cosWork 优先两行；换搜索词显示「正在搜索…」加载态而不混旧词结果，同词筛选/分区保持 keepPreviousData 不闪；详情新增完整文件名行与复制（失败提示手动复制）；消费共享 Go 搜索语义，不重写匹配。
+- Android 两代维护目录：`MaintenanceFolderRepository` 改为当前/上次两代 + 上传归档，整代轮换、独立摘要、原子写、拒覆盖保留现场、旧 flat3 只读兼容；新增 `MaintenanceGenerations.kt`（纯 JVM 轮换/原子写/摘要）与 `MaintenanceLayoutMigration.kt`（旧三代只读核对+复制不删除）；旧镜像/备份偏好改指新代且保留旧文件；18 项 JVM 单测由本机 kotlinc+JUnit 运行通过（AGP/Gradle 与真机未跑，云端 CI 为编译门禁）。
+- Android 搜索结果：缩略图下一行简短文件名（单行省略、保留编号/页码，`QimengMediaGrid` 可选 caption，默认不影响其他网格），详情信息弹窗完整文件名与复制（Clipboard+提示），换词提交同步清空旧结果/游标（配合既有查询代际丢弃在途旧响应），保留双指缩放 2～5 列/分页/滚动/返回，内嵌与连接模式同一 API；补 JVM 单测（短名保留编号/页码与边界、换词清空旧结果）。真机与内嵌现场未验收。
+- 验证边界：Web vitest 全量 41 文件/381 用例、tsc --noEmit 与本次改动 oxlint 通过（未跑 vite build/dev、浏览器走查另按 HANDOVER）；Android 仅静态类型检查与 JVM 单测，未跑 AGP/Gradle/真机；未安装到现装 PC/手机。
+- 交付后 CI 修复（同批提交 6a41bc55/d1ef39f9）：维护任务中心对合成/异常响应形状做列表/详情/取消归一（避免非协议 JSON 在渲染期抛错拖垮维护页），任务中心改用独立布局类名 `.maintenance-job-center`（避免 e2e 严格模式把第二个 `.monitor-grid` 判为多元素）；Playwright 维护/管理导航场景恢复通过。
+- 验证：最终 HEAD 云端 ci [42370683863](https://github.com/Surtr42u/qimeng-media/actions/runs/42370683863) 七 job 全绿（服务端 go vet/golangci-lint/go test -race/go build、Web tsc/build/vitest/Playwright、Android assembleDebug+单测+Lint、SDK 生成链、桌面壳、Windows 原生文件操作、redocly）；文档 [42370683869](https://github.com/Surtr42u/qimeng-media/actions/runs/42370683869) 与依赖安全 [42370683860](https://github.com/Surtr42u/qimeng-media/actions/runs/42370683860) 通过。本轮交付仍**未安装**到现装 PC/手机，真实库、真机与外部 AI 客户端未验收。
+
+## feat(server): 两代备份镜像、组图命名解析与搜索编号语义（2026-11-07 第七百零一笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 两代备份布局（服务端）：`server/internal/authorattach/mirror.go` 在 `path` 祖先目录恰有一段 `当前`/`current` 时，按同根兄弟 `上次`/`previous` 推导上一代并校验仍在维护根内；内容变化先把当前代（正文+独立 .sha256）提交为上次代再写新当前，相同数据只刷新当前；上次目标已存在且正文不同时必须有可复算匹配的 .sha256 才覆盖，缺失/不符/不可读拒绝并告警；相对路径、无代目录段、多段歧义、盘符/共享根等不推导时回退旧 flat3 三代语义，旧配置行为不变。新增 8 组测试覆盖推导、轮换、拒覆盖、外部编辑、失败重试与 master 模式全链路。
+- 迁移核对工具：新增 `tools/migrate_backup_layout.py`，默认 `--check` 只读核对（可读性/.sha256 复算/新旧对应建议/JSON 摘要），`--apply` 才复制生成当前/上次（当前=旧最新，上次=旧「（上次）」），上上次仅列可清理清单；绝不删除/移动，目标占用拒覆盖，临时文件+os.replace 原子写；12 项合成目录单测通过。
+- 组图命名：新增 `server/internal/filing/workname.go` 纯函数解析作品基名/主作品编号（位宽/分隔/标记风格）/可选组内页码，仅括号序号（含上传自动改名产物）回退旧 seriesSuffix；`SuggestSeriesNames` 对组图页建议下一作品编号而非下一页码，组图与单图混合/乱序/缺页/补图/全角括号/零填充均覆盖测试；`docs/domain/files.md` 与 `docs/api/files.md` 记录命名语法、三步优先级与「自动改名不算命名成功」。
+- 搜索编号语义：新增 `server/internal/store/searchtoken`（纯函数 Match + modernc 确定性标量函数 `qimeng_search_token`，init 注册失败直接 panic 防静默退化）；browse/facets 的 10 处 q 谓词统一改为该函数：数字 token 按独立数字段匹配（前后非 ASCII 数字，裸数字不命中括号页码），`(2)` 等页码 token 定位组图页，非数字 token 保持旧 ASCII 子串多字段语义；列表/计数/分面/dateCounts 同口径。修复前隔离测试复现「朱诺 1 命中 13/13、朱诺 11 命中 110/2011、朱诺 2 命中页码」，修复后 store/search/httpapi 定向测试通过；sqlc 重新生成比对无额外漂移。
+- 验证边界：上述 Go 侧本机 `go build/vet/gofmt` 与 authorttach/store/search/httpapi 定向测试通过；Python 侧 12 项迁移工具测试通过；未改 OpenAPI/sdk.lock/SDK/migration；未迁移真实维护目录、未对真实库执行搜索专项或命名整理。
+
+## feat(server): 维护任务 Worker、幂等载荷指纹冲突与组合根装配（2026-11-07 第七百笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- `server/internal/maintenance` 新增 `worker.go`：内部常驻执行器（不开放任何 HTTP 领取/续租/完成端点），仅领取本进程已注册 handler 的 kind（sqlc 查询按 kind 过滤），有界并发（默认 1）、租约 TTL+心跳、逐步骤 RecordStep（running/completed/failed/skipped + attempt/时间/detail）、状态机安全推进（queued→inventory→applying→verifying→completed/partial/failed）、暂停/取消/租约丢失后停止后续步骤并保留已提交步骤、进程退出不写终态由租约过期续跑、panic 兜底只影响单任务、已完成步骤不重复执行副作用。
+- 内置 `backup_export` handler（`handler_backup.go`）：复用既有 `backup.Manager` 生成库快照并 AddArtifact 记录工件元数据（正文不入库）；无 handler 的 `asset_research`/`author_cleanup`/`custom` 保持 queued 供未来外部 AI 执行器。
+- 幂等冲突保护：`Service.Create` 命中同 idempotencyKey 时比较新载荷 inputFingerprint，相同保持重放（200/created=false），不同返回 ErrStateConflict（409），httpapi 映射 STATE_CONFLICT；补并发 replay 竞争路径。
+- 装配与配置：`cmd/qimeng` 以 `safego.Go` 启动 worker 并在关库前收齐；config 新增具名默认值（轮询 5s/租约 2min/并发 1，`QIMENG_MAINTENANCE_WORKER_*` 可覆盖，默认启用但只处理已注册 kind）；SQL 改动经锁定 sqlc v1.31.1 重新生成。
+- 测试与文档：maintenance/config 包覆盖领取/心跳、租约过期接管、重启续跑不重复、暂停取消、无 handler kind 不被领取、同 key 同/不同载荷、backup_export 工件与失败终态；docs/api/maintenance.md 更新 worker/冲突/未开放外部领取端点的边界，ADR-0054 追加实现补充。
+- 验证边界：本机 `go build ./...`、`go vet ./...`、定向 `go test ./internal/maintenance/ ./internal/config/` 通过，`gofmt -l` 干净；完整回归与 race 检测以云端 CI 为准（见 HANDOVER）。未安装到现装运行包，未对真实库创建任务。
+
+## feat(tools): 独立 AI 工具核心、作者链受控写入与 stdio MCP 适配器（2026-11-07 第六百九十九笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- `tools/ai_maintenance/` 升级为可独立维护的统一工具包（仅 Python 3.13 标准库）：新增 versions/errors/openapi/schema/registry/runtime/execution/plans/client/validation 模块与 tools_query/tools_author/tools_asset/tools_media/profile_import 实现；分离 platformVersion/toolContractVersion/rulepackVersion 与 openapiSha256（仅来源追踪），OpenAPI 改为分块解析（path→method→requestBody/schema/parameters，支持 $ref），按工具独立核对端点+方法+必需字段并输出 supported/unavailable/incompatible；25 个显式注册工具（19 supported/6 planned 如实），可列举、可禁用（QIMENG_AI_DISABLED_TOOLS/QIMENG_AI_READONLY），新增工具不改入口分支。
+- 统一 CLI 保留既有只读子命令与 `--json`/退出码 0/1/2 合同，新增 `version`、`tools list/show`、`tool call <id> --input-json/--input-file`；token 仍只来自环境变量，输出/日志/报告不回显；请求客户端统一（QIMENG_BASE_URL→QIMENG_API_BASE 兼容映射并提示弃用）。
+- 受控写入：prepare 计划（目标实例/库/对象、changes、impact、evidence、前置 revision/摘要、planFingerprint、idempotencyKey、confirmation、recoverableSteps、expectedReadback）→apply 校验确认+指纹+toolContract/rulepack 版本+live 前置摘要→正式 API→回读→结构化报告；作者档案 prepare/update（人工已填字段默认保护，409 不覆盖）、cleanup prepare/apply（删除/改名/合并预览与逐项回读，零关联不单条件删除）、author.merge（只用原子端点）、asset.authors prepare/apply；旧 `tools/import_creator_profiles.py` 改为转发统一实现，保留参数/退出码/输出类别与人工资料保护语义。
+- 新增 `media_naming.py` 组图命名规划引擎（作品编号 vs 组内页码、先分组→编号→页码、补图/缺页/并发/回读；prepare_plan/validate_plan/plan_steps/readback_report/SerializedLocks）与 `tools_media.py` 适配：apply 前按 instance+library 串行化、锁内重取现状+双检、逐步 POST move、回读发现自动改名/缺失/多余即失败；`media.organize.prepare/apply` 由 planned 动态变为 supported。
+- 新增 stdio MCP 适配器 `mcp_server.py`（JSON-RPC 2.0 最小子集：initialize/notifications/ping/tools.list/tools.call/取消与超时；与 CLI 共用同一注册表与 Schema；无 shell/任意 Python 执行；不暴露 token）；协议层以两个独立合成客户端验证，**真实 AI 客户端（Codex/Claude 等）接入未实测**，README 如实说明。
+- 规则源同批：rules.json schemaVersion=2、source 指向 V2 任务书与 ADR-0056、新增 mediaNaming 规则节、补齐 maintenance/jobs* 与 device/apply-tasks* 能力声明、区分 status/apiStatus/toolStatus、过时三代陈述改两代；rulesVersion/rulepackVersion 增为 2026-11-07.3。
+- 验证边界：`python -m unittest discover -s tools -p 'test_*.py'` 181 项通过（含旧 22 项 CLI 合同与旧脚本 15 项收敛回归、MCP 双合成客户端、命名 39 项）；CLI/MCP 冒烟通过；check_docs 0 错误、check_privacy passed。未改 server/api/web/android，未接真实服务端/真实 AI 客户端/8420 真库。
+
+## docs(ai): 独立 AI 接入平台 V2 任务书、ADR-0056 与 R0 定向审计（2026-11-07 第六百九十八笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 纳入 [外部 AI 接入平台统一任务书 V2](AI_PLATFORM_TASKBOOK.md) 作为现行执行清单（R0–R8、§6.6 组图命名与作品编号、§6.7 搜索语义与双端文件名显示、§11 安全权限与 §14 验收矩阵）；原[外部 AI 维护任务书](AI_MAINTENANCE_TASKBOOK.md)与 [P0 底稿](AI_MAINTENANCE_P0.md)标记为历史需求与设计来源，保留全文供追溯，不再作为并行执行清单。
+- 新增 [ADR-0056 独立 AI 接入平台架构](adr/0056-独立AI接入平台架构.md) 与 ADR 索引：两层接口独立、Python 标准库工具核心与显式注册表、版本分离与能力核对、计划/确认/执行/回读、唯一维护账本与内部 Worker、两代备份路径约定、研究默认关闭的边界与被否方案。
+- 新增 [R0 定向审计](AI_PLATFORM_AUDIT.md)：脚本/工具逐项清点（AI 工具链、作者写入、研究链、管理员工具、服务端能力）、三分类收敛、重复实现 D1–D8、规则包与 OpenAPI 逐条漂移（A1–A9，无 P0，24 个有端点声明路径+方法匹配）、复用/退役映射与最小变更计划。
+- 文档治理同批：AGENTS/AI_README_FIRST/llms 任务入口、ARCHITECTURE 外部 AI 平台章节、CAPABILITY_MAP 能力域（AI 工具层/维护队列/两代备份/组图命名/检索筛选）、HANDOVER §5 指针与 §9 本轮交付边界；旧三代陈述在 docs/domain/migration.md、docs/SECURITY.md、tools/MEDIA_RESEARCH_IMPORT.md 改为「当前/上次」两代并保留旧 flat3 兼容读取；tools/README 增迁移工具条目。
+- 验证边界：纯文档与入口调整，未改代码/协议/迁移/SDK；`python -X utf8 tools/check_docs.py` 0 错误、`check_privacy.py --mode worktree` passed。本轮源码交付的安装、真实数据与设备验收状态见 HANDOVER §9。
+
+## feat(server): 设备结果包服务端 API（PC→手机无前台维护第一刀）（2026-11-07 第六百九十七笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 新增 migration `0024_device_apply_tasks`：只增 `device_apply_tasks`/`device_apply_segments` 两表与「设备+状态+新建倒序」「过期」索引，不改历史表/索引；任务状态机 pending→claimed→applied/partial/failed、pending/claimed→cancelled/expired，终态不可变更，过期由读写路径惰性标记。
+- 新增 `server/internal/deviceapply`：manifest 校验（targetDeviceId/protocolVersion=1/rulesFingerprint/ttl/段 kind/bytes/SHA-256/expectedReadback）、段落盘时流式复算摘要与字节数后再单事务写库、失败清理任务目录；Create/List/Get/Claim/OpenSegment/Result/Cancel；领取对已 claimed 未过期任务幂等、相同归一化结果回传幂等（不同结果 409）、取消对 cancelled 幂等；段相对路径逐字校验+根目录包含，下载前复核文件类型与大小；只依赖 store/db，不依赖 httpapi（depguard）。
+- 协议新增 7 个 `/api/v1/device/apply-tasks` 端点（登记/列表/详情/领取/段下载/回传/取消）：登记为 multipart manifest + masterTxt≤1MiB + v2Backup≤64MiB，单个段或整体请求体超限 413；段下载 octet-stream + Content-Length + X-Content-SHA256；`make sdk` 三端生成、go build ./... 通过，`api/sdk.lock` 同批重算（355 项）。
+- httpapi 只做 multipart/query 校验、错误映射与响应装配；测试覆盖创建/段落盘 SHA-256/超限/指纹不符、列表过滤与游标、领取幂等与过期、段下载头/终态/路径安全、回传终态与重复回传、取消、404/409/413，全部使用临时 SQLite、临时包目录与合成字节（含 1KB 段）。
+- 文档同批：`docs/api/device.md`、ADR-0055 与索引、能力地图、HANDOVER §8、AI_MAINTENANCE_P0 §4.5/§5/§6、llms 导航。验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet`、文档/隐私/迁移检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；Android Worker、配对/设备身份、真机后台同步与包清理仍未实现。第六百六十七笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
+
+## feat(maintenance): 持久维护任务队列服务端垂直切片（2026-11-07 第六百九十六笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 新增 migration `0023_maintenance_jobs`：只增 `maintenance_jobs`/`maintenance_steps`/`maintenance_artifacts` 三表与状态、幂等、租约、步骤/工件索引；状态机覆盖 queued→inventory→research→planned→applying→verifying→completed、waiting_evidence/waiting_authorization/waiting_device 与 paused/partial/failed/cancelled，终态不可变更。
+- 新增 `server/internal/maintenance`：Create/List/Get/Pause/Resume/Cancel、同事务状态校验、幂等键冲突返回既有任务、输入指纹、租约字段与 Claim/Heartbeat/Complete、RecordStep/AddArtifact 内部原语；只依赖 store/db，不依赖 httpapi（depguard）。
+- 协议新增 `POST/GET /api/v1/maintenance/jobs`、`GET /api/v1/maintenance/jobs/{id}` 与 `POST …/{id}/pause|resume|cancel` 六端点；创建幂等 201/200，非法迁移/终态 409 STATE_CONFLICT，不存在 404，列表 status/limit/cursor 与详情步骤/工件/error。`make sdk` 三端生成通过，`api/sdk.lock` 同批更新为 331 项。
+- httpapi 只做协议校验/错误映射/响应装配；测试覆盖创建/幂等重复/并发同键、列表过滤与游标、状态机合法/非法迁移、暂停/恢复/取消、终态不可变与 404/409 映射，全部使用临时 SQLite 与合成数据。文档同批：`docs/api/maintenance.md`、ADR-0054 与索引、能力地图、HANDOVER、AI_MAINTENANCE_P0 §4.2/§5、llms 导航。
+- 验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet` 与迁移只增检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；worker 执行器、Web 任务中心、PC→手机桥接、作者清理工具与两代布局仍未实现。第六百六十六笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
+
+## feat(app): 安装 796d813f 双端并完成研究流水线真实实例试验（2026-11-07 第六百九十五笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 云端同源门禁：ci/安全/文档与 PC/APK 出包均在 796d813f 通过（CI 首轮 Windows 文件操作作业因环境清理失败，同作业重跑通过）。PC 安装 119 项清单本地 SHA-256 核对通过，version JSON revision=796d813f、schema22、health/ready 200；手机同签名保留数据覆盖安装，版本 0.2.1/code35（lastUpdateTime 2026-11-07 01:59）。
+- 研究流水线真实实例试验：临时开启 `research.enabled` 并运行本机 sidecar，`/research/context` 返回 enabled=true、sidecar available、7 provider；`/research/lens` 真实返回 200/约 13s（frame SHA 与真实库图片一致、links 空、top 域噪声，符合 best-effort 预期）。`/providers/fxtwitter/query` 因本机 DNS fake-IP（198.18.1.x 保留段）被 SSRF 防护拦截返回 ADDRESS_BLOCKED；未放宽安全策略，需本机切真实 DNS 或另立显式逃生配置后再验。
+- 顺带按用户 2026-11-07 授权补挂作者：POST /assets/{assetId}/authors 将「守望先锋 天使 18.jpg」关联到 vgerotica 并回读一致；写前已做服务端热备。
+- 边界：未做手机 v2 同步；研究默认关闭、日常启动不带试验环境；真实 429/503/504 未触发；所有证据与安装副本只留忽略目录，未写测试脏数据。
 # CHANGELOG - 变更历史
 
 本文件只保留最近 30 笔；更早条目按 [历史索引](history/INDEX.md) 查询。历史条目正文及署名不改写，当前状态看 HANDOVER/能力地图与现行规范。
@@ -11,231 +245,25 @@
 - 署名补全（2026-10-23，用户明确确认）：2026-10-22 第五百七十五至第五百八十四笔原标未知，补为 GPT-6.1 Sol；各笔执行分工和历史验证边界不变。
 - 署名更正（2026-10-20，用户明确确认）：2026-10-19～20 的第五百三十八至第五百四十五笔原误署 GPT-6 或仅署 Codex，统一更正为 GPT-6.1 Sol；保留各条主代理/执行子代理及复核分工。
 
-## docs(app): 合并后归档交付记录并收尾产物清理（2026-10-31 第六百七十八笔）
+## feat(tools): 研究核验 CLI 命令（context/provider/lens）（2026-11-07 第六百九十四笔）
 
-执行 AI：opencode-go-chat/deepseek-v4.1-flash（主代理；工具 ZCode）。
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
 
-- [PR #33](https://github.com/Surtr42u/qimeng-media/pull/33)已合入master为258185d5，PR head a652b3b6的完整CI、安全与文档门禁通过；本地只留master并与origin同步，已完成用途的任务分支清空。合并与纯文档提交不重标已装包来源，仍为576b32dd/code21。
-- HANDOVER的已结项记录、旧候选与安装状态原样迁入[2026-10-26～31交付归档](history/DELIVERY-20261026-20261031.md)，当前交接只留现状、安装记录与边界；同步README、Android入口、架构、能力地图、API files与历史索引，链接和章节可达。
-- 本地清理4,930个文件、4,963,049,993字节（约4.62GiB）已完成并留审计摘要；当前程序/Web、运行日志、安装核验、校时改前记录、内容摘要与数据库保留，旧包不再作为回退材料。
-- 云端过时产物按计划333份收尾：本轮删除剩余179份，累计7,667,974,082字节（约7.14GiB），复核333份均不可达；保留实际安装来源PC artifact13032136003与Release artifact13032530835，两者仍可下载且未过期。
-- 本次不重新构建、不安装、不操作设备，真实媒体、历史、配置与密钥保留。文档影响：交接、交付归档、变更历史、历史索引、能力地图、README、Android入口、架构与API files；无OpenAPI/schema变化。
-- 提交前文档检查（tools/check_docs.py）0项错误；云端门禁随本次推送执行，结果以实际运行为准。
+- `tools/ai_maintenance/cli.py` 新增只读 `research` 命令组：`research context`（GET /api/v1/research/context，打印 enabled、sidecar configured/available/pending、provider 矩阵与限额）、`research provider --provider <name> --operation <author|post|work|artist|tags|url|workshop|search> --target <值> [--limit N]`（POST /api/v1/research/providers/{provider}/query；CLI 不硬编码矩阵，矩阵外/非法参数由服务端 400 透传）、`research lens --file <本地图片>`（POST /api/v1/research/lens 的 multipart 字段 file；扩展名与 20MiB 本地预检、150 秒超时、摘要只打印 status/frameSha256/topTitles/links 数量，不打印图片内容）。所有命令支持全局 `--json`；缺配置退出码 2 且不回显 token，图片字节不进入任何输出。
+- 规则包与文档同步：`rules.json` 三条 research capabilities 的 `cli` 指向实际命令、研究指南补 CLI 用法并删除「本切片未提供研究 CLI」，规则版本 `2026-11-06.3`；`rulepack.py` 去掉与指南重复的研究节并把 research 命令加入只读命令清单；`tools/ai_maintenance/README.md` 增研究示例与 `RESEARCH_DISABLED`/`RESEARCH_SIDECAR_*`/`RATE_LIMITED`/`INVALID_PARAM` 语义；`docs/api/research.md` 增「命令行工具」小节，注明研究默认关闭、sidecar 需另行部署。
+- 验证边界：`tools/test_ai_maintenance.py` 由 23 项增至 31 项并全部通过，仅用临时目录与 `127.0.0.1` 随机端口 stub（研究成功摘要与 --json、POST 路径/Bearer/JSON 体、multipart 字段与文件名、服务端 400/503 透传、缺配置、token 脱敏、本地文件预检）；未访问真实平台、未安装 sidecar、未触碰 8420 真库，也未改 OpenAPI/Go。`python -X utf8 tools/check_docs.py` 0 错误、`python -X utf8 tools/check_privacy.py --mode worktree` passed。第六百六十四笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
 
-## fix(app): 上传与归档使用本次上传时间（2026-10-31 第六百七十七笔）
+## feat(research): 媒体研究流水线 API 集成（provider 网关 + Lens sidecar）（2026-11-06 第六百九十三笔）
 
-- 首次上传固定入队时间，归档副本同刻，归档再传保留，忽略下载器旧日期；旧在途任务和重试时间保持。补首次/归档再传、归档去重与回退路径回归。
-- 增加仅本地显式小批日期校正，先报告、数量/版本/路径保护、归档内容比对，用户范围仅最新一批作者Liepraag七项；实际为10月31日凌晨入库，按作者关联及完整内容摘要唯一匹配后，两端物理时间与数据库已对齐手机原入库时间，另五项不变。
-- 干净来源576b32dd的完整CI/安全/文档16项及PC/Release出包全部通过。原手机同签名保留数据覆盖到code21、签名/内嵌来源/已装字节一致；电脑正常停服后更新服务端与111份Web，HTTP逐文件、health/ready及七项校正核对通过。恢复手机原NAS连接、清理手机维护临时文件；完整证据见HANDOVER，不外推为NAS硬件或新增性能验收。
-- 文档影响：Android入口、文件领域、服务端入口、安全边界与交接；无协议/schema变化。执行 AI：完整型号未知（主代理，当前会话未提供可核实完整型号与变体）。
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
 
-## chore(app): 准备局域网连接双端保留数据安装（2026-10-31 第六百七十六笔）
+- 新增 `GET /api/v1/research/context`、`POST /api/v1/research/providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵，矩阵外 400 INVALID_PARAM）、`POST /api/v1/research/lens`（multipart file ≤20MiB，loopback sidecar）；错误映射含 400/401/413/429/502/503/504 与 `RESEARCH_DISABLED`、`RESEARCH_SIDECAR_*` 码，provider 上游失败以 200+status 表达。协议先改 OpenAPI，再 `make sdk` 生成三端并同批重算 `api/sdk.lock`；Go 枚举用 `x-enum-varnames` 规避 oapi-codegen v2.8.0 的常量去重冲突（否则既有 `Ok` 常量被改名、编译失败）。
+- 新包 `server/internal/research`：provider 接口与注册表、安全 HTTP 出口（仅 https、域名白名单、禁重定向与环境代理、DNS 解析后校验公网地址、20s 超时/2MiB 响应上限）、进程内预算（provider 每分钟、Lens 每小时/每日，时钟可注入、UTC 对齐）、sidecar 客户端（loopback 校验、Bearer、/healthz、/lens multipart、超时映射）与证据落盘（剥会话参数、只记哈希/公开字段、不入库）。配置新增 `research` 段与 `QIMENG_RESEARCH_*`，默认关闭，启动期校验端点/凭据/预算；嵌入式/Android 默认关闭且不新增监听面。
+- 验证边界：research 与 httpapi 测试全部使用 httptest 假上游、假 sidecar 与合成数据，不访问真实平台、不触碰 8420 真库；**未安装 Lens sidecar、未在真实实例验收真实平台查询**，现装 PC/手机仍为 264b9d83。文档同批：`docs/api/research.md`、ADR-0053 与索引、能力地图、HANDOVER 研究交接、llms 导航，规则包增研究能力/工作流/手册节。第六百六十三笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
 
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
+## feat(tools): 外部 AI 维护规则包与只读 CLI（2026-11-06 第六百九十二笔）
 
-- 用户明确安装电脑和原手机，不再测试；连接功能不变，仅递增安装序号19→20，版本0.2.1/schema20保持，为同源PC及签名arm64 Release包准备云端来源。
-- 不新增业务测试，不卸载或清除日常手机数据，不主动启动App；安装只核对云端来源/既有门禁、签名、包字节及配置保留。云端打包自带检查继续执行，不修改流水线来绕过。
-- 文档影响：HANDOVER区分发布准备和最终装机证据；本笔不改变UI/协议/领域/持久化规则，Android已有安装序号单源说明继续适用。实际部署结果后补，不把候选或旧包算新安装。
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
 
-## feat(app): 本机与NAS双模式连接、局域网发现及五地址记忆（2026-10-31 第六百七十五笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 登录页重做为本机/NAS双模式按钮、连接卡片、可滚动布局与折叠手填入口；服务器设置可回到NAS查找。NAS先按成功历史顺序单播寻找，均不通再广播当前网卡；单候选自动填入、多候选选择，不自动提交密码或迁移旧会话。
-- DataStore保留最近5个去重成功NAS地址，本机登录/未确认预置不覆盖；兼容旧单槽，适应Wi-Fi/网线往返。显式选择/手填不被迟到候选覆盖，离开前台/切本机取消搜索。自动发现等待冷启动权限处理后再启动，主动动作走原权限门。
-- 服务端独立有界IPv4 UDP发现，不缓存网卡IP或访问业务库；回环内嵌不开放。换网瞬间单包/旧IP路由失败不阻断后续查找；AI调试工具提供JSON输出。只用标准库，无新运行时依赖，选型复查/退役条件见server入口。
-- 验证：代码c04a9890的完整CI/安全/文档16项通过。云端APK摘要核对后在qimeng_api35独立初始数据/只读会话核验模式、搜索/空态、手填和浅深色；现场确认旧窗口adjustPan，最终显式adjustResize后状态栏不再重叠，键盘保留可滚动到主操作。会话已关闭；未更新日常PC/手机，真实切网、API37权限弹窗及NAS硬件另验，不宣称安装完成。
-- 文档影响：Android/server入口、UI、安全、架构、能力地图、部署与工具说明同批同步；HTTP OpenAPI/SDK和数据库schema未变。NAS bridge/host网络条件与来源证据见HANDOVER；后补验证文档保留c04a9890产物身份。
-
-## fix(app): 完善媒体后台准备与加载并优化偏好标签选择（2026-10-30 第六百七十四笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 图片取色改为复用舞台已解码原图、有界采样顶部1/3；不再为48px取色另下原件。当前图成功后才串行预取邻图，目标清单增量更新保留在途任务，移除/换URL/暂停时取消，迟到回调不续生或覆盖界面。
-- 原图预取按已知压缩体积8MiB/解码像素32MiB准入，未知尺寸保守限量，内存紧张暂停；native占用对照应用堆预算，已完成解码尺寸补充会话缓存。完整原件、原图不落盘、现有手势及浏览事件语义保持，无API/schema变化。
-- 服务端复用现有分页后台主管，安全读取图片头/受限ffprobe补齐缺失尺寸，版本条件写入、不改身份/源时间，合并通知且停机收齐；推荐偏好Top-20改固定候选，严格保持相关度/同分字典序及评分常量，无schema或协议形状变化。sqlc由锁定生成器重建。
-- 新增队列取消/重入、大小/像素预算、迟到元数据、有界取色、后台准备/条件写入、旧算法同输出以及真实阻塞体取消/正常完成回归。最终同源c214f0a7/code19的16项完整门禁及PC/Release通过，指定真机同签名保留数据覆盖并核对已装字节。固定合成对照原图请求8→3、字节380436141→103200821，恢复不重下及后台实际中止传输通过；加载中切换中旧请求提前关闭且新请求独立完成，动图暂停恢复正常且增加原图请求0次，客户端异常记录0条。隔离后端补齐4张旧图尺寸且源时间保持；Top-20子步骤2万标签中位13.311ms→0.181ms、分配328720→984 B/op，不外推整页性能。电脑日常后端和111份Web已更新并恢复，5份配置/密钥摘要保持；App已按用户要求关闭，临时转发和隔离服务已清理，详情见HANDOVER。
-- 文档影响：Android/server入口、GUIDE_UI、缩略图/推荐专题、安全及架构边界、工具说明同步实际机制，HANDOVER区分候选与已装状态；旧完整条目归档并更新索引。私人素材/设备/采样不入库。
-
-## chore(app): 整合待合并依赖并清理工作分支（2026-10-30 第六百七十三笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 按用户“合并后删除”要求合入作者管理 PR #30，已清理其分支及此前已合并的两个工作分支；四项依赖更新保留原提交，以整合分支统一验证后合并、删除来源分支，不丢弃未合并工作。
-- 整合 actions/setup-python 7.1.0、tauri-build 2.7.4、knip 6.43.0 与 Tauri CLI 2.12.4；仅构建/开发依赖及锁文件，无 API、schema、运行时权限或媒体行为变更。原四 PR 文档门禁缺少具体影响说明，已补充依据，不绕过检查。
-- 文档影响：HANDOVER 同步作者管理已合并及依赖整合边界；原完整条目移入历史档并更新索引。整合结果以当前 head 云端 CI、安全与文档门禁为准；本次不构建/安装本地应用，不操作真实媒体或设备。
-- 大图加载仅做源码分析与方案咨询，确认 Android 原图不降采样、不落磁盘、邻位预载的既有约定；未实施高清预览、分块或缓存策略变更，未宣称完成网络/NAS 性能测量。
-
-## chore(app): 完成作者管理双端覆盖更新 code14（2026-10-30 第六百七十二笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 按用户授权，干净来源4349c53e、0.2.1/schema20的PC/Web与原手机均已覆盖安装；手机code13→14，协议/数据格式不变。完整CI40913733371、安全40913733451、文档40913733373、PC40913762738和Release40913775040共18项通过，自审无可确认发现，PR #30无现有审查意见，未另触发机器人审查。
-- 电脑服务端和111份Web字节符合发布清单，8份启动/配置/密钥摘要保持，旧程序/Web保留且后端始终关闭；原手机同签名保留数据安装，回拉APK与候选逐字节一致、首次安装记录保留，旧code13包保留。手机包下载重试后完整摘要通过才安装，未降低校验要求。
-- 文档影响：HANDOVER及双端README同步真实安装来源与边界；包摘要/操作证据见HANDOVER。未主动启动两端界面或后端、未向8420写测试数据、未做设备冷启动/业务全回归/备份恢复/NAS验收，未重建整库备份。私密设备信息和安装材料仅留忽略目录，后补文档不重标4349c53e产物来源；PR #30尚未合并。
-
-## feat(app): 同步双端作者资料管理与设置入口（2026-10-30 第六百七十一笔）
-
-执行 AI：未知（主代理；工具 Codex；无可核实的完整型号与变体元数据）。
-
-- 已核实 desktop-browse-fixes 由 PR #24 合并；兴趣卡片 PR #29 当前 head 16 项检查通过，解除草稿并合并为 e5b8caa9。
-- App/Web 同步作者改名/别名、来源编辑、关注与删除口径；新增来源读取/失败重试/清空保存/草稿保护，COS 不开放手工管理。Web 玻璃列表与资料弹层、App 中性卡面与 Material 菜单保留各端风格；设置页补分组入口及实际状态。
-- 文档影响：GUIDE_UI、双端 README 同步交互；HANDOVER 记录合并与未装机边界。复用既有协议和仓储，不变更 OpenAPI、数据库或领域公式。
-- 验证：首轮云端文档同步门禁未通过（CI 证据上传变化漏同步工具说明），已补 tools/README；本地文档检查通过。新增 Web 合成浏览器行为及 Android 来源状态回归，构建/单测依约提交云端执行，首轮 Android 构建/单测/Lint、Web 类型/构建/Lint/单测已通过；浏览器37项通过、两项失败，修正新用例等待读取失败状态的时序，并隔离既有小时键盘用例的鼠标悬停干扰。修正后源码 c4bf1ba3 的完整 CI40910398593、安全40910398642、文档40910398615共16项全通过，Web39个浏览器场景通过；最终桌面/窄屏列表及来源弹层截图已核对。自审未发现可确认问题。PR #30交付，未操作8420或设备、未安装新版；Android构建/单测/Lint通过不等于实机视觉验收，后补文档不重标c4bf1ba3验证来源。
-
-## chore(app): 完成兴趣卡片双端覆盖安装 code13（2026-10-29 第六百七十笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 用户明确要求安装电脑与原手机。安装前已只读核对原手机连接及现有0.2.1/code12；Android安装序号12→13，发布版本仍0.2.1。兴趣卡片、接口、schema及持久化格式与已验证35bf2638一致，无业务代码变化。
-- 同来源adfc7055的完整CI40886761127、安全40886761123、文档40886761122、PC40887024832和Release40887041567共18项通过后覆盖双端。电脑服务端及110份Web字节与清单一致，8份启动/配置/密钥摘要保持，旧程序/Web保留且服务始终关闭；原手机同签名保留数据更新code13，回拉已装APK与候选逐字节一致、首次安装记录保留，旧APK保留。
-- 文档影响：HANDOVER、双端README同步实际装机身份/范围；来源、产物摘要与下载重试事实见HANDOVER。首次不完整PC下载未通过摘要而被拦下，重取核对后才安装；不放宽来源/签名门禁。自审无可确认发现，未新增机器人审查、冷启动/真库业务/备份恢复/NAS测试，未启动后端或手机Activity、未重建整库备份；详细设备/本机材料只留忽略目录。后补文档不重标adfc7055产物来源。
-
-## feat(app): 落实双端兴趣变化简洁卡片（2026-10-29 第六百六十九笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 用户逐轮确认叠片卡片布局并要求去掉图标及叠片图形，最终写入双端：更多关注/较少关注分组、名称/分类/份额增减、单卡详情/收起。精确份额、次数及百分点默认隐藏，空组不展示，组内保留服务端顺序；Web沿用紫青玻璃token，Android沿用中性主题卡面，不改接口、领域公式或兴趣选取。
-- 文档影响：GUIDE_UI与双端README同步最终展示和独立展开约定，HANDOVER记录候选边界；Web既有场景覆盖分组、无图标、键盘展开及互不干扰。首轮854d40e3在Web测试类型检查失败：共享合成夹具将interests声明为unknown；已在测试边界使用生成协议类型明确字段，不改夹具运行值。测试改为直接引用生成的纯类型文件。c262d08a的Web37项浏览器场景、Android构建/单测/双Lint已通过；云端产物390px实际预览发现右侧留白挤压详情导致裁切，已收回窄屏留白并让详情自动换列，补防裁切断言。最终实现35bf2638的完整CI40884230585、安全40884230775、文档40884230661和PC出包40884418308共17项全部通过，含Web37项浏览器场景与Android构建/单测/双Lint。云端包来源/协议摘要/清单字节核对后，已在隔离合成预览复核深色桌面卡片及浅色390px详情，裁切消除、独立展开正常；自审无可确认发现。未覆盖安装双端日常版本，未新增Android实机视觉验收；后补文档不重标产物来源。
-
-## feat(app): 用双点对比柔化浏览回顾兴趣变化（2026-10-29 第六百六十八笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 双端以固定0–100%刻度的空心上期/实心本期双点连线和更多/较少关注代替默认百分比行，精确份额、次数和百分点由按钮展开/收起。Web沿用紫青token/玻璃材质，Android沿用中性主题，不改接口、排序、兴趣公式或浏览数据。
-- 文档影响：GUIDE_UI与双端README同步展示和展开约定；Web既有浏览回顾场景改为检查图形语义和详情展开/收起。实现bedf58e3的完整CI40849634268、安全40849634247、文档40849634241及PC出包40849654515均通过，含Web浏览器场景与Android构建/单测/双Lint。核对云端包来源/清单字节后，在隔离合成预览核对深色桌面、浅色390px窄屏及详情展开/收起；差异与直接消费点自审无可确认发现。未安装双端日常版本，未做App实机视觉核验；后补记录不重标产物来源。
-
-## feat(app): 细化双端浏览回顾的对比与小时详情（2026-10-29 第六百六十七笔）
-
-- 按用户参考图重做浏览时长卡：窗口标题、大号真实停留时长、顶部小时刻度、24列蓝/黄/绿堆叠、底部图片/视频/动图时长图例；小时点击详情和Web键盘操作保留。丰富内容放在时长和类型构成；兴趣变化精简为名称/前后份额/升降的一行对比，去掉双进度条与嵌套卡片。
-- 回顾协议新增dwell总时长、互斥类型及每小时值，窗口总量复用日物化统计，小时按开始记录整段归桶，视频不冒称播放时长；不改既有open与兴趣公式。云端40838207408生成sqlc/三端SDK及sdk.lock，增加停留/仅dwell日/孤立记录及类型守恒回归；双端消费、UI/API/领域专题同步。最终e616127c完整CI40840676484、安全40840676388、文档40840676426及PC40840675733全部成功（Web35场景）。同源Web产物在桌面/390px宽度核验；Android/Go与dc18799a一致，其调试包在qimeng_api35只读临时克隆核对7/30天、零预取、时长堆叠/读数及精简兴趣行。该阶段尚未覆盖安装；后续实际安装见下一条及HANDOVER。
-- 用户随后授权直接覆盖电脑和手机、不追加测试；双端已安装同来源e9d762cf，电脑服务端/110份Web字节一致并保持关闭，原手机同签名保留数据更新0.2.1/code11→12，已装APK字节/首次安装记录保留。旧包保留，不启动App或执行设备业务测试；出包来源及边界见HANDOVER。
-- 整理装机概览与安装前阶段记录，修正能力地图将旧冷启动验收套用于code12的表述，更新产品/预览入口；用户已授权PR #24合并master。此笔后补文档不改变e9d762cf产物身份或增加设备验收。
-- 执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## feat(stats): 双端浏览回顾替换混合发现（2026-10-28～29 第六百六十六笔）
-
-- 数据页“浏览回顾”定位个人浏览报告：首次/再次浏览、兴趣份额变化与活跃时段。Web/桌面提供摘要及独立报告，Android主页仅显示名称入口，进入后按所选窗口取数；推荐与周期榜公式保留。
-- OpenAPI先行，云端生成40710714537并同步sdk.lock/sqlc；复用日统计与只读有界查询，统一服务端公式，无migration/历史重建。零记录、无前期比较和读取失败分别呈现，旧发现API仅兼容已装客户端；领域/API/UI/端入口及预览文档同步。
-- 来源1e16937f的完整CI40718757752、安全40718757635、文档40718757908均成功，含Web35个交互场景和Android全模块构建/单测/Lint。修正本轮图标引用与测试夹具；现有备份测试首轮波动，同代码重跑通过，边界见HANDOVER。Web云端产物已在隔离浏览器核对；同源调试APK在qimeng_api35只读临时克隆验证名称入口、进入前零预取、7/30天报告及窗口传递。截图/来源留在忽略目录，现用双端未安装此候选。
-- 执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## chore(docs): 清理过期分支并完成手机覆盖安装（2026-10-28 第六百六十五笔）
-
-- 按用户要求清理8组已合并分支和3条已完成用途的代码生成分支，本地删除10条、远端删除11条，复核仅保留master与当前PR #24分支。删除前保存并验证Git恢复包，远端使用预期提交保护；工作区与无关未提交文档改动保留。
-- 原手机重连并核对同一目标后，同签名保留数据覆盖安装0.2.1/code10→11，来源5cf2658b；签名、非Debug/仅arm64、内嵌提交、FFmpeg三件套及候选/回拉已装APK字节一致，首次安装记录保留。未卸载/清数据或主动启动新版，冷启动及内嵌健康未验；电脑仍是同源新包并保持关闭。
-- 同步Android入口与交接，区分连接中断时的准备状态和重连后的实际安装；原第664笔阶段记录保留。只做Git引用维护与已授权安装，不改运行源码/协议/schema，不手动重跑业务套件。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## docs(app): 合并Android主线并安装电脑新包（2026-10-28 第六百六十四笔）
-
-- 按用户要求将PR #19合入master（71b186f2），同来源7c135d5c完整CI/安全/文档通过；PR #24同步主线仅有文档变化，生产代码及双端产物来源仍为已通过全部门禁的5cf2658b/code11。
-- 电脑已保留数据覆盖更新0.2.1/schema20：版本/清单/摘要、105份实际Web资源字节、healthz/readyz和只读数据库检查通过，配置/密钥保持，旧程序/Web保留；按安装前状态正常关闭后端，不打开前台。
-- 手机Release包同签名、code11、仅arm64/非Debug、内嵌提交和三件套摘要已核对；设备连接在安装前断开，尚未执行安装，当前仍为现场确认的e508a6fe/code10。已请求重连，未卸载/清数据；新包与旧APK已准备，待连接后继续保留数据覆盖并核对安装字节。交接明确区分已安装和待安装，不沿用旧证据。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## chore(app): 同步Android独立分支以合入主线（2026-10-28 第六百六十三笔）
-
-- 用户明确要求PR #19合入主分支。保留其已安装e508a6fe的我的/管理/上传界面及推荐保存反馈，与当前主线同步；生产代码自动合并，文档冲突按现行主线加Android专题处理，原独立分支三笔重号历史单独归档，不改写正文。
-- 手机现场只读确认为0.2.1/code10、内嵌e508a6fe，同证书和首次安装记录已留本机核对；不沿用旧b60f2a76身份。首次同步误提交未处理的文档冲突，已在本次修正并由本地文档检查阻断复核；新组合完整CI/安全/文档通过后再合并，不把旧版门禁当新结果。实际双端更新由PR #24的code11候选承接，本提交不替换设备。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## chore(app): 准备此刻发现双端覆盖安装（2026-10-28 第六百六十二笔）
-
-- 用户明确要求最新包覆盖手机和电脑。只读核对发现手机实际内嵌来源为PR #19的e508a6fe/code10，先整合这批已安装的我的/管理/上传及推荐保存改动，保留本轮发现与播放器修复，避免新包退回旧界面；原独立分支记录保留于单独历史档，不改写重号历史。
-- Android安装序号10→11，版本仍为0.2.1；同一来源云端生成PC/Web与arm64 Release，核对完整CI/安全/文档、候选Release单测/Lint、签名、内嵌身份和清单后保留数据覆盖安装。当前仅准备，尚未替换设备；桌面壳共享新版托管Web，无壳源码变化。安装结果与边界待本轮核验记录。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## fix(web/app): 此刻发现隐藏理由标签（2026-10-28 第六百六十一笔）
-
-- 按用户截图反馈，Web/桌面和Android发现条目只显示封面与标题，去掉“未看发现/久别重逢/近期兴趣”标签，说明简化为“换个角度逛影库”；服务端混合逻辑、理由字段和周期榜不变。移除Web不再使用的标签映射、组件参数与CSS，Android标题直接占用剩余行宽。
-- 更新既有浏览器回归，检查发现内容可见且无理由文案；同步UI指南、推荐专题、双端入口与交接。首轮0acf6ac3云端Web构建/单测通过，33/34个浏览器场景通过；另一个旧场景仍要求六项理由，已同步为封面/标题/无理由文案断言，保留换组与窗口独立性检查，763bc73c的CI40691233416七项、安全40691233433七项及文档40691233398两项全通过，含34个浏览器场景与Android构建/单测/Lint；隔离预览用同生产代码的0acf6ac3云端产物确认无标签/换组。本轮未安装新APK、未部署电脑或手机。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## feat(web/app/server): 此刻发现与搜索、全屏、扫描交互修正（2026-10-28 第六百六十笔）
-
-- 按用户要求将数据页重复周期榜替换为“此刻发现”：服务端未看/久别/近期三池按seed混合，双端呈现理由并可换组；原周期榜公式不变。新增只读API/查询及纯算法，协议先行、SDK/锁由云端生成，不新增schema migration。
-- Web长词避开搜索清空按钮；扫描模式切换立即保存、失败保留草稿并拦截未保存离开；全屏右上退出、网页zoom补偿、鼠标底边唤醒。Android同步发现区及现有播放器桥的退出/暂停控制栏。Web浏览确认后刷新统计/周期榜/历史缓存，当前发现组不跳动。
-- 验证与部署边界：048b9a3a的CI40671374179七项、安全40671374068及文档40671374244全部成功，含Web34个浏览器场景。云端产物05bedcd3与其生产代码相同，另在隔离预览和qimeng_api35只读副本核对发现换组、搜索/设置及合成视频全屏退出。未部署电脑或手机、未向真库写测试数据；文档同步API/领域/UI/架构/端入口与交接。执行AI：具体型号变体不可核实（当前会话Codex，主代理）。
-
-## docs(docs): 按任务风险收敛 AI 协作与验证规则（2026-10-28 第六百五十九笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话未提供可核实的完整型号与变体元数据）。
-
-- 用户要求对照全局简约工作偏好优化项目文档。AGENTS 将固定多章阅读改为按任务触发；协作规范取消按重复次数强制抽象、机械套用并发工具与领域改动前必跑基线，限定自研选型说明的适用范围，补充有依据的防御/兜底和验证停止条件。
-- 文档影响：AGENTS、AI_README_FIRST 维护工作尺度；Web/server/tools 入口及 ARCHITECTURE 对齐云端执行与阶段门禁，纯文档不触发应用构建/业务测试。AGENTS/SECURITY 按现行上传策略校正已退役单文件业务上限的旧表述，保留声明长度、空间与分片资源保护。
-- 本次仅修改文档，本地文档门禁、静态差异和历史条目完整性核对通过；未运行应用构建/自动业务测试，未操作真实库或设备。近期日志保持30笔，第六百二十九笔完整原样移入对应日期历史档；不重启旧任务书或未选产品需求。
-
-## docs(docs): 浏览体验分支合并主线（2026-10-28 第六百五十八笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 按用户明确要求依次合并#20为d70b8153、#21为21eb6e73，后者改基于master，无冲突，保留提交历史；本地master同步。最终源码86fa7e1e的CI40633637031全部7项、安全40633637078、文档40633637027成功；含Web353单测/30交互、Windows扫描异常回归。#20审查无发现，#21单库panic保护P2已修复并通过回归，最新审查无未解决发现；未额外重复触发审查。
-- 文档影响：HANDOVER更新真实合并状态、同源资格及两项补正，明确本机仍安装11542033且关闭；不把合并提交或后补文档当装机来源，不重新构建/安装/启动或改动并发设置，不操作手机与真库。CHANGELOG/历史索引同步，纯文档本地静态检查通过，后补文档不重标已有检查来源。
-
-## fix(server): 并行轮询单库异常隔离（2026-10-28 第六百五十七笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- #21草稿转就绪自动审查确认P2：新建轮询子goroutine绕过父级recover，探测panic可能终止进程。每库safego.Run捕获后记录错误，同批其他库继续、失败库下轮重试；提取原轮询批次用于确定性回归，验证单槽panic后健康库入库、两批重试及名额释放，不改扫描/推荐口径。
-- 文档影响：server入口/SECURITY明确子任务恢复边界，HANDOVER记录#20已合并及#21真实审查发现；CHANGELOG/历史同步。d1d7024f滚动补正Web353单测/30交互已通过，其余检查当时仍运行；本次同源门禁待云端完成，不沿用旧绿色。电脑保持原安装并关闭，不自动再安装、不操作手机或真库。
-
-## fix(web): 推荐新批次提交后即时归位（2026-10-28 第六百五十六笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 合并前99b92248的CI40631978220浏览器场景29/30通过，换批回顶偶发仍为247px。原effect只跟随seed、早于新数据到达，键盘平滑滚动及旧行锚定可能覆盖归位；改为布局提交时跟随批次数据即时scrollTo，禁用该列表滚动锚定，补挂起响应的确定性交互回归，保持卡片样式/推荐口径。
-- 文档影响：GUIDE_UI明确异步归位边界，Web入口校正workers已实际接入、仅thumbEdge预留；HANDOVER记录本次门禁失败与待验证/待合并。只本地静态文档与差异检查，构建/测试继续云端；已安装11542033保持关闭，不自动再安装、不开启自动并发，不操作手机/真库。
-
-## docs(docs): 浏览体验版静默安装并按要求保持关闭（2026-10-28 第六百五十五笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 用户预览满意后授权安装，随后要求不启动、明天再用；11542033同源CI/安全/文档及PC包全部通过，含353单测、30浏览器场景与7夹具回归。核对artifact12746207568、ZIP摘要、版本身份及105份Web文件后后台替换，schema20不变，旧程序/Web保留。
-- 新后台短暂隐藏启动核验healthz/readyz及105份HTTP资源字节，随后正常退出；最终8420关闭、安装哈希与只读数据库/外键检查通过。未操作前台/手机、不写真库测试数据；原设置原文一致，没有启用自动并发。PR21仍草稿未合并，不把源码能力或此前预览当实机全回归。
-- 文档影响：HANDOVER更新实际安装来源、最终关闭状态、同源证据及设置保留边界，deploy补安装后按用户要求保持关闭的约定；滚动历史/索引同步。仅文档及忽略目录交付记录，无运行代码/API/schema变化，本地仅静态文档与差异核查。
-
-## test(web): 修正管理入口带徽章时的返回用例定位（2026-10-27 第六百五十四笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- fdcbaf46服务端/Android/协议/SDK检查通过；浏览器29/30场景通过，返回用例在“数据管理→上传”被前置“日常使用”徽章影响起始名称匹配，改按已知链接目标定位，返回断言保持。
-- 不改生产页面、协议或资源策略；HANDOVER同步失败证据与重跑状态，源码/产物来源不混用，仍只更新虚拟预览。
-
-
-## fix(server): 清理上传限制退役测试的遗留引用（2026-10-27 第六百五十三笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 云端3a2bffce服务端检查发现上传测试移除旧大小拒绝断言后，filing包引用不再使用；清理该引用，不改生产语义或SDK输入。
-- 文档影响：HANDOVER记录失败原因与重跑边界；此前协议/SDK链及Web构建通过不冒充本次完整通过。应用检查与出包继续走云端，未更新日常后台。
-
-
-## feat(web): 自动扫描并发与上传限制退役及返回入口修复（2026-10-27 第六百五十二笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 用户确认实际接入扫描并发，并希望按设备性能自动调整：默认0自动，按CPU可用额度/可用内存保守分配1–8库；手动1–32。手动/轮询/监听共用可取消准入，已运行任务不打断，单库文件顺序不变。
-- 取消单文件业务大小上限；旧配置不再收紧，API保留正数不限哨兵兼容旧SDK，Web撤下输入，Android识别哨兵。类型/MIME/路径/声明长度、空间预检及分片会话/暂存总预算保留；直传收流每8MiB复核空间，失败清理临时件。
-- 历史缩略图完成角标移除；上传按URL已知入口返回服务与维护或数据管理，作者管理增加同风格小返回。前笔播放框/右栏对齐继续保留；本次API、SDK锁与跨端消费同批交付，生成/自动回归走云端，预览仍隔离不写真实库。
-- 文档影响：GUIDE_UI、API系统/上传专题、SECURITY、Web/server/Android入口及HANDOVER同步实际语义与资源边界；SDK锁待云端生成后原样纳入，不手改生成物。
-
-
-## fix(web): 视频右栏卡片与播放框上下对齐（2026-10-27 第六百五十一笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 视频双栏的舞台/右栏共用高度变量，作者卡下方的推荐卡填充剩余空间，底边与播放框对齐；推荐标题固定、内容内部滚动。作者过多时在自身卡片限高滚动；窄窗仍上下排列，不强行等高。
-- 仅呈现层调整，图片详情、推荐请求/排序、换批与播放逻辑不变；既有详情浏览器场景补顶/底边对齐断言。GUIDE_UI、Web入口及HANDOVER同步，应用构建/回归走云端，验证后只更新合成预览，不改日常后台。
-
-
-## docs(web): 记录应用流量与详情推荐最终预览核验（2026-10-27 第六百五十笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 48b8d8ff完整CI/安全/文档及PC出包均成功，含353单测、28浏览器场景与7夹具回归。artifact12738841004的ZIP、104份Web文件与清单摘要核对后仅更新19474虚拟预览，前版候选保留，候选服务端未执行。
-- 实际确认推荐列表限高380px并内部滚动、换批回到顶部、标题/按钮仍可见；维护页只消费应用计数，合成动态低速读数取整后保持单行，累计仍原值。页面最终停在详情页。
-- 文档影响：HANDOVER原位更新最终来源与核验范围，区分合成预览与云端HTTP计量回归；不把旧版或后补文档重标为产物来源。草稿PR #21未合并，日常后台/真实媒体与设备不变。
-
-
-## fix(web): 收敛低速流量小数避免卡片换行（2026-10-27 第六百四十九笔）
-
-执行 AI：未知（主代理；工具 Codex；当前会话无可核实的完整型号与变体元数据）。
-
-- 91d1219e完整云端门禁及PC包成功（353单测、28浏览器、7夹具），包清单/104份Web文件核对后，实际预览确认推荐内部滚动及换批回顶、应用流量采样；动态低速流量出现长小数撑破卡片。
-- 只将流量展示模型的速率收敛为整B/s，累计计数、真实采样时间、协议及服务端埋点不改；GUIDE_UI与HANDOVER同步显示精度及新旧来源。补正的自动验证/构建仍走云端，真实库与日常后台不变。
+- 新增 `tools/ai_maintenance/`：`rules.json` 为唯一手写领域规则源，`rulepack.py` 从规则源与 `api/openapi.yaml` 原始字节生成稳定规则包（`openapiSha256`、路径、字段上限、能力、作者动作、备份/错误/工作流/权限），端点缺失时自动把 `supported/available` 降级为 planned；当前 OpenAPI 的 `/authors/merge` 只标 `apiStatus=available`，写入仍 planned。`cli.py` 提供只读 `context/health/libraries/assets/authors/author-profile/author-sources`，无任何写入命令，`author.cleanup`、设备结果包、MCP 等仍为 planned；`tools/README.md` 加一行入口。
+- 凭据只从 `QIMENG_API_BASE`/`QIMENG_API_TOKEN` 读取，错误不回显 token；网络命令拒绝重定向、禁用环境代理、20 秒超时、2 MiB 响应上限。`tools/test_ai_maintenance.py` 覆盖规则包必需键/指纹稳定性/未知端点降级与 CLI 配置、认证头、分页、HTTP/超时错误分类、重定向拒绝；仅临时目录与 127.0.0.1 stub，不访问真实 8420/外网。

@@ -15,6 +15,7 @@ import (
 
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/authorimport"
+	"qimeng-media/server/internal/creatorprofile"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -33,6 +34,7 @@ const (
 type backupImport struct {
 	s          *Service
 	ctx        context.Context
+	opts       ImportOptions
 	err        error
 	committed  bool
 	res        ImportResult
@@ -157,6 +159,7 @@ func (imp *backupImport) importSegment(stage string, fn func(qx *db.Queries)) {
 // 逐行 autocommit，中途失败会留下作者已建而关联缺失的半段状态，重跑虽可
 // 幂等补齐但中间窗口内读侧看到半成品；段级原子后窗口消除）。
 func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef) {
+	conflicts := 0
 	imp.importSegment("作者", func(qx *db.Queries) {
 		for _, a := range sliceOrEmpty(authors) {
 			authorType := "regular"
@@ -174,8 +177,77 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 				imp.fail("导入作者", err)
 				return
 			}
+			if a.ProfileJson != nil {
+				current, profileErr := creatorprofile.Load(imp.ctx, qx, a.AuthorId)
+				if profileErr != nil {
+					imp.fail("读取作者档案", profileErr)
+					return
+				}
+				var profile creatorprofile.Profile
+				if profileErr = json.Unmarshal([]byte(*a.ProfileJson), &profile); profileErr != nil {
+					imp.fail("解析作者档案", profileErr)
+					return
+				}
+				restore := creatorprofile.IsEmpty(current)
+				replaceProfile := !restore && imp.opts.AuthorProfileConflict == AuthorProfileConflictReplace
+				if replaceProfile {
+					// 显式 replace：以备份档案整份覆盖本机（含离线头像），与首次
+					// restore 共用恢复口径；不参与冲突计数，也不发「保留本机」提示。
+					profile, profileErr = profileFromBackup(a, profile)
+					if profileErr != nil {
+						imp.fail("解析离线头像", profileErr)
+						return
+					}
+				} else {
+					fillAvatar := a.AvatarData != nil && len(current.AvatarData) == 0 && current.AvatarURL == profile.AvatarURL
+					fillX := canFillXProfile(current, profile)
+					fillTranslation := canFillXTranslation(current, profile)
+					if !restore && profilesConflict(current, profile) {
+						conflicts++
+					}
+					if !restore && !fillAvatar && !fillX && !fillTranslation {
+						imp.bump(&imp.res.AuthorsImported)
+						continue
+					}
+					if !restore {
+						xProfile := profile.XProfile
+						profile = current
+						if fillX {
+							profile.XProfile = xProfile
+						} else if fillTranslation {
+							translated := *current.XProfile
+							translated.BiographyZh = xProfile.BiographyZh
+							profile.XProfile = &translated
+						}
+					}
+					if a.AvatarData != nil && fillAvatar {
+						profile.AvatarData, profileErr = creatorprofile.DecodeAvatar(*a.AvatarData)
+						if profileErr != nil {
+							imp.fail("解析离线头像", profileErr)
+							return
+						}
+					}
+					if restore {
+						profile, profileErr = profileFromBackup(a, profile)
+						if profileErr != nil {
+							imp.fail("解析离线头像", profileErr)
+							return
+						}
+					}
+				}
+				profile.Revision = current.Revision + 1
+				if profileErr = creatorprofile.Persist(imp.ctx, qx, profile, imp.s.now()); profileErr != nil {
+					imp.fail("导入作者档案", profileErr)
+					return
+				}
+				if replaceProfile {
+					imp.bump(&imp.res.AuthorProfilesReplaced)
+				}
+			}
 			imp.bump(&imp.res.AuthorsImported)
 		}
+		var linkedAssets []string
+		seenAssets := make(map[string]bool)
 		for _, ref := range sliceOrEmpty(refs) {
 			assetID, ok := imp.keyToAsset[ref.RecordKey]
 			if !ok {
@@ -191,9 +263,43 @@ func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef
 				imp.fail("导入作者关联", err)
 				return
 			}
+			if !hasCosPrefix(ref.AuthorId) && !seenAssets[assetID] {
+				seenAssets[assetID] = true
+				linkedAssets = append(linkedAssets, assetID)
+			}
 			imp.bump(&imp.res.AuthorRefsImported)
 		}
+		recorder := authorattach.Service{Logger: imp.s.logger}
+		for _, assetID := range linkedAssets {
+			if err := recorder.RecordAssetWorks(imp.ctx, qx, imp.s.now(), assetID); err != nil {
+				imp.fail("同步作者TXT作品行", err)
+				return
+			}
+		}
 	})
+	if imp.err == nil && conflicts > 0 {
+		imp.warn("%d 位作者的备份资料与本机不同，已保留本机已有资料，仅按规则补齐同来源缺失信息；如需替换请在作者资料页核对编辑", conflicts)
+	}
+	if imp.err == nil && len(sliceOrEmpty(refs)) > 0 {
+		imp.s.mirror.Refresh(imp.ctx, imp.s.q)
+	}
+}
+
+// profileFromBackup 把备份档案整份落成本机档案：身份、维护开关与离线头像
+// 统一覆盖；首次 restore 与显式 replace 共用，Revision 由调用方按本机当前值
+// 递增（备份自身 revision 不参与，避免旧备份回退本机版本）。
+func profileFromBackup(a Author, profile creatorprofile.Profile) (creatorprofile.Profile, error) {
+	profile.AuthorID = a.AuthorId
+	profile.AutoRefresh = false
+	profile.TrackUpdates = false
+	if a.AvatarData != nil {
+		avatar, err := creatorprofile.DecodeAvatar(*a.AvatarData)
+		if err != nil {
+			return profile, err
+		}
+		profile.AvatarData = avatar
+	}
+	return profile, nil
 }
 
 // hasCosPrefix：COS 作者 id 约定前缀（0001 表注释 / DOMAIN_RULES §6）。

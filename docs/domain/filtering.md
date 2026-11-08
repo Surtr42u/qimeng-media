@@ -8,7 +8,7 @@
 
 | 区域 | 选项 |
 |---|---|
-| 搜索词 | 全文搜索 q：空格分词；多词 AND；每词子串匹配任一维度 |
+| 搜索词 | 全文搜索 q：空格分词；多词 AND；非数字词子串匹配、数字编号按独立数字段/组图页匹配任一维度（口径见下） |
 | 排序 | 默认、文件日期、添加日期、观看次数、播放次数、文件大小、名字、收藏时间（仅收藏筛选时语义成立） |
 | 顺位 | 降序、升序 |
 
@@ -36,9 +36,13 @@
   4. 作者（常规/COS 双体系的 display_name）
   5. 角色（asset_characters 的角色规范名）
   6. 出处（source 规范名，未命中出处的资产此处为空）
-- **匹配方式**：任意长度的**子串**匹配（contains 语义，含单字/两字中文词）；ASCII 大小写不敏感（"dva" 匹配 "DVA"）；`%`、`_`、`\` 是普通字符（无 LIKE 通配语义）。
+- **匹配方式**（2026-11-07 修订，用户反馈搜索「朱诺 11」大量命中 110/2011）：关键词仍按空白分词、多词 AND；单关键词按类型分语义，列表/计数（totalMatched、dateCounts）与分面（GET /assets/facets）共用同一 `qimeng_search_token(all_text, token)` SQL 函数（`internal/store/searchtoken`），禁止在 SQL 里再写第二份判断：
+  1. **非数字词**：任意长度**子串**匹配（contains 语义，含单字/两字中文词）；ASCII 大小写不敏感（"dva" 匹配 "DVA"）；`%`、`_`、`\` 是普通字符（无 LIKE 通配语义）。
+  2. **数字编号词**（纯 ASCII 数字）：按**独立数字段**匹配——命中位置前后都不能是 ASCII 数字。因此 `11` 不再命中 `110`/`2011`/`1080`，`110` 只命中独立的 `110` 段；年份（`2011`）与分辨率（`1080p` 的 `1080`）需要对应完整数字段。
+  3. **组图页码词**（`(2)`/`（2）`/`[2]`/`【2】`）：按组图页码命中，正文括号全角/半角互认；**裸数字不命中**紧跟在 `(`/`（`/`[`/`【` 之后的页码（`11 (2)` 用 `(2)` 定位第 2 页，搜 `2` 不命中）。
+  4. 数字段仅以 ASCII 数字邻接判定，因此 `1080p`、`.mp4` 里的数字仍算独立段（单数字搜索天然宽泛，组图页请用括号页码词）。
 - **叠加**：搜索与 §3 全部其它筛选（排序/顺位/次数/大小/时间/标签/出处/角色/作者/收藏）以 AND 叠加；分页（keyset 游标）与 totalMatched 在搜索下与未搜索时口径一致。
-- **索引**：SQLite FTS5 trigram（migrations/0002_search_fts），由迁移触发器按写路径增量维护，业务代码不直接写索引；查询侧用 instr 子串（trigram 的 MATCH 不支持两字短词，2026-08-29 SQLite 3.53.3 实测后定案；性能基准 3 万行文本 <150ms/词）。
+- **索引**：SQLite FTS5 trigram（migrations/0002_search_fts），由迁移触发器按写路径增量维护，业务代码不直接写索引；查询侧不再用裸 instr，而是共用内置函数 `qimeng_search_token(all_text, token)`（`internal/store/searchtoken`，含 ASCII 折叠与数字编号/组图页语义；trigram 的 MATCH 不支持两字短词，2026-08-29 SQLite 3.53.3 实测后定案；性能基准 3 万行文本 <150ms/词）。
 - **出处列表端点（GET /sources）**：按出处规范名分组的文件计数，name=null 表示无出处文件（显示层兜底"其他"），按 fileCount 降序；口径与资产列表一致——默认排除 COS 作者关联文件（§6 隔离口径），includeCos=true 重新包含。
 - **相册四维聚合端点（GET /assets/facets，2026-09-03 第三笔（历史档）建 / 第五笔（历史档）语义修正）**：分区/作者/角色/类型四维候选计数——partitions 恒三项（all/regular/cos，regular=all−cos）；types 固定 all/image/animated_image/video 四项（key=MediaType 枚举值，可直接回传 GET /assets 的 mediaType）。**作者行 = 常规出处分组 ∪ COS 作者**（第五笔（历史档）拍板，替代原 authorId 全量作者；= 旧版「全部」tab「作品」行的 groupBySource(!isCos) ∪ groupByCosAuthor(isCos) 合并口径）：常规分区只出处、COS 分区只 COS 作者、all 分区两者合并；出处分组只统计**非 COS 关联**资产（NULL source 行=用户侧「其他」桶，且 COS 关联资产永不落入——source_is_other 谓词含 NOT EXISTS cos 排除，browse.sql/source 口径一致），常规 TXT 作者表行不进本行。**角色行**：常规分区=角色规范名（key 回传 character）、COS 分区=cos_work 作品名（key 回传 work，NULL 不列入，前端兜底）、all 分区=两者合并（COS 作品进角色行）。每行候选带 **kind**（source/author/character/work）=回传哪个筛选参数（同一行混合两种候选时前端按 kind 分派）。**排自身口径**：计每维候选时忽略该维自身当前选择——前端每维独立请求各缺自身参数；服务端把 source/authorId 对全部行**照常作为收窄条件**（2026-09-09 协议批修订，原「source 与 authorId 同属作者行一起忽略」口径废止——作者集合页固定传 authorId 即可让作品维候选按作者收窄，#34 闭环）。**子集计数（2026-09-05 S-1）**：`favorite` / `history` 是子集约束非四维之一——favorite=1 只统计收藏资产（与 GET /assets favorite=true 同义）、history=1 只统计存在 kind='open' 浏览事件的资产（「浏览历史」口径）；传入时对**全部四维（含分区栏）**统一收窄统计口径（如 favorite=1 的分区芯片=收藏子集内 all/regular/cos），四维之间仍按排自身口径互算。COS 三态开关口径见 §6。
 - **搜索框补全端点（GET /search/suggestions，2026-09-05 S-1 批次新增，LEGACY §C + 用户 3B 拍板）**：五维候选 = 出处 / 角色 / COS 作者 / COS 作品（assets.cos_work）/ 常规作者；q 对候选名做子串匹配（contains 语义，ASCII 大小写不敏感，同本节匹配口径；`%`/`_` 无通配语义）。五维合并去重——**同维同名只一条、跨维同名各保留**（`type` 字段 = source/character/cosAuthor/cosWork/author，即前端类型徽标的分派语义）；排序 = **名称长度升序、再名称字典序**（短名优先，贴近补全直觉）；limit 默认 10、上限 50；**作者维只返回实际有关联文件的作者**（LEGACY §C：零关联作者行对补全无意义；回收站删除即移出 assets 表，作者随之失去候选资格）；COS 作品 NULL（无作品子目录）不产生候选；**q 为空（trim 后）且未开 recommend 时返回空列表；recommend=1 且 q 为空时返回随机抽取的五维候选合并 ≤limit 条**（旧版「推荐搜索=名字索引随机取 10 条」语义，2026-09-05 用户拍板对齐；实现=五池各 ORDER BY random() 后轮转交错合并，任一维缺货由其余维填满；q 非空时 recommend 被忽略、照常子串匹配）。

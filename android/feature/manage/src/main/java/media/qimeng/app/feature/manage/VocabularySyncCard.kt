@@ -25,10 +25,10 @@ private const val ACTION_SYNC = "立即合并同步"
 private const val ACTION_SYNC_BUSY = "同步中…"
 private const val ERROR_NOTE_LABEL = "同步失败："
 
-/** 12dp：卡四向内边距（BackupCards.BackupCardInnerPadding 同值，本文件私有单源） */
+/** 12dp：卡四向内边距（本文件私有单源） */
 private val CardInnerPadding = 12.dp
 
-/** 6dp：状态行与标题区纵向节奏（BackupSubtitleTopSpacing 同档） */
+/** 6dp：状态行与标题区纵向节奏（本页紧凑节奏） */
 private val StatusLineSpacing = 6.dp
 
 /** 10dp/6dp：状态行内边距（横 10 纵 6，小字软底条档） */
