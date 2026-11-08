@@ -23,15 +23,17 @@
 
 | 端 | 已安装来源 | 实际核验 |
 |---|---|---|
-| PC 服务端与 Web | 796d813f，0.2.1/schema22 | version JSON revision=796d813f、modified=false；本地 119 项清单（服务端+118 Web）逐文件 SHA-256 通过，Web index HTTP 字节 3152 与清单一致；health/ready 均 200，旧程序与旧 Web 已备份到忽略目录 |
-| arm64 手机内嵌 | 796d813f，0.2.1/code35 | 同签名（证书 SHA-256 8f62ba55…）保留数据覆盖安装成功，versionCode 35/lastUpdateTime 2026-11-07 01:59；包来自同 SHA 云端 APK 出包 |
+| PC 服务端与 Web | 0b951acc，0.2.2/schema26（2026-11-08 安装） | release-manifest revision=0b951acc、modified=false；qimeng-server.exe SHA-256 378ee203…（27,762,688 bytes），Web 120 文件；healthz/readyz 均 200；schema 26；升级前后业务计数一致（assets 7316、authors 175、asset_authors 7468、tags 20、asset_tags 1135、view_events 21697）；旧 exe/Web/DB 备份在忽略目录 build/install-20261108/ |
+| arm64 手机内嵌 | 0b951acc，0.2.2/code36（2026-11-08 安装） | 同签名（证书 SHA-256 8f62ba55…）`adb install -r` 成功；versionCode 36/versionName 0.2.2，firstInstallTime 保持 2026-09-12、lastUpdateTime 2026-11-08 17:19；APK SHA-256 4cde5253…；仅安装核验，后台/SAF/Doze 运行期仍未验收 |
 | 桌面连接壳 | 原壳加载PC托管Web | 本轮更新共享Web，沿用现有壳 |
 
-同源796d813f的[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379160)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379165)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379174)、[PC出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42263417541)、[APK出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42263427121)均通过；CI 首轮 Windows 文件操作作业因环境清理失败，重跑同一作业后通过（同 SHA 门禁）。APK 版本 0.2.1/code35，证书 SHA-256 与既有安装一致；实际安装字节与核验记录在忽略目录。
+2026-11-08 同源 0b951acc 的[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/42464337155)、[依赖安全](https://github.com/Surtr42u/qimeng-media/actions/runs/42464337173)（privacy 首轮下载 gitleaks 504，重跑通过）、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/42464337149)、[PC 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42464677564)、[APK 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42464680279)均通过；产物 SHA-256 与安装核验见 §2 与 §10。
 
-### 2026-11-08 源码增量（未安装）
+历史 796d813f 的[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379160)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379165)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/42263379174)、[PC出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42263417541)、[APK出包](https://github.com/Surtr42u/qimeng-media/actions/runs/42263427121)均通过；CI 首轮 Windows 文件操作作业因环境清理失败，重跑同一作业后通过（同 SHA 门禁）。APK 版本 0.2.1/code35，证书 SHA-256 与既有安装一致；实际安装字节与核验记录在忽略目录。
 
-2026-11-08 合并 PR #44/#45 并在工作区继续交付以下源码；**现装 PC/手机仍为 796d813f**，以下能力均未构建、未安装、未接真实库或设备，合并后云端 CI 在编写本文时仍待跑：
+### 2026-11-08 增量（已安装 0.2.2 于双端）
+
+2026-11-08 合并 PR #44/#45 并在工作区继续交付以下能力；**现装 PC 与手机已升级为 0b951acc/0.2.2（PC schema26、手机 code36）**。安装核验见 §2；真机后台、Doze/FGS、SAF 撤回、断网恢复等运行期事项仍未验收：
 
 - Go AI 权限：新增 8 个写 scope（asset.write/asset.upload/asset.delete/tag.write/source.write/library.write/trash.restore/maintenance.execute）与方法+路径映射，未映射写仍默认拒绝；AI 客户端管理与审计查询 HTTP 端点仅管理员会话可用，AI token（含 admin scope）403；撤销/轮换约 5 秒缓存生效。
 - 按客户端令牌桶限流（默认 600/分、突发 120，0 关闭，429 + Retry-After），进程内单实例。
@@ -111,7 +113,7 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 
 ## 9. 外部 AI 接入平台与维护执行面（2026-11-07 本轮交付）
 
-本轮按[统一任务书 V2](AI_PLATFORM_TASKBOOK.md)（R0–R7）与 [ADR-0056](adr/0056-独立AI接入平台架构.md) 交付源码、测试与文档；**未安装到现装运行包**，现装仍为 §2 记录的 796d813f（PC 0.2.1/schema22、arm64 手机 code35）。本节区分「源码交付 / 本机验证 / 云端 CI / 安装 / 真实数据与设备验收」。
+本轮按[统一任务书 V2](AI_PLATFORM_TASKBOOK.md)（R0–R7）与 [ADR-0056](adr/0056-独立AI接入平台架构.md) 交付源码、测试与文档；本节记录 2026-11-07 的源码交付范围。2026-11-08 已把后续增量构建为 0.2.2 并安装到 PC 与手机（§2、§10）；本节区分「源码交付 / 本机验证 / 云端 CI / 安装 / 真实数据与设备验收」。
 
 ### 9.1 源码交付范围
 
@@ -132,17 +134,17 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 - 未执行：全量 `go test ./...`（按仓库约定走云端 CI）、Android Gradle 构建/单测、vite build、真实服务端联调。
 - **2026-11-08 合并/增量提交的云端 CI 尚未运行**：PR #44/#45 合并后的新提交与本条记录的 2026-11-07 门禁不是同一 SHA，不能沿用为已通过证据；本轮状态见 §10。
 
-### 9.3 未安装与未验收边界
+### 9.3 未验收边界（安装状态见 §2/§10）
 
-- 本轮**未部署**到现装 PC/手机；两代维护目录未迁移真实维护目录（迁移工具只在合成目录验证）；组图命名与媒体整理未在真实媒体库执行；AI 工具未对真实实例运行写入；MCP 未接真实 AI 客户端；Android 搜索文件名/详情复制未真机走查；搜索修复未在真实大库与内嵌模式做性能/行为验收。
+- 2026-11-08 已安装 0.2.2 到 PC/手机；以下为仍待运行期验收的边界：两代维护目录未迁移真实维护目录（迁移工具只在合成目录验证）；组图命名与媒体整理未在真实媒体库执行；AI 工具未对真实实例运行写入；MCP 未接真实 AI 客户端；Android 搜索文件名/详情复制未真机走查；搜索修复未在真实大库与内嵌模式做性能/行为验收。
 - **9 个已报告问题的修复均只在本机做定向验证**：AI 工具 5 项（新增 test_ai_regressions 12 项）、Web 两代备份 24 项、Android 历史备份 28 项、Worker fencing 定向 go test；未跑全量、未接真实库/真实维护目录。
 - **Go AI 客户端凭据（ADR-0057 P1/P2）源码已交付但未安装**：P1 本地 `qimeng ai-client`、scope/审计/设备级隔离；2026-11-08 增 HTTP 管理端点（仅管理员会话）、审计查询、8 个写 scope 与按客户端限流（见 §10）。Web 管理 UI、动作级确认 token、多实例共享限流、真实管理员/AI 客户端验收仍未做；进程缓存使异地撤销/轮换约 5 秒生效。
 - **Android 后台 Worker 源码已交付但未安装/未真机验收**：JVM 单测 device 纯逻辑 37 项本机实跑通过（设置 3 项由 Gradle）与 compileDebugKotlin 通过（task-21 领取前置/claimed 恢复后需云端 CI 重新编译；2026-11-08 增翻页/本机令牌/最近任务，见 §10）；Doze/厂商后台限制、后台拉起内嵌 FGS、SAF/所有文件访问授权撤回、真实 PC→手机端到端、断网/进程被杀恢复均未验证；无段级进度持久化（进程强杀可能重下整包）；claimed 恢复已按 nextCursor 全量翻页（2026-11-08）；readback 默认仍是导入响应增量，manifest 可声明 expectedState 由服务端做绝对计数校验（见 §10）；设备令牌依赖服务端 ADR-0057 P1（旧服务端会 401，本实现不回退会话 token）；本机内嵌单机模式已可自助生成设备令牌（2026-11-08，仅内嵌实例预设地址）。
-- 外部 AI 执行器受控通道已实现源码（fencing leaseToken/租约围栏，见 §10），但真实外部执行器、多执行器并发与 NAS 未验收；Android 设备配对（短码/二维码）与临时包清理未实现；Web/Android 未安装更新，现装仍为 796d813f。
+- 外部 AI 执行器受控通道已实现源码（fencing leaseToken/租约围栏，见 §10），但真实外部执行器、多执行器并发与 NAS 未验收；Android 设备配对（短码/二维码）与临时包清理未实现；2026-11-08 已安装 0.2.2（PC schema26、手机 code36），运行期后台/SAF/Doze 仍待真机验收。
 
-## 10. 2026-11-08 外部 AI 平台与执行面增量（未安装）
+## 10. 2026-11-08 外部 AI 平台与执行面增量（已安装 0.2.2）
 
-合并 PR #44（外部 AI 平台、维护执行面、Android Worker 源码）与 PR #45（作者 TXT 硬约束、研究工具包）后，本轮继续交付以下源码。**现装 PC/手机仍为 §2 的 796d813f；本轮没有构建安装、没有真机/模拟器验收、没有向 8420 或真实维护目录写入。** 编写本节时合并后提交的云端 CI 仍待运行，本文不声称绿。
+合并 PR #44（外部 AI 平台、维护执行面、Android Worker 源码）与 PR #45（作者 TXT 硬约束、研究工具包）后，本轮继续交付并在 2026-11-08 构建安装 0.2.2。**PC 与手机已安装 0b951acc/0.2.2（PC schema26、手机 code36），业务计数升级前后一致；未做真机后台/Doze/SAF 运行期验收，未向真实维护目录执行设备包回传或外部执行器领取。** 0b951acc 的云端 CI/安全/文档/出包均绿，链接与产物哈希见 §2。
 
 ### 10.1 源码交付与本机验证
 
@@ -157,18 +159,18 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 
 ### 10.2 明确未做/未验收
 
-- 未构建、未安装 PC/手机；未更新 APK versionCode 或发布产物；合并后云端 CI 待跑，不能沿用 2026-11-07 的绿。
+- 已于 2026-11-08 构建并安装 0.2.2/code36（PC schema26）；0b951acc 云端 CI/安全/文档/出包均绿。仍未做真机后台/Doze/SAF 运行期验收。
 - 未真机/模拟器验证 Android 后台（Doze/厂商后台、FGS、SAF 授权撤回、断网/进程被杀恢复）；未验证设备配对/设备身份证明与临时包 GC。
 - 未对真实库/真实维护目录执行设备包回传、权威计数比对或外部执行器领取；未验证多执行器并发与租约竞争。
 - Web 无 AI 客户端管理 UI（HTTP 端点已存在）；无动作级确认 token（当前仅 scope）；无多实例共享限流；backup.import 仍为规划；研究 provider fxtwitter 仍受本机 fake-IP DNS 拦截（未放宽 SSRF）；无 NAS 硬件验收。
 
 ### 10.3 下一步测试清单
 
-1. 合并提交云端 CI（服务端 vet/lint/test -race/build、Web、Android assemble+单测、SDK 生成链、文档）转绿后记录 SHA 与 run 链接。
+1. ~~合并提交云端 CI 转绿~~（2026-11-08 已完成：0b951acc 的 CI/安全/文档全绿，链接见 §2）。
 2. 隔离实例验证 AI 客户端管理：创建/列表/轮换/撤销、明文 token 只返回一次、AI token 访问管理端点 403、审计 keyset 分页、限流 429 + Retry-After。
 3. 隔离实例验证执行器：claim/204、心跳、步骤/工件幂等、暂停/取消/过期/重领后 409 `LEASE_LOST`、>50 步恢复不重复副作用。
 4. 隔离实例验证设备包：expectedState 命中/不符/未声明、deviceLocalHashes 少报/不符、相同结果重放不产生 409。
-5. 构建并安装到 PC 与 arm64 手机（同签名保留数据），核对 version JSON/schema 0026/health/ready，按 §4 记录安装字节与来源。
+5. ~~构建并安装到 PC 与 arm64 手机~~（2026-11-08 已完成：PC 0.2.2/schema26，手机 0.2.2/code36，同签名保留数据；证据见 §2）；后续升级仍按 §4 记录安装字节与来源。
 6. Android 真机（显式 `qimeng_api35` 或用户指定设备）：充电+Wi-Fi 后台领取→导出→应用→回读→回传；Doze、进程被杀、授权撤回、本机模式令牌生成。
 7. 设备配对/设备身份证明与临时包 GC 实现后再验跨设备误领/结果冒用。
 8. 研究 provider 在本机真实 DNS 下复验 fxtwitter；不为此放宽 SSRF。
