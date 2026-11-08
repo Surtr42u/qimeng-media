@@ -252,6 +252,18 @@ func (s *Service) Get(ctx context.Context, id string) (Task, error) {
 	if err := hydrateExpectedReadback(row.ManifestJson, task.Segments); err != nil {
 		return Task{}, err
 	}
+	verificationJSON, verifyErr := s.q.GetDeviceApplyVerification(ctx, taskID)
+	switch {
+	case verifyErr == nil:
+		// 旧结果/损坏行不能让详情整页失败：验证快照是附加证据，解析失败
+		// 按未验证处理（结果正文仍可读）。
+		if verification, decodeErr := decodeVerification(verificationJSON); decodeErr == nil {
+			task.Verification = verification
+		}
+	case !errors.Is(verifyErr, sql.ErrNoRows):
+		s.logger.Warn("读取设备结果验证快照失败（按未验证处理）",
+			"taskId", taskID, "error", verifyErr)
+	}
 	if row.ResultJson.Valid && strings.TrimSpace(row.ResultJson.String) != "" {
 		result, err := decodeResult(row.ResultJson.String)
 		if err != nil {
@@ -343,7 +355,8 @@ func (s *Service) Result(ctx context.Context, id string, in ResultInput) (Task, 
 	}
 	// 权威状态快照与摘要核验在服务端计算，与客户端上报的增量计数分开存放：
 	// result_json 保持客户端规范化内容（幂等重放逐字节比较），验证结果写入
-	// verification_json，重放不会因库状态变化被误判为 STATE_CONFLICT。
+	// device_apply_verifications 独立表，重放不会因库状态变化被误判为
+	// STATE_CONFLICT。
 	verification, verifyErr := s.buildVerification(ctx, taskID, row.ManifestJson, in.DeviceLocalHashes)
 	if verifyErr != nil {
 		// 验证快照是附加证据，不是结果写入的前置条件：读取失败按协议留空
@@ -353,18 +366,17 @@ func (s *Service) Result(ctx context.Context, id string, in ResultInput) (Task, 
 			"taskId", taskID, "error", verifyErr)
 		verification = nil
 	}
-	verificationJSON := sql.NullString{}
+	verificationJSON := ""
 	if len(verification) > 0 {
-		verificationJSON = sql.NullString{String: string(verification), Valid: true}
+		verificationJSON = string(verification)
 	}
 	nowText := store.FormatTimestamp(now)
 	affected, err := s.q.FinishDeviceApplyTask(ctx, db.FinishDeviceApplyTaskParams{
-		Status:           string(status),
-		ResultJson:       sql.NullString{String: string(canonical), Valid: true},
-		VerificationJson: verificationJSON,
-		FinishedAt:       sql.NullString{String: nowText, Valid: true},
-		UpdatedAt:        nowText,
-		ID:               taskID,
+		Status:     string(status),
+		ResultJson: sql.NullString{String: string(canonical), Valid: true},
+		FinishedAt: sql.NullString{String: nowText, Valid: true},
+		UpdatedAt:  nowText,
+		ID:         taskID,
 	})
 	if err != nil {
 		return Task{}, err
@@ -379,6 +391,19 @@ func (s *Service) Result(ctx context.Context, id string, in ResultInput) (Task, 
 			return s.Get(ctx, taskID)
 		}
 		return Task{}, ErrStateConflict
+	}
+	// 验证快照独立表、best-effort：写入失败只丢证据，不影响已提交的终态。
+	// 独立表而非新列是为了旧版本回退兼容（旧代码对任务表 SELECT * 定长扫描，
+	// 新增列会让回退后的设备端点扫描失败）。
+	if verificationJSON != "" {
+		if insertErr := s.q.InsertDeviceApplyVerification(ctx, db.InsertDeviceApplyVerificationParams{
+			TaskID:           taskID,
+			VerificationJson: verificationJSON,
+			CreatedAt:        nowText,
+		}); insertErr != nil {
+			s.logger.Warn("写入设备结果验证快照失败（结果已记录）",
+				"taskId", taskID, "error", insertErr)
+		}
 	}
 	return s.Get(ctx, taskID)
 }
@@ -651,13 +676,6 @@ func taskFromRow(row db.DeviceApplyTask) Task {
 		ClaimedAt:        parseNullTimestamp(row.ClaimedAt),
 		FinishedAt:       parseNullTimestamp(row.FinishedAt),
 		ExpiresAt:        parseTimestamp(row.ExpiresAt),
-	}
-	if row.VerificationJson.Valid && strings.TrimSpace(row.VerificationJson.String) != "" {
-		// 旧行/损坏行不能让详情整页失败：验证快照是附加证据，解析失败按
-		// 未验证处理（结果正文仍可读）。
-		if verification, err := decodeVerification(row.VerificationJson.String); err == nil {
-			task.Verification = verification
-		}
 	}
 	return task
 }

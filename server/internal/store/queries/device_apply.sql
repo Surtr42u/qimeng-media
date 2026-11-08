@@ -59,7 +59,6 @@ WHERE status IN ('pending', 'claimed')
 UPDATE device_apply_tasks
 SET status = ?,
     result_json = ?,
-    verification_json = ?,
     finished_at = ?,
     updated_at = ?
 WHERE id = ?
@@ -98,3 +97,13 @@ SELECT
     (SELECT COUNT(*) FROM tags) AS tags,
     (SELECT COUNT(*) FROM asset_tags) AS asset_tag_refs,
     (SELECT COUNT(*) FROM view_events) AS view_events;
+
+-- name: InsertDeviceApplyVerification :exec
+-- Best-effort snapshot written after the terminal result; repeated writes for
+-- the same task are ignored (the result itself is immutable once terminal).
+INSERT INTO device_apply_verifications (task_id, verification_json, created_at)
+VALUES (?, ?, ?)
+ON CONFLICT(task_id) DO NOTHING;
+
+-- name: GetDeviceApplyVerification :one
+SELECT verification_json FROM device_apply_verifications WHERE task_id = ?;

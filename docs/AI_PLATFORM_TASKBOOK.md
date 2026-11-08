@@ -317,7 +317,7 @@ CLI、MCP 和可选 HTTP API 必须使用同一套工具注册、校验和执行
 
 ### 9.1 当前基础
 
-PC 服务端已有设备结果包 API、migration 0024 和 `deviceapply` 包；ADR-0057 P1 已加入 AI 客户端设备级 scope（device.apply + device_ids）。Android 后台 Worker 源码已按 §9.6 交付，但真机后台/SAF/内嵌服务可用性与自动应用尚未验收，设备配对短码/二维码仍未实现。2026-11-08 增：manifest 可选 `expectedState` 与服务端权威回读（migration 0026 `verification_json`，不参与幂等重放比较）；Android 领取/待办按 nextCursor 全量翻页（100/页、上限 2000）、本机模式自助设备令牌与只读最近任务卡已交付源码。设备配对/身份证明、临时包 GC 与真机后台仍未验收。
+PC 服务端已有设备结果包 API、migration 0024 和 `deviceapply` 包；ADR-0057 P1 已加入 AI 客户端设备级 scope（device.apply + device_ids）。Android 后台 Worker 源码已按 §9.6 交付，但真机后台/SAF/内嵌服务可用性与自动应用尚未验收，设备配对短码/二维码仍未实现。2026-11-08 增：manifest 可选 `expectedState` 与服务端权威回读（migration 0026 独立表 `device_apply_verifications`，不参与幂等重放比较）；Android 领取/待办按 nextCursor 全量翻页（100/页、上限 2000）、本机模式自助设备令牌与只读最近任务卡已交付源码。设备配对/身份证明、临时包 GC 与真机后台仍未验收。
 
 ### 9.2 手机同步流程
 
@@ -462,7 +462,7 @@ R0～R4 优先解决 AI 接口独立、规则变更和脚本重复问题。R5～
 | 研究接口 | 默认关闭不影响 AI 自带联网研究和业务维护 |
 | 任务恢复 | Worker 重启后不会重复执行已完成步骤 |
 | 外部执行器通道 | claim 无任务 204、租约 + fencing token；暂停/取消/过期/重领后旧 token 一律 409 LEASE_LOST；步骤/工件幂等 upsert；>50 步恢复不重复副作用（2026-11-08 源码 + 本机定向测试；未接真实执行器/多执行器） |
-| 设备权威回读 | 回传时服务端读库绝对计数与 expectedState 比较、deviceLocalHashes 逐段核对；verification_json 不参与幂等重放比较（2026-11-08 源码 + 本机测试；未真机/真实库） |
+| 设备权威回读 | 回传时服务端读库绝对计数与 expectedState 比较、deviceLocalHashes 逐段核对；独立表 device_apply_verifications 不参与幂等重放比较（2026-11-08 源码 + 本机测试；未真机/真实库） |
 | AI 客户端管理/限流 | 管理端点仅管理员会话、AI token 403；限流 429 + Retry-After；撤销/轮换约 5 秒生效（2026-11-08 源码 + 本机测试；未安装、未接真实客户端） |
 | 设备同步 | 设备身份有效，错误设备无法领取结果包 |
 | 备份保护 | 导入前导出失败时禁止继续写入 |

@@ -135,7 +135,12 @@ type DeviceApplyTask struct {
 	FinishedAt       sql.NullString
 	ExpiresAt        string
 	ResultJson       sql.NullString
-	VerificationJson sql.NullString
+}
+
+type DeviceApplyVerification struct {
+	TaskID           string
+	VerificationJson string
+	CreatedAt        string
 }
 
 type Favorite struct {

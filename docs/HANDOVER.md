@@ -36,7 +36,7 @@
 - Go AI 权限：新增 8 个写 scope（asset.write/asset.upload/asset.delete/tag.write/source.write/library.write/trash.restore/maintenance.execute）与方法+路径映射，未映射写仍默认拒绝；AI 客户端管理与审计查询 HTTP 端点仅管理员会话可用，AI token（含 admin scope）403；撤销/轮换约 5 秒缓存生效。
 - 按客户端令牌桶限流（默认 600/分、突发 120，0 关闭，429 + Retry-After），进程内单实例。
 - 维护任务外部执行器受控通道（claim/heartbeat/steps/artifacts/complete + fencing leaseToken，30–1800 秒），worker 恢复按完整已完成步骤跳过（修复 >50 步重复副作用）。
-- 设备结果包服务端权威校验：manifest 可选 expectedState，回传时读库绝对计数并与段摘要核对，结果新增 authoritativeState/expectedStateMatches/expectedStateDiff/hashVerified，migration 0026 只增 verification_json。
+- 设备结果包服务端权威校验：manifest 可选 expectedState，回传时读库绝对计数并与段摘要核对，结果新增 authoritativeState/expectedStateMatches/expectedStateDiff/hashVerified，migration 0026 只增独立表 device_apply_verifications（旧版本忽略，回退安全）。
 - Android：领取/待办按 nextCursor 全量翻页（100/页、上限 2000）；本机模式自助签发设备令牌；设置页只读最近任务卡。
 - AI 工具 1.1.0：43 个工具、toolContract 1.1.0、rulesVersion 2026-11-08.2。
 
@@ -151,7 +151,7 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 | Go AI 权限 | 新增 asset.write/asset.upload/asset.delete/tag.write/source.write/library.write/trash.restore/maintenance.execute；方法+路径映射扩展，未映射写默认 deny；AI 客户端管理/审计查询仅管理员会话，AI token 即使带 admin scope 也 403 | aiauth/httpapi 定向 `go test`；未跑全量/race |
 | 限流 | 每客户端 600/分、突发 120，`QIMENG_AI_RATE_LIMIT_PER_MINUTE`/`_BURST` 可调，0 关闭；429 `RATE_LIMITED` + `Retry-After` | aiauth/httpapi 定向测试；未压测 |
 | 外部执行器 | `/api/v1/maintenance/executor/claim`（无任务 204）与 `jobs/{id}/{heartbeat,steps,artifacts,complete}`；fencing `leaseToken` 30–1800 秒（默认 120）；旧 token 409 `LEASE_LOST`；完整 completedSteps | maintenance/httpapi 定向 `go test` |
-| 设备权威回读 | manifest 可选 expectedState；服务端绝对计数 + deviceLocalHashes 核对；结果暴露 authoritativeState/expectedStateMatches/expectedStateDiff/hashVerified；migration 0026 只增 verification_json | deviceapply/httpapi 定向测试（临时 SQLite、合成包） |
+| 设备权威回读 | manifest 可选 expectedState；服务端绝对计数 + deviceLocalHashes 核对；结果暴露 authoritativeState/expectedStateMatches/expectedStateDiff/hashVerified；migration 0026 只增独立表 device_apply_verifications | deviceapply/httpapi 定向测试（临时 SQLite、合成包） |
 | Android | 领取/待办按 nextCursor 全量翻页（100/页、上限 2000）；本机模式设备令牌自助签发；只读最近任务卡（20 条）；本地/远端共用 runner | `:core:data` device/token 50 项通过；`:feature:manage`/`:app` compileDebugKotlin + hiltJavaCompileDebug 成功 |
 | AI 工具 1.1.0 | 43 工具（14 项新增，backup.export 与 device.apply.* 转 supported）；错误目录新增 4 码；rulesVersion 2026-11-08.2 | Python 164 项通过；未接真实客户端 |
 

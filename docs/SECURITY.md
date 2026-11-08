@@ -101,7 +101,7 @@
   未绑定任何设备的客户端不能使用设备端点；管理员会话不受设备级限制。设备标签仍是不透明标签（真实设备配对属于 G6，后续阶段）。Android 本机模式的设备令牌由 App 用**本机管理员会话**调用 `POST /api/v1/ai-clients` 生成（label `android-local-<device>`、scope `device.apply`、`deviceIds` 绑定），明文只落 App DataStore，不回显、不写日志；不得把会话 token 当设备 token 使用。
 - **审计**：AI 客户端的所有写请求（含被 403 拒绝的）追加一行 `ai_audit`：client_id/method/path/action/status_code/request_id/created_at；不记录请求体/响应体。action 默认是所需 scope，设备域补充操作与目标（如 `device.apply:claim:phone-main`、`device.apply:result:applied`），便于追踪哪台手机领取/回传了什么。request_id 优先取 `X-Request-Id`（有界可打印 ASCII），否则服务端随机生成。审计写失败只记错误日志、不阻断业务；管理员会话不写该表。`GET /api/v1/ai-audit` 支持 clientId/action 前缀/keyset 分页，仅管理员会话可读。
 - **缓存生效窗口**：服务端内存缓存客户端最多 `DefaultCacheTTL = 5s`；本地 CLI 在另一进程改库后，撤销/轮换/新建最多约 5 秒生效。`last_used_at` 按分钟节流 best-effort 更新。鉴权缓存刷新失败按 401 处理（fail-closed），不让陈旧缓存继续放行。
-- **设备结果包权威回读**：manifest 可选 `expectedState`（绝对计数，键限定 assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents）；回传时服务端读取库内真实计数、与期望比较，并核对手机回传的段摘要。验证快照写入独立的可空列 `verification_json`（migration 0026），不参与 `result_json` 的幂等重放比较；旧任务/旧客户端不受影响。
+- **设备结果包权威回读**：manifest 可选 `expectedState`（绝对计数，键限定 assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents）；回传时服务端读取库内真实计数、与期望比较，并核对手机回传的段摘要。验证快照写入独立表 `device_apply_verifications`（migration 0026，task_id 主键），不参与 `result_json` 的幂等重放比较；旧任务/旧客户端不受影响，回退旧版本时旧代码忽略该表。
 - **已知边界/未实现**：无 Web 管理/审计 UI（HTTP 端点与 CLI 已有）；无多实例共享限流；高风险动作仍靠独立 scope，未加动作级确认凭据（G3）；设备身份仍是标签非认证（G6）；管理员 Bearer 仍是全权凭据，AI 工具层应使用受限客户端 token；`ai_audit` 只增、无自动裁剪/归档（容量随写请求增长，当前单机规模接受，后续可加保留策略）；真实设备/模拟器后台执行与 NAS 部署仍未验收。
 
 ## 开发模式（红线 5 的受限例外）

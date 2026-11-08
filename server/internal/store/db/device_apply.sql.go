@@ -192,7 +192,6 @@ const finishDeviceApplyTask = `-- name: FinishDeviceApplyTask :execrows
 UPDATE device_apply_tasks
 SET status = ?,
     result_json = ?,
-    verification_json = ?,
     finished_at = ?,
     updated_at = ?
 WHERE id = ?
@@ -200,19 +199,17 @@ WHERE id = ?
 `
 
 type FinishDeviceApplyTaskParams struct {
-	Status           string
-	ResultJson       sql.NullString
-	VerificationJson sql.NullString
-	FinishedAt       sql.NullString
-	UpdatedAt        string
-	ID               string
+	Status     string
+	ResultJson sql.NullString
+	FinishedAt sql.NullString
+	UpdatedAt  string
+	ID         string
 }
 
 func (q *Queries) FinishDeviceApplyTask(ctx context.Context, arg FinishDeviceApplyTaskParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, finishDeviceApplyTask,
 		arg.Status,
 		arg.ResultJson,
-		arg.VerificationJson,
 		arg.FinishedAt,
 		arg.UpdatedAt,
 		arg.ID,
@@ -283,7 +280,7 @@ func (q *Queries) GetDeviceApplySegment(ctx context.Context, arg GetDeviceApplyS
 }
 
 const getDeviceApplyTask = `-- name: GetDeviceApplyTask :one
-SELECT id, target_device_id, status, protocol_version, rules_fingerprint, manifest_json, created_at, updated_at, claimed_at, finished_at, expires_at, result_json, verification_json FROM device_apply_tasks WHERE id = ?
+SELECT id, target_device_id, status, protocol_version, rules_fingerprint, manifest_json, created_at, updated_at, claimed_at, finished_at, expires_at, result_json FROM device_apply_tasks WHERE id = ?
 `
 
 func (q *Queries) GetDeviceApplyTask(ctx context.Context, id string) (DeviceApplyTask, error) {
@@ -302,9 +299,38 @@ func (q *Queries) GetDeviceApplyTask(ctx context.Context, id string) (DeviceAppl
 		&i.FinishedAt,
 		&i.ExpiresAt,
 		&i.ResultJson,
-		&i.VerificationJson,
 	)
 	return i, err
+}
+
+const getDeviceApplyVerification = `-- name: GetDeviceApplyVerification :one
+SELECT verification_json FROM device_apply_verifications WHERE task_id = ?
+`
+
+func (q *Queries) GetDeviceApplyVerification(ctx context.Context, taskID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getDeviceApplyVerification, taskID)
+	var verification_json string
+	err := row.Scan(&verification_json)
+	return verification_json, err
+}
+
+const insertDeviceApplyVerification = `-- name: InsertDeviceApplyVerification :exec
+INSERT INTO device_apply_verifications (task_id, verification_json, created_at)
+VALUES (?, ?, ?)
+ON CONFLICT(task_id) DO NOTHING
+`
+
+type InsertDeviceApplyVerificationParams struct {
+	TaskID           string
+	VerificationJson string
+	CreatedAt        string
+}
+
+// Best-effort snapshot written after the terminal result; repeated writes for
+// the same task are ignored (the result itself is immutable once terminal).
+func (q *Queries) InsertDeviceApplyVerification(ctx context.Context, arg InsertDeviceApplyVerificationParams) error {
+	_, err := q.db.ExecContext(ctx, insertDeviceApplyVerification, arg.TaskID, arg.VerificationJson, arg.CreatedAt)
+	return err
 }
 
 const listDeviceApplySegments = `-- name: ListDeviceApplySegments :many
@@ -344,7 +370,7 @@ func (q *Queries) ListDeviceApplySegments(ctx context.Context, taskID string) ([
 
 const listDeviceApplyTasks = `-- name: ListDeviceApplyTasks :many
 SELECT
-    t.id, t.target_device_id, t.status, t.protocol_version, t.rules_fingerprint, t.manifest_json, t.created_at, t.updated_at, t.claimed_at, t.finished_at, t.expires_at, t.result_json, t.verification_json,
+    t.id, t.target_device_id, t.status, t.protocol_version, t.rules_fingerprint, t.manifest_json, t.created_at, t.updated_at, t.claimed_at, t.finished_at, t.expires_at, t.result_json,
     (SELECT COUNT(*) FROM device_apply_segments s
      WHERE s.task_id = t.id) AS segment_count
 FROM device_apply_tasks t
@@ -379,7 +405,6 @@ type ListDeviceApplyTasksRow struct {
 	FinishedAt       sql.NullString
 	ExpiresAt        string
 	ResultJson       sql.NullString
-	VerificationJson sql.NullString
 	SegmentCount     int64
 }
 
@@ -411,7 +436,6 @@ func (q *Queries) ListDeviceApplyTasks(ctx context.Context, arg ListDeviceApplyT
 			&i.FinishedAt,
 			&i.ExpiresAt,
 			&i.ResultJson,
-			&i.VerificationJson,
 			&i.SegmentCount,
 		); err != nil {
 			return nil, err

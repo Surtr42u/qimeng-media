@@ -21,7 +21,7 @@
 执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
 
 - manifest 新增可选 `expectedState`（assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents，非负整数；未知键/负数 400）；回传结果时服务端读库内绝对计数逐键比较，并核对 `deviceLocalHashes` 与登记段摘要（少报/不符记 `hashVerified=false`，不改变回传状态码）。
-- 结果新增 `authoritativeState`/`expectedStateMatches`/`expectedStateDiff`/`hashVerified`；migration `0026_device_apply_verification` 只增 nullable `verification_json`，`result_json` 仍是幂等重放比较基准，相同结果重放不重算、不产生 409，旧行保持 NULL。
+- 结果新增 `authoritativeState`/`expectedStateMatches`/`expectedStateDiff`/`hashVerified`；migration `0026_device_apply_verification` 只增独立表 `device_apply_verifications`（不改任务表列，旧版本回退时 SELECT * 扫描不受影响）；`result_json` 仍是幂等重放比较基准，相同结果重放不重算、不产生 409。
 - 文档：`docs/api/device.md`、OpenAPI/SDK 由同批提交维护。验证：deviceapply/httpapi 定向测试（临时 SQLite、合成包）。未安装、未真机、未向真实库回传。
 
 ## feat(server): 维护任务外部执行器受控通道与 worker 恢复修复（2026-11-08 第七百一十八笔）

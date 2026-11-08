@@ -12,7 +12,7 @@
 - **段字节不入库**：SQLite 只存 kind/bytes/sha256/相对路径与任务状态；正文在 DataDir 下，删除/清理任务留给后续阶段。
 - **过期与取消只改账本**：到期或取消不会删除磁盘段文件；本切片没有 GC/清理任务，磁盘占用需后续维护阶段处理。
 - **未安装/未真机验证**：服务端源码、协议与 SDK 已交付；Android Worker 源码已交付但未安装。现装版本见 [HANDOVER](../HANDOVER.md)。
-- **权威状态校验在服务端**：回传结果时服务端读库内绝对计数与 manifest 可选 `expectedState` 比较，并核对手机上报的 `deviceLocalHashes` 与登记段摘要；校验结果单独存 `verification_json`（migration 0026），不参与结果重放比较。
+- **权威状态校验在服务端**：回传结果时服务端读库内绝对计数与 manifest 可选 `expectedState` 比较，并核对手机上报的 `deviceLocalHashes` 与登记段摘要；校验结果单独存独立表 `device_apply_verifications`（migration 0026），不参与结果重放比较。
 
 ## 鉴权
 
@@ -64,7 +64,7 @@ task-17 在 Android 侧新增了设备结果包 Worker（源码路径 `android/c
 
 - manifest 的 `expectedState` 是可选的**应用后绝对计数**（键：`assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents`；值非负整数；未知键或负数 400）。它和 `expectedReadback` 语义不同：后者是本次导入的增量回读，前者是「应用完成后库里应该有多少」的绝对断言。
 - 回传结果时服务端读取权威数据库计数（绝对值），与 `expectedState` 逐键比较；同时检查 `deviceLocalHashes` 是否覆盖全部已登记段并逐段等于登记摘要（少报/不符即不通过）。
-- 校验结果写入独立列 `verification_json`（migration 0026），**不进入 `result_json` 的重放比较**：相同结果重放仍按原样判断字节相等/幂等，不会因为重建计数而变成 409。
+- 校验结果写入独立表 `device_apply_verifications`（migration 0026），**不进入 `result_json` 的重放比较**：相同结果重放仍按原样判断字节相等/幂等，不会因为重建计数而变成 409。
 
 ### 失败、重试与幂等
 
@@ -197,7 +197,7 @@ manifest 声明值超出段类型上限、或声明字节数与实际文件不�
 
 **重复回传语义**（文档化契约）：
 
-- 已终态任务再次提交**完全相同**的结果（`status`、归一化 JSON `readback`、排序后的 `deviceLocalHashes`、`message` 全部一致）→ **200 幂等**，返回原任务，`finishedAt` 不变；校验结果沿用首次保存的 `verification_json`，不重算、不因此产生冲突。
+- 已终态任务再次提交**完全相同**的结果（`status`、归一化 JSON `readback`、排序后的 `deviceLocalHashes`、`message` 全部一致）→ **200 幂等**，返回原任务，`finishedAt` 不变；校验结果沿用首次保存的验证快照，不重算、不因此产生冲突。
 - 任何字段不同 → **409 `STATE_CONFLICT`**；终态结果不可覆盖。
 - 未领取（`pending`）、`cancelled/expired` 或已过期 → 409；不存在 404。
 
@@ -267,7 +267,7 @@ Worker 重试建议：领取 409 时用详情确认是否已终态/过期；回�
 
 ## 数据与验证边界
 
-- migration `0024_device_apply_tasks` 只新增 `device_apply_tasks`/`device_apply_segments` 两表与索引；migration `0026_device_apply_verification` 仅给 `device_apply_tasks` 增加 nullable `verification_json`，不改历史迁移，旧行保持 NULL。`result_json` 仍是客户端结果的重放比较基准。
+- migration `0024_device_apply_tasks` 只新增 `device_apply_tasks`/`device_apply_segments` 两表与索引；migration `0026_device_apply_verification` 仅新增独立表 `device_apply_verifications`（task_id 主键、级联删除），不改历史迁移、不给任务表加列；旧版本回退时 `SELECT *` 扫描不受影响。`result_json` 仍是客户端结果的重放比较基准。
 - 测试使用临时 SQLite、临时包目录与合成字节（含 1KB 段），覆盖创建/段 SHA/超限/指纹不符、列表过滤与游标、领取幂等/过期、段下载头与路径安全、回传终态/重复回传、取消、404/409/413，以及回传时的权威计数比较、`expectedState` 键/取值校验、摘要逐段校验与相同结果重放幂等；不访问 8420 真库、真实设备或真实维护目录。
 - 本地未跑业务 `go test`（仓库规定走云端 CI）；已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet` 与文档/隐私/迁移检查。实际测试结果以云端 CI 为准。
 - Android Worker：device 包 JVM 单测 40 项（2026-11-08 task-21 后：目标筛选、领取前登录/维护根/全文件访问前置、pending+claimed 过期过滤、段 size/SHA-256、授权缺失、回读比较、结果映射、两代路径、设置持久化）；其中 37 项纯逻辑用例已在开发机用 kotlinc+JUnit 实跑通过（设置持久化 3 项依赖 DataStore 运行时，由 Gradle 单测执行）。`:feature:manage:compileDebugKotlin` 与 `:app:compileDebugKotlin` 编译通过。未安装、未跑全量 Gradle/Lint、未在 `qimeng_api35` 或真机验收，也未访问真实维护目录/8420 真库。

@@ -168,7 +168,7 @@
 
 > **落地状态（2026-11-07 第六百九十七笔）**：服务端 API 已落地——migration `0024_device_apply_tasks` 两表、`server/internal/deviceapply`（manifest 校验、段文件落盘+SHA-256 复算、状态机、惰性过期、领取/回传/取消幂等）、7 个 `/api/v1/device/apply-tasks` 端点、OpenAPI/SDK/锁与 `docs/api/device.md`/ADR-0055。Android Worker、配对/设备身份与真机后台同步**未实现**，本轮未安装；下文 Worker/配对仍为目标方案，不能写成已具备。
 >
-> **2026-11-08 更新（源码 + 本机定向测试，未安装）**：服务端增 manifest 可选 `expectedState` 与回传时权威计数/段摘要核对（migration 0026 `verification_json`，不参与幂等重放比较）；Android Worker 源码已交付（WorkManager、专用设备令牌、SAF/所有文件访问门禁），领取/待办改为 nextCursor 全量翻页，本机模式可自助签发设备令牌。设备配对/身份证明、临时包 GC、真机后台与应用恢复仍未验收。
+> **2026-11-08 更新（源码 + 本机定向测试，未安装）**：服务端增 manifest 可选 `expectedState` 与回传时权威计数/段摘要核对（migration 0026 独立表 `device_apply_verifications`，不参与幂等重放比较）；Android Worker 源码已交付（WorkManager、专用设备令牌、SAF/所有文件访问门禁），领取/待办改为 nextCursor 全量翻页，本机模式可自助签发设备令牌。设备配对/身份证明、临时包 GC、真机后台与应用恢复仍未验收。
 
 **推荐做法**：PC 端新增设备结果包端点族（P4，OpenAPI 先行）：`POST /api/v1/device/apply-tasks`（登记包，绑定 `targetDeviceId`）、`GET /api/v1/device/apply-tasks?targetDevice=&status=`（手机领取）、`POST /api/v1/device/apply-tasks/{id}/result`（回传）、`GET /api/v1/device/apply-tasks/{id}`（状态）。包内固定包含：协议/规则指纹、目标实例、段清单（每段 kind 取 `masterTxt` 或 `v2Backup`、字节数、SHA-256、期望回读指标）。正文按段落 `<dataDir>/device-apply-packages/<taskId>/`，数据库只存清单、摘要与状态；主表 TXT 受现有 `httpapi.maxJSONBody`（1MiB）约束，v2 备份受 `portablebackup.ImportMaxBody`（64MiB）约束，超限在登记时拒绝。
 
