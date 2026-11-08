@@ -164,6 +164,10 @@ func TestRequiredAIScopeAssetSubroutes(t *testing.T) {
 		{http.MethodPut, "/api/v1/config", "", false},
 		{http.MethodGet, "/api/v1/ai-clients", "", false},
 		{http.MethodGet, "/api/v1/ai-audit", "", false},
+		{http.MethodGet, "/metrics", "", false},
+		{http.MethodGet, "/api/v1/client-logs", "", false},
+		{http.MethodGet, "/api/v1/config", "", false},
+		{http.MethodGet, "/api/v1/system/status", "", false},
 	}
 	for _, tc := range cases {
 		scope, _, mapped := requiredAIScope(tc.method, tc.path)

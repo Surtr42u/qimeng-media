@@ -149,4 +149,4 @@ def maintenance_complete(ctx: ToolContext, payload: dict) -> dict:
     job = _executor_post(ctx, "maintenance.complete",
                          _job_path(job_id, "/complete"), body, job_id)
     return {"job": job,
-            "note": "终态不可再领取/改写；重复回传同一终态幂等，租约失效返回 LEASE_LOST。"}
+            "note": "终态不可再领取/改写；终态写入后重复回传返回 LEASE_LOST（不幂等重放），响应丢失应先查详情。"}

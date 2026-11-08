@@ -167,3 +167,12 @@ func TestNormalizeExecutorLeaseTTL(t *testing.T) {
 		t.Fatalf("过长租约错误 = %v", err)
 	}
 }
+
+// TestExecutorRejectsWorkerOwnedKind 覆盖外部通道的 kind 边界：backup_export
+// 有 Go worker 内置 handler，外部执行器不得领取/关单。
+func TestExecutorRejectsWorkerOwnedKind(t *testing.T) {
+	svc, _ := newTestService(t)
+	if _, _, err := svc.ClaimForExecutor(context.Background(), KindBackupExport, 0); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("领取 backup_export 错误 = %v，期望 ErrInvalidInput", err)
+	}
+}

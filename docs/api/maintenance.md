@@ -6,7 +6,7 @@
 
 ## 能力边界（先看这里）
 
-- **执行面分两条通道**：POST 只建 queued 行；进程内 worker 通过 `server/internal/maintenance` 内部原语推进；外部执行器只能走 `/api/v1/maintenance/executor/*` 受控通道（ADR-0058），凭 claim 返回的 `leaseToken` 续租/写步骤/工件/回传终态，**不能直接写任务表**。没有 token 或 token 已失效一律 409 `LEASE_LOST`。
+- **执行面分两条通道**：POST 只建 queued 行；进程内 worker 通过 `server/internal/maintenance` 内部原语推进；外部执行器只能走 `/api/v1/maintenance/executor/*` 受控通道（ADR-0058），凭 claim 返回的 `leaseToken` 续租/写步骤/工件/回传终态，**不能直接写任务表**。没有 token 或 token 已失效一律 409 `LEASE_LOST`。`backup_export` 有 Go worker 内置 handler，外部执行器领取返回 400 `INVALID_PARAM`，避免外部把真实快照任务写成终态。
 - **端点无独立开关，worker 有独立开关**：与 research 不同，账本端点恒可用（只读写本地 SQLite，不出网、不执行任务）；worker 由 `maintenance_worker.enabled`（`QIMENG_MAINTENANCE_WORKER_ENABLED`）控制，默认启用，只消费已注册 handler 的 kind。
 - **任务类型决定是否被本进程消费**：`backup_export` 有内置 handler，会被 worker 自动领取执行；`asset_research`/`author_cleanup`/`custom` 目前只有账本标签，保持 queued 供外部 AI 执行器，具体业务规则仍由后续实现。
 - **`libraryId` 不校验存在性**：它是账本引用标签，库删除后历史任务仍保留，不能据此认为库一定存在。
@@ -130,7 +130,7 @@ queued -> inventory -> research -> planned -> applying -> verifying -> completed
 | `POST /jobs/{id}/heartbeat` | `leaseToken`、`leaseSeconds?` | `{jobId, leaseUntil}` | 仅未过期租约的持有者可续租 |
 | `POST /jobs/{id}/steps` | `leaseToken`、`step`、`status`（pending/running/completed/failed/skipped）、`attempt?`、`detail?`（≤16KiB） | `MaintenanceJob` | 按 `(job, step)` 幂等 upsert；服务端按状态补 `startedAt/finishedAt`，完成时保留原 `startedAt` |
 | `POST /jobs/{id}/artifacts` | `leaseToken`、`kind`、`uri`、`sha256`、`bytes` | `MaintenanceJob` | 按 `(job, kind, uri)` 去重，重复登记 no-op；工件正文不入库 |
-| `POST /jobs/{id}/complete` | `leaseToken`、`status`（completed/partial/failed）、`errorCode?`、`errorMessage?` | `MaintenanceJob` | 只有持有效租约者可回传终态；`completed` 清空错误字段；同一终态重复回传幂等 200 |
+| `POST /jobs/{id}/complete` | `leaseToken`、`status`（completed/partial/failed）、`errorCode?`、`errorMessage?` | `MaintenanceJob` | 只有持有效租约者可回传终态；`completed` 清空错误字段；终态写入后重复回传 409 `LEASE_LOST`（不幂等重放，响应丢失应先查详情） |
 
 **Fencing（围栏）语义**：
 

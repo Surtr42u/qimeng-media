@@ -806,7 +806,7 @@ TOOLS: tuple[ToolSpec, ...] = (
                            fields=("leaseToken", "status"), body_required=True),),
         error_codes=({"code": "LEASE_LOST", "category": "conflict", "exitCode": 1,
                       "recovery": "终态不可再改；租约失效时不要反复重试，交由账本/人工处理。"},),
-        runtime_checks=("completed 清空错误字段；重复回传同一终态幂等",),
+        runtime_checks=("completed 清空错误字段；终态写入后重复回传返回 LEASE_LOST（不幂等重放）",),
     ),
     # ---- research_kit 本机研究工作流（算法在 tools/research_kit，本层只组 argv/边界）----
     ToolSpec(

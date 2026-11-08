@@ -231,6 +231,12 @@ func requiredAIScope(method, path string) (aiauth.Scope, string, bool) {
 		return "", "", false
 	case path == "/api/v1/ai-audit" || strings.HasPrefix(path, "/api/v1/ai-audit/"):
 		return "", "", false
+	// 管理面诊断/配置 GET 不向 AI 开放：metrics 暴露端点×状态码与耗时画像，
+	// client-logs 含客户端异常堆栈，config/system-status 属运维面。read 兜底
+	// 只覆盖业务只读面，避免"只读"被解释成"运维只读"。
+	case path == "/metrics" || path == "/api/v1/client-logs" ||
+		path == "/api/v1/config" || path == "/api/v1/system/status":
+		return "", "", false
 	case strings.HasPrefix(path, "/api/v1/maintenance/executor"):
 		return aiauth.ScopeMaintenanceExecute, "maintenance.execute", true
 	case strings.HasPrefix(path, "/api/v1/maintenance/jobs"):

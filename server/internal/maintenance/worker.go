@@ -340,7 +340,7 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 	// 详情端点只返回最近 MaxDetailSteps 条步骤；长任务更早的 completed 步骤
 	// 会落在窗口外。从账本读取完整 completed/skipped 名集合补齐，否则那些
 	// 步骤会被当成"从未执行"重复产生副作用（2026-11-08 修复）。
-	completedNames, namesErr := w.svc.CompletedStepNames(ctx, job.ID)
+	settled, namesErr := w.svc.SettledSteps(ctx, job.ID)
 	if namesErr != nil {
 		// 读不到完整步骤集合时不执行任何步骤：停止本次领取，让租约到期后
 		// 重试（与临时 DB 错误同款处理，不把可恢复错误写成 failed 终态）。
@@ -348,9 +348,11 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 			"jobId", job.ID, "error", namesErr)
 		return
 	}
-	for _, name := range completedNames {
-		if _, seen := prior[name]; !seen {
-			prior[name] = Step{Step: name, Status: StepCompleted}
+	for _, step := range settled {
+		if _, seen := prior[step.Step]; !seen {
+			// 保留 skipped：窗口外的 skipped 若伪装成 completed，恢复后的
+			// 终态会被误判为 completed 而不是 partial。
+			prior[step.Step] = Step{Step: step.Step, Status: step.Status}
 		}
 	}
 
@@ -482,7 +484,11 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 			}
 			status = next
 		}
-		if priorStep, done := prior[spec.Name]; done && priorStep.Status == StepCompleted {
+		if priorStep, done := prior[spec.Name]; done &&
+			(priorStep.Status == StepCompleted || priorStep.Status == StepSkipped) {
+			if priorStep.Status == StepSkipped {
+				skipped = true
+			}
 			continue
 		}
 
@@ -499,6 +505,13 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 				return
 			}
 			if w.stopOnLeaseLost(err, job.ID, "记录步骤开始") {
+				return
+			}
+			if !isDeterministicJobError(err) {
+				// 临时存储错误（如 SQLITE_BUSY）不能写终态：任务保持原状态，
+				// 租约到期后重领，已提交步骤按名跳过。
+				w.logger.Warn("记录步骤开始遇到临时错误，停止本次执行等待重领",
+					"jobId", job.ID, "step", spec.Name, "error", err)
 				return
 			}
 			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, spec, attempt, startedAt,
@@ -548,6 +561,11 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 				if w.stopOnLeaseLost(err, job.ID, "记录工件") {
 					return
 				}
+				if !isDeterministicJobError(err) {
+					w.logger.Warn("记录工件遇到临时错误，停止本次执行等待重领",
+						"jobId", job.ID, "step", spec.Name, "error", err)
+					return
+				}
 				w.failJob(context.WithoutCancel(ctx), job, leaseOwner, spec, attempt, startedAt,
 					StepFailedCode, "记录工件失败: "+err.Error())
 				return
@@ -569,6 +587,11 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 			LeaseOwner: leaseOwner,
 		}); err != nil {
 			if w.stopOnLeaseLost(err, job.ID, "记录步骤完成") {
+				return
+			}
+			if !isDeterministicJobError(err) {
+				w.logger.Warn("记录步骤完成遇到临时错误，停止本次执行等待重领",
+					"jobId", job.ID, "step", spec.Name, "error", err)
 				return
 			}
 			w.failJob(context.WithoutCancel(ctx), job, leaseOwner, spec, attempt, startedAt,
@@ -667,6 +690,15 @@ func (w *Worker) failJob(ctx context.Context, job Job, leaseOwner string, step S
 // stopOnLeaseLost 统一识别「写账本时租约已失效」：旧执行器的步骤/工件/状态
 // 写入被 fencing 拒绝后只记日志并停止，不把任务标成 failed（任务已由新执行
 // 器接管，或已被暂停/取消，终态由当前持有者/公开端点决定）。
+// isDeterministicJobError 区分确定性业务错误与临时存储/上下文错误：只有
+// 前者应写 failed 终态。SQLITE_BUSY/磁盘抖动等临时错误若写成终态，会让
+// 已完成的副作用永久不可重试，与心跳/状态推进的既有分类策略冲突。
+func isDeterministicJobError(err error) bool {
+	return errors.Is(err, ErrInvalidInput) ||
+		errors.Is(err, ErrNotFound) ||
+		errors.Is(err, ErrStateConflict)
+}
+
 func (w *Worker) stopOnLeaseLost(err error, jobID, phase string) bool {
 	if !errors.Is(err, ErrLeaseLost) {
 		return false

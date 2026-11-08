@@ -344,9 +344,14 @@ func (s *Service) Result(ctx context.Context, id string, in ResultInput) (Task, 
 	// 权威状态快照与摘要核验在服务端计算，与客户端上报的增量计数分开存放：
 	// result_json 保持客户端规范化内容（幂等重放逐字节比较），验证结果写入
 	// verification_json，重放不会因库状态变化被误判为 STATE_CONFLICT。
-	verification, err := s.buildVerification(ctx, taskID, row.ManifestJson, in.DeviceLocalHashes)
-	if err != nil {
-		return Task{}, err
+	verification, verifyErr := s.buildVerification(ctx, taskID, row.ManifestJson, in.DeviceLocalHashes)
+	if verifyErr != nil {
+		// 验证快照是附加证据，不是结果写入的前置条件：读取失败按协议留空
+		// （authoritativeState=null），终态必须照常落账，不能因一次临时
+		// DB 错误让手机的 applied/partial/failed 丢失并最终过期。
+		s.logger.Warn("设备结果权威校验失败（结果照常记录，验证字段留空）",
+			"taskId", taskID, "error", verifyErr)
+		verification = nil
 	}
 	verificationJSON := sql.NullString{}
 	if len(verification) > 0 {

@@ -1583,6 +1583,7 @@ paths:
         "200": { description: 幂等重放（返回既有任务，不重复创建）, content: { application/json: { schema: { $ref: "#/components/schemas/MaintenanceJob" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/StateConflict" }
     get:
       summary: 维护任务列表（状态过滤 + 新建倒序 keyset 分页）
       description: |
@@ -1674,7 +1675,8 @@ paths:
         204（无正文）。同一任务被重新领取会生成新的 token；旧 token 在暂停、
         取消、终态或租约过期后不能再续租/写步骤/工件/回传终态，避免旧执行器
         产生重复副作用。completedSteps 返回全部已完成/跳过步骤名（不受详情
-        端点最近 50 条限制），执行器按名跳过已完成步骤。
+        端点最近 50 条限制），执行器按名跳过已完成步骤。backup_export 由 Go
+        worker 内置 handler 负责，外部执行器领取返回 400 INVALID_PARAM。
       requestBody:
         required: true
         content:
@@ -1750,8 +1752,9 @@ paths:
       summary: 回传终态（completed/partial/failed，受租约围栏）
       description: |
         只有仍持有未过期租约的执行器可以回传终态。completed 会清空错误字段。
-        重复回传同一终态幂等返回 200；租约失效或任务已被暂停/取消/重领时返回
-        409 LEASE_LOST。终态不可再被领取或改写。
+        终态写入会同时清空租约：成功响应丢失后的重复回传返回 409 LEASE_LOST，
+        不做幂等重放（执行器应停止并查询任务详情核对，而不是重试同一 token）。
+        暂停/取消/过期/被重领同样返回 409 LEASE_LOST；终态不可再被领取或改写。
       parameters: [ { $ref: "#/components/parameters/MaintenanceJobId" } ]
       requestBody:
         required: true

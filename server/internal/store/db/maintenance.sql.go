@@ -619,6 +619,44 @@ func (q *Queries) ListMaintenanceJobs(ctx context.Context, arg ListMaintenanceJo
 	return items, nil
 }
 
+const listMaintenanceSettledSteps = `-- name: ListMaintenanceSettledSteps :many
+SELECT step, status FROM maintenance_steps
+WHERE job_id = ? AND status IN ('completed', 'skipped')
+ORDER BY step
+`
+
+type ListMaintenanceSettledStepsRow struct {
+	Step   string
+	Status string
+}
+
+// Settled steps with their real status (completed vs skipped). Recovery must
+// preserve skipped: treating it as completed would turn a partial job into
+// completed after a re-claim, and the detail endpoint's 50-step window hides
+// older settled steps entirely.
+func (q *Queries) ListMaintenanceSettledSteps(ctx context.Context, jobID string) ([]ListMaintenanceSettledStepsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMaintenanceSettledSteps, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMaintenanceSettledStepsRow
+	for rows.Next() {
+		var i ListMaintenanceSettledStepsRow
+		if err := rows.Scan(&i.Step, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMaintenanceSteps = `-- name: ListMaintenanceSteps :many
 SELECT job_id, step, status, attempt, started_at, finished_at, detail_json FROM maintenance_steps
 WHERE job_id = ?

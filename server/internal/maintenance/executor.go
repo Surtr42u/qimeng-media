@@ -36,6 +36,15 @@ type LeaseResult struct {
 	CompletedSteps []string
 }
 
+// externalExecutorKinds 是外部执行器允许领取的任务族。当前 backup_export
+// 有 Go worker 内置 handler（backup.export 快照），必须留给内部 worker；
+// 其余 kind 没有内置 handler，由外部 AI 执行器消费。
+var externalExecutorKinds = map[Kind]struct{}{
+	KindAssetResearch: {},
+	KindAuthorCleanup: {},
+	KindCustom:        {},
+}
+
 // NormalizeExecutorLeaseTTL 校验外部请求的租约时长：0 用默认值，越界拒绝。
 func NormalizeExecutorLeaseTTL(ttl time.Duration) (time.Duration, error) {
 	if ttl == 0 {
@@ -57,6 +66,13 @@ func NormalizeExecutorLeaseTTL(ttl time.Duration) (time.Duration, error) {
 // the full ledger list (not the 50-step detail window) so a recovered executor
 // can skip side effects that already happened.
 func (s *Service) ClaimForExecutor(ctx context.Context, kind Kind, ttl time.Duration) (LeaseResult, bool, error) {
+	kind = Kind(strings.TrimSpace(string(kind)))
+	if _, ok := externalExecutorKinds[kind]; !ok {
+		// backup_export 由 Go worker 内置 handler 负责：外部执行器领取后
+		// 可以用 failed/completed 把它写成终态，导致真实快照从未执行却被
+		// 账本声称已处理。外部通道只开放没有内置 handler 的 kind。
+		return LeaseResult{}, false, fmt.Errorf("%w: kind %s 由内部 worker 负责，外部执行器不可领取", ErrInvalidInput, kind)
+	}
 	ttl, err := NormalizeExecutorLeaseTTL(ttl)
 	if err != nil {
 		return LeaseResult{}, false, err
@@ -96,17 +112,45 @@ func (s *Service) HeartbeatForExecutor(ctx context.Context, id, leaseToken strin
 // ordered by step. It is the recovery source of truth: the detail endpoint
 // caps steps at MaxDetailSteps, so long-running jobs must not rely on it to
 // decide which side effects already happened.
-func (s *Service) CompletedStepNames(ctx context.Context, id string) ([]string, error) {
+// SettledStep 是一个已收敛（completed/skipped）的步骤及其真实状态。
+type SettledStep struct {
+	Step   string
+	Status StepStatus
+}
+
+// SettledSteps 返回全部 completed/skipped 步骤及真实状态。恢复时不能把
+// skipped 伪装成 completed，否则窗口外的 skipped 会改变终态（partial ->
+// completed）；详情端点的 50 条窗口同样不能用于恢复判断。
+func (s *Service) SettledSteps(ctx context.Context, id string) ([]SettledStep, error) {
 	id, err := normalizeID(id)
 	if err != nil {
 		return nil, err
 	}
-	names, err := s.q.ListMaintenanceCompletedStepNames(ctx, id)
+	rows, err := s.q.ListMaintenanceSettledSteps(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("maintenance: 查询已完成步骤: %w", err)
 	}
-	if names == nil {
-		names = []string{}
+	settled := make([]SettledStep, 0, len(rows))
+	for _, row := range rows {
+		status := StepStatus(row.Status)
+		if !status.Valid() {
+			return nil, fmt.Errorf("maintenance: 步骤 %q 状态不合法", row.Step)
+		}
+		settled = append(settled, SettledStep{Step: row.Step, Status: status})
+	}
+	return settled, nil
+}
+
+// CompletedStepNames 返回全部 completed/skipped 步骤名（claim 响应用；
+// 只关心"哪些步骤已有结论"，不暴露 skipped/completed 差异）。
+func (s *Service) CompletedStepNames(ctx context.Context, id string) ([]string, error) {
+	settled, err := s.SettledSteps(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(settled))
+	for _, step := range settled {
+		names = append(names, step.Step)
 	}
 	return names, nil
 }

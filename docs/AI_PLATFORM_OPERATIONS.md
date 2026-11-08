@@ -44,7 +44,7 @@
 | Go API 版本 | `/api/v1/system/status` 等 | 只增协议优先；AI 平台按工具能力核对降级，不猜测旧参数 |
 
 - 升级 AI 工具包：替换 `tools/ai_maintenance/` 后运行 `version`/`catalog` 自检；不需要重新构建三端。
-- 当前工具包版本：`platformVersion` 1.1.0、`toolContractVersion` 1.1.0、`rulesVersion` 2026-11-08.1，共 43 个工具（含 `backup.export`、`device.apply.prepare/submit/status`、`maintenance.claim/heartbeat/step.record/artifact.record/complete`、研究探测/头像/回收站等新工具）；Python 侧 164 项测试通过。版本以 `version` 输出与 `rules.json` 为准。
+- 当前工具包版本：`platformVersion` 1.1.0、`toolContractVersion` 1.1.0、`rulesVersion` 2026-11-08.2，共 43 个工具（含 `backup.export`、`device.apply.prepare/submit/status`、`maintenance.claim/heartbeat/step.record/artifact.record/complete`、研究探测/头像/回收站等新工具）；Python 侧 164 项测试通过。版本以 `version` 输出与 `rules.json` 为准。
 - 升级 Go：先发布协议与实现，再按需更新 AI 工具包；工具会按 `openapiSha256`/能力核对报告 `supported/unavailable/incompatible`。
 - 工具新增/废弃：只增 ToolSpec + 实现模块；废弃用 `deprecated/replacedBy`，精简目录默认隐藏，执行返回 `TOOL_DEPRECATED`。
 

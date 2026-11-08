@@ -3,7 +3,7 @@
 
 执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
 
-- 工具注册表 29→43：新增 `maintenance.claim/heartbeat/step.record/artifact.record/complete`、`research.image.pipeline/search`、`research.author.probe/media.probe/avatar.fetch`、`trash.list/restore`、`asset.trash`、`asset.tags.replace`；`backup.export` 与 `device.apply.prepare/submit/status` 由 planned 转 supported。`platformVersion`/`toolContractVersion` 升 1.1.0，`rulesVersion`/`rulepackVersion` 升 `2026-11-08.1`。
+- 工具注册表 29→43：新增 `maintenance.claim/heartbeat/step.record/artifact.record/complete`、`research.image.pipeline/search`、`research.author.probe/media.probe/avatar.fetch`、`trash.list/restore`、`asset.trash`、`asset.tags.replace`；`backup.export` 与 `device.apply.prepare/submit/status` 由 planned 转 supported。`platformVersion`/`toolContractVersion` 升 1.1.0，`rulesVersion`/`rulepackVersion` 升 `2026-11-08.2`。
 - 错误目录新增 `PERMISSION_DENIED`/`TOOL_DEPRECATED`/`FORBIDDEN_SCOPE`/`LEASE_LOST`；工具权限与 Go scope 对齐（asset.write/asset.upload/asset.delete/tag.write/source.write/library.write/trash.restore/maintenance.execute），执行器工具以 `leaseToken` 作为能力凭据，只在 claim 结果出现。
 - 文档：`tools/ai_maintenance/README`、`rules.json`、`docs/AI_PLATFORM_OPERATIONS`、`docs/AI_PLATFORM_API_GAPS` 与 HANDOVER §10、CAPABILITY_MAP 同批。验证：Python 164 项通过；未接真实 AI 客户端、未安装、未对真实库执行写入。
 

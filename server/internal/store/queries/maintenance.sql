@@ -192,3 +192,12 @@ ORDER BY step;
 
 -- name: GetMaintenanceStep :one
 SELECT * FROM maintenance_steps WHERE job_id = ? AND step = ?;
+
+-- name: ListMaintenanceSettledSteps :many
+-- Settled steps with their real status (completed vs skipped). Recovery must
+-- preserve skipped: treating it as completed would turn a partial job into
+-- completed after a re-claim, and the detail endpoint's 50-step window hides
+-- older settled steps entirely.
+SELECT step, status FROM maintenance_steps
+WHERE job_id = ? AND status IN ('completed', 'skipped')
+ORDER BY step;

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-08.1",
+  "rulesVersion": "2026-11-08.2",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1292,7 +1292,7 @@
     "rules": [
       "claim 返回 completedSteps；恢复时按步骤名跳过已完成项，步骤按 (job, step) 幂等 upsert。",
       "heartbeat 只续租；409 LEASE_LOST 表示租约过期/暂停/取消/被重领，必须重新 claim，不自动重试旧 token。",
-      "终态 completed/partial/failed 受租约围栏；终态不可再领取或改写，重复回传同一终态幂等。",
+      "终态 completed/partial/failed 受租约围栏；终态不可再领取或改写，终态写入后重复回传返回 LEASE_LOST（不幂等重放）。",
       "工件只登记 kind/uri/sha256/bytes，正文不入 SQLite；同一 (job,kind,uri) 重复登记为 no-op。",
       "执行器只上报事实：不得伪造步骤完成、工件摘要或终态。"
     ]
@@ -1305,7 +1305,7 @@
       "资产删除需确认并回读 404；不得按路径猜测或直接操作文件系统。"
     ]
   },
-  "rulepackVersion": "2026-11-08.1",
+  "rulepackVersion": "2026-11-08.2",
   "platform": {
     "platformVersion": "1.1.0",
     "toolContractVersion": "1.1.0",
