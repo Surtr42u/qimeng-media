@@ -44,10 +44,10 @@ func TestExecutorClaimLeaseFencingAndCompletedSteps(t *testing.T) {
 	// 返回全量（否则恢复执行器会重复副作用）。
 	for i := 0; i < 60; i++ {
 		if err := svc.RecordExecutorStep(ctx, StepInput{
-			JobID:     job.Job.ID,
-			Step:      fmt.Sprintf("step-%02d", i),
-			Status:    StepCompleted,
-			Attempt:   1,
+			JobID:      job.Job.ID,
+			Step:       fmt.Sprintf("step-%02d", i),
+			Status:     StepCompleted,
+			Attempt:    1,
 			LeaseOwner: lease.LeaseToken,
 		}); err != nil {
 			t.Fatalf("登记步骤 %d 失败: %v", i, err)
