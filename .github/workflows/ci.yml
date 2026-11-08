@@ -156,7 +156,7 @@ jobs:
         run: npm run test:e2e
       - name: 浏览器交互与界面证据
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-browser-evidence
           path: web/test-results/
@@ -196,7 +196,7 @@ jobs:
       # R14（2026-09-20 审计清偿）：android/sdk 生成一次、artifact 下发复用，
       # 消除 android job 二次 make sdk 的全链双跑冗余；锁校验通过才上传。
       - name: 上传 android/sdk 生成物（android job 复用）
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-sdk
           path: android/sdk
@@ -260,7 +260,7 @@ jobs:
       # 可装机内嵌调试包下发（命名与普通 debug 包区分，仅内嵌链通过断言后上传；
       # 短保留期——验装机用途，不作长期存档）
       - name: 上传内嵌调试包（artifact：app-debug-apk-embedded）
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: app-debug-apk-embedded
           path: android/app/build/outputs/apk/debug/app-debug.apk

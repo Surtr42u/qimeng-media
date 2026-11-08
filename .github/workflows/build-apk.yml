@@ -73,7 +73,7 @@ jobs:
           cd android
           ./gradlew testDebugUnitTest :core:model:test lintRelease
       - name: 上传候选包（本通道检查通过，仍须同 SHA 完整门禁）
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: app-release-apk-embedded
           path: android/app/build/outputs/apk/release/app-release.apk
