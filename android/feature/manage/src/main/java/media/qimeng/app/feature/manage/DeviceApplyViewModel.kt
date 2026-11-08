@@ -39,6 +39,8 @@ data class DeviceApplyUiState(
     val targetDeviceId: String = "",
     /** 新令牌草稿（空=不改变已有令牌）；已保存明文不进入 UI state。 */
     val deviceTokenDraft: String = "",
+    /** 仅设备端点使用的远端地址；空=当前登录服务端（本机模式可填 PC/NAS）。 */
+    val deviceServiceUrl: String = "",
     /** 是否已保存过设备令牌（只显示状态，不显示令牌本体）。 */
     val tokenConfigured: Boolean = false,
     val backgroundEnabled: Boolean = false,
@@ -75,6 +77,8 @@ data class DeviceApplyUiState(
  * 2026-11-08 增加本机令牌自助生成与最近任务只读区）。
  *
  * 只负责表单、校验、持久化与手动触发；领取/下载/应用/回传全部在 core:data 的 Worker/Runner。
+ * 「领取服务端地址」只影响设备端点（空=当前登录服务端），保存前按
+ * [DeviceApplyPolicy.isValidDeviceServiceUrl] 校验；段应用仍走当前登录会话（本机库）。
  * 令牌只写 [DeviceApplySettingsRepository]（client_prefs），不进入日志、结果包、导航参数
  * 或 UI state 回填；本类仅保留内存态 [persistedToken] 以便「只改标签/开关时保留原令牌」。
  * 本机模式生成令牌同样只把「已配置」布尔状态带回 UI，明文不进入 state。
@@ -108,6 +112,7 @@ class DeviceApplyViewModel @Inject constructor(
             _state.update {
                 it.copy(
                     targetDeviceId = saved.targetDeviceId,
+                    deviceServiceUrl = saved.deviceServiceUrl,
                     // 不回填明文：只暴露「已配置」状态。
                     tokenConfigured = saved.deviceToken.isNotBlank(),
                     backgroundEnabled = saved.backgroundEnabled,
@@ -136,6 +141,10 @@ class DeviceApplyViewModel @Inject constructor(
     fun onDeviceTokenChange(value: String) {
         // 输入新令牌视为替换草稿；保存后才写入持久层。
         _state.update { it.copy(deviceTokenDraft = value, error = null) }
+    }
+
+    fun onDeviceServiceUrlChange(value: String) {
+        _state.update { it.copy(deviceServiceUrl = value, error = null) }
     }
 
     fun onBackgroundEnabledChange(enabled: Boolean) {
@@ -269,6 +278,7 @@ class DeviceApplyViewModel @Inject constructor(
         if (_state.value.saving) return PersistOutcome.Busy
         _state.update { it.copy(saving = true, error = null, notice = null) }
         val target = _state.value.targetDeviceId.trim()
+        val deviceServiceUrl = _state.value.deviceServiceUrl.trim()
         val draftToken = _state.value.deviceTokenDraft.trim()
         // 草稿为空=保留已保存令牌；否则用新草稿替换（P3-2：不回填明文但仍可整体替换）。
         val effectiveToken = draftToken.ifEmpty { persistedToken }
@@ -292,19 +302,37 @@ class DeviceApplyViewModel @Inject constructor(
             }
             return PersistOutcome.Invalid
         }
+        // 空=沿用当前登录服务端；非空必须是可规范化的 http(s) 地址（仓库层仍兜底清空非法值）。
+        if (!DeviceApplyPolicy.isValidDeviceServiceUrl(deviceServiceUrl)) {
+            _state.update {
+                it.copy(
+                    saving = false,
+                    error = "领取服务端地址格式不正确，请填 http(s)://主机[:端口] 或留空。",
+                )
+            }
+            return PersistOutcome.Invalid
+        }
         val enabled = _state.value.backgroundEnabled && authorization is DeviceApplyAuthorization.AuthorizationState.Ready
         return try {
-            settingsRepository.save(target, effectiveToken, enabled)
+            settingsRepository.save(
+                targetDeviceId = target,
+                deviceToken = effectiveToken,
+                backgroundEnabled = enabled,
+                deviceServiceUrl = deviceServiceUrl,
+            )
             persistedToken = effectiveToken
+            val savedUrlNote = if (deviceServiceUrl.isNotEmpty()) "；已保存领取服务端地址" else ""
             val notice = when {
                 authorization is DeviceApplyAuthorization.AuthorizationState.Missing -> authorization.message
-                draftToken.isNotEmpty() -> "已保存新设备令牌；后台领取" + (if (enabled) "已开启" else "未开启")
-                enabled -> "已保存；后台领取已开启（系统省电可能延迟）"
-                else -> "已保存；后台领取未开启"
+                draftToken.isNotEmpty() ->
+                    "已保存新设备令牌；后台领取" + (if (enabled) "已开启" else "未开启") + savedUrlNote
+                enabled -> "已保存；后台领取已开启（系统省电可能延迟）" + savedUrlNote
+                else -> "已保存；后台领取未开启" + savedUrlNote
             }
             _state.update {
                 it.copy(
                     targetDeviceId = target,
+                    deviceServiceUrl = deviceServiceUrl,
                     deviceTokenDraft = "",
                     tokenConfigured = effectiveToken.isNotBlank(),
                     backgroundEnabled = enabled,

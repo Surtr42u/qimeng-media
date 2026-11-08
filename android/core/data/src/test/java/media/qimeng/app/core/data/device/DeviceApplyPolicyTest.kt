@@ -56,6 +56,57 @@ class DeviceApplyPolicyTest {
     }
 
     @Test
+    fun `领取服务端地址为空时沿用当前登录服务端`() {
+        assertEquals(
+            "http://127.0.0.1:18430",
+            DeviceApplyPolicy.resolveDeviceServiceUrl("http://127.0.0.1:18430", ""),
+        )
+        assertEquals(
+            "http://192.0.2.10:8420",
+            DeviceApplyPolicy.resolveDeviceServiceUrl("http://192.0.2.10:8420/", "   "),
+        )
+        assertNull(DeviceApplyPolicy.resolveDeviceServiceUrl("", ""))
+        assertNull(DeviceApplyPolicy.resolveDeviceServiceUrl("  ", ""))
+    }
+
+    @Test
+    fun `领取服务端地址覆盖补齐协议并规范化尾斜杠`() {
+        assertEquals(
+            "http://192.0.2.10:8420",
+            DeviceApplyPolicy.resolveDeviceServiceUrl(
+                "http://127.0.0.1:18430",
+                " 192.0.2.10:8420/ ",
+            ),
+        )
+        assertEquals(
+            "https://nas.example:8443",
+            DeviceApplyPolicy.resolveDeviceServiceUrl(
+                "http://127.0.0.1:18430",
+                "https://nas.example:8443/",
+            ),
+        )
+    }
+
+    @Test
+    fun `领取服务端地址非法或带子路径时返回 null`() {
+        val current = "http://127.0.0.1:18430"
+        assertNull(DeviceApplyPolicy.resolveDeviceServiceUrl(current, "ftp://192.0.2.10:8420"))
+        assertNull(DeviceApplyPolicy.resolveDeviceServiceUrl(current, "http://192.0.2.10:8420/api"))
+        assertNull(DeviceApplyPolicy.resolveDeviceServiceUrl(current, "http://"))
+        assertNull(DeviceApplyPolicy.resolveDeviceServiceUrl(current, "nas example"))
+    }
+
+    @Test
+    fun `设置页空地址通过其余按 http(s) 校验`() {
+        assertTrue(DeviceApplyPolicy.isValidDeviceServiceUrl(""))
+        assertTrue(DeviceApplyPolicy.isValidDeviceServiceUrl("   "))
+        assertTrue(DeviceApplyPolicy.isValidDeviceServiceUrl("192.0.2.10:8420"))
+        assertTrue(DeviceApplyPolicy.isValidDeviceServiceUrl("https://nas.example:8443"))
+        assertFalse(DeviceApplyPolicy.isValidDeviceServiceUrl("ftp://192.0.2.10:8420"))
+        assertFalse(DeviceApplyPolicy.isValidDeviceServiceUrl("http://192.0.2.10:8420/api"))
+    }
+
+    @Test
     fun `目标筛选只保留本机且 pending 的摘要`() {
         val items = listOf(
             summary(id = "a", target = "phone-main", status = DeviceTaskStatus.PENDING),

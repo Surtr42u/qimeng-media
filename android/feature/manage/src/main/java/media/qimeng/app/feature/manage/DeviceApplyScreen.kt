@@ -44,6 +44,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 只做最小闭环：设备标签、专用设备 AI 令牌（口令式）、后台领取开关、立即应用。
  * 2026-11-08 增加：本机单机模式「生成本机设备令牌」（会话签发 device.apply，明文只落盘
  * 不回显）与「最近设备任务」只读区（设备令牌读取最近 20 条，不领取/不应用）。
+ * 「领取服务端地址（可选）」只覆盖设备端点（本机模式可填 PC/NAS 做跨端领取）；
+ * 段应用/两代备份仍走当前登录会话（本机库）。
  * 结果包历史仍以 PC 端服务端账本为准；本页不展示段内容，也不接受会话 token 顶替。
  */
 @Composable
@@ -116,6 +118,25 @@ fun DeviceApplyScreen(
                 )
                 Text(
                     "只保存在本机且不回显明文：保存后仅显示「已配置」，输入新令牌保存即替换。登录会话 token 不能替代设备级授权。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Text("领取服务端地址（可选）", style = MaterialTheme.typography.labelMedium)
+                QimengCapsuleTextField(
+                    value = state.deviceServiceUrl,
+                    onValueChange = viewModel::onDeviceServiceUrlChange,
+                    placeholder = "http://192.168.x.x:8420",
+                    singleLine = true,
+                    enabled = !state.saving && !state.generatingToken,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Done,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "本机模式填 PC/NAS 地址；留空=当前登录服务端。设备令牌仍来自该地址的服务端。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -316,7 +337,8 @@ fun DeviceApplyScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "• 作者 TXT 与 v2 备份导入使用当前登录会话；设备令牌只用于设备级领取与回传。",
+                    "• 作者 TXT 与 v2 备份导入使用当前登录会话；设备令牌只用于设备级领取与回传。" +
+                        "领取服务端地址只影响设备端点，留空=当前登录服务端；跨端应用成功后触发本机库异步重扫。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

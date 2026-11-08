@@ -57,7 +57,7 @@
 ## 6. 设备令牌与 Go 权限衔接
 
 1. 管理员在 **运行目标服务端的 Go 主机**执行 `qimeng ai-client create --label phone-main --scopes read,device.apply --device-ids phone-main`（参数以 `server/cmd/qimeng/ai_client_cmd.go` 为准），只显示一次明文令牌。令牌写入该服务端本机 SQLite，因此只能用于同一服务端实例；纯手机内嵌单机模式（令牌库在手机上）目前无法用 PC 命令创建令牌，仅远端模式可用；
-2. 在手机设置页填写设备标签（与 device_ids 一致）与设备令牌，开启后台领取；
+2. 在手机设置页填写设备标签（与 device_ids 一致）与设备令牌，开启后台领取；本机模式可另填「领取服务端地址（可选）」做跨端领取：设备端点走 PC/NAS、段应用仍落本机库，跨端且本轮有段应用成功后会异步触发本机库重扫（202，资产稍后入库）；
 3. Worker 用该令牌调用设备结果包端点；Go 侧按 scope+device_ids 校验，越权请求 403 且写审计；
 4. 撤销/轮换：`qimeng ai-client revoke/rotate <id>`；服务端有短缓存，撤销在数秒内生效；
 5. 管理员会话仍可人工操作，但设备后台执行不应长期使用管理员 Bearer。

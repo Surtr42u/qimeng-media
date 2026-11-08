@@ -51,9 +51,15 @@ class DeviceApplySettingsRepositoryTest {
     @Test
     fun `完整配置时后台开关保持并记录最近运行`() = runBlocking {
         val repository = newRepository()
-        repository.save("phone-main", " device-token ", backgroundEnabled = true)
+        repository.save(
+            targetDeviceId = "phone-main",
+            deviceToken = " device-token ",
+            backgroundEnabled = true,
+            deviceServiceUrl = " 192.0.2.10:8420/ ",
+        )
         var saved = repository.settings.first()
         assertEquals("device-token", saved.deviceToken)
+        assertEquals("http://192.0.2.10:8420", saved.deviceServiceUrl)
         assertTrue(saved.backgroundEnabled)
         assertTrue(saved.isConfigured)
 
@@ -61,6 +67,26 @@ class DeviceApplySettingsRepositoryTest {
         saved = repository.settings.first()
         assertEquals("已处理 1 个结果包", saved.lastMessage)
         assertEquals(1234L, saved.lastRunAtMillis)
+    }
+
+    @Test
+    fun `领取服务端地址规范化且非法值保存为空`() = runBlocking {
+        val repository = newRepository()
+        repository.save(
+            targetDeviceId = "phone-main",
+            deviceToken = "device-token",
+            backgroundEnabled = false,
+            deviceServiceUrl = "https://nas.example:8443/",
+        )
+        assertEquals("https://nas.example:8443", repository.settings.first().deviceServiceUrl)
+
+        repository.save(
+            targetDeviceId = "phone-main",
+            deviceToken = "device-token",
+            backgroundEnabled = false,
+            deviceServiceUrl = "ftp://192.0.2.10:8420",
+        )
+        assertEquals("", repository.settings.first().deviceServiceUrl)
     }
 
     @Test

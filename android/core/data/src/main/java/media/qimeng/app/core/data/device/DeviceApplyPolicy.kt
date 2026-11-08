@@ -1,5 +1,7 @@
 package media.qimeng.app.core.data.device
 
+import media.qimeng.app.core.network.ServerAddress
+
 /**
  * 设备结果包协议面的纯策略（JVM 单测锁定，无 Android/SDK 依赖）。
  *
@@ -29,6 +31,25 @@ object DeviceApplyPolicy {
      * 空白会与 `device_ids` 绑定不一致；UI 保存前自行 trim。
      */
     fun isValidTargetDeviceId(value: String): Boolean = TARGET_DEVICE_PATTERN.matches(value)
+
+    /**
+     * 解析设备端点实际使用的服务端地址（跨端领取的单一判定点）。
+     *
+     * [overrideUrl] 空白=沿用当前登录服务端 [currentServerUrl]（保持原行为）；否则只认
+     * 显式配置的远端地址。两边都经 [ServerAddress.normalize]（补缺省 http、去尾斜杠、
+     * 拒绝路径前缀/非 http(s)）。语义是「设备端点走远端账本，段应用/两代备份仍走当前
+     * 登录会话（本机库）」——返回值与 [currentServerUrl] 不同即跨端场景。
+     *
+     * @return 规范化后的 base URL；override/current 非法时返回 null（调用方提示格式错误）。
+     */
+    fun resolveDeviceServiceUrl(currentServerUrl: String, overrideUrl: String): String? {
+        val effective = if (overrideUrl.isBlank()) currentServerUrl else overrideUrl
+        return ServerAddress.normalize(effective)
+    }
+
+    /** 设置页校验：空（沿用当前登录服务端）或可规范化的 http(s) 地址。 */
+    fun isValidDeviceServiceUrl(raw: String): Boolean =
+        raw.isBlank() || ServerAddress.normalize(raw) != null
 
     fun isValidSha256(value: String): Boolean = SHA256_PATTERN.matches(value)
 
