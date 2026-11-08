@@ -24,8 +24,24 @@ const (
 	ScopeAuthorDestructive Scope = "author.destructive"
 	// ScopeAssetAuthorWrite 允许替换资产作者关联。
 	ScopeAssetAuthorWrite Scope = "asset.author.write"
+	// ScopeAssetWrite 允许资产元数据与用户状态写入：编辑资产、标签关联、
+	// 点赞/收藏/进度、时间轴标签与浏览事件。不含删除（ScopeAssetDelete）。
+	ScopeAssetWrite Scope = "asset.write"
+	// ScopeAssetUpload 允许上传通道：创建上传会话、分片、完成与取消。
+	ScopeAssetUpload Scope = "asset.upload"
+	// ScopeAssetDelete 允许删除资产（先移入回收站）与回收站永久删除/清空。
+	// 属于不可逆或接近不可逆动作，必须单独授予。
+	ScopeAssetDelete Scope = "asset.delete"
+	// ScopeTagWrite 允许创建/删除标签定义。
+	ScopeTagWrite Scope = "tag.write"
+	// ScopeSourceWrite 允许维护来源自定义词表与分组。
+	ScopeSourceWrite Scope = "source.write"
+	// ScopeLibraryWrite 允许注册/扫描/启停/移除库。
+	ScopeLibraryWrite Scope = "library.write"
 	// ScopeMediaOrganize 允许资产移动/命名整理（不删除原件）。
 	ScopeMediaOrganize Scope = "media.organize"
+	// ScopeTrashRestore 允许从回收站恢复资产（不删除、不清空）。
+	ScopeTrashRestore Scope = "trash.restore"
 	// ScopeBackupExport 允许备份导出/列表/快照管理（不含恢复）。
 	ScopeBackupExport Scope = "backup.export"
 	// ScopeBackupRestore 允许备份恢复/导入（高风险，默认不授予 AI）。
@@ -34,6 +50,10 @@ const (
 	ScopeMaintenanceRead Scope = "maintenance.read"
 	// ScopeMaintenanceWrite 允许创建/暂停/恢复/取消维护任务。
 	ScopeMaintenanceWrite Scope = "maintenance.write"
+	// ScopeMaintenanceExecute 允许外部执行器使用受控领取通道（claim /
+	// heartbeat / steps / artifacts / complete）。租约 fencing 防止旧执行器
+	// 在重领后继续写入。
+	ScopeMaintenanceExecute Scope = "maintenance.execute"
 	// ScopeDeviceApply 允许参与设备结果包（无前台维护执行器）；具体可访问
 	// 哪些设备由 ai_clients.device_ids 绑定，隔离在接入层二次校验。
 	ScopeDeviceApply Scope = "device.apply"
@@ -46,9 +66,14 @@ const (
 // knownScopes 是 ParseScope 的唯一白名单（未知 scope 默认拒绝）。
 var knownScopes = map[Scope]struct{}{
 	ScopeRead: {}, ScopeResearch: {}, ScopeAuthorWrite: {},
-	ScopeAuthorDestructive: {}, ScopeAssetAuthorWrite: {}, ScopeMediaOrganize: {},
-	ScopeBackupExport: {}, ScopeBackupRestore: {}, ScopeMaintenanceRead: {},
-	ScopeMaintenanceWrite: {}, ScopeDeviceApply: {}, ScopeAdmin: {},
+	ScopeAuthorDestructive: {}, ScopeAssetAuthorWrite: {},
+	ScopeAssetWrite: {}, ScopeAssetUpload: {}, ScopeAssetDelete: {},
+	ScopeTagWrite: {}, ScopeSourceWrite: {}, ScopeLibraryWrite: {},
+	ScopeMediaOrganize: {}, ScopeTrashRestore: {},
+	ScopeBackupExport: {}, ScopeBackupRestore: {},
+	ScopeMaintenanceRead: {}, ScopeMaintenanceWrite: {},
+	ScopeMaintenanceExecute: {},
+	ScopeDeviceApply:        {}, ScopeAdmin: {},
 }
 
 var (
@@ -110,8 +135,11 @@ func NewScopeSet(scopes []Scope) ScopeSet {
 // List 返回集合内 scope 的稳定顺序列表（按白名单顺序，便于日志/CLI 输出）。
 func (s ScopeSet) List() []Scope {
 	order := []Scope{ScopeRead, ScopeResearch, ScopeAuthorWrite, ScopeAuthorDestructive,
-		ScopeAssetAuthorWrite, ScopeMediaOrganize, ScopeBackupExport, ScopeBackupRestore,
-		ScopeMaintenanceRead, ScopeMaintenanceWrite, ScopeDeviceApply, ScopeAdmin}
+		ScopeAssetAuthorWrite, ScopeAssetWrite, ScopeAssetUpload, ScopeAssetDelete,
+		ScopeTagWrite, ScopeSourceWrite, ScopeLibraryWrite, ScopeMediaOrganize,
+		ScopeTrashRestore, ScopeBackupExport, ScopeBackupRestore,
+		ScopeMaintenanceRead, ScopeMaintenanceWrite, ScopeMaintenanceExecute,
+		ScopeDeviceApply, ScopeAdmin}
 	out := make([]Scope, 0, len(s))
 	for _, scope := range order {
 		if s.Has(scope) {

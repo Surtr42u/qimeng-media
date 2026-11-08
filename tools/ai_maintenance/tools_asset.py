@@ -1,9 +1,13 @@
-"""资产作者关联工具：asset.authors.prepare / apply。
+"""资产工具：asset.authors.prepare/apply、asset.trash、asset.tags.replace。
 
 复用 PUT /assets/{assetId}/authors（整体替换 authorIds ∪ newAuthorNames）：
 - prepare 只读：读取资产与作者索引、校验库 capabilities.authorAttach、计算差异；
 - apply 重新读取资产并把当前作者集合摘要与计划前置比对，变化即冲突；
 - 只解除业务关联（作品行会随移除删除），媒体文件保留；COS 作者不参与。
+
+asset.trash = DELETE /assets/{assetId}：删除一律进回收站，需确认 + 回读 404。
+asset.tags.replace = PUT /assets/{assetId}/tags：先读详情生成标签计划，确认后
+整体替换并回读标签集合（整体替换会刷新全部关联时间，逐条解除另有端点）。
 """
 from __future__ import annotations
 
@@ -313,4 +317,217 @@ def asset_authors_apply(ctx: ToolContext, payload: dict) -> dict:
                      "authors": readback.get("authors") or [],
                      "fileName": readback.get("fileName")},
         "summary": "资产作者关联已替换并回读；媒体文件未改动。",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# 回收站（删除一律进回收站）与标签整体替换
+# --------------------------------------------------------------------------- #
+
+MAX_TAG_IDS = 200
+
+
+def _asset_tags_digest(asset: dict) -> str:
+    tags = asset.get("tags") if isinstance(asset.get("tags"), list) else []
+    ids = sorted({item["id"] for item in tags
+                  if isinstance(item, dict) and isinstance(item.get("id"), str)})
+    return plans.digest({"id": asset.get("id"), "fileName": asset.get("fileName"),
+                         "tagIds": ids})
+
+
+def _current_tag_ids(asset: dict) -> list[str]:
+    tags = asset.get("tags") if isinstance(asset.get("tags"), list) else []
+    ids = [item["id"] for item in tags
+           if isinstance(item, dict) and isinstance(item.get("id"), str)]
+    return sorted(set(ids))
+
+
+def _tag_ids(payload: dict) -> list[str]:
+    values = payload.get("tagIds")
+    if not isinstance(values, list):
+        raise errors.invalid_input("tagIds 必须是数组（空数组=清空标签）")
+    if len(values) > MAX_TAG_IDS:
+        raise errors.invalid_input(f"tagIds 最多 {MAX_TAG_IDS} 项")
+    ids: list[str] = []
+    for position, tag_id in enumerate(values):
+        if not isinstance(tag_id, str) or not tag_id:
+            raise errors.invalid_input(f"tagIds[{position}] 必须是非空字符串")
+        if len(tag_id) > 512 or any(ord(ch) < 32 for ch in tag_id):
+            raise errors.invalid_input(f"tagIds[{position}] 非法")
+        if tag_id in ids:
+            raise errors.invalid_input("tagIds 不可重复")
+        ids.append(tag_id)
+    return ids
+
+
+def asset_trash(ctx: ToolContext, payload: dict) -> dict:
+    """DELETE /assets/{assetId}：移入回收站（非物理删除），回读 404。"""
+    asset_id = _asset_id(payload)
+    if payload.get("confirm") is not True:
+        raise errors.not_confirmed("asset.trash")
+    try:
+        asset = _read_asset(ctx, asset_id)
+    except http_client.HTTPStatusError as exc:
+        if exc.status == 404:
+            raise errors.precondition_failed("资产不存在或已删除，未执行",
+                                             {"assetId": asset_id}) from None
+        raise
+    try:
+        ctx.client.delete(_asset_path(asset_id))
+    except http_client.HTTPStatusError as exc:
+        if exc.status == 404:
+            raise errors.precondition_failed("删除时资产已不存在，未确认写入结果",
+                                             {"assetId": asset_id}) from None
+        if exc.status == 409:
+            raise errors.conflict("删除被服务端拒绝（409），未确认写入结果",
+                                  {"assetId": asset_id, "body": exc.body}) from None
+        if exc.status == 403 and isinstance(exc.body, dict) \
+                and exc.body.get("code") == "FORBIDDEN_SCOPE":
+            raise errors.forbidden_scope("asset.trash", str(exc.body)[:500],
+                                         {"status": exc.status}) from None
+        raise
+    exists = True
+    try:
+        _read_asset(ctx, asset_id)
+    except http_client.HTTPStatusError as exc:
+        if exc.status != 404:
+            raise
+        exists = False
+    if exists:
+        raise errors.readback_mismatch("删除后资产仍可读取（可能未实际移入回收站）",
+                                       {"assetId": asset_id})
+    return {
+        "status": "applied",
+        "tool": "asset.trash",
+        "assetId": asset_id,
+        "steps": [
+            {"step": 1, "action": "query-current", "status": "completed"},
+            {"step": 2, "action": "DELETE /api/v1/assets/{assetId}", "status": "completed"},
+            {"step": 3, "action": "readback", "status": "completed"},
+        ],
+        "readback": {"assetGone": True},
+        "removed": {"fileName": asset.get("fileName"),
+                    "libraryId": asset.get("libraryId"),
+                    "relPath": asset.get("relPath")},
+        "summary": "资产已移入回收站（非物理删除）；永久删除需独立管理操作。",
+    }
+
+
+def _tags_plan(ctx: ToolContext, asset: dict, asset_id: str, tag_ids: list[str]) -> dict:
+    current_ids = _current_tag_ids(asset)
+    target_ids = sorted(set(tag_ids))
+    added = [tag_id for tag_id in target_ids if tag_id not in current_ids]
+    removed = [tag_id for tag_id in current_ids if tag_id not in target_ids]
+    changes = []
+    if added:
+        changes.append({"field": "tags.add", "oldValue": current_ids, "newValue": added})
+    if removed:
+        changes.append({"field": "tags.remove", "oldValue": current_ids, "newValue": removed})
+    return plans.make_plan(
+        tool="asset.tags.replace",
+        tool_version="1.0.0",
+        kind="asset.tags",
+        target={
+            "instance": ctx.target,
+            "objects": [{"type": "asset", "id": asset_id,
+                         "fileName": asset.get("fileName"),
+                         "relPath": asset.get("relPath")}],
+        },
+        changes=changes,
+        impact={"tagsAdded": len(added), "tagsRemoved": len(removed),
+                "mediaFilesTouched": 0, "associationTimesRefreshed": len(target_ids)},
+        evidence=[{"source": "api", "endpoint": "GET " + _asset_path(asset_id),
+                   "fileName": asset.get("fileName"), "tagIds": current_ids}],
+        versions_info=plans.version_snapshot(ctx.rulepack_version, ctx.openapi_sha256),
+        confirmation={
+            "required": True,
+            "risk": "low",
+            "reason": "整体替换资产标签集合；会刷新全部标签关联时间，不修改媒体文件。",
+        },
+        recoverable_steps=[
+            "prepare 不写入数据。",
+            "replace 前重新读取资产标签，与计划前置摘要不一致即拒绝。",
+            "误改可再次 PUT 原标签集合恢复；关联时间会再次刷新。",
+        ],
+        expected_readback=[
+            "GET /assets/{assetId}.tags 的 id 集合等于 tagIds",
+            "媒体文件与资产本体未变化",
+        ],
+        extra={
+            "preconditions": {"assetTagsDigest": _asset_tags_digest(asset),
+                              "currentTagIds": current_ids},
+            "current": {"tags": asset.get("tags") or []},
+            "notices": [
+                "整体替换会刷新全部标签关联时间；只解除单条标签可用 DELETE /assets/{assetId}/tags/{tag}。",
+                "标签池维度只从 GET /tags 读取；本工具不新建或删除标签。",
+            ],
+        },
+    )
+
+
+def asset_tags_replace(ctx: ToolContext, payload: dict) -> dict:
+    """confirm=false 返回标签替换计划；confirm=true 校验指纹后 PUT 并回读。"""
+    asset_id = _asset_id(payload)
+    tag_ids = _tag_ids(payload)
+    confirm = payload.get("confirm") is True
+    asset = _read_asset(ctx, asset_id)
+    plan = _tags_plan(ctx, asset, asset_id, tag_ids)
+    if not confirm:
+        return {"plan": plan, "diagnostics": {
+            "mode": "dry-run",
+            "currentTagIds": _current_tag_ids(asset),
+            "targetTagIds": sorted(set(tag_ids)),
+            "notices": [
+                "确认时携带 confirm=true 与 planFingerprint 才会写入。",
+                "整体替换会刷新全部标签关联时间。",
+            ],
+        }}
+    if payload.get("planFingerprint") != plan["planFingerprint"]:
+        raise errors.precondition_failed(
+            "标签计划指纹不匹配：现状已变化，需要重新读取并确认", {
+                "expectedPlanFingerprint": plan["planFingerprint"],
+                "providedPlanFingerprint": payload.get("planFingerprint"),
+            })
+    fresh = _read_asset(ctx, asset_id)
+    preconditions = plan.get("preconditions") or {}
+    if preconditions.get("assetTagsDigest") != _asset_tags_digest(fresh):
+        raise errors.precondition_failed("资产标签在计划生成后发生变化，拒绝覆盖", {
+            "currentTagIds": _current_tag_ids(fresh),
+        })
+    try:
+        response = ctx.client.put(_asset_path(asset_id) + "/tags",
+                                  {"tagIds": sorted(set(tag_ids))})
+    except http_client.HTTPStatusError as exc:
+        if exc.status == 400:
+            raise errors.precondition_failed(
+                "标签替换被服务端拒绝（400 INVALID_PARAM），未确认写入结果",
+                {"status": exc.status, "body": exc.body}) from None
+        if exc.status == 403 and isinstance(exc.body, dict) \
+                and exc.body.get("code") == "FORBIDDEN_SCOPE":
+            raise errors.forbidden_scope("asset.tags.replace", str(exc.body)[:500],
+                                         {"status": exc.status}) from None
+        raise
+    readback = _read_asset(ctx, asset_id)
+    readback_ids = _current_tag_ids(readback)
+    expected_ids = sorted(set(tag_ids))
+    if readback_ids != expected_ids:
+        raise errors.readback_mismatch("资产标签回读与计划不一致", {
+            "expectedTagIds": expected_ids, "readbackTagIds": readback_ids,
+        })
+    return {
+        "status": "applied",
+        "tool": "asset.tags.replace",
+        "assetId": asset_id,
+        "planFingerprint": plan["planFingerprint"],
+        "idempotencyKey": plan["idempotencyKey"],
+        "result": response,
+        "steps": [
+            {"step": 1, "action": "query-current", "status": "completed"},
+            {"step": 2, "action": "verify-plan-and-preconditions", "status": "completed"},
+            {"step": 3, "action": "PUT /api/v1/assets/{assetId}/tags", "status": "completed"},
+            {"step": 4, "action": "readback", "status": "completed"},
+        ],
+        "readback": {"tagIds": readback_ids, "tags": readback.get("tags") or [],
+                     "fileName": readback.get("fileName")},
+        "summary": "资产标签集合已整体替换并回读；媒体文件未改动。",
     }

@@ -125,6 +125,9 @@ const (
 	MaxListLimit           = 100
 	MaxDetailSteps         = 50
 	MaxDetailArtifacts     = 100
+	// MaxStepDetailBytes 是外部执行器步骤 detail 的序列化上限（与 OpenAPI
+	// 的 16KiB 声明同值；账本把它当不透明 JSON 存储，仍须有界）。
+	MaxStepDetailBytes = 16 << 10
 )
 
 // Job is the ledger row exposed by the API (plus internal fingerprint/lease

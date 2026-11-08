@@ -22,7 +22,13 @@
 | `validation.py` | 作者档案/URL/名称/跨字段约束的机器可读校验。 |
 | `tools_query.py` | 只读查询与研究工具实现。 |
 | `tools_author.py` | 作者档案 prepare/update、清理 prepare/apply、原子合并。 |
-| `tools_asset.py` | 资产作者关联 prepare/apply。 |
+| `tools_asset.py` | 资产作者关联 prepare/apply、asset.trash、asset.tags.replace（标签整体替换）。 |
+| `tools_backup.py` | backup.export：`GET /export/qimeng-backup` 流式落盘（临时文件 + 原子改名）、摘要与预算。 |
+| `tools_device.py` | device.apply.prepare/submit/status：本地段校验、manifest 计划、multipart 登记与回读。 |
+| `tools_maintenance.py` | maintenance.claim/heartbeat/step.record/artifact.record/complete：执行器控制面（leaseToken 是能力凭据）。 |
+| `tools_research.py` | research_kit 适配：argv 组装、路径/超时边界、产物枚举（算法仍在 `../research_kit/`）。 |
+| `tools_trash.py` | trash.list / trash.restore（需确认 + 回读）。 |
+| `pathguard.py` | 写盘路径边界（绝对路径、仓库外或忽略工作根）与文件摘要。 |
 | `media_naming.py` | **组图命名纯规划/校验引擎**（作品索引、`(1)..(n)` 页码、计划指纹、`SerializedLocks`、回读报告）；ENGINE_VERSION=1.0.0。 |
 | `tools_media.py` | media.organize.prepare/apply 适配层：有界读目录现状、调用引擎、加锁逐步 move 并回读；缺失引擎时工具动态 planned。 |
 | `profile_import.py` | 作者公开档案受控填充的**唯一写入实现**；旧脚本 `../import_creator_profiles.py` 只转发。 |
@@ -34,6 +40,7 @@
 | [test_ai_toolkit.py](../test_ai_toolkit.py) | 分块解析、能力降级、注册表/禁用、计划指纹、作者/清理/合并/资产流程。 |
 | [test_ai_mcp.py](../test_ai_mcp.py) | 两个独立合成 MCP 客户端的协议、超时、取消与脱敏回归。 |
 | [test_media_naming.py](../test_media_naming.py) | 命名引擎纯函数回归（工作编号/页码/补图/缺页/锁/回读）。 |
+| [test_ai_platform_20261108.py](../test_ai_platform_20261108.py) | 外部 AI 工具平台回归（41 项）：备份 3MiB 流式落盘、设备 prepare/submit/status、执行器 200/204/409、研究 argv/边界/超时、回收站与标签。 |
 
 生成物默认输出到 stdout；`--out` 写入文件。本目录 `.gitignore` 已忽略 `rulepack.json`；
 建议写到被忽略的 `build/ai-maintenance/`。
@@ -63,7 +70,8 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
 | `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
 | `QIMENG_AI_LOCK_DIR` | 可选 | media.organize.apply 的命名锁目录（默认系统临时目录）；受限沙箱下可指向可写目录。 |
-| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/media.organize/admin.maintenance 或 all）。未配置=授予全部已声明权限（兼容旧 CLI）；生产执行器应显式收窄。工具可见≠有权执行，execute_tool 在调用前强制检查。 |
+| `QIMENG_AI_RESEARCH_DIR` | 可选 | research.* 与写盘工具的忽略工作根（默认 `tools/ai_maintenance/.work/research`，已加入 `.gitignore`）；必须是绝对路径。 |
+| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/asset.write/asset.delete/trash.restore/media.organize/backup.export/device.apply/maintenance.execute/admin.maintenance 或 all）。未配置=授予全部已声明权限（兼容旧 CLI）；生产执行器应显式收窄。工具可见≠有权执行，execute_tool 在调用前强制检查。 |
 
 ```powershell
 $env:QIMENG_API_BASE = "http://127.0.0.1:8420"
@@ -101,7 +109,7 @@ $env:QIMENG_API_TOKEN = "<ai-client-token>"
 - AI 写请求会写入 `ai_audit`（含被拒绝的），审计失败不阻断业务；管理员请求不写；
 - 撤销/轮换在服务端进程缓存 TTL（约 5 秒）内生效；本地管理命令先跑幂等 migration，不需要停服。
 
-scope 与强制矩阵的权威说明见 [SECURITY「独立 AI 客户端凭据」](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p12026-11-07) 与 [ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)。本轮不改 OpenAPI/SDK，管理只走本地 CLI。
+scope 与强制矩阵的权威说明见 [SECURITY「独立 AI 客户端凭据」](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p1p22026-11-08) 与 [ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)。2026-11-08 起同时提供管理员会话专用的 HTTP 管理端点（`/api/v1/ai-clients*`、`/api/v1/ai-audit`，AI token 一律 403）；本地 CLI 继续可用。
 
 ## 版本与兼容
 
@@ -212,8 +220,13 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 | `author.merge` | supported（需确认） | confirm=false 出计划；confirm=true 校验指纹后 POST /authors/merge。 |
 | `asset.authors.prepare` / `asset.authors.apply` | supported（apply 需确认） | 资产作者关联替换；校验库 `capabilities.authorAttach`。 |
 | `media.organize.prepare` / `media.organize.apply` | supported（apply 需确认） | 组图命名规划/校验/执行/回读；算法唯一实现 `media_naming.py`（随本发行物提供），prepare 只读计划、apply 校验计划指纹+前置文件名指纹+并发锁并逐步 move 后回读，服务端自动改名判失败。 |
-| `backup.export` | planned | 大响应/落盘摘要/预算未实现，不假装执行。 |
-| `device.apply.prepare/submit/status` | planned | 服务端结果包 API 已有，Android Worker/配对未实现。 |
+| `backup.export` | supported | `GET /export/qimeng-backup` 流式落盘：256KiB 分块写临时文件 + 原子改名，返回 `{path,bytes,sha256}`；默认拒绝覆盖，预算 128MiB/硬上限 256MiB。 |
+| `device.apply.prepare/submit/status` | supported | PC 侧结果包：prepare 只读出 manifest/指纹（masterTxt ≤1MiB、v2Backup ≤64MiB），submit 重新复核源文件后 multipart 登记并回读段清单，status 列表/详情。Android Worker/配对仍未实现。 |
+| `maintenance.claim` / `heartbeat` / `step.record` / `artifact.record` / `complete` | supported | 外部 AI 执行器控制面（ADR-0058）：领取租约/fencing token、续租、幂等步骤、工件元数据、终态回传；409 统一映射 `LEASE_LOST`。 |
+| `research.image.pipeline` / `research.image.search` | supported | research_kit 适配：Lens→Yandex→SauceNAO 阶梯与单工具调用，只返回退出码/产物/有界摘要。 |
+| `research.author.probe` / `research.media.probe` / `research.avatar.fetch` | supported | fxtwitter/kemono 公开字段、ffprobe 抽帧、头像下载；算法在 `../research_kit/`。 |
+| `trash.list` / `trash.restore` | supported | 回收站只读列表与恢复（需 confirm、前置检查与回读）。 |
+| `asset.trash` / `asset.tags.replace` | supported | 删除一律进回收站（回读 404）；标签整体替换（读详情出计划、确认指纹、回读）。 |
 | `platform.catalog` / `platform.tool.describe` / `platform.rules` / `platform.playbook` | supported | 精简领域目录、按需工具 Schema/示例/规则摘录、可选工作流模板（纯本地、只读；不写业务数据）。 |
 
 ## 计划与受控写入
@@ -254,7 +267,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
   之前按 `QIMENG_AI_GRANTED_PERMISSIONS`（或 `rules.json` `toolConfig.grantedPermissions`）
   强制拒绝未授权工具（`PERMISSION_DENIED`）。未配置时默认授予全部已声明权限只是兼容旧
   CLI；生产执行器应显式收窄并审计。看见工具≠有权执行，CLI 与 MCP 走同一检查。
-- **受限凭据（ADR-0057 P1 已实现）**：服务端新增独立 AI 客户端凭据与 scope 强制（`qimeng ai-client` 本地管理、`ai_audit` 写审计）。生产执行端应使用 `-scopes` 收窄的 AI token，而不是管理员 Bearer；未映射写请求默认 403，删除/合并/恢复需各自高风险 scope。工具层隐藏 token 仍不能阻止“执行环境直接调 Go API”：管理员 Bearer 仍是全权凭据，只注入可信执行端进程环境、不下发给模型，AI 写入只用于受信本机维护；模型侧可见的只是工具声明。剩余边界与路线见 [Go API 缺口与 AI 客户端权限模型](../../docs/AI_PLATFORM_API_GAPS.md)、[ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)、[SECURITY](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p12026-11-07)。
+- **受限凭据（ADR-0057 P1 已实现）**：服务端新增独立 AI 客户端凭据与 scope 强制（`qimeng ai-client` 本地管理、`ai_audit` 写审计）。生产执行端应使用 `-scopes` 收窄的 AI token，而不是管理员 Bearer；未映射写请求默认 403，删除/合并/恢复需各自高风险 scope。工具层隐藏 token 仍不能阻止“执行环境直接调 Go API”：管理员 Bearer 仍是全权凭据，只注入可信执行端进程环境、不下发给模型，AI 写入只用于受信本机维护；模型侧可见的只是工具声明。剩余边界与路线见 [Go API 缺口与 AI 客户端权限模型](../../docs/AI_PLATFORM_API_GAPS.md)、[ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)、[SECURITY](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p1p22026-11-08)。
 - 本机沙箱若限制系统临时目录/目录权限，测试临时目录放在被忽略的
   `tools/ai_maintenance/.test-temp/`。
 
@@ -319,8 +332,60 @@ python -X utf8 tools/check_docs.py
 （11 (1)..(4) 作品编号/页码、锁内执行、回读失败与篡改计划拒绝），以及扩展性回归
 （精简目录不含 Schema 且显著小于完整清单、120 个合成工具仍有界、按需 describe/rules/playbook、
 惰性模块加载与缺失模块降级、废弃/禁用工具、权限与发现分离、规则版本变化、24 路并发、
-CLI/MCP 目录与完整 tools list 一致）。全部使用合成数据与回环 stub；命名引擎自身另跑
-`python -m unittest test_media_naming`。当前 tools 全套 205 项通过。
+CLI/MCP 目录与完整 tools list 一致）。2026-11-08 批次另覆盖：备份导出 3MiB 流式
+落盘（超过旧 2MiB JSON 上限）与摘要、覆盖/预算拒绝、设备 prepare→submit（multipart
+capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 token 不落错误、
+研究 argv/路径边界/超时/缺失脚本、回收站与标签计划-确认-回读。全部使用合成数据与
+回环 stub；命名引擎自身另跑 `python -m unittest test_media_naming`。当前
+`test_ai_*.py` 全套 164 项通过（含新增 `test_ai_platform_20261108.py` 41 项）。
+
+## 备份导出、设备结果包与执行器控制面
+
+- `backup.export`：`GET /api/v1/export/qimeng-backup` 按 256KiB 分块写同目录临时
+  文件并计算 SHA-256/字节数，成功后 `os.replace` 原子改名；超过预算、HTTP 错误或
+  进程失败都会删除半成品。`outPath` 必须是绝对路径：仓库外任意路径，或仓库内
+  被忽略工作根（`QIMENG_AI_RESEARCH_DIR`、`.test-temp/`、`build/`）。默认
+  `overwrite=false`，覆盖需显式 `overwrite=true`；预算默认 128MiB、硬上限 256MiB。
+  结果只含 `{path,bytes,sha256}` 等元数据，备份正文不进入工具结果。
+- `device.apply.prepare` 只读：读取 masterTxt/v2Backup，按 Go 上限（1MiB / 64MiB）
+  校验并计算摘要，生成 manifest（protocolVersion=1、rulesFingerprint 默认取规则包
+  摘要、ttlSeconds 300s–7d）与计划指纹；不发起写请求。`device.apply.submit` 需
+  `confirm=true`，重新读取并复核源文件 bytes/sha256（变化即 `PRECONDITION_FAILED`），
+  再以 multipart（`manifest` JSON 字符串 + 与 kind 同名的文件段）登记并回读段清单。
+  `device.apply.status` 只读列表/详情。targetDeviceId 只是不透明标签，设备配对与真机后台同步仍未验证
+  （Android Worker 源码已有但未安装/真机验收），工具不宣称已完成手机应用。
+- `maintenance.claim/heartbeat/step.record/artifact.record/complete` 是外部 AI 执行器
+  控制面（ADR-0058）的薄封装：claim 返回 `leaseToken`、`leaseUntil` 与
+  `completedSteps`（204 → `claimed=false`）；其余调用原样回传 `leaseToken`。
+  **leaseToken 是 fencing token/能力凭据**：只在 claim 的工具结果出现一次，不得写入
+  日志、任务记录、证据包或转发到其他模型上下文；工具错误只带 jobId/状态码，不回显
+  token。服务端 409 `LEASE_LOST` 统一映射为稳定错误码 `LEASE_LOST`（退出码 1），
+  不自动重领或重试旧 token；恢复时按 `completedSteps` 跳过已完成步骤。
+
+## 研究工具包接入（research.*）
+
+`research.image.pipeline/search`、`research.author.probe`、`research.media.probe`、
+`research.avatar.fetch` 只做 research_kit 的适配，不复制识别算法：
+
+- argv 始终是列表并以 `shell=False` 启动；工作目录固定仓库根（脚本默认缓存落
+  `build/research-kit.local/`），子进程环境剔除 `QIMENG_API_*`，研究脚本拿不到服务端 token。
+- 输入/输出路径必须是绝对路径；仓库内只允许被忽略工作根（`QIMENG_AI_RESEARCH_DIR`，
+  默认 `tools/ai_maintenance/.work/research`，已忽略）。相对路径、源码树内路径直接拒绝。
+- 超时默认 300s、上限 900s（超时 kill 并按退出码 124 报告）；stdout/stderr 各捕获
+  至多 256KiB，工具结果只返回退出码、产物 `{path,sha256,bytes}` 与有界摘要，不返回完整日志。
+- 方法学与预算（Lens 优先 → Yandex → SauceNAO；Lens 8s 间隔、SauceNAO 4 次/30s 与日上限）
+  以 [tools/IMAGE_RESEARCH.md](../IMAGE_RESEARCH.md)、[tools/AUTHOR_RESEARCH.md](../AUTHOR_RESEARCH.md)
+  与 [research_kit/README.md](../research_kit/README.md) 为准；rules.json `research` 节只做摘要与引用。
+
+## 回收站与标签
+
+- `trash.list` 只读；`trash.restore` 需 `confirm=true`，先确认条目仍在回收站，恢复后
+  回读条目消失（同名冲突由服务端自动改名，工具不猜测实际文件名）。
+- `asset.trash` = `DELETE /assets/{assetId}`：删除一律移入回收站（非物理删除），需确认
+  并回读 404；永久删除只走独立管理操作。
+- `asset.tags.replace`：confirm=false 先读资产详情并返回带指纹的计划；confirm=true 需
+  `planFingerprint` 一致、重新读取标签摘要后 `PUT /assets/{assetId}/tags` 并回读 tagIds。
+  整体替换会刷新全部标签关联时间；不新建/删除标签池条目。
 
 ## 组图命名集成（media.organize.*）
 
@@ -338,10 +403,9 @@ CLI/MCP 目录与完整 tools list 一致）。全部使用合成数据与回环
 - 本地受限沙箱若不能在新建目录写锁文件，请设 `QIMENG_AI_LOCK_DIR` 到可写目录；
   本地 apply 集成测试会把锁目录 patch 到工作区临时目录。
 
-## 本切片明确未实现（planned）
+## 当前未实现（planned/未验证）
 
-- `backup.export`：大响应、落盘摘要与预算流程未实现。
-- `device.apply.*`：服务端结果包 API 已存在，Android Worker/配对/真机后台同步未实现。
-- 标签写入、任意 SQL/文件/shell 执行、通用插件市场、远程 HTTP AI API。
-- 服务端最小权限/受限凭据与独立执行端隔离：当前管理员 Bearer 仍可绕过工具层（见安全
-  边界与 rules.json toolCatalog.permissions.adminBearerRisk），需在正式开放 AI 写入前落地。
+- v2 导入（`backup.import`）：分段导入与回滚仍走独立管理员流程，不向 AI 开放。
+- 设备配对/设备证明与 Android 真机后台同步：Worker 源码已有并通过 JVM/编译检查，但未安装、未真机验收；工具只到 PC 登记/查询与手机侧领取，不宣称已应用。
+- 标签池新建/删除、标签组、任意 SQL/文件/shell 执行、通用插件市场、远程 HTTP AI API。
+- 服务端最小权限/受限凭据与独立执行端隔离已完成 P1（ADR-0057）与 P2（ADR-0058：管理员会话专属 HTTP 管理/审计、按客户端限流、执行器受控领取）；管理员 Bearer 仍可绕过工具层，生产执行端应使用 scope 收窄的 AI 客户端 token（见安全边界）。

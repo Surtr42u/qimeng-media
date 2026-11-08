@@ -1,6 +1,10 @@
 // ai_client_cmd.go：qimeng 本地 AI 客户端管理子命令（ADR-0057 P1）。
 //
-// 为什么不做 HTTP 管理端点：本轮协议冻结（不改 OpenAPI/sdk.lock/三端），
+// 本命令是服务端本机的离线管理入口。2026-11-08 起同一能力另有
+// 管理员会话专属 HTTP 端点（/api/v1/ai-clients*、/api/v1/ai-audit，
+// 见 httpapi/aiclient_admin.go），本命令继续保留用于本机运维与恢复。
+//
+// 以下为 P1 时期的历史说明：
 // 管理动作只在服务端本机执行。命令直接打开与服务端同一 SQLite，经
 // internal/aiauth 创建/列出/撤销/轮换凭据：
 //   - 明文 token 只在 create/rotate 的 stdout 输出一次，绝不写日志或文件；

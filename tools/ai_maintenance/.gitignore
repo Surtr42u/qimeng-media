@@ -3,3 +3,5 @@ rulepack.json
 rulepack.json.tmp
 # 单测临时目录（受限沙箱下系统 temp 不可写时使用）
 .test-temp/
+# 研究工作根（QIMENG_AI_RESEARCH_DIR 默认值）：识别结果、帧、头像与证据
+.work/

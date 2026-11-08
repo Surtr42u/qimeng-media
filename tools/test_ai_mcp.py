@@ -144,11 +144,11 @@ class McpProtocolTest(unittest.TestCase):
         self.assertTrue(response["result"]["isError"])
         self.assertEqual("NOT_CONFIRMED",
                          response["result"]["structuredContent"]["error"])
-        planned = client.request({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        invalid = client.request({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                                   "params": {"name": "backup.export", "arguments": {}}})
-        self.assertTrue(planned["result"]["isError"])
-        self.assertEqual("TOOL_NOT_IMPLEMENTED",
-                         planned["result"]["structuredContent"]["error"])
+        self.assertTrue(invalid["result"]["isError"])
+        self.assertEqual("INVALID_INPUT",
+                         invalid["result"]["structuredContent"]["error"])
 
     def test_unknown_protocol_version_falls_back_to_latest(self):
         client = DirectMcpClient(self.env())

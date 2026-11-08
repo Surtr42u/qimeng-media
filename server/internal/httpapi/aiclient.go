@@ -9,8 +9,10 @@
 //     管理员会话不受 scope 限制。
 //   - 审计只覆盖 AI 写请求（含被拒绝的）；管理员请求不写 ai_audit。
 //     审计失败不阻断业务，只记录错误日志。
-//   - 不新增 HTTP 管理端点：创建/列表/撤销/轮换走 qimeng ai-client 本地命令，
-//     主 API 协议（api/openapi.yaml）本轮不变。
+//   - 凭据管理（创建/列表/撤销/轮换）与审计查询走管理员会话专用端点
+//     （aiclient_admin.go），AI 客户端即使持有 admin scope 也被拒绝。
+//   - 按客户端令牌桶限流：超限 429 RATE_LIMITED + Retry-After；限流是进程内
+//     的单实例实现，最终权限仍由 scope 强制。
 package httpapi
 
 import (
@@ -20,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +60,22 @@ func (s *Server) bearerChain(next http.Handler) http.Handler {
 		if !ok {
 			// 无效 token 与管理员 token 无效同文案（不区分身份类型，减少探测面）。
 			admin.ServeHTTP(w, r)
+			return
+		}
+		// 限流在 scope 检查之前：被拒绝的探测请求同样消耗配额，避免用 403
+		// 差异做高频枚举。重试时长取整到秒（Retry-After 只接受整数秒）。
+		if retryAfter, allowed := s.aiAuth.AllowRequest(client.ID); !allowed {
+			seconds := int(retryAfter.Seconds())
+			if seconds < 1 {
+				seconds = 1
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
+			record := &aiAuditRecord{action: "rate_limited"}
+			requestID := aiRequestID(r)
+			if isAIWriteMethod(r.Method) {
+				s.writeAIAudit(r, client.ID, record.actionString(), http.StatusTooManyRequests, requestID)
+			}
+			writeErr(w, http.StatusTooManyRequests, codeRateLimited, "AI 客户端请求过于频繁，请稍后重试")
 			return
 		}
 		s.serveAIClient(w, r, client, next)
@@ -206,6 +225,14 @@ func (s *Server) requireAIDeviceManifestAccess(w http.ResponseWriter, r *http.Re
 func requiredAIScope(method, path string) (aiauth.Scope, string, bool) {
 	read := method == http.MethodGet || method == http.MethodHead
 	switch {
+	// 凭据管理与审计查询只接受管理员会话：连只读也不向 AI 开放（否则 AI
+	// 可读他人 token 元信息/审计轨迹）。必须在 read 兜底之前拦截。
+	case path == "/api/v1/ai-clients" || strings.HasPrefix(path, "/api/v1/ai-clients/"):
+		return "", "", false
+	case path == "/api/v1/ai-audit" || strings.HasPrefix(path, "/api/v1/ai-audit/"):
+		return "", "", false
+	case strings.HasPrefix(path, "/api/v1/maintenance/executor"):
+		return aiauth.ScopeMaintenanceExecute, "maintenance.execute", true
 	case strings.HasPrefix(path, "/api/v1/maintenance/jobs"):
 		if read {
 			return aiauth.ScopeMaintenanceRead, "maintenance.read", true
@@ -230,9 +257,58 @@ func requiredAIScope(method, path string) (aiauth.Scope, string, bool) {
 			return aiauth.ScopeRead, "read", true
 		}
 		return aiauth.ScopeAuthorWrite, "author.write", true
+	case path == "/api/v1/assets/upload" || strings.HasPrefix(path, "/api/v1/uploads"):
+		return aiauth.ScopeAssetUpload, "asset.upload", true
 	case strings.HasPrefix(path, "/api/v1/assets/") && strings.HasSuffix(path, "/authors") && method == http.MethodPut:
 		return aiauth.ScopeAssetAuthorWrite, "asset.author.write", true
 	case strings.HasPrefix(path, "/api/v1/assets/") && strings.HasSuffix(path, "/move"):
+		return aiauth.ScopeMediaOrganize, "media.organize", true
+	// 标签/时间轴子路径的 DELETE 是"解除关联"，不是删除资产本身：必须先于
+	// 资产 DELETE 判定，否则持有 asset.write 的客户端无法解绑标签。
+	case strings.HasPrefix(path, "/api/v1/assets/") && (strings.Contains(path, "/tags") || strings.Contains(path, "/timeline-tags")):
+		if read {
+			return aiauth.ScopeRead, "read", true
+		}
+		return aiauth.ScopeAssetWrite, "asset.write", true
+	case strings.HasPrefix(path, "/api/v1/assets/") && method == http.MethodDelete:
+		return aiauth.ScopeAssetDelete, "asset.delete", true
+	case path == "/api/v1/assets" || strings.HasPrefix(path, "/api/v1/assets/"):
+		if read {
+			return aiauth.ScopeRead, "read", true
+		}
+		return aiauth.ScopeAssetWrite, "asset.write", true
+	case path == "/api/v1/events/view":
+		return aiauth.ScopeAssetWrite, "asset.write", true
+	case strings.HasPrefix(path, "/api/v1/trash"):
+		if read {
+			return aiauth.ScopeRead, "read", true
+		}
+		if method == http.MethodPost && strings.HasSuffix(path, "/restore") {
+			return aiauth.ScopeTrashRestore, "trash.restore", true
+		}
+		// 永久删除单项或清空回收站：不可逆，单独高风险 scope。
+		if method == http.MethodDelete {
+			return aiauth.ScopeAssetDelete, "asset.delete", true
+		}
+		return "", "", false
+	case path == "/api/v1/tags" || strings.HasPrefix(path, "/api/v1/tags/"):
+		if read {
+			return aiauth.ScopeRead, "read", true
+		}
+		return aiauth.ScopeTagWrite, "tag.write", true
+	case path == "/api/v1/sources/custom" || path == "/api/v1/sources/custom-groups":
+		if read {
+			return aiauth.ScopeRead, "read", true
+		}
+		return aiauth.ScopeSourceWrite, "source.write", true
+	case path == "/api/v1/libraries" || strings.HasPrefix(path, "/api/v1/libraries/"):
+		if read {
+			return aiauth.ScopeRead, "read", true
+		}
+		return aiauth.ScopeLibraryWrite, "library.write", true
+	case path == "/api/v1/local-sync/trigger" && method == http.MethodPost:
+		return aiauth.ScopeMaintenanceWrite, "maintenance.write", true
+	case path == "/api/v1/dirs" && method == http.MethodPost:
 		return aiauth.ScopeMediaOrganize, "media.organize", true
 	}
 	if read {

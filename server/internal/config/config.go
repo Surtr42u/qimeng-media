@@ -180,6 +180,23 @@ type MaintenanceWorkerConfig struct {
 	Concurrency int `yaml:"concurrency"`
 }
 
+// AI 客户端接入默认值（ADR-0057 P2：按客户端限流）。0 = 不限制是显式
+// 可选语义（本地单机调试/受信批处理），生产默认给一个宽松但有界的上限。
+const (
+	// DefaultAIRateLimitPerMinute 是单 AI 客户端每分钟请求上限（默认 600）。
+	DefaultAIRateLimitPerMinute = 600
+	// DefaultAIRateLimitBurst 是单客户端突发容量（默认 120）。
+	DefaultAIRateLimitBurst = 120
+)
+
+// AIConfig 是独立 AI 客户端接入限制。
+type AIConfig struct {
+	// RateLimitPerMinute 是单客户端每分钟请求上限；0 = 不限制。
+	RateLimitPerMinute int `yaml:"rate_limit_per_minute"`
+	// RateLimitBurst 是令牌桶突发容量；<=0 按每分钟上限的 1/5（至少 10）推导。
+	RateLimitBurst int `yaml:"rate_limit_burst"`
+}
+
 // LocalSyncConfig 本机文件夹自动同步通道配置（ADR-0030）：同步根直接子
 // 文件夹名=库名，媒体走直传同款校验与入库后源文件移入库根；同步根直接下
 // 的 *.txt 走作者片段导入（keep 语义）后归档进 <同步根>/.synced/。
@@ -280,6 +297,8 @@ type Config struct {
 	Research ResearchConfig `yaml:"research"`
 	// MaintenanceWorker 是持久维护任务 worker（ADR-0054 实现补充）配置。
 	MaintenanceWorker MaintenanceWorkerConfig `yaml:"maintenance_worker"`
+	// AI 是独立 AI 客户端接入限制（限流；权限仍由 scope 强制）。
+	AI AIConfig `yaml:"ai"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -321,6 +340,10 @@ func Load(path string) (*Config, error) {
 			PollInterval: DefaultMaintenanceWorkerPollInterval,
 			LeaseTTL:     DefaultMaintenanceWorkerLeaseTTL,
 			Concurrency:  DefaultMaintenanceWorkerConcurrency,
+		},
+		AI: AIConfig{
+			RateLimitPerMinute: DefaultAIRateLimitPerMinute,
+			RateLimitBurst:     DefaultAIRateLimitBurst,
 		},
 	}
 
@@ -412,6 +435,7 @@ func applyEnv(cfg *Config) error {
 		applyTrashEnv,
 		applyLocalSyncEnv,
 		applyMaintenanceWorkerEnv,
+		applyAIEnv,
 		applyScannerEnv,
 		applyResearchEnv,
 	} {
@@ -736,4 +760,30 @@ func (c *Config) SlogLevel() slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// applyAIEnv 覆盖 AI 客户端限流两键。RateLimitPerMinute=0 是显式关闭限流
+// 的合法语义（仅建议本地单机），负值拒绝；burst 至少 1。
+func applyAIEnv(cfg *Config) error {
+	if v := os.Getenv("QIMENG_AI_RATE_LIMIT_PER_MINUTE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_AI_RATE_LIMIT_PER_MINUTE=%q 不是合法整数: %w", v, err)
+		}
+		if n < 0 {
+			return fmt.Errorf("环境变量 QIMENG_AI_RATE_LIMIT_PER_MINUTE=%q 不能为负（0=关闭限流）", v)
+		}
+		cfg.AI.RateLimitPerMinute = n
+	}
+	if v := os.Getenv("QIMENG_AI_RATE_LIMIT_BURST"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_AI_RATE_LIMIT_BURST=%q 不是合法整数: %w", v, err)
+		}
+		if n < 1 {
+			return fmt.Errorf("环境变量 QIMENG_AI_RATE_LIMIT_BURST=%q 须为正整数", v)
+		}
+		cfg.AI.RateLimitBurst = n
+	}
+	return nil
 }

@@ -22,6 +22,9 @@ REQUEST_TIMEOUT_SECONDS = 20.0
 LENS_TIMEOUT_SECONDS = 150.0
 MAX_RESPONSE_BYTES = 2 << 20
 TOKEN_MAX_LENGTH = 8192
+# 流式落盘（backup.export）分块大小：不把大响应整块读进内存，也不使用
+# 上面的 JSON 2MiB 响应上限；上限由调用方给出的预算单独强制。
+STREAM_CHUNK_BYTES = 256 << 10
 
 LENS_CONTENT_TYPES = {
     ".jpg": "image/jpeg",
@@ -291,3 +294,50 @@ class ApiClient:
         req = request.Request(self._url(path), method="DELETE", headers=self._headers())
         return send(self.opener, req, token=self.token,
                     timeout=self.timeout if timeout is None else timeout)
+
+    def download(self, path: str, target, *, max_bytes: int,
+                 timeout: float | None = None) -> tuple[int, str]:
+        """流式 GET 写入 target，返回 (字节数, SHA-256 十六进制)。
+
+        与 send() 不同：不把正文读进内存、不受 2MiB JSON 上限约束，改用调用方
+        给定的字节预算（超限抛 ResponseError("response_too_large") 并删除半成品）。
+        target 由调用方保证是同目录临时文件；本方法不做改名/覆盖判断，原子
+        rename 由调用方在成功返回后执行。错误分类与 send() 一致且已脱敏。
+        """
+        import hashlib
+
+        req = request.Request(self._url(path), method="GET", headers=self._headers())
+        hasher = hashlib.sha256()
+        total = 0
+        truncated = False
+        try:
+            with self.opener.open(req, timeout=self.timeout if timeout is None else timeout) as response:
+                with open(target, "wb") as handle:
+                    while True:
+                        chunk = response.read(STREAM_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > max_bytes:
+                            truncated = True
+                            break
+                        hasher.update(chunk)
+                        handle.write(chunk)
+        except error.HTTPError as exc:
+            body = redact(decode_body(_read_http_error(exc)), self.token)
+            raise HTTPStatusError(exc.code, body) from None
+        except (socket.timeout, TimeoutError):
+            raise NetworkError("timeout") from None
+        except error.URLError as exc:
+            if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+                raise NetworkError("timeout") from None
+            raise NetworkError("network_error") from None
+        except (OSError, http.client.HTTPException):
+            raise NetworkError("network_error") from None
+        if truncated:
+            try:
+                os.unlink(target)
+            except OSError:
+                pass
+            raise ResponseError("response_too_large")
+        return total, hasher.hexdigest()

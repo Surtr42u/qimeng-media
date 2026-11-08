@@ -45,6 +45,9 @@ enum class DeviceResultStatus { APPLIED, PARTIAL, FAILED }
  * [expiresAtMillis] 来自服务端账本到期时刻：只用于客户端领取前二次过滤（服务端已惰性
  * 标记过期并默认不返回过期任务，这里防御旧服务端/响应被替换）。默认 [Long.MAX_VALUE]
  * 兼容既有构造点（测试替身不显式声明到期时视为不过期）。
+ *
+ * [createdAtMillis]/[segmentCount] 只供设置页「最近设备任务」只读展示（2026-11-08），
+ * 领取/应用路径不依赖它们；默认值兼容既有构造点。
  */
 data class DeviceApplySummary(
     val id: String,
@@ -53,6 +56,8 @@ data class DeviceApplySummary(
     val protocolVersion: Int,
     val rulesFingerprint: String,
     val expiresAtMillis: Long = Long.MAX_VALUE,
+    val createdAtMillis: Long = 0L,
+    val segmentCount: Int = 0,
 )
 
 /** manifest 声明的段（bytes/sha256 来自服务端登记账本，expectedReadback 原样透传）。 */

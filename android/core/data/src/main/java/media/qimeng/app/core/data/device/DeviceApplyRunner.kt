@@ -139,6 +139,11 @@ class DeviceApplyRunner @Inject constructor(
             return@withLock retry(manual, "设备结果包列表请求失败（服务端 HTTP ${e.statusCode}），稍后重试")
         } catch (e: IOException) {
             return@withLock retry(manual, "设备结果包列表网络失败，稍后重试")
+        } catch (e: DeviceApplyPageLimitException) {
+            // 2026-11-08 分页修复：超过 20 页（2000 条）是确定性终态，重试不会收敛；
+            // 记录明确提示并结束本轮，避免无限翻页或永远只处理第一页。
+            val message = e.message ?: "设备结果包列表超过分页上限，请先在 PC 端处理历史任务"
+            return@withLock record(manual, message, DeviceApplyRunResult.Completed(message))
         }
 
         val targets = DeviceApplyPolicy.resumeOrClaimForDevice(

@@ -54,6 +54,14 @@ func parseManifest(raw []byte) (Manifest, []byte, error) {
 	if manifest.TTLSeconds < MinTTLSeconds || manifest.TTLSeconds > MaxTTLSeconds {
 		return Manifest{}, nil, fmt.Errorf("%w: ttlSeconds 须在 %d–%d", ErrInvalidInput, MinTTLSeconds, MaxTTLSeconds)
 	}
+	for key, value := range manifest.ExpectedState {
+		if !ValidAuthoritativeStateKey(key) {
+			return Manifest{}, nil, fmt.Errorf("%w: expectedState 含未知键 %q", ErrInvalidInput, key)
+		}
+		if value < 0 {
+			return Manifest{}, nil, fmt.Errorf("%w: expectedState.%s 不能为负", ErrInvalidInput, key)
+		}
+	}
 	if len(manifest.Segments) == 0 || len(manifest.Segments) > 2 {
 		return Manifest{}, nil, fmt.Errorf("%w: segments 须为 1–2 项", ErrInvalidInput)
 	}

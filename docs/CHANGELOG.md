@@ -1,4 +1,59 @@
 
+## feat(tools): AI 工具平台 1.1.0：43 工具、执行器/设备/研究/回收站能力（2026-11-08 第七百二十一笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 工具注册表 29→43：新增 `maintenance.claim/heartbeat/step.record/artifact.record/complete`、`research.image.pipeline/search`、`research.author.probe/media.probe/avatar.fetch`、`trash.list/restore`、`asset.trash`、`asset.tags.replace`；`backup.export` 与 `device.apply.prepare/submit/status` 由 planned 转 supported。`platformVersion`/`toolContractVersion` 升 1.1.0，`rulesVersion`/`rulepackVersion` 升 `2026-11-08.1`。
+- 错误目录新增 `PERMISSION_DENIED`/`TOOL_DEPRECATED`/`FORBIDDEN_SCOPE`/`LEASE_LOST`；工具权限与 Go scope 对齐（asset.write/asset.upload/asset.delete/tag.write/source.write/library.write/trash.restore/maintenance.execute），执行器工具以 `leaseToken` 作为能力凭据，只在 claim 结果出现。
+- 文档：`tools/ai_maintenance/README`、`rules.json`、`docs/AI_PLATFORM_OPERATIONS`、`docs/AI_PLATFORM_API_GAPS` 与 HANDOVER §10、CAPABILITY_MAP 同批。验证：Python 164 项通过；未接真实 AI 客户端、未安装、未对真实库执行写入。
+
+## fix(app): 设备任务全量翻页与本机模式设备令牌自助生成（2026-11-08 第七百二十笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 领取/待办列表改为沿 `nextCursor` 读到底（100 条/页，20 页硬上限 2000），修复只读第一页导致第 51 条之后任务永远轮不到；本地/远端共用同一 runner。
+- 本机单机模式新增「生成本机设备令牌」：用内嵌实例管理员会话先 `GET /ai-clients` 复用/轮换，必要时创建 `android-local-<device>`（device.apply + deviceIds 绑定），明文 token 只写设置存储，不回填 UI/日志/state；远端模式不提供该入口。
+- 设置页新增只读「最近设备任务」卡（20 条，设备令牌），不参与领取/应用；README 同步边界。
+- 验证：`:core:data` device/token 测试 50 项通过，`:feature:manage`/`:app` `compileDebugKotlin` + `hiltJavaCompileDebug` 成功。未安装、未真机/模拟器验证；Doze/FGS/SAF 仍未验。
+
+## feat(server): 设备结果包服务端权威状态校验（2026-11-08 第七百一十九笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- manifest 新增可选 `expectedState`（assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents，非负整数；未知键/负数 400）；回传结果时服务端读库内绝对计数逐键比较，并核对 `deviceLocalHashes` 与登记段摘要（少报/不符记 `hashVerified=false`，不改变回传状态码）。
+- 结果新增 `authoritativeState`/`expectedStateMatches`/`expectedStateDiff`/`hashVerified`；migration `0026_device_apply_verification` 只增 nullable `verification_json`，`result_json` 仍是幂等重放比较基准，相同结果重放不重算、不产生 409，旧行保持 NULL。
+- 文档：`docs/api/device.md`、OpenAPI/SDK 由同批提交维护。验证：deviceapply/httpapi 定向测试（临时 SQLite、合成包）。未安装、未真机、未向真实库回传。
+
+## feat(server): 维护任务外部执行器受控通道与 worker 恢复修复（2026-11-08 第七百一十八笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 新增 `POST /api/v1/maintenance/executor/claim`（无任务 204）与 `jobs/{id}/heartbeat|steps|artifacts|complete` 五个端点，scope `maintenance.execute`；服务端每次领取生成 fencing `leaseToken`（30–1800 秒，默认 120），暂停/取消/终态/租约过期/重领后旧 token 一律 409 `LEASE_LOST`，步骤/工件在租约事务内校验后写。
+- claim 返回**完整** `completedSteps`（步骤详情仍限 50 条）；worker 恢复按完整已完成/跳过步骤名跳过，修复 >50 步任务重跑已完成步骤的副作用。
+- 文档：`docs/api/maintenance.md` 与 OpenAPI/SDK 同批。验证：maintenance/httpapi 定向 `go test`。未跑全量/race/云端 CI，未接真实外部执行器或 NAS。
+
+## feat(server): AI 客户端按客户端令牌桶限流（2026-11-08 第七百一十七笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 每客户端默认 600 次/分、突发 120；`QIMENG_AI_RATE_LIMIT_PER_MINUTE`/`QIMENG_AI_RATE_LIMIT_BURST` 可调，0 关闭。超限 429 `RATE_LIMITED` + `Retry-After`；限流在 scope 检查之前，写请求照常记审计。
+- 限流为进程内单实例实现（空闲桶 10 分钟回收）；重启清零，多实例共享配额未实现。
+- 验证：aiauth/httpapi 定向测试；未安装、未做真实客户端压测。
+
+## feat(server): AI 客户端 HTTP 管理、审计查询与写 scope 扩展（2026-11-08 第七百一十六笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- 新增 scope `asset.write`/`asset.upload`/`asset.delete`/`tag.write`/`source.write`/`library.write`/`trash.restore`/`maintenance.execute`；method+path 映射扩展到上传、标签、来源、库、回收站与执行器端点，未映射写请求仍默认 deny。
+- 新增 `GET/POST /api/v1/ai-clients`、`DELETE /api/v1/ai-clients/{id}`、`POST /{id}/rotate` 与 `GET /api/v1/ai-audit`：仅管理员会话可用，AI token 即使带 admin scope 也返回 403 `FORBIDDEN_SCOPE`；明文 token 只在创建/轮换响应出现一次，审计按客户端/动作/目标/结果/请求 ID 记录；撤销/轮换经 5 秒缓存生效。
+- 文档：OpenAPI/SDK/`api/sdk.lock`、`docs/AI_PLATFORM_API_GAPS`、SECURITY 由同批提交维护。验证：aiauth/httpapi 定向 `go test`。未安装、未跑全量/CI、未接真实 AI 客户端；Web 管理 UI 未做。
+
+## merge: 合并 PR #44 外部 AI 平台与 PR #45 作者 TXT 硬约束（2026-11-08 第七百一十五笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
+
+- PR #44（外部 AI 接入平台、维护执行面、Android Worker 源码）与 PR #45（作者 TXT 作品行硬约束、研究工具包）合并入 master；唯一文档冲突 `docs/domain/migration.md` 按两代备份口径 + `authorProfileConflict=replace` 解析。
+- 合并后本轮增量见第七百一十六～七百二十一笔；现装仍为 796d813f，新代码未构建安装，合并后云端 CI 待跑。
 
 ## fix(app): 设备领取本地前置与 claimed 恢复收尾、worker 测试 lint 修复（2026-11-08 第七百一十四笔）
 
@@ -212,73 +267,3 @@
 
 - 新增 `tools/ai_maintenance/`：`rules.json` 为唯一手写领域规则源，`rulepack.py` 从规则源与 `api/openapi.yaml` 原始字节生成稳定规则包（`openapiSha256`、路径、字段上限、能力、作者动作、备份/错误/工作流/权限），端点缺失时自动把 `supported/available` 降级为 planned；当前 OpenAPI 的 `/authors/merge` 只标 `apiStatus=available`，写入仍 planned。`cli.py` 提供只读 `context/health/libraries/assets/authors/author-profile/author-sources`，无任何写入命令，`author.cleanup`、设备结果包、MCP 等仍为 planned；`tools/README.md` 加一行入口。
 - 凭据只从 `QIMENG_API_BASE`/`QIMENG_API_TOKEN` 读取，错误不回显 token；网络命令拒绝重定向、禁用环境代理、20 秒超时、2 MiB 响应上限。`tools/test_ai_maintenance.py` 覆盖规则包必需键/指纹稳定性/未知端点降级与 CLI 配置、认证头、分页、HTTP/超时错误分类、重定向拒绝；仅临时目录与 127.0.0.1 stub，不访问真实 8420/外网。
-
-## feat(api): 原子作者合并端点与 SDK 指纹锁（2026-11-06 第六百九十一笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 新增 `POST /api/v1/authors/merge`（`AuthorMergeRequest` sourceAuthorId/targetAuthorId → `AuthorMergeResult`）：同一事务把源常规作者并入目标，TXT 块别名/作品行/来源词保序去重、`asset_authors` 迁移并对双端重复保留 target 既有行及其 origin/created_at、关注并集、档案 target 优先（仅 target 空档案时迁入源档案；target 与源均非空时 `sourceProfileDiscarded=true`）、上传条目改指目标块；删除源作者行，媒体文件与资产本体保留。不可撤销、无撤销端点；同 ID/空 ID/COS 400 INVALID_PARAM，任一不存在 404 NOT_FOUND，失败整体回滚。
-- 按协议先行执行 `make sdk`：三端 clean 后重新生成 Go/TS/Kotlin、`go build ./...` 通过，`api/sdk.lock` 同批重算（283 项）。文档同步 `docs/api/authors.md`「作者合并」与 `docs/domain/authors.md`「作者合并」，并在领域说明中衔接改名 409 旧语义与 `author.cleanup` planned 关系。
-- 验证边界：`server/internal/authoredit/merge_test.go`、`server/internal/authoring/merge_test.go`、`server/internal/httpapi/authors_merge_test.go` 覆盖全量合并、目标无块、档案保留、哨兵错误、回滚与零副作用；全部使用合成数据/测试库，未做真实实例端到端，未向 8420 真库写入。
-
-## docs(docs): 外部AI维护P0现状与最小方案（2026-11-06 第六百九十笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 完成 P0 底稿 docs/AI_MAINTENANCE_P0.md：现状核对、可复用端点、需求/缺口表、规则包与工具适配层、持久任务队列、作者合并协议、两代备份分代目录、手机无前台桥接、本地权限与凭据、阶段切片与测试矩阵；均为设计默认方案，待用户确认。
-- 任务书 P0 行、HANDOVER 与能力地图同步指到 P0 底稿。本轮纯文档，不改代码/协议/migration/SDK；现装仍 264b9d83/0.2.1/schema22、三代/明文/无桥接。
-- 未运行应用构建、未操作真实库/8420/设备；文档检查与隐私扫描由主代理合并后复核。第六百六十笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
-
-## docs(docs): 修订外部AI维护任务书与备份布局（2026-11-06 第六百八十九笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 用户 2026-11-06 第二批需求：取消 AI 打标签与标签加密/隐私（原任务书第6章与 P5 删除）；扩大本地维护权限；新增 PC→手机无前台跨端维护通道、作者清理/去重、两代备份分代目录；规则包承接写入规范并随发行物自包含交付、运行时不依赖仓库文档，减少反复读文档。
-- ADR-0052 记录修订并部分取代 ADR-0051 的标签加密部分；任务书重写，能力地图、交接、安全已确认需求节、规划、架构目标结构、llms 与工具入口同步。具体工具、队列、桥接、备份布局及旧标签加密遗留均待实施；当前装机仍 264b9d83/0.2.1/schema22、三代/明文/无桥接。
-- 本轮纯文档，不运行应用构建、不操作真实库/8420/设备；文档检查通过（130 个文件，0 项错误）。第六百五十九笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
-
-## docs(docs): 外部AI维护、后台执行与标签隐私任务书（2026-11-06 第六百八十八笔）
-
-执行 AI：完整型号未知（主代理；当前会话未提供可核实的完整型号与变体元数据）。拟交接执行者DeepSeek V4.1由用户指定，后续代码执行署名单独记录。
-
-- 保存混合媒体下载后的研究、规范命名、作者/头像/链接/双语简介/标签/关联维护、双端后台及未来NAS云端AI场景，提供可直接派发的分阶段任务书、规则发现与写入教程要求、故障/隐私/恢复验收和重构不变量。
-- ADR-0051记录已确认方向，部分修订旧AI范围，能力地图、储备、架构、安全、API/工具导航及交接同步。标签加密、工具及持久队列列为待实现。
-- 本轮为文档交付，按文档门禁核对，不重标运行包或宣称新功能已安装。第六百五十八笔完整归档，近期记录维持30笔。
-
-## feat(maintenance): 统一资料目录与作者加入排序（2026-11-06 第六百八十七笔）
-
-执行 AI：完整型号未知（主代理；当前会话未提供可核实的完整型号与变体元数据）。
-
-- 作者TXT、备份与上传归档合并为三任务页面，一次选根目录生成对应文件夹、原始TXT、阅读版作者资料、片段索引及v2备份。Android原子保存派生路径，自动与手动备份都更新资料；Web用现有平台目录API与IndexedDB保存授权句柄，保留下载回退，上传原件副本独立归档与报错。
-- 作者列表增加加入顺序正反排序，历史顺序沿TXT首次出现，入库记录时刻独立展示并注明历史日期边界。协议/SQL由云端生成；Android作品详情作者弹窗接入认证离线头像及共享渲染件。
-- 更新UI、双端入口、作者/API/迁移专题、SECURITY与媒体整理规范。真实主TXT已刷新并区分bak与文件日期，最终云端门禁、出包与双端安装状态继续记HANDOVER。
-
-- 统一主TXT由服务端同源快照合成，原片段子目录留档；补主表外部编辑保护、目录备份SHA-256/上一份保留、独立导入前快照和档案差异提示。Web在授权页面内自动写回，App本机镜像采用master。v2继续作为当前格式，安装序号33，云端生成42170017268。
-
-- 用户追加实测TXT重新导入仍缺作者，补v2恢复/改名到TXT作品行的一致性维护和重建回归；解除相册滚动缩略图暂停。最新手机备份及新增作品已同步电脑，最后安装来源见HANDOVER。
-
-- code33安装后按用户截图重整手机维护三页，目录摘要、任务卡与按需高级维护统一。所有共享媒体网格补滚动方向邻位有界预取，解除收藏/历史暂停，候选code34；实际云端及装机记录见HANDOVER。
-
-- 用户追加将统一目录收敛为三代中文文件名，作者主表与完整备份各保留最新、上次、上上次；手动/自动/导入前保护纳入同一备份链，相同数据不挤占历史，外部待导入文件受摘要保护。停止额外输出原始片段，候选安装序号35，最终验证与装机记录见HANDOVER。
-
-- 同源浏览器回归发现推荐换批返回相同数据时未再次归位，补请求完成状态作为归位时机，保留原键盘End与延迟响应回归。
-
-- 安装前以真实完成导出重新复核，纠正暂存文件误当回读的证据；确认Android Go默认UTC造成双端日统计错位，补手机系统IANA时区传递、启动校验与跨日回归，继续同源出包及真实同步。
-
-- 最终264b9d83的完整CI42208227103、安全42208227084、文档42208227109、PC42208361832及APK42208357598均通过并实际更新双端，手机0.2.1/code35。真实完成导出核对153位作者、7246媒体业务信息、21402事件、标签/关联/偏好及逐日统计一致；本机身份、溯源和文件时间分开记录。两端目录均保留三代，旧生成文件已清理，手机两次重复导出未挤占历史。Web内置浏览器目录绑定仍按用户要求保留待后续处理，实际目录文件和PC主表镜像已核验。
-
-## feat(author): 简介双语与编辑交互细化（2026-11-05 第六百八十六笔）
-
-执行 AI：完整型号未知（主代理；当前会话未提供可核实的完整型号与变体元数据）。
-
-- 用户追加要求保留原文并增加中文译文，主卡右侧切换，编辑页按语言编辑；协议增加可选biographyZh，同原文旧客户端兼容、跨端备份仅补缺省译文并保护人工清空。SDK继续云端生成。
-- 编辑页补作者上下文、分块层次、修改反馈与操作状态。用户追加反馈快速滚动头像回闪，Android补256条/16MiB会话缓存、稳定图片键、刷新及切服失效和迟到隔离回归；资料保存后推进缓存域，页面新会话独立图片键，安装序号31。浏览器回归发现字数被并入简介控件的无障碍名称，补显式名称以保留稳定语义。Web存储明细沿用数据管理的顶部返回栏与标题布局；返回对齐仅涉及Web。
-- 文档影响为作者/迁移领域、SECURITY、UI/两端入口与API说明；工具入口补媒体复核、规范命名、双端资料/标签同步和总表增量交付流程。当前协议生成与实现进行中，实际来源与安装记录见HANDOVER。
-
-## fix(author): 资料默认只读与分块编辑（2026-11-05 第六百八十五笔）
-
-执行 AI：完整型号未知（主代理；当前会话未提供可核实的完整型号与变体元数据）。
-
-- 按用户澄清，App/Web资料页默认只读，统一X资料、基础资料、账号来源和作品订阅四块，逐块进入编辑；保存/取消返回概览，脏草稿确认、冲突保留及完整修订保护沿用。完整核验说明与检查记录折叠，候选核对独立显示受影响字段。实际窄屏核验发现刷新悬浮按钮遮挡保存，补侧向留白、纵向操作及无重叠回归。
-- Android使用全屏单块编辑页、滚动正文与固定保存区，并处理键盘/安全区；code28真机核验确认键盘上方保存区可用，随后修正独立窗口系统栏图标对比，安装序号29。新增分组隔离、取消草稿及候选保存后回只读的行为回归，验证和出包继续云端。
-- 文档影响为GUIDE_UI、两端README及HANDOVER，原作者来源与作品订阅语义保持。bd9cef43/code27已安装，122份X原文已保存电脑；本次UI候选门禁与安装待完成。

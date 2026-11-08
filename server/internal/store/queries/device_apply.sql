@@ -59,6 +59,7 @@ WHERE status IN ('pending', 'claimed')
 UPDATE device_apply_tasks
 SET status = ?,
     result_json = ?,
+    verification_json = ?,
     finished_at = ?,
     updated_at = ?
 WHERE id = ?
@@ -85,3 +86,15 @@ ORDER BY CASE kind WHEN 'masterTxt' THEN 0 ELSE 1 END;
 -- name: GetDeviceApplySegment :one
 SELECT * FROM device_apply_segments
 WHERE task_id = ? AND kind = ?;
+
+-- name: GetDeviceApplyAuthoritativeState :one
+-- Absolute business-state counts read from the same database at result time.
+-- These are authoritative (DB truth), unlike the incremental counters in the
+-- import response; they are stored in verification_json for later comparison.
+SELECT
+    (SELECT COUNT(*) FROM assets) AS assets,
+    (SELECT COUNT(*) FROM authors) AS authors,
+    (SELECT COUNT(*) FROM asset_authors) AS asset_author_refs,
+    (SELECT COUNT(*) FROM tags) AS tags,
+    (SELECT COUNT(*) FROM asset_tags) AS asset_tag_refs,
+    (SELECT COUNT(*) FROM view_events) AS view_events;

@@ -89,6 +89,33 @@ def tool_deprecated(tool_id: str, reason: str, replaced_by: str = "") -> ToolErr
     )
 
 
+def forbidden_scope(tool_id: str, message: str = "", details=None) -> ToolError:
+    """服务端 403 FORBIDDEN_SCOPE：当前 AI 客户端 scope 未覆盖该写请求。"""
+    return ToolError(
+        "FORBIDDEN_SCOPE",
+        f"工具 {tool_id} 被服务端 scope 拒绝" + (("：" + message) if message else ""),
+        category="permission",
+        exit_code=2,
+        recovery="由管理员为该 AI 客户端补授所需 scope（或改用受信执行端）；不要重复提交同一请求。",
+        details=details,
+    )
+
+
+def lease_lost(tool_id: str, job_id: str = "", details=None) -> ToolError:
+    """服务端 409 LEASE_LOST：租约已过期/被暂停/取消/重领，旧 fencing token 失效。"""
+    payload = dict(details or {})
+    if job_id:
+        payload.setdefault("jobId", job_id)
+    return ToolError(
+        "LEASE_LOST",
+        f"工具 {tool_id} 的维护任务租约已失效（过期/暂停/取消/被重新领取）",
+        category="conflict",
+        exit_code=1,
+        recovery="重新 claim 取得新 leaseToken 后再续租/写步骤/回传终态；旧 token 的写入不会被接受。",
+        details=payload or None,
+    )
+
+
 def invalid_input(message: str, details=None) -> ToolError:
     return ToolError(
         "INVALID_INPUT",

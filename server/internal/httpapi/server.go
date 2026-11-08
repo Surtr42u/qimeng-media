@@ -399,6 +399,8 @@ func New(deps Deps) (*Server, error) {
 	if s.aiAuth == nil {
 		aiSvc, aiErr := aiauth.New(aiauth.Options{
 			Conn: deps.Conn, Queries: deps.Queries, Now: now, Logger: logger,
+			RateLimitPerMinute: deps.Cfg.AI.RateLimitPerMinute,
+			RateLimitBurst:     deps.Cfg.AI.RateLimitBurst,
 		})
 		if aiErr != nil {
 			return nil, aiErr

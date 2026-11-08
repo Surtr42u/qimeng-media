@@ -26,6 +26,13 @@ import (
 // verifying) whose lease expired is how a restarted worker takes a job back
 // over; the worker skips already-completed steps so no side effect repeats.
 func (s *Service) Claim(ctx context.Context, kind Kind, owner string, ttl time.Duration) (Detail, bool, error) {
+	return s.claim(ctx, kind, owner, ttl, s.now().UTC())
+}
+
+// claim is Claim with an explicit clock value. The external executor response
+// must report the exact leaseUntil committed by the same UPDATE; recomputing
+// the deadline afterwards would drift by a few milliseconds.
+func (s *Service) claim(ctx context.Context, kind Kind, owner string, ttl time.Duration, now time.Time) (Detail, bool, error) {
 	kind = Kind(strings.TrimSpace(string(kind)))
 	if !kind.Valid() {
 		return Detail{}, false, fmt.Errorf("%w: kind 不合法", ErrInvalidInput)
@@ -34,7 +41,7 @@ func (s *Service) Claim(ctx context.Context, kind Kind, owner string, ttl time.D
 	if owner == "" || !checkRunes(owner, MaxLeaseOwnerRunes) || ttl <= 0 {
 		return Detail{}, false, fmt.Errorf("%w: 租约 owner/ttl 不合法", ErrInvalidInput)
 	}
-	now := s.now().UTC()
+	now = now.UTC()
 	nowText := store.FormatTimestamp(now)
 	untilText := store.FormatTimestamp(now.Add(ttl))
 	tx, err := s.conn.BeginTx(ctx, nil)
@@ -124,13 +131,20 @@ func (s *Service) releaseLease(id, owner string) {
 // 间隔为 TTL/3，远早于过期；若单次续租失败超过 TTL，worker 会停止并由
 // 重领路径接续（completed 步骤不会重复副作用）。
 func (s *Service) Heartbeat(ctx context.Context, id, owner string, ttl time.Duration) error {
+	_, err := s.heartbeat(ctx, id, owner, ttl)
+	return err
+}
+
+// heartbeat is Heartbeat returning the exact renewed deadline for the external
+// executor response.
+func (s *Service) heartbeat(ctx context.Context, id, owner string, ttl time.Duration) (time.Time, error) {
 	id, err := normalizeID(id)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	owner = strings.TrimSpace(owner)
 	if owner == "" || !checkRunes(owner, MaxLeaseOwnerRunes) || ttl <= 0 {
-		return fmt.Errorf("%w: 租约 owner/ttl 不合法", ErrInvalidInput)
+		return time.Time{}, fmt.Errorf("%w: 租约 owner/ttl 不合法", ErrInvalidInput)
 	}
 	now := s.now().UTC()
 	nowText := store.FormatTimestamp(now)
@@ -142,12 +156,12 @@ func (s *Service) Heartbeat(ctx context.Context, id, owner string, ttl time.Dura
 		Now:        sql.NullString{String: nowText, Valid: true},
 	})
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if affected == 0 {
-		return ErrLeaseLost
+		return time.Time{}, ErrLeaseLost
 	}
-	return nil
+	return now.Add(ttl), nil
 }
 
 // Complete finishes a job owned by owner. Only completed/partial/failed are

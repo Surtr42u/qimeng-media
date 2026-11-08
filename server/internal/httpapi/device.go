@@ -370,6 +370,19 @@ func deviceApplyTaskToGen(task deviceapply.Task) gen.DeviceApplyTask {
 			message := task.Result.Message
 			result.Message = &message
 		}
+		if verification := task.Verification; verification != nil {
+			state := verification.AuthoritativeState
+			result.AuthoritativeState = &state
+			result.ExpectedStateMatches = verification.ExpectedStateMatches
+			result.HashVerified = verification.HashVerified
+			if len(verification.ExpectedStateDiff) > 0 {
+				diff := make(map[string]interface{}, len(verification.ExpectedStateDiff))
+				for key, item := range verification.ExpectedStateDiff {
+					diff[key] = map[string]int64{"expected": item.Expected, "actual": item.Actual}
+				}
+				result.ExpectedStateDiff = &diff
+			}
+		}
 		out.Result = result
 	}
 	return out

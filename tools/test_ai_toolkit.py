@@ -267,11 +267,19 @@ class CapabilityTest(unittest.TestCase):
             self.assertIsNotNone(spec, tool_id)
             self.assertEqual("supported", registry.tool_status(spec, document)["status"], tool_id)
 
-    def test_planned_tools_are_honest(self):
+    def test_external_tool_platform_tools_are_supported(self):
+        # 2026-11-08：备份导出/设备结果包/执行器/研究/回收站工具均已实现。
         document, _raw = openapi.parse_file(OPENAPI)
         for tool_id in ("backup.export", "device.apply.prepare", "device.apply.submit",
-                        "device.apply.status"):
-            self.assertEqual("planned", registry.tool_status(registry.get(tool_id), document)["status"])
+                        "device.apply.status", "maintenance.claim",
+                        "maintenance.heartbeat", "maintenance.step.record",
+                        "maintenance.artifact.record", "maintenance.complete",
+                        "research.image.pipeline", "research.image.search",
+                        "research.author.probe", "research.media.probe",
+                        "research.avatar.fetch", "trash.list", "trash.restore",
+                        "asset.trash", "asset.tags.replace"):
+            self.assertEqual("supported", registry.tool_status(registry.get(tool_id), document)["status"],
+                             tool_id)
 
 
 class RulepackTest(unittest.TestCase):
@@ -279,9 +287,9 @@ class RulepackTest(unittest.TestCase):
         with temp_dir() as directory:
             first = rulepack.build_rulepack()
             second = rulepack.build_rulepack()
-        self.assertEqual(first["platformVersion"], "1.0.0")
-        self.assertEqual(first["toolContractVersion"], "1.0.0")
-        self.assertEqual(first["rulepackVersion"], "2026-11-07.6")
+        self.assertEqual(first["platformVersion"], "1.1.0")
+        self.assertEqual(first["toolContractVersion"], "1.1.0")
+        self.assertEqual(first["rulepackVersion"], "2026-11-08.1")
         self.assertNotEqual(first["platformVersion"], first["rulepackVersion"])
         self.assertEqual(rulepack.dumps_pack(first), rulepack.dumps_pack(second))
         self.assertEqual(len(first["tools"]), len(registry.TOOLS))
@@ -336,7 +344,7 @@ class RulepackTest(unittest.TestCase):
 class RegistryTest(StubServerTest):
     def test_listing_exposes_contract_and_schema(self):
         listing = execution.tool_listing(self.config())
-        self.assertEqual("1.0.0", listing["platformVersion"])
+        self.assertEqual("1.1.0", listing["platformVersion"])
         by_id = {tool["id"]: tool for tool in listing["tools"]}
         self.assertEqual(set(by_id), set(registry.tool_ids()))
         sample = by_id["author.profile.update"]
@@ -390,13 +398,13 @@ class RegistryTest(StubServerTest):
             self.call("health.check", {"unknown": 1})
         self.assertEqual("INVALID_INPUT", caught.exception.code)
 
-    def test_unknown_and_planned_and_unconfirmed_tools(self):
+    def test_unknown_and_invalid_and_unconfirmed_tools(self):
         with self.assertRaises(errors.ToolError) as caught:
             self.call("no.such.tool", {})
         self.assertEqual("UNKNOWN_TOOL", caught.exception.code)
         with self.assertRaises(errors.ToolError) as caught:
             self.call("backup.export", {})
-        self.assertEqual("TOOL_NOT_IMPLEMENTED", caught.exception.code)
+        self.assertEqual("INVALID_INPUT", caught.exception.code)
         with self.assertRaises(errors.ToolError) as caught:
             self.call("author.profile.update", {"plan": {}, "confirm": False})
         self.assertEqual("NOT_CONFIRMED", caught.exception.code)
@@ -488,7 +496,7 @@ class AuthorProfileFlowTest(StubServerTest):
         self.routes_for([current])
         plan = self.prepare({"nickname": "Synthetic New"})
         self.assertEqual("author.profile.update", plan["tool"])
-        self.assertEqual("1.0.0", plan["versions"]["toolContractVersion"])
+        self.assertEqual("1.1.0", plan["versions"]["toolContractVersion"])
         self.assertEqual(plan["planFingerprint"], plans.compute_fingerprint(plan))
         self.assertEqual(["nickname"], [change["field"] for change in plan["changes"]])
         self.assertEqual(0, plan["preconditions"]["revision"])
@@ -755,8 +763,8 @@ class CliToolTest(StubServerTest):
         status, stdout, stderr = self.run_cli(["version"])
         self.assertEqual(0, status)
         payload = json.loads(stdout)
-        self.assertEqual("1.0.0", payload["platformVersion"])
-        self.assertEqual("2026-11-07.6", payload["rulepackVersion"])
+        self.assertEqual("1.1.0", payload["platformVersion"])
+        self.assertEqual("2026-11-08.1", payload["rulepackVersion"])
         self.assertIn("sha256", payload["openapi"])
         status, stdout, stderr = self.run_cli(["tools", "list", "--json"])
         self.assertEqual(0, status)
@@ -800,10 +808,10 @@ class CliToolTest(StubServerTest):
             self.assertEqual(2, status)
             self.assertEqual("usage_error", json.loads(stderr)["error"])
 
-    def test_tool_call_reports_planned_and_disabled(self):
+    def test_tool_call_reports_invalid_and_disabled(self):
         status, stdout, stderr = self.run_cli(["tool", "call", "backup.export", "--input-json", "{}"])
         self.assertEqual(2, status)
-        self.assertEqual("TOOL_NOT_IMPLEMENTED", json.loads(stderr)["error"])
+        self.assertEqual("INVALID_INPUT", json.loads(stderr)["error"])
         env = dict(self.env(), QIMENG_AI_DISABLED_TOOLS="health.check")
         status, stdout, stderr = self.run_cli(
             ["tool", "call", "health.check", "--input-json", "{}"], env=env)

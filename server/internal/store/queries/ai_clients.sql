@@ -37,3 +37,17 @@ SELECT * FROM ai_audit
 WHERE client_id = ?
 ORDER BY created_at DESC, id DESC
 LIMIT ?;
+
+-- name: ListAiAudit :many
+-- Audit list for the admin console: optional exact client filter, optional action
+-- prefix, newest-first keyset cursor on (created_at, id). Empty string means "no
+-- filter" so the generated parameter set stays fixed.
+SELECT * FROM ai_audit
+WHERE (sqlc.arg(client_id) = '' OR client_id = sqlc.arg(client_id))
+  AND (sqlc.arg(action_prefix) = ''
+       OR substr(action, 1, length(sqlc.arg(action_prefix))) = sqlc.arg(action_prefix))
+  AND (sqlc.arg(before_created_at) = ''
+       OR created_at < sqlc.arg(before_created_at)
+       OR (created_at = sqlc.arg(before_created_at) AND id < sqlc.arg(before_id)))
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg(page_limit);

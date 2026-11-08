@@ -118,9 +118,9 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(2, pack["schemaVersion"])
         self.assertNotIn("generatedAt", pack)
         self.assertEqual(hashlib.sha256(raw).hexdigest(), pack["openapiSha256"])
-        self.assertEqual("1.0.0", pack["platformVersion"])
-        self.assertEqual("1.0.0", pack["toolContractVersion"])
-        self.assertEqual("2026-11-07.6", pack["rulepackVersion"])
+        self.assertEqual("1.1.0", pack["platformVersion"])
+        self.assertEqual("1.1.0", pack["toolContractVersion"])
+        self.assertEqual("2026-11-08.1", pack["rulepackVersion"])
         self.assertEqual(pack["rulepackVersion"], pack["rulesVersion"])
         for known in (
             "/api/v1/healthz",
@@ -138,9 +138,12 @@ class RulepackTest(unittest.TestCase):
         for name in ("author.profile.update", "author.merge", "author.cleanup.apply",
                      "asset.authors.apply"):
             self.assertEqual("supported", write[name]["status"], name)
-        for name in ("backup.import", "device.apply.prepare", "device.apply.submit",
-                     "device.apply.status"):
-            self.assertEqual("planned", write[name]["status"], name)
+        self.assertEqual("planned", write["backup.import"]["status"])
+        for name in ("device.apply.prepare", "device.apply.submit", "device.apply.status",
+                     "maintenance.claim", "maintenance.heartbeat", "maintenance.step.record",
+                     "maintenance.artifact.record", "maintenance.complete",
+                     "trash.restore", "asset.trash", "asset.tags.replace"):
+            self.assertEqual("supported", write[name]["status"], name)
             self.assertTrue(write[name].get("endpoint"), name)
         tool_ids = {tool["id"] for tool in pack["tools"]}
         for name in ("author.profile.prepare", "author.cleanup.apply", "author.merge",
@@ -160,8 +163,8 @@ class RulepackTest(unittest.TestCase):
         for name, action in pack["authorActions"].items():
             if action.get("apiStatus") == "available":
                 self.assertTrue(action.get("endpointPresent"), name)
-        self.assertEqual("read-only", pack["tags"]["access"])
-        self.assertEqual("not_supported", pack["tags"]["write"])
+        self.assertEqual("read-write (replace-only)", pack["tags"]["access"])
+        self.assertTrue(pack["tags"]["write"].startswith("supported"))
         self.assertTrue(pack["backup"]["exportBeforeImport"])
         self.assertEqual(5, len(pack["workflows"]))
         self.assertEqual("QIMENG_API_TOKEN", pack["permissions"]["api"]["tokenEnv"])

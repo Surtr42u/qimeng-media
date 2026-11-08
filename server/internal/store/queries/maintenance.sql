@@ -180,3 +180,15 @@ SELECT COUNT(*) AS step_count,
        COUNT(CASE WHEN status = 'completed' THEN 1 END) AS completed_steps
 FROM maintenance_steps
 WHERE job_id = ?;
+
+-- name: ListMaintenanceCompletedStepNames :many
+-- Full (unpaginated) list of step names already completed or skipped. The
+-- executor claim response and the recovery path use it to skip side effects;
+-- the detail endpoint intentionally caps steps at 50, so worker recovery must
+-- not rely on Detail.Steps.
+SELECT step FROM maintenance_steps
+WHERE job_id = ? AND status IN ('completed', 'skipped')
+ORDER BY step;
+
+-- name: GetMaintenanceStep :one
+SELECT * FROM maintenance_steps WHERE job_id = ? AND step = ?;

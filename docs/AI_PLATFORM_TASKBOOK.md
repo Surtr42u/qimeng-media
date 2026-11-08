@@ -104,6 +104,8 @@
 
 注意：已合并源码、CI 通过、已构建、已安装及真实功能验收是五种不同状态，必须分别记录。
 
+**2026-11-08 状态增量（源码 + 本机定向测试，未安装）**：PR #44/#45 已合并；Go 侧新增 8 个写 scope、AI 客户端 HTTP 管理/审计查询（仅管理员会话，AI token 即使带 admin scope 也 403）、按客户端限流（600/分、突发 120，429 + Retry-After）、外部执行器受控通道（claim/heartbeat/steps/artifacts/complete + fencing leaseToken，30–1800 秒）与设备结果包权威回读（expectedState + migration 0026 `verification_json`）；Android 增领取/待办全量翻页、本机模式设备令牌与只读最近任务卡；AI 工具升 1.1.0（43 工具）。设备配对/包 GC、Web 管理 UI、动作级确认、多实例共享限流、backup.import 与 NAS 仍未实现。验证与未安装边界见 [HANDOVER](HANDOVER.md) §10；合并后云端 CI 待跑。
+
 维护任务队列的账本与设备结果包服务端已存在，禁止重新建设第二套任务状态表或第二套设备结果包协议。
 
 ## 3. 首先进行全项目定向审计
@@ -205,6 +207,8 @@ AI 连接时先获取能力上下文。针对每个工具检查实际依赖的�
 
 当前 PR 优先收尾现有代码与测试：本项**先形成 API 缺口与权限模型方案**（[Go API 缺口与 AI 客户端权限模型](AI_PLATFORM_API_GAPS.md)、[ADR-0057](adr/0057-AI客户端凭据与细粒度权限模型.md)），按必要性分阶段实施，不立即重构全部接口、不阻塞现有交付。
 
+**2026-11-08 更新**：P1/P2 已落地源码——migration 0025 `ai_clients`/`ai_audit`、scope 强制（未映射写默认 deny）、8 个写 scope（asset.write/asset.upload/asset.delete/tag.write/source.write/library.write/trash.restore/maintenance.execute）、AI 客户端管理/审计查询 HTTP 端点（仅管理员会话）、按客户端限流；设备级 `device.apply` + `device_ids` 隔离保留。动作级确认（G3）、多实例共享限流、Web 管理 UI 与真实管理员/AI 客户端验收仍未完成，源码未安装。
+
 **阶段验收：修改一个与 AI 无关的主 API 字段，不会导致全部 AI 工具无条件失效。**
 
 ## 6. 第三阶段：统一查询、计划与受控写入
@@ -290,6 +294,8 @@ CLI、MCP 和可选 HTTP API 必须使用同一套工具注册、校验和执行
 
 当前 Go 队列的 Claim/Heartbeat/Complete 仅是内部原语，外部执行器没有现成的领取接口。因此在实现独立 Worker 前，必须审查并定稿可信领取/续租/完成协议，避免外部工具直接写任务表。可以采用内部 Worker 桥接或受限 Worker 通道，但不能直接向普通客户端开放不受控的执行端点。
 
+> **2026-11-08 更新（源码 + 本机定向测试，未安装）**：受控通道已实现——`POST /api/v1/maintenance/executor/claim`（无任务 204）与 `jobs/{id}/{heartbeat,steps,artifacts,complete}`，scope `maintenance.execute`；服务端每次领取生成 fencing `leaseToken`（30–1800 秒，默认 120），暂停/取消/终态/过期/重领后旧 token 一律 409 `LEASE_LOST`；claim 返回完整 `completedSteps`，>50 步任务恢复不再重复已完成副作用。真实外部执行器、多执行器并发与 NAS 未验收。
+
 ### 8.3 可靠性要求
 
 - 有界并发、CPU/IO 和模型费用预算。
@@ -311,7 +317,7 @@ CLI、MCP 和可选 HTTP API 必须使用同一套工具注册、校验和执行
 
 ### 9.1 当前基础
 
-PC 服务端已有设备结果包 API、migration 0024 和 `deviceapply` 包；ADR-0057 P1 已加入 AI 客户端设备级 scope（device.apply + device_ids）。Android 后台 Worker 源码已按 §9.6 交付，但真机后台/SAF/内嵌服务可用性与自动应用尚未验收，设备配对短码/二维码仍未实现。
+PC 服务端已有设备结果包 API、migration 0024 和 `deviceapply` 包；ADR-0057 P1 已加入 AI 客户端设备级 scope（device.apply + device_ids）。Android 后台 Worker 源码已按 §9.6 交付，但真机后台/SAF/内嵌服务可用性与自动应用尚未验收，设备配对短码/二维码仍未实现。2026-11-08 增：manifest 可选 `expectedState` 与服务端权威回读（migration 0026 `verification_json`，不参与幂等重放比较）；Android 领取/待办按 nextCursor 全量翻页（100/页、上限 2000）、本机模式自助设备令牌与只读最近任务卡已交付源码。设备配对/身份证明、临时包 GC 与真机后台仍未验收。
 
 ### 9.2 手机同步流程
 
@@ -429,6 +435,8 @@ AI 模型不直接持有 Go 管理员 Token。AI 模型不直接获取任意 she
 
 R0～R4 优先解决 AI 接口独立、规则变更和脚本重复问题。R5～R7 承接原任务书尚未完成的后台维护与跨端任务。R8 在有实际目标硬件时执行，不得因尚无 NAS 而阻塞前面阶段。
 
+**2026-11-08 状态增量（源码 + 本机定向测试，未安装）**：R5 增外部执行器受控通道（claim/heartbeat/steps/artifacts/complete + fencing leaseToken）与 >50 步恢复修复；R6 增设备权威回读（expectedState + migration 0026）与 Android 全量翻页/本机设备令牌/最近任务卡；§5.4 增 HTTP 管理、审计查询、8 个写 scope 与按客户端限流。R6 真机后台、设备配对、临时包 GC 与 R7/R8 端到端/NAS 仍未验收；合并后云端 CI 待跑，安装状态见 [HANDOVER](HANDOVER.md) §10。
+
 **不得将已经实现的 Go 队列、设备结果包或作者合并端点重新列为需要从零开发的项目。**
 
 ## 14. 自动化测试与验收矩阵
@@ -453,6 +461,9 @@ R0～R4 优先解决 AI 接口独立、规则变更和脚本重复问题。R5～
 | 凭据保护 | 模型输出、日志、任务工件不包含密钥 |
 | 研究接口 | 默认关闭不影响 AI 自带联网研究和业务维护 |
 | 任务恢复 | Worker 重启后不会重复执行已完成步骤 |
+| 外部执行器通道 | claim 无任务 204、租约 + fencing token；暂停/取消/过期/重领后旧 token 一律 409 LEASE_LOST；步骤/工件幂等 upsert；>50 步恢复不重复副作用（2026-11-08 源码 + 本机定向测试；未接真实执行器/多执行器） |
+| 设备权威回读 | 回传时服务端读库绝对计数与 expectedState 比较、deviceLocalHashes 逐段核对；verification_json 不参与幂等重放比较（2026-11-08 源码 + 本机测试；未真机/真实库） |
+| AI 客户端管理/限流 | 管理端点仅管理员会话、AI token 403；限流 429 + Retry-After；撤销/轮换约 5 秒生效（2026-11-08 源码 + 本机测试；未安装、未接真实客户端） |
 | 设备同步 | 设备身份有效，错误设备无法领取结果包 |
 | 备份保护 | 导入前导出失败时禁止继续写入 |
 | Android 后台 | 断网、进程被杀、授权失效后可恢复 |

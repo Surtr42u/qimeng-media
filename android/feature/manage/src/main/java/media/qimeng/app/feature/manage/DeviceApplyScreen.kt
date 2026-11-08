@@ -31,6 +31,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import media.qimeng.app.core.data.device.DeviceApplyAuthorization
+import media.qimeng.app.core.data.device.DeviceApplyPolicy
+import media.qimeng.app.core.data.device.DeviceTaskStatus
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.icon.BackupRestoreIcon
@@ -40,7 +42,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 设备结果包设置/手动触发页（task-17，嵌入「资料维护」第四个分段）。
  *
  * 只做最小闭环：设备标签、专用设备 AI 令牌（口令式）、后台领取开关、立即应用。
- * 结果包列表/历史仍以 PC 端服务端账本为准；本页不展示段内容，也不接受会话 token 顶替。
+ * 2026-11-08 增加：本机单机模式「生成本机设备令牌」（会话签发 device.apply，明文只落盘
+ * 不回显）与「最近设备任务」只读区（设备令牌读取最近 20 条，不领取/不应用）。
+ * 结果包历史仍以 PC 端服务端账本为准；本页不展示段内容，也不接受会话 token 顶替。
  */
 @Composable
 fun DeviceApplyScreen(
@@ -74,8 +78,9 @@ fun DeviceApplyScreen(
                     }
                 }
                 Text(
-                    "在服务器本机执行 qimeng ai-client create -label <名称> -scopes device.apply " +
-                        "-device-ids <设备标签>，把只显示一次的令牌填入下方。",
+                    "远端模式：在服务器本机执行 qimeng ai-client create -label <名称> -scopes device.apply " +
+                        "-device-ids <设备标签>，把只显示一次的令牌填入下方。" +
+                        "本机单机模式可直接点下方「生成本机设备令牌」。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -86,7 +91,7 @@ fun DeviceApplyScreen(
                     onValueChange = viewModel::onTargetDeviceIdChange,
                     placeholder = "如 phone-main",
                     singleLine = true,
-                    enabled = !state.saving,
+                    enabled = !state.saving && !state.generatingToken,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
@@ -101,7 +106,7 @@ fun DeviceApplyScreen(
                     onValueChange = viewModel::onDeviceTokenChange,
                     placeholder = if (state.tokenConfigured) "已配置；输入新令牌可替换" else "只显示一次的专用令牌",
                     singleLine = true,
-                    enabled = !state.saving,
+                    enabled = !state.saving && !state.generatingToken,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
@@ -114,10 +119,29 @@ fun DeviceApplyScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (state.localMode) {
+                    // 本机单机模式：用应用自己的本机管理员会话签发 device.apply 令牌
+                    // （POST /ai-clients；同名同设备已存在时走 rotate）。明文只落盘不回显。
+                    Text(
+                        "本机单机模式可用当前本机管理员会话生成本机设备令牌（device.apply，仅绑定上方设备标签）；" +
+                            "令牌只保存不回显。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(
+                        onClick = viewModel::generateLocalToken,
+                        enabled = !state.saving && !state.generatingToken &&
+                            DeviceApplyPolicy.isValidTargetDeviceId(state.targetDeviceId.trim()),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (state.generatingToken) "生成中…" else "生成本机设备令牌")
+                    }
+                }
                 if (state.tokenConfigured) {
                     OutlinedButton(
                         onClick = viewModel::clearToken,
-                        enabled = !state.saving,
+                        enabled = !state.saving && !state.generatingToken,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -141,7 +165,7 @@ fun DeviceApplyScreen(
                     Switch(
                         checked = state.backgroundEnabled,
                         onCheckedChange = viewModel::onBackgroundEnabledChange,
-                        enabled = !state.saving && state.deviceTokenProvided,
+                        enabled = !state.saving && !state.generatingToken && state.deviceTokenProvided,
                     )
                 }
 
@@ -162,7 +186,7 @@ fun DeviceApplyScreen(
                 ) {
                     Button(
                         onClick = viewModel::applyNow,
-                        enabled = !state.saving && state.configured,
+                        enabled = !state.saving && !state.generatingToken && state.configured,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f),
                     ) {
@@ -170,7 +194,7 @@ fun DeviceApplyScreen(
                     }
                     OutlinedButton(
                         onClick = viewModel::save,
-                        enabled = !state.saving,
+                        enabled = !state.saving && !state.generatingToken,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f),
                     ) {
@@ -207,6 +231,83 @@ fun DeviceApplyScreen(
                 Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("最近设备任务", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "只读：最近 20 条，使用专用设备令牌读取；领取/应用仍由后台执行。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::refreshRecentTasks,
+                        enabled = !state.recentLoading && state.tokenConfigured,
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(if (state.recentLoading) "读取中…" else "刷新")
+                    }
+                }
+                when {
+                    !state.tokenConfigured -> Text(
+                        "配置设备令牌后可查看本机最近任务。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    state.recentError != null -> Text(
+                        state.recentError!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+
+                    state.recentTasks.isEmpty() && state.recentLoaded -> Text(
+                        "暂无设备任务。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    state.recentTasks.isEmpty() && !state.recentLoading -> Text(
+                        "点「刷新」读取最近任务。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    else -> state.recentTasks.forEach { task ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Column(
+                                Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    taskStatusLabel(task.status),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    "${formatRunTime(task.createdAtMillis)} · ${task.segmentCount} 段",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        QimengSettingsCard {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text("应用前提", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "• 维护目录已授权：应用前会先导出本机「当前/上次」两代备份；" +
@@ -233,3 +334,14 @@ private fun formatRunTime(millis: Long): String = runCatching {
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
 }.getOrDefault("")
+
+/** 服务端账本状态 → 中文只读标签（不改变状态机语义）。 */
+private fun taskStatusLabel(status: DeviceTaskStatus): String = when (status) {
+    DeviceTaskStatus.PENDING -> "待领取"
+    DeviceTaskStatus.CLAIMED -> "已领取"
+    DeviceTaskStatus.APPLIED -> "已应用"
+    DeviceTaskStatus.PARTIAL -> "部分成功"
+    DeviceTaskStatus.FAILED -> "失败"
+    DeviceTaskStatus.CANCELLED -> "已取消"
+    DeviceTaskStatus.EXPIRED -> "已过期"
+}

@@ -34,6 +34,12 @@ type aiHTTPEnv struct {
 
 func newAIHTTPEnv(t *testing.T) *aiHTTPEnv {
 	t.Helper()
+	return newAIHTTPEnvWithConfig(t, nil)
+}
+
+// newAIHTTPEnvWithConfig 允许用例覆盖 AI 限流等配置（其余装配与生产同款）。
+func newAIHTTPEnvWithConfig(t *testing.T, aiCfg *config.AIConfig) *aiHTTPEnv {
+	t.Helper()
 	dataDir := t.TempDir()
 	conn, err := store.Open(filepath.Join(dataDir, "test.db"))
 	if err != nil {
@@ -45,6 +51,9 @@ func newAIHTTPEnv(t *testing.T) *aiHTTPEnv {
 	}
 	q := db.New(conn)
 	cfg := &config.Config{DataDir: dataDir}
+	if aiCfg != nil {
+		cfg.AI = *aiCfg
+	}
 	apisrv, err := New(Deps{
 		Conn: conn, Queries: q, Bus: events.NewBus(nil, 0), Cfg: cfg,
 		Thumbs:      thumbnail.NewGenerator(dataDir, nil, thumbnail.Options{}),
@@ -186,9 +195,15 @@ func TestAIClientDeniedWritesAudited(t *testing.T) {
 	if status != http.StatusForbidden || aiErrorCode(t, body) != codeForbiddenScope {
 		t.Fatalf("缺少 maintenance.write 期望 403 FORBIDDEN_SCOPE，得到 %d: %s", status, body)
 	}
-	// 未映射写请求：默认拒绝（即使持有 read 也不行）。
+	// 已映射但缺 scope：tag.write（2026-11-08 起标签写面向 AI 开放）。
 	status, body = env.request(t, http.MethodPost, "/api/v1/tags", token,
 		strings.NewReader("{\"name\":\"synthetic\"}"), "application/json", nil)
+	if status != http.StatusForbidden || aiErrorCode(t, body) != codeForbiddenScope {
+		t.Fatalf("缺少 tag.write 期望 403 FORBIDDEN_SCOPE，得到 %d: %s", status, body)
+	}
+	// 仍未映射的写请求（配置修改仅限管理员）：默认拒绝，审计动作 admin。
+	status, body = env.request(t, http.MethodPut, "/api/v1/config", token,
+		strings.NewReader("{}"), "application/json", nil)
 	if status != http.StatusForbidden || aiErrorCode(t, body) != codeForbiddenScope {
 		t.Fatalf("未映射写请求期望 403 FORBIDDEN_SCOPE，得到 %d: %s", status, body)
 	}
@@ -199,12 +214,15 @@ func TestAIClientDeniedWritesAudited(t *testing.T) {
 	}
 
 	rows := env.audits(t, client.ID)
-	if len(rows) != 2 {
-		t.Fatalf("被拒绝写请求审计条数 = %d，期望 2", len(rows))
+	if len(rows) != 3 {
+		t.Fatalf("被拒绝写请求审计条数 = %d，期望 3", len(rows))
 	}
-	actions := map[string]db.AiAudit{rows[0].Action: rows[0], rows[1].Action: rows[1]}
+	actions := map[string]db.AiAudit{rows[0].Action: rows[0], rows[1].Action: rows[1], rows[2].Action: rows[2]}
 	if entry, ok := actions["maintenance.write"]; !ok || entry.StatusCode != http.StatusForbidden {
 		t.Fatalf("缺少 maintenance.write 拒绝审计: %+v", actions)
+	}
+	if entry, ok := actions["tag.write"]; !ok || entry.StatusCode != http.StatusForbidden {
+		t.Fatalf("缺少 tag.write 的拒绝审计缺失: %+v", actions)
 	}
 	if entry, ok := actions["admin"]; !ok || entry.StatusCode != http.StatusForbidden {
 		t.Fatalf("未映射写请求审计动作应为 admin: %+v", actions)

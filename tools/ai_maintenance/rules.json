@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-07.6",
+  "rulesVersion": "2026-11-08.1",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -10,7 +10,7 @@
   },
   "guide": {
     "title": "绮梦影库 AI 工具平台规则包（R3：查询、计划与受控写入）",
-    "summary": "面向外部 AI 的机器可读规则与中文指南。工具包按显式注册表提供只读查询、研究核验与受控写入（作者档案/清理/合并、资产作者关联、组图命名规划）；所有写入必须先查询现状、生成计划、校验前置版本与指纹、确认后执行并回读。planned 工具（备份导出、设备结果包等）不得假装执行。",
+    "summary": "面向外部 AI 的机器可读规则与中文指南。工具包按显式注册表提供只读查询、本机研究工具包（Lens 优先）、受控写入（作者档案/清理/合并、资产作者关联、组图命名）、流式备份导出、设备结果包登记与外部执行器受控领取；所有写入必须先查询现状、生成计划、校验前置版本与指纹、确认后执行并回读。仍为 planned 的能力（如 v2 导入）不得假装执行。",
     "sections": [
       {
         "heading": "先看边界与版本",
@@ -111,7 +111,7 @@
           "导入前必须先导出当前实例的完整 v2 备份与摘要；导出保存失败即中止导入。",
           "作者主表 TXT 只含作者身份、作品行与来源区，不含头像、简介和译文；完整资料必须走 v2 导入。",
           "v2 分段合并保持现有语义：事件身份幂等合并、收藏/关注并集、作者档案保留本端并补缺、TXT 按 keep 重建、appPrefs 覆盖。",
-          "设备结果包服务端 API（/api/v1/device/apply-tasks 登记/领取/段下载/回传/取消）已存在，但 Android Worker、配对/设备身份与真机后台同步未实现；device.apply.* 工具本轮为 planned，不得写成已具备。",
+          "设备结果包服务端 API（/api/v1/device/apply-tasks 登记/领取/段下载/回传/取消）已存在，device.apply.prepare/submit/status 工具已实现 PC 侧生成/登记/查询；Android Worker、配对/设备身份与真机后台同步仍未实现，不得写成已具备。",
           "手机流程固定：充电+Wi-Fi 主动拉取 → 先导出本地完整备份（失败即中止）→ 校验指纹/摘要 → 按段应用 → 回读 → 回传 → 清理临时包并保留两代备份。",
           "维护目录采用当前/上次两个独立文件夹（各含作者资料与完整 v2 备份及独立摘要）：内容变化时当前整代提交为上次再写新当前，相同数据只刷新当前；旧 flat3 三代同目录保留只读兼容与回退。迁移必须先只读核对摘要/可读性再复制生成新布局，未经用户授权不删除旧文件；客户端迁移与真机验收待后续阶段。"
         ]
@@ -121,7 +121,7 @@
         "points": [
           "401 检查 QIMENG_API_TOKEN 是否设置或失效，不回显 token；404 重新查询对象；409 重读并按冲突类型处理。",
           "409 profile revision：重新 GET，核对本次字段与人工修改后重新 prepare；409 改名冲突：不要自动合并，先出计划；409 TXT_CONFLICT：必须显式选择 keep 或 remove。",
-          "工具错误码（结构化）：INVALID_INPUT、CONFIGURATION_ERROR、UNKNOWN_TOOL、TOOL_DISABLED、TOOL_NOT_IMPLEMENTED、CAPABILITY_UNAVAILABLE/INCOMPATIBLE、NOT_CONFIRMED、PLAN_INVALID/FINGERPRINT_MISMATCH/VERSION_MISMATCH、PRECONDITION_FAILED、CONFLICT、READBACK_MISMATCH、HTTP_ERROR、NETWORK_ERROR、TIMEOUT、RESPONSE_ERROR、INTERNAL_ERROR。",
+          "工具错误码（结构化）：INVALID_INPUT、CONFIGURATION_ERROR、UNKNOWN_TOOL、TOOL_DISABLED、TOOL_NOT_IMPLEMENTED、TOOL_DEPRECATED、PERMISSION_DENIED、FORBIDDEN_SCOPE、CAPABILITY_UNAVAILABLE/INCOMPATIBLE、NOT_CONFIRMED、PLAN_INVALID/FINGERPRINT_MISMATCH/VERSION_MISMATCH、PRECONDITION_FAILED、CONFLICT、LEASE_LOST、READBACK_MISMATCH、HTTP_ERROR、NETWORK_ERROR、TIMEOUT、RESPONSE_ERROR、INTERNAL_ERROR。",
           "token 只从 QIMENG_API_TOKEN 环境变量读取，不打印、不写日志、不写入输出、规则包、任务记录或结果包；MCP/CLI 参数中禁止出现 token。",
           "本机可信执行端对 qimeng-data 只读；业务数据写入只经正式 API；不向外部模型导出密钥或令牌。"
         ]
@@ -203,9 +203,10 @@
         "description": "Lens 视觉反查代理：multipart file（JPEG/PNG/WebP ≤20MiB），需要本机 loopback sidecar；links 可为空，不得当作证据。CLI 用 --file 本地预检扩展名/上限，摘要只打印 status/frameSha256/计数。"
       },
       "backup.export": {
-        "status": "planned",
+        "status": "supported",
+        "cli": "tool call backup.export",
         "endpoint": "GET /api/v1/export/qimeng-backup",
-        "description": "导出 v2 便携备份；本版本工具仍为 planned（大响应/落盘摘要/预算未实现），不得假装执行。"
+        "description": "流式导出 v2 便携备份到授权绝对路径（临时文件 + 原子改名），返回 bytes/sha256；默认拒绝覆盖，预算 128MiB/硬上限 256MiB。"
       },
       "author.cleanup.prepare": {
         "status": "supported",
@@ -304,22 +305,70 @@
         "description": "v2 分段导入；导入前先导出，失败保留已提交段。"
       },
       "device.apply.prepare": {
-        "status": "planned",
+        "status": "supported",
         "cli": "tool call device.apply.prepare",
         "endpoint": "POST /api/v1/device/apply-tasks",
-        "description": "设备结果包登记：服务端 API 已有；Android Worker/配对未实现，工具 planned。"
+        "description": "只读生成设备结果包计划：读本地 TXT/v2 备份、计算 bytes+sha256、按 Go 上限校验并出 manifest 与指纹；不写数据。"
       },
       "device.apply.submit": {
-        "status": "planned",
+        "status": "supported",
         "cli": "tool call device.apply.submit",
-        "endpoint": "POST /api/v1/device/apply-tasks/{id}/result",
-        "description": "设备结果包回传：手机 Worker 未实现，工具 planned。"
+        "endpoint": "POST /api/v1/device/apply-tasks",
+        "description": "confirm=true 且指纹/版本/实例一致后复核源文件，multipart 登记结果包并回读段清单。"
       },
       "device.apply.status": {
-        "status": "planned",
+        "status": "supported",
         "cli": "tool call device.apply.status",
         "endpoint": "GET /api/v1/device/apply-tasks/{id}",
-        "description": "结果包状态查询：只读 API 已有，但设备身份/配对未实现，暂不对 AI 开放。"
+        "description": "只读列表（targetDevice 过滤 + keyset 分页）或详情；不含段正文。"
+      },
+      "maintenance.claim": {
+        "status": "supported",
+        "cli": "tool call maintenance.claim",
+        "endpoint": "POST /api/v1/maintenance/executor/claim",
+        "description": "受控领取维护任务（租约 + fencing token）；204 返回 claimed=false。leaseToken 只在工具结果出现。"
+      },
+      "maintenance.heartbeat": {
+        "status": "supported",
+        "cli": "tool call maintenance.heartbeat",
+        "endpoint": "POST /api/v1/maintenance/executor/jobs/{id}/heartbeat",
+        "description": "续租；409 LEASE_LOST 映射为稳定错误码，不自动重领。"
+      },
+      "maintenance.step.record": {
+        "status": "supported",
+        "cli": "tool call maintenance.step.record",
+        "endpoint": "POST /api/v1/maintenance/executor/jobs/{id}/steps",
+        "description": "按 (job, step) 幂等 upsert 步骤状态与明细。"
+      },
+      "maintenance.artifact.record": {
+        "status": "supported",
+        "cli": "tool call maintenance.artifact.record",
+        "endpoint": "POST /api/v1/maintenance/executor/jobs/{id}/artifacts",
+        "description": "登记工件元数据（kind/uri/sha256/bytes）；正文不入 SQLite。"
+      },
+      "maintenance.complete": {
+        "status": "supported",
+        "cli": "tool call maintenance.complete",
+        "endpoint": "POST /api/v1/maintenance/executor/jobs/{id}/complete",
+        "description": "回传终态 completed/partial/failed（受租约围栏，终态不可改写）。"
+      },
+      "trash.restore": {
+        "status": "supported",
+        "cli": "tool call trash.restore",
+        "endpoint": "POST /api/v1/trash/{trashId}/restore",
+        "description": "从回收站恢复；需 confirm、前置检查与回读条目消失。"
+      },
+      "asset.trash": {
+        "status": "supported",
+        "cli": "tool call asset.trash",
+        "endpoint": "DELETE /api/v1/assets/{assetId}",
+        "description": "删除一律移入回收站（非物理删除）；需 confirm 并回读 404。"
+      },
+      "asset.tags.replace": {
+        "status": "supported",
+        "cli": "tool call asset.tags.replace",
+        "endpoint": "PUT /api/v1/assets/{assetId}/tags",
+        "description": "标签整体替换：先读详情出计划，confirm+planFingerprint 后写入并回读；整体替换会刷新关联时间。"
       },
       "asset.authors.apply": {
         "status": "supported",
@@ -588,13 +637,14 @@
     }
   },
   "tags": {
-    "access": "read-only",
-    "write": "not_supported",
+    "access": "read-write (replace-only)",
+    "write": "supported (asset.tags.replace；计划+确认+回读)",
     "storage": "现行标签保持明文存储、FTS5、唯一约束、搜索/筛选/排序与关联语义。",
     "rules": [
-      "AI 不生成、不写入、不修改标签、标签组或标签关联。",
-      "规则包和工具不提供标签写操作，也不做标签隐私增强或密钥迁移。",
-      "需要标签时由用户在界面维护；任务只报告现状与冲突。"
+      "本版本只提供资产标签集合整体替换（PUT /assets/{assetId}/tags）；不新建/删除标签池条目、不管理标签组。",
+      "整体替换会刷新全部标签关联时间；只需解除单条时优先用 DELETE /assets/{assetId}/tags/{tag}（本包暂不提供该工具）。",
+      "写入必须先读资产详情出计划，confirm=true 且 planFingerprint 一致后执行并回读 tagIds。",
+      "不做标签隐私增强或密钥迁移；标签池维度只从 GET /tags 读取。"
     ]
   },
   "backup": {
@@ -887,6 +937,30 @@
         "recovery": "非 JSON/超限：缩小范围或排查服务。"
       },
       {
+        "code": "PERMISSION_DENIED",
+        "category": "permission",
+        "exitCode": 2,
+        "recovery": "执行端未授予该工具所需权限：检查 QIMENG_AI_GRANTED_PERMISSIONS / toolConfig；看见工具不等于有权执行。"
+      },
+      {
+        "code": "TOOL_DEPRECATED",
+        "category": "capability",
+        "exitCode": 2,
+        "recovery": "改用 replacedBy 指向的新工具；旧工具不再获得修复。"
+      },
+      {
+        "code": "FORBIDDEN_SCOPE",
+        "category": "permission",
+        "exitCode": 2,
+        "recovery": "服务端 AI 客户端 scope 未覆盖该写请求：由管理员补授 scope（ADR-0057），不要重复提交。"
+      },
+      {
+        "code": "LEASE_LOST",
+        "category": "conflict",
+        "exitCode": 1,
+        "recovery": "租约已过期/暂停/取消/被重领：重新 claim 取新 leaseToken，旧 token 的写入不会被接受。"
+      },
+      {
         "code": "INTERNAL_ERROR",
         "category": "internal",
         "exitCode": 1,
@@ -1035,13 +1109,13 @@
     },
     {
       "id": "device-apply-pc-only",
-      "title": "手机无前台应用：只能由 PC 生成结果包，手机后台拉取并应用（全部 planned）",
-      "status": "planned",
+      "title": "手机无前台应用：PC 生成结果包（已支持），手机后台拉取并应用（Android Worker 未实现）",
+      "status": "pc-supported; android-worker-planned",
       "steps": [
         {
           "step": 1,
-          "action": "PC 生成结果包：协议/规则版本指纹、目标实例、段清单、主表 TXT、完整 v2 备份摘要与期望回读指标",
-          "status": "planned"
+          "action": "PC 生成结果包：device.apply.prepare 出 manifest/指纹（只读），device.apply.submit 确认后 multipart 登记并回读段清单",
+          "status": "supported"
         },
         {
           "step": 2,
@@ -1070,13 +1144,13 @@
         },
         {
           "step": 7,
-          "action": "查询 device.apply.status；waiting_authorization 与 waiting_device 可恢复，重试按幂等键判定",
-          "status": "planned"
+          "action": "查询 device.apply.status（targetDevice 过滤/详情）；waiting_authorization 与 waiting_device 可恢复，重试按幂等键判定",
+          "status": "supported"
         }
       ],
       "notes": [
         "PC 不连接手机，手机不开放入站端口，不新增监听面。",
-        "服务端结果包 API（/api/v1/device/apply-tasks）已存在；Android Worker、配对与真机后台同步未实现，device.apply.* 工具本轮为 planned。",
+        "服务端结果包 API（/api/v1/device/apply-tasks）已存在；device.apply.prepare/submit/status 已实现 PC 侧生成/登记/查询，Android Worker、配对与真机后台同步仍未实现。",
         "两代分代目录本轮由服务端镜像按路径约定推导，客户端迁移与真机验收待后续阶段；不得写成已具备。"
       ]
     },
@@ -1157,7 +1231,9 @@
     "privacy": [
       "不向外部模型导出密钥、令牌、真实媒体或含个人信息的任务记录。",
       "任务记录、结果包与日志使用合成 ID/占位符；真实凭据只放忽略的本地配置。",
-      "标签只读；AI 不写标签，不做标签隐私增强或密钥迁移。"
+      "标签只做资产集合整体替换（计划+确认+回读），不做标签池管理、隐私增强或密钥迁移。",
+      "备份导出与研究产物只写显式授权的绝对路径或被忽略工作根；覆盖需显式 overwrite。",
+      "维护任务 leaseToken 是能力凭据：只在 claim 工具结果出现，不写日志/证据包/任务记录。"
     ],
     "toolPermissions": {
       "read": "只读查询，不写业务数据。",
@@ -1165,18 +1241,74 @@
       "author.profile.write": "作者资料写入；必须 prepare + confirm + 回读。",
       "author.cleanup": "作者删除/改名/合并；高风险，不可撤销动作需确认。",
       "asset.authors.write": "资产作者关联写入；移除关联会删作品行。",
+      "asset.write": "资产写入（标签整体替换）；必须计划、确认与回读。",
+      "asset.delete": "资产删除：一律移入回收站（非物理删除），需确认与回读。",
+      "trash.restore": "回收站恢复；需确认与回读。",
       "media.organize": "混合媒体命名/移动；必须计划、确认、锁与回读。",
-      "admin.maintenance": "管理员维护（备份/设备结果包等）；当前版本不向 AI 开放写入。"
+      "backup.export": "便携备份流式导出；只写授权绝对路径，默认拒绝覆盖。",
+      "device.apply": "设备结果包登记/查询；配对与 Android Worker 未实现。",
+      "maintenance.execute": "外部 AI 执行器控制面；leaseToken 是 fencing token，只在 claim 结果出现。",
+      "admin.maintenance": "管理员维护（导入/恢复/数据库等）；当前版本不向 AI 开放写入。"
     },
     "adminTools": [
-      "backup.export、device.apply.prepare/submit/status 本轮为 planned；管理员专用能力不默认对 AI 开放。",
-      "数据库审计、迁移、备份恢复、环境诊断保持独立管理员工具，不进入 AI 工具注册表。"
+      "v2 导入（backup.import）仍为 planned；数据库审计、迁移、备份恢复、环境诊断保持独立管理员工具，不进入 AI 工具注册表。",
+      "backup.export 与 device.apply.* 已实现，但仍需各自 scope/权限（backup.export / device.apply）与计划-确认-回读。",
+      "permission 与 scope 分离：工具权限由执行端授予，服务端另按 AI 客户端 scope 拒绝（403 FORBIDDEN_SCOPE）。"
     ]
   },
-  "rulepackVersion": "2026-11-07.6",
+  "research": {
+    "priority": ["Lens", "Yandex", "SauceNAO", "fxtwitter/kemono 作者探针"],
+    "methodDoc": "tools/IMAGE_RESEARCH.md",
+    "authorDoc": "tools/AUTHOR_RESEARCH.md",
+    "kitDoc": "tools/research_kit/README.md",
+    "budgets": {
+      "pipelineDefault": {"lens": 15, "yandex": 10, "saucenao": 20, "author": 20},
+      "lensMinIntervalMs": 8000,
+      "saucenao": "4 次/30s，日上限 90（脚本内置）"
+    },
+    "toolTimeoutSeconds": {"default": 300, "max": 900},
+    "rules": [
+      "识图先 Lens：Lens 没有稳定外链，links/topTitles 为空不代表失败，也不能单独支撑归属；Lens 未命中再按 Yandex→SauceNAO 阶梯补证。",
+      "作者核验以平台公开接口（fxtwitter/kemono 等）字段为主证据；bing/wayback 等检索摘要只是线索，不能单独支撑 verified。",
+      "真实作者名单、图片、结果、帧与证据只写被忽略的本地目录；不写媒体库/数据库，不上传凭据，不访问付费内容或绕过验证码。",
+      "算法唯一实现在 tools/research_kit/；工具层只组 argv、校验路径/超时并枚举产物，不复制识别算法。",
+      "方法学与证据分级以 tools/IMAGE_RESEARCH.md、tools/AUTHOR_RESEARCH.md 与 tools/research_kit/README.md 为准，本节不复制全文。"
+    ]
+  },
+  "deviceApply": {
+    "endpoint": "POST/GET /api/v1/device/apply-tasks",
+    "protocolVersion": 1,
+    "limits": {"masterTxtBytes": 1048576, "v2BackupBytes": 67108864, "manifestBytes": 262144, "ttlSeconds": [300, 604800]},
+    "rules": [
+      "prepare 只读：读本地文件计算 bytes+sha256，生成 manifest 与计划指纹；submit 必须 confirm=true 并重新复核源文件，变化即拒绝。",
+      "targetDeviceId 只是不透明标签，本轮没有设备身份校验与配对；不得宣称已完成手机应用。",
+      "手机回传结果后必须核对 deviceLocalHashes/readback 与 manifest 段摘要；expectedStateDiff 非空即未对齐。",
+      "段字节不写入 SQLite；过期/取消不删除账本行，包清理留给后续维护阶段。"
+    ]
+  },
+  "maintenanceExecutor": {
+    "endpoints": "/api/v1/maintenance/executor/{claim, jobs/{id}/{heartbeat,steps,artifacts,complete}}",
+    "leaseToken": "fencing token：只在 claim 结果出现一次；不得写日志/证据包/任务记录或转发到其他模型上下文。",
+    "rules": [
+      "claim 返回 completedSteps；恢复时按步骤名跳过已完成项，步骤按 (job, step) 幂等 upsert。",
+      "heartbeat 只续租；409 LEASE_LOST 表示租约过期/暂停/取消/被重领，必须重新 claim，不自动重试旧 token。",
+      "终态 completed/partial/failed 受租约围栏；终态不可再领取或改写，重复回传同一终态幂等。",
+      "工件只登记 kind/uri/sha256/bytes，正文不入 SQLite；同一 (job,kind,uri) 重复登记为 no-op。",
+      "执行器只上报事实：不得伪造步骤完成、工件摘要或终态。"
+    ]
+  },
+  "trash": {
+    "endpoints": ["GET /api/v1/trash", "POST /api/v1/trash/{trashId}/restore", "DELETE /api/v1/assets/{assetId}"],
+    "rules": [
+      "删除媒体一律移入回收站；永久删除只走独立管理操作，AI 工具不提供。",
+      "恢复前确认条目仍在回收站；恢复后回读条目消失；同名冲突由服务端自动改名，工具不猜测实际文件名。",
+      "资产删除需确认并回读 404；不得按路径猜测或直接操作文件系统。"
+    ]
+  },
+  "rulepackVersion": "2026-11-08.1",
   "platform": {
-    "platformVersion": "1.0.0",
-    "toolContractVersion": "1.0.0",
+    "platformVersion": "1.1.0",
+    "toolContractVersion": "1.1.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
   },
@@ -1254,10 +1386,10 @@
     "domains": [
       {"id": "author", "label": "作者", "description": "作者身份/档案/来源/清理/合并与作者关联"},
       {"id": "media", "label": "媒体", "description": "媒体库/资产查询、混合媒体命名整理"},
-      {"id": "research", "label": "研究", "description": "可选研究网关（默认关闭，不含默认外网抓取）"},
-      {"id": "backup", "label": "备份", "description": "便携备份导出等管理员能力"},
-      {"id": "device", "label": "设备", "description": "手机结果包登记/回传/状态（配对未实现）"},
-      {"id": "maintenance", "label": "后台维护", "description": "维护任务账本查询与清点"},
+      {"id": "research", "label": "研究", "description": "本机研究工具包（Lens 优先）与可选研究网关"},
+      {"id": "backup", "label": "备份", "description": "便携备份流式导出与摘要"},
+      {"id": "device", "label": "设备", "description": "设备结果包登记/查询（配对与 Android Worker 未实现）"},
+      {"id": "maintenance", "label": "后台维护", "description": "维护任务账本查询、清点与外部执行器受控领取"},
       {"id": "system", "label": "平台", "description": "上下文/版本/能力目录与平台元工具"}
     ],
     "discovery": {
@@ -1324,13 +1456,15 @@
       "title": "长任务复用维护账本",
       "whenToUse": "需要后台执行研究/清理/备份等长任务时；复用 Go 维护任务账本与 Worker，不建第二套任务系统。",
       "risk": "normal",
-      "baseTools": ["maintenance.inventory", "maintenance.status", "project.context"],
+      "baseTools": ["maintenance.inventory", "maintenance.status", "maintenance.claim",
+                    "maintenance.heartbeat", "maintenance.step.record",
+                    "maintenance.artifact.record", "maintenance.complete", "project.context"],
       "steps": [
         {"action": "查询账本与清点", "tool": "maintenance.status", "note": "只读查询任务状态/步骤/工件；不领取/不执行"},
         {"action": "创建任务（如已开放）", "note": "使用 Go 账本的创建端点；AI 工具层当前不直接创建"},
         {"action": "跟踪与核对", "tool": "maintenance.status", "note": "按任务 id 查询；失败/暂停由账本状态判断，不凭空假设完成"}
       ],
-      "guardrails": ["不建立第二套任务状态", "不假装执行 planned 工具", "写操作仍走对应业务 API 与回读"]
+      "guardrails": ["不建立第二套任务状态；执行器只用 maintenance.* 控制面，leaseToken 不落日志/证据包", "不假装执行 planned 工具", "写操作仍走对应业务 API 与回读"]
     },
     "backup.rotate": {
       "domain": "backup",
@@ -1340,11 +1474,72 @@
       "baseTools": ["maintenance.inventory", "backup.export"],
       "steps": [
         {"action": "确认当前/上次两代目录", "note": "当前代写入前核对摘要；上次代保留上一代完整副本"},
-        {"action": "导出新备份", "tool": "backup.export", "note": "当前为 planned（大响应/落盘摘要未实现），暂用既有管理员备份流程"},
+        {"action": "导出新备份", "tool": "backup.export", "note": "流式导出并核对 sha256/bytes；默认不覆盖，写入前确认当前/上次代目录"},
         {"action": "轮换与校验", "note": "内容变化才轮换；摘要与正文分开校验；中断后下次写入自愈"},
         {"action": "恢复入口", "note": "当前/上次可恢复；旧 flat3 只读兼容，不自动删除"}
       ],
       "guardrails": ["不覆盖不可读/摘要不符的上次代", "不删除旧 flat3 现场", "恢复前人工确认目标代"]
+    },
+    "backup.export": {
+      "domain": "backup",
+      "title": "导出 v2 便携备份并核对摘要",
+      "whenToUse": "需要把当前实例完整 v2 备份落到本机维护目录（导入前、不可逆动作前、两代轮换前）时。",
+      "risk": "normal",
+      "baseTools": ["backup.export", "maintenance.status"],
+      "steps": [
+        {"action": "确认目标路径与预算", "tool": "backup.export", "note": "outPath 必须是仓库外绝对路径或被忽略工作根；预算默认 128MiB、上限 256MiB；默认拒绝覆盖"},
+        {"action": "流式导出", "tool": "backup.export", "note": "临时文件 + 原子改名；失败删除半成品，不产生半个备份"},
+        {"action": "核对摘要与字节数", "note": "用返回的 bytes/sha256 与维护目录独立摘要比对；不把备份正文放进模型上下文"},
+        {"action": "登记工件（可选）", "tool": "maintenance.artifact.record", "note": "长任务可用执行器登记 kind=backup 的 uri/sha256/bytes"}
+      ],
+      "guardrails": [
+        "outPath 不得指向源码树；仓库内只允许 .work/.test-temp/build",
+        "不覆盖现有文件，除非用户明确 overwrite=true",
+        "导出失败即中止后续导入/删除流程"
+      ]
+    },
+    "device.apply": {
+      "domain": "device",
+      "title": "PC 生成设备结果包 → 手机领取/应用 → 查询状态",
+      "whenToUse": "需要把作者主表 TXT 与/或 v2 备份投递到已配对手机（配对/Worker 未实现，本轮只到登记与查询）。",
+      "risk": "high",
+      "baseTools": ["device.apply.prepare", "device.apply.submit", "device.apply.status"],
+      "steps": [
+        {"action": "准备本地段文件", "note": "masterTxt ≤1MiB、v2Backup ≤64MiB；至少一段"},
+        {"action": "生成计划", "tool": "device.apply.prepare", "note": "只读：计算 bytes+sha256、manifest、指纹与 expectedReadback/expectedState；不写服务端"},
+        {"action": "人工核对计划", "note": "核对 targetDeviceId、段摘要、ttlSeconds 与预算；manifest 不得手工修改"},
+        {"action": "确认并登记", "tool": "device.apply.submit", "note": "confirm=true + 计划原样；重新复核源文件，变化即拒绝；回读 segments 与 manifest 一致"},
+        {"action": "手机领取/应用", "note": "手机侧 Worker 未实现：本轮只能由手机按 pending/claimed 下载段并回传结果；不得宣称已应用"},
+        {"action": "查询状态与结果", "tool": "device.apply.status", "note": "targetDevice 过滤 + keyset 分页；核对 readback/deviceLocalHashes/expectedStateDiff"}
+      ],
+      "guardrails": [
+        "targetDeviceId 只是不透明标签，不校验设备身份",
+        "prepare 不写数据；submit 必须确认并重新复核源文件",
+        "不把段字节或 v2 备份内容转发到外部模型上下文"
+      ]
+    },
+    "research.author.verify": {
+      "domain": "research",
+      "title": "作者核验：Lens 优先 → 平台探针 → 证据分级 → 只出候选",
+      "whenToUse": "需要从图片/账号线索确认真实作者身份、主页与作品归属时。",
+      "risk": "normal",
+      "baseTools": ["research.image.pipeline", "research.image.search", "research.author.probe",
+                    "research.media.probe", "research.avatar.fetch", "research.provider.query"],
+      "steps": [
+        {"action": "读研究规则与预算", "tool": "platform.rules", "note": "sections=[research]；先确认 Lens 预算与超时上限"},
+        {"action": "视频抽帧（可选）", "tool": "research.media.probe", "note": "15/50/85% 帧 ≤1600px；只作识图输入"},
+        {"action": "Lens 批处理", "tool": "research.image.search", "note": "script=lens；links/topTitles 为空不代表失败"},
+        {"action": "阶梯补证", "tool": "research.image.search", "note": "Lens 未命中再 yandex→saucenao；深挖需显式 deep/预算"},
+        {"action": "平台公开字段", "tool": "research.author.probe", "note": "fxtwitter 取账号/帖子字段；kemono 取公开 API 元数据"},
+        {"action": "头像候选", "tool": "research.avatar.fetch", "note": "只下载到显式 outDir，manifest 记录尺寸/格式/摘要"},
+        {"action": "证据分级与档案候选", "tool": "author.profile.prepare", "note": "平台字段+主页+至少 1 条证据才可能 verified；研究结果先写 candidate"}
+      ],
+      "guardrails": [
+        "证据等级：平台公开字段 > 主页/官方链接 > 检索摘要/相似图（后两者只是线索）",
+        "Lens 无稳定外链，不得当作识别成功",
+        "不伪造证据、不写标签池、不把研究脚本输出当业务写入",
+        "真实作者数据只放忽略目录，不上传外部模型上下文之外的第三方服务"
+      ]
     }
   }
 }

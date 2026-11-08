@@ -192,6 +192,7 @@ const finishDeviceApplyTask = `-- name: FinishDeviceApplyTask :execrows
 UPDATE device_apply_tasks
 SET status = ?,
     result_json = ?,
+    verification_json = ?,
     finished_at = ?,
     updated_at = ?
 WHERE id = ?
@@ -199,17 +200,19 @@ WHERE id = ?
 `
 
 type FinishDeviceApplyTaskParams struct {
-	Status     string
-	ResultJson sql.NullString
-	FinishedAt sql.NullString
-	UpdatedAt  string
-	ID         string
+	Status           string
+	ResultJson       sql.NullString
+	VerificationJson sql.NullString
+	FinishedAt       sql.NullString
+	UpdatedAt        string
+	ID               string
 }
 
 func (q *Queries) FinishDeviceApplyTask(ctx context.Context, arg FinishDeviceApplyTaskParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, finishDeviceApplyTask,
 		arg.Status,
 		arg.ResultJson,
+		arg.VerificationJson,
 		arg.FinishedAt,
 		arg.UpdatedAt,
 		arg.ID,
@@ -218,6 +221,42 @@ func (q *Queries) FinishDeviceApplyTask(ctx context.Context, arg FinishDeviceApp
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const getDeviceApplyAuthoritativeState = `-- name: GetDeviceApplyAuthoritativeState :one
+SELECT
+    (SELECT COUNT(*) FROM assets) AS assets,
+    (SELECT COUNT(*) FROM authors) AS authors,
+    (SELECT COUNT(*) FROM asset_authors) AS asset_author_refs,
+    (SELECT COUNT(*) FROM tags) AS tags,
+    (SELECT COUNT(*) FROM asset_tags) AS asset_tag_refs,
+    (SELECT COUNT(*) FROM view_events) AS view_events
+`
+
+type GetDeviceApplyAuthoritativeStateRow struct {
+	Assets          int64
+	Authors         int64
+	AssetAuthorRefs int64
+	Tags            int64
+	AssetTagRefs    int64
+	ViewEvents      int64
+}
+
+// Absolute business-state counts read from the same database at result time.
+// These are authoritative (DB truth), unlike the incremental counters in the
+// import response; they are stored in verification_json for later comparison.
+func (q *Queries) GetDeviceApplyAuthoritativeState(ctx context.Context) (GetDeviceApplyAuthoritativeStateRow, error) {
+	row := q.db.QueryRowContext(ctx, getDeviceApplyAuthoritativeState)
+	var i GetDeviceApplyAuthoritativeStateRow
+	err := row.Scan(
+		&i.Assets,
+		&i.Authors,
+		&i.AssetAuthorRefs,
+		&i.Tags,
+		&i.AssetTagRefs,
+		&i.ViewEvents,
+	)
+	return i, err
 }
 
 const getDeviceApplySegment = `-- name: GetDeviceApplySegment :one
@@ -244,7 +283,7 @@ func (q *Queries) GetDeviceApplySegment(ctx context.Context, arg GetDeviceApplyS
 }
 
 const getDeviceApplyTask = `-- name: GetDeviceApplyTask :one
-SELECT id, target_device_id, status, protocol_version, rules_fingerprint, manifest_json, created_at, updated_at, claimed_at, finished_at, expires_at, result_json FROM device_apply_tasks WHERE id = ?
+SELECT id, target_device_id, status, protocol_version, rules_fingerprint, manifest_json, created_at, updated_at, claimed_at, finished_at, expires_at, result_json, verification_json FROM device_apply_tasks WHERE id = ?
 `
 
 func (q *Queries) GetDeviceApplyTask(ctx context.Context, id string) (DeviceApplyTask, error) {
@@ -263,6 +302,7 @@ func (q *Queries) GetDeviceApplyTask(ctx context.Context, id string) (DeviceAppl
 		&i.FinishedAt,
 		&i.ExpiresAt,
 		&i.ResultJson,
+		&i.VerificationJson,
 	)
 	return i, err
 }
@@ -304,7 +344,7 @@ func (q *Queries) ListDeviceApplySegments(ctx context.Context, taskID string) ([
 
 const listDeviceApplyTasks = `-- name: ListDeviceApplyTasks :many
 SELECT
-    t.id, t.target_device_id, t.status, t.protocol_version, t.rules_fingerprint, t.manifest_json, t.created_at, t.updated_at, t.claimed_at, t.finished_at, t.expires_at, t.result_json,
+    t.id, t.target_device_id, t.status, t.protocol_version, t.rules_fingerprint, t.manifest_json, t.created_at, t.updated_at, t.claimed_at, t.finished_at, t.expires_at, t.result_json, t.verification_json,
     (SELECT COUNT(*) FROM device_apply_segments s
      WHERE s.task_id = t.id) AS segment_count
 FROM device_apply_tasks t
@@ -339,6 +379,7 @@ type ListDeviceApplyTasksRow struct {
 	FinishedAt       sql.NullString
 	ExpiresAt        string
 	ResultJson       sql.NullString
+	VerificationJson sql.NullString
 	SegmentCount     int64
 }
 
@@ -370,6 +411,7 @@ func (q *Queries) ListDeviceApplyTasks(ctx context.Context, arg ListDeviceApplyT
 			&i.FinishedAt,
 			&i.ExpiresAt,
 			&i.ResultJson,
+			&i.VerificationJson,
 			&i.SegmentCount,
 		); err != nil {
 			return nil, err

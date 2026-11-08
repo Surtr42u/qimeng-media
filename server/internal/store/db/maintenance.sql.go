@@ -297,6 +297,30 @@ func (q *Queries) GetMaintenanceJobByIdempotencyKey(ctx context.Context, idempot
 	return i, err
 }
 
+const getMaintenanceStep = `-- name: GetMaintenanceStep :one
+SELECT job_id, step, status, attempt, started_at, finished_at, detail_json FROM maintenance_steps WHERE job_id = ? AND step = ?
+`
+
+type GetMaintenanceStepParams struct {
+	JobID string
+	Step  string
+}
+
+func (q *Queries) GetMaintenanceStep(ctx context.Context, arg GetMaintenanceStepParams) (MaintenanceStep, error) {
+	row := q.db.QueryRowContext(ctx, getMaintenanceStep, arg.JobID, arg.Step)
+	var i MaintenanceStep
+	err := row.Scan(
+		&i.JobID,
+		&i.Step,
+		&i.Status,
+		&i.Attempt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.DetailJson,
+	)
+	return i, err
+}
+
 const heartbeatMaintenanceJob = `-- name: HeartbeatMaintenanceJob :execrows
 UPDATE maintenance_jobs
 SET lease_until = ?1,
@@ -456,6 +480,39 @@ func (q *Queries) ListMaintenanceArtifacts(ctx context.Context, arg ListMaintena
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMaintenanceCompletedStepNames = `-- name: ListMaintenanceCompletedStepNames :many
+SELECT step FROM maintenance_steps
+WHERE job_id = ? AND status IN ('completed', 'skipped')
+ORDER BY step
+`
+
+// Full (unpaginated) list of step names already completed or skipped. The
+// executor claim response and the recovery path use it to skip side effects;
+// the detail endpoint intentionally caps steps at 50, so worker recovery must
+// not rely on Detail.Steps.
+func (q *Queries) ListMaintenanceCompletedStepNames(ctx context.Context, jobID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listMaintenanceCompletedStepNames, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var step string
+		if err := rows.Scan(&step); err != nil {
+			return nil, err
+		}
+		items = append(items, step)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

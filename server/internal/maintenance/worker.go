@@ -337,6 +337,22 @@ func (w *Worker) process(ctx context.Context, claimed Detail, leaseOwner string)
 	for _, step := range claimed.Steps {
 		prior[step.Step] = step
 	}
+	// 详情端点只返回最近 MaxDetailSteps 条步骤；长任务更早的 completed 步骤
+	// 会落在窗口外。从账本读取完整 completed/skipped 名集合补齐，否则那些
+	// 步骤会被当成"从未执行"重复产生副作用（2026-11-08 修复）。
+	completedNames, namesErr := w.svc.CompletedStepNames(ctx, job.ID)
+	if namesErr != nil {
+		// 读不到完整步骤集合时不执行任何步骤：停止本次领取，让租约到期后
+		// 重试（与临时 DB 错误同款处理，不把可恢复错误写成 failed 终态）。
+		w.logger.Warn("读取已完成步骤失败，暂停本次执行等待重领",
+			"jobId", job.ID, "error", namesErr)
+		return
+	}
+	for _, name := range completedNames {
+		if _, seen := prior[name]; !seen {
+			prior[name] = Step{Step: name, Status: StepCompleted}
+		}
+	}
 
 	// jobCtx 是本任务的执行上下文（handler 专用）：租约丢失或心跳判定不可
 	// 靠时主动 cancel，让 backup 等长步骤的在途副作用尽快停止，避免暂停/

@@ -50,6 +50,10 @@ type Options struct {
 	Logger *slog.Logger
 	// CacheTTL 内存缓存最大陈旧时间；<=0 用 DefaultCacheTTL。
 	CacheTTL time.Duration
+	// RateLimitPerMinute 是单客户端每分钟请求上限；<=0 = 关闭限流。
+	RateLimitPerMinute int
+	// RateLimitBurst 是令牌桶突发容量；<=0 按上限推导。
+	RateLimitBurst int
 }
 
 // AuditEntry 是一次 AI 客户端写操作审计。只记录请求元数据：不记录请求体/
@@ -87,6 +91,9 @@ type Service struct {
 	// 时刻）；进程内仅用于节流，不参与鉴权判断。
 	lastUsedMu sync.Mutex
 	lastUsed   map[string]time.Time
+
+	// rates 是单客户端请求限流器；nil = 未启用（RateLimitPerMinute<=0）。
+	rates *rateLimiter
 }
 
 // New 组装凭据服务并完成一次初始加载。加载失败返回错误：调用方（main /
@@ -120,6 +127,7 @@ func New(opts Options) (*Service, error) {
 		cacheTTL: cacheTTL,
 		byHash:   map[string]Client{},
 		lastUsed: map[string]time.Time{},
+		rates:    newRateLimiter(opts.RateLimitPerMinute, opts.RateLimitBurst, now),
 	}
 	if err := service.Reload(context.Background()); err != nil {
 		return nil, fmt.Errorf("aiauth: 初始加载 AI 客户端失败: %w", err)
@@ -241,4 +249,13 @@ func truncate(value string, max int) string {
 		return value
 	}
 	return string(runes[:max])
+}
+
+// AllowRequest 在业务处理器执行前按客户端限流。返回 ok=false 时 retryAfter
+// 是建议的 Retry-After 时长；未启用限流时恒为 (0,true)。
+func (s *Service) AllowRequest(clientID string) (time.Duration, bool) {
+	if s == nil {
+		return 0, true
+	}
+	return s.rates.allow(clientID)
 }

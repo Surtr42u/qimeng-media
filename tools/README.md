@@ -114,7 +114,7 @@ Web 云端浏览器检查将合成作者管理场景的窄屏/桌面截图与失
 
 外部AI接入平台与维护系统的现行执行清单、工具契约、本地维护权限、作者清理与无前台跨端维护见[统一任务书 V2](../docs/AI_PLATFORM_TASKBOOK.md)与[ADR-0056](../docs/adr/0056-独立AI接入平台架构.md)；旧[外部 AI 维护任务书](../docs/AI_MAINTENANCE_TASKBOOK.md)只作历史需求与设计来源。
 
-AI 工具平台（显式工具注册表、规则包、统一 CLI、计划与受控写入、stdio MCP 适配器）见 [ai_maintenance/README.md](ai_maintenance/README.md)。旧脚本 [import_creator_profiles.py](import_creator_profiles.py) 已转发到统一实现，仅保留兼容入口。
+AI 工具平台（显式工具注册表、规则包、统一 CLI、计划与受控写入、流式备份导出、设备结果包、外部执行器受控领取、research_kit 适配、stdio MCP 适配器）见 [ai_maintenance/README.md](ai_maintenance/README.md)。旧脚本 [import_creator_profiles.py](import_creator_profiles.py) 已转发到统一实现，仅保留兼容入口。研究/备份产物默认写 `ai_maintenance/.work/`（已忽略），不进入源码树。
 
 组图命名（作品编号按作品递增、组内页码独立）的唯一实现是 [ai_maintenance/media_naming.py](ai_maintenance/media_naming.py) 纯规划/校验引擎（计划指纹、并发锁、回读报告；测试 [test_media_naming.py](test_media_naming.py)）；工具层 media.organize.prepare/apply 只做适配、加锁执行与回读，不复制第二套命名算法。
 

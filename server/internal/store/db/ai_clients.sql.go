@@ -121,6 +121,67 @@ func (q *Queries) InsertAiAudit(ctx context.Context, arg InsertAiAuditParams) er
 	return err
 }
 
+const listAiAudit = `-- name: ListAiAudit :many
+SELECT id, client_id, method, path, "action", status_code, request_id, created_at FROM ai_audit
+WHERE (?1 = '' OR client_id = ?1)
+  AND (?2 = ''
+       OR substr(action, 1, length(?2)) = ?2)
+  AND (?3 = ''
+       OR created_at < ?3
+       OR (created_at = ?3 AND id < ?4))
+ORDER BY created_at DESC, id DESC
+LIMIT ?5
+`
+
+type ListAiAuditParams struct {
+	ClientID        interface{}
+	ActionPrefix    interface{}
+	BeforeCreatedAt interface{}
+	BeforeID        int64
+	PageLimit       int64
+}
+
+// Audit list for the admin console: optional exact client filter, optional action
+// prefix, newest-first keyset cursor on (created_at, id). Empty string means "no
+// filter" so the generated parameter set stays fixed.
+func (q *Queries) ListAiAudit(ctx context.Context, arg ListAiAuditParams) ([]AiAudit, error) {
+	rows, err := q.db.QueryContext(ctx, listAiAudit,
+		arg.ClientID,
+		arg.ActionPrefix,
+		arg.BeforeCreatedAt,
+		arg.BeforeID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AiAudit
+	for rows.Next() {
+		var i AiAudit
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClientID,
+			&i.Method,
+			&i.Path,
+			&i.Action,
+			&i.StatusCode,
+			&i.RequestID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAiAuditByClient = `-- name: ListAiAuditByClient :many
 SELECT id, client_id, method, path, "action", status_code, request_id, created_at FROM ai_audit
 WHERE client_id = ?
