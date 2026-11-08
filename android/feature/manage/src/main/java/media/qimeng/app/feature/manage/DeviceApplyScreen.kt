@@ -190,6 +190,26 @@ fun DeviceApplyScreen(
                     )
                 }
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("应用时覆盖作者资料", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "开启后 v2 备份应用按 replace 整份替换本机作者档案（昵称/简介/主页/头像，含离线头像）；默认保留本机（keep）。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.replaceAuthorProfilesOnApply,
+                        onCheckedChange = viewModel::onReplaceAuthorProfilesChange,
+                        enabled = !state.saving && !state.generatingToken,
+                    )
+                }
+
                 if (!state.configured) {
                     Text(
                         if (state.deviceTokenProvided) {

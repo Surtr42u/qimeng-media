@@ -39,6 +39,7 @@ task-17 在 Android 侧新增了设备结果包 Worker（源码路径 `android/c
 - **前提**：设备标签与专用设备令牌必须来自该远端服务端（`device.apply` + `device_ids`；本机生成的设备令牌只属于本机服务端，不能用于远端）。设置页保存前按 `ServerAddress.normalize` 口径校验，非法地址提示格式错误；仓库层兜底把非法值按空串落盘。
 - **媒体文件**：结果包只搬运作者主表与 v2 备份，不搬运媒体二进制。跨端领取前需用 adb/文件复制把新媒体放进手机本地库目录；设备结果包应用只更新业务表。
 - **应用后重扫**：远端地址与当前登录服务端不同（跨端）且本轮至少一段应用成功时，Runner 在本机应用完成后对当前登录服务端的每个库调用 `POST /api/v1/libraries/{id}/scan`。扫描是异步 202，资产稍后入库；重扫失败只写本机状态行与日志，不改变结果包终态或回传状态。
+- **应用时覆盖作者资料（可选开关）**：设置页新增「应用时覆盖作者资料」开关（默认关）。开启后 v2 备份段按 `authorProfileConflict=replace` 应用：以备份整份替换本机作者档案（昵称/简介/主页/证据/xProfile/头像，含离线头像，Revision+1）；关闭=沿用服务端默认 `keep`（保留本机既有资料）。跨端把 PC 新资料带到手机时打开；纯本机维护建议保持关闭，避免覆盖手机端尚未回传的改动。该开关只影响 v2 备份段的本机导入，不改 manifest，也不影响 TXT 段。
 - **回传目标**：领取、下载与结果回传都发往远端服务端账本；本机库写入与重扫不改变 `applied/partial/failed` 判定。
 - **边界**：跨端不改变 claim 幂等、段校验、两代备份和结果重放语义；不搬运媒体二进制，不跳过设备令牌，不允许用登录会话 token 代替设备令牌。
 
@@ -87,7 +88,7 @@ task-17 在 Android 侧新增了设备结果包 Worker（源码路径 `android/c
 
 - 未安装到现装手机；未在 `qimeng_api35` 或真机验证后台周期触发、Doze/厂商限制、进程被杀后恢复、后台拉起内嵌 FGS、SAF/共享存储授权撤回与两代备份写入。
 - 短码/二维码配对、设备证明、包清理 GC、Web 任务中心、段级进度持久化仍未实现。
-- device 包 JVM 单测 40 项（2026-11-08 task-21 后新增领取前登录/维护根/全文件访问前置、pending+claimed 过期过滤与 claimed 恢复过滤；其中 37 项纯逻辑已在开发机 kotlinc+JUnit 实跑通过，设置持久化 3 项依赖 DataStore 运行时由 Gradle 单测执行）。`:feature:manage:compileDebugKotlin`/`:app:compileDebugKotlin` 此前编译通过；本次 task-21 改动后需云端 CI 重新编译验证。本批新增跨端领取地址解析/持久化单测，按约定待云端 CI 编译与执行。未跑全量 Gradle、Lint、设备验收。
+- device 包 JVM 单测 40 项（2026-11-08 task-21 后新增领取前登录/维护根/全文件访问前置、pending+claimed 过期过滤与 claimed 恢复过滤；其中 37 项纯逻辑已在开发机 kotlinc+JUnit 实跑通过，设置持久化 3 项依赖 DataStore 运行时由 Gradle 单测执行）。`:feature:manage:compileDebugKotlin`/`:app:compileDebugKotlin` 此前编译通过；本次 task-21 改动后需云端 CI 重新编译验证。本批新增跨端领取地址解析/持久化单测与「应用时覆盖作者资料」开关（BackupRepository 导入冲突处置参数化），按约定待云端 CI 编译与执行。未跑全量 Gradle、Lint、设备验收。
 
 ## 包结构（manifest）
 

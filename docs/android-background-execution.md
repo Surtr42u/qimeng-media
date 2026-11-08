@@ -51,7 +51,7 @@
 新增/修改（以工作树为准，统一由 Lead 提交）：
 
 - `android/core/data/.../device/`：`DeviceApplyRunner`（编排本地前置→列表→领取/恢复→下载-应用-回读-回传）、`DeviceApplyPreconditions`（claim 前登录会话/维护根/全文件访问门禁）、`DeviceApplyWorker`/`DeviceApplyScheduler`/`DeviceApplyWorkSpec`（WorkManager 周期+立即、约束、unique work）、`DeviceApplyRemote`（SDK 设备端点，pending+claimed 分状态查询）、`DeviceApplyPolicy`（可领取/可恢复过滤/设备标签/开关）、`DeviceApplyAuthorization`（设备标签+令牌校验）、`DeviceApplySegmentVerifier`（size/sha256）、`DeviceApplyResultPlanner`（applied/partial/failed + readback）、`DeviceApplyLocalBackup`（导入前本地备份/清理）、`DeviceApplyReadback`、`DeviceApplyBootstrapper`、`DeviceApplySettingsRepository`、`DeviceApplyModels`。
-- UI：`feature/manage/DeviceApplyScreen.kt`/`DeviceApplyViewModel.kt` + `MaintenanceScreen` 入口：设备标签、设备令牌（口令式，保存后只显示已配置/替换/清除，不回显明文）、后台领取开关、立即执行；无令牌时提示不能用会话 token 做设备级授权。
+- UI：`feature/manage/DeviceApplyScreen.kt`/`DeviceApplyViewModel.kt` + `MaintenanceScreen` 入口：设备标签、设备令牌（口令式，保存后只显示已配置/替换/清除，不回显明文）、后台领取开关、立即执行、「应用时覆盖作者资料」开关（默认关；开启后 v2 备份段按 replace 整份替换本机作者档案，关闭=keep）；无令牌时提示不能用会话 token 做设备级授权。
 - 依赖接线：`QimengApplication`、`core/data/di/DataModule`、`SdkBackupRepository`、`LegacyImportModels` 的最小适配；JVM 单测（纯逻辑）随实现补充，见 §7。
 
 ## 6. 设备令牌与 Go 权限衔接

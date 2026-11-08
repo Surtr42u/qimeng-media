@@ -16,6 +16,7 @@ import media.qimeng.app.core.data.backup.MaintenanceFolderRepository
 import media.qimeng.app.core.data.di.IoDispatcher
 import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.data.embedded.LocalServerWarmup
+import media.qimeng.app.core.data.repository.AuthorProfileConflict
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.BackupRepository
 import media.qimeng.app.core.data.repository.LibraryRepository
@@ -179,7 +180,7 @@ class DeviceApplyRunner @Inject constructor(
         var localRescanFailed = false
         for (summary in targets) {
             val outcome = try {
-                process(remote, summary, settings.targetDeviceId)
+                process(remote, summary, settings.targetDeviceId, settings.replaceAuthorProfilesOnApply)
             } catch (e: ClientException) {
                 if (e.statusCode == HTTP_UNAUTHORIZED || e.statusCode == HTTP_FORBIDDEN) {
                     val message = "设备 AI 令牌在领取/下载时被拒绝；请在设置页更新专用设备令牌"
@@ -226,6 +227,7 @@ class DeviceApplyRunner @Inject constructor(
         remote: DeviceApplyRemote,
         summary: DeviceApplySummary,
         expectedTargetDeviceId: String,
+        replaceAuthorProfiles: Boolean,
     ): TaskOutcome {
         val claimed = try {
             withContext(ioDispatcher) { remote.claim(summary.id) }
@@ -329,7 +331,14 @@ class DeviceApplyRunner @Inject constructor(
                                 }
 
                                 is BackupValidator.Result.Ok -> {
-                                    val summaryResult = backupRepository.importBackup(validated.payload)
+                                    val summaryResult = backupRepository.importBackup(
+                                        validated.payload,
+                                        if (replaceAuthorProfiles) {
+                                            AuthorProfileConflict.REPLACE
+                                        } else {
+                                            AuthorProfileConflict.KEEP
+                                        },
+                                    )
                                     segmentResults += SegmentApplyResult(segment.kind, applied = true)
                                     readbacks += SegmentReadback(
                                         segment.kind,

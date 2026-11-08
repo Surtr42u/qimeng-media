@@ -130,6 +130,7 @@ class DeviceApplyLocalTokenRepository @Inject constructor(
                 deviceToken = provisioned.first,
                 backgroundEnabled = backgroundEnabled,
                 deviceServiceUrl = savedSettings?.deviceServiceUrl.orEmpty(),
+                replaceAuthorProfilesOnApply = savedSettings?.replaceAuthorProfilesOnApply ?: false,
             )
         } catch (cancelled: CancellationException) {
             throw cancelled

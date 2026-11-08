@@ -3,6 +3,7 @@ package media.qimeng.app.core.data.backup
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import media.qimeng.app.core.data.repository.AuthorProfileConflict
 import media.qimeng.app.core.data.repository.BackupAutoPrefs
 import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
@@ -54,7 +55,10 @@ class AutoBackupRunnerTest {
 
     private class FakeBackupRepository : BackupRepository {
         override suspend fun exportJson(): String = "{}"
-        override suspend fun importBackup(payload: ValidatedBackupPayload): LegacyImportSummary =
+        override suspend fun importBackup(
+            payload: ValidatedBackupPayload,
+            profileConflict: AuthorProfileConflict,
+        ): LegacyImportSummary =
             LegacyImportSummary(mediaFilesTotal = 0, assetsMatched = 0, authorsImported = 0, tagsImported = 0, eventsReplayed = 0)
     }
 

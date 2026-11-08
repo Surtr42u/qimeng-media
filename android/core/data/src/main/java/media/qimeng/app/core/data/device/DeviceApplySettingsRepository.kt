@@ -33,6 +33,12 @@ data class DeviceApplySettings(
      * 登录会话（本机库）。保存时经 ServerAddress 规范化，非法值按空串落盘。
      */
     val deviceServiceUrl: String = "",
+    /**
+     * 设备结果包应用 v2 备份时，作者档案（昵称/简介/主页/证据/xProfile/头像）冲突处置：
+     * false=保留本机（服务端默认 keep）；true=以备份整份替换（replace，含离线头像）。
+     * 跨端从 PC 领取时打开可把 PC 的新档案带到本机。
+     */
+    val replaceAuthorProfilesOnApply: Boolean = false,
     val backgroundEnabled: Boolean = false,
     /** 最近一次 Worker/手动触发的本机提示（UI 状态行；不代替服务端 result 账本）。 */
     val lastMessage: String? = null,
@@ -61,6 +67,7 @@ interface DeviceApplySettingsRepository {
         deviceToken: String,
         backgroundEnabled: Boolean,
         deviceServiceUrl: String = "",
+        replaceAuthorProfilesOnApply: Boolean = false,
     )
 
     /** 记录最近一次运行摘要（设备标签/令牌都不写入；message 按服务端上限截断）。 */
@@ -77,6 +84,7 @@ class DataStoreDeviceApplySettingsRepository @Inject constructor(
             targetDeviceId = prefs[KEY_TARGET_DEVICE_ID].orEmpty(),
             deviceToken = prefs[KEY_DEVICE_TOKEN].orEmpty(),
             deviceServiceUrl = prefs[KEY_DEVICE_SERVICE_URL].orEmpty(),
+            replaceAuthorProfilesOnApply = prefs[KEY_REPLACE_AUTHOR_PROFILES] ?: false,
             backgroundEnabled = prefs[KEY_BACKGROUND_ENABLED] ?: false,
             lastMessage = prefs[KEY_LAST_MESSAGE],
             lastRunAtMillis = prefs[KEY_LAST_RUN_AT],
@@ -88,6 +96,7 @@ class DataStoreDeviceApplySettingsRepository @Inject constructor(
         deviceToken: String,
         backgroundEnabled: Boolean,
         deviceServiceUrl: String,
+        replaceAuthorProfilesOnApply: Boolean,
     ) {
         val target = targetDeviceId.trim()
         val token = deviceToken.trim()
@@ -101,6 +110,7 @@ class DataStoreDeviceApplySettingsRepository @Inject constructor(
             prefs[KEY_TARGET_DEVICE_ID] = target
             prefs[KEY_DEVICE_TOKEN] = token
             prefs[KEY_DEVICE_SERVICE_URL] = serviceUrl
+            prefs[KEY_REPLACE_AUTHOR_PROFILES] = replaceAuthorProfilesOnApply
             prefs[KEY_BACKGROUND_ENABLED] = enabled
         }
     }
@@ -117,6 +127,7 @@ class DataStoreDeviceApplySettingsRepository @Inject constructor(
         val KEY_TARGET_DEVICE_ID = stringPreferencesKey("device_apply_target_device_id")
         val KEY_DEVICE_TOKEN = stringPreferencesKey("device_apply_token")
         val KEY_DEVICE_SERVICE_URL = stringPreferencesKey("device_apply_service_url")
+        val KEY_REPLACE_AUTHOR_PROFILES = booleanPreferencesKey("device_apply_replace_author_profiles")
         val KEY_BACKGROUND_ENABLED = booleanPreferencesKey("device_apply_background_enabled")
         val KEY_LAST_MESSAGE = stringPreferencesKey("device_apply_last_message")
         val KEY_LAST_RUN_AT = longPreferencesKey("device_apply_last_run_at")

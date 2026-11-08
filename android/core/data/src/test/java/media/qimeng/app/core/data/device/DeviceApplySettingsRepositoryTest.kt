@@ -44,6 +44,7 @@ class DeviceApplySettingsRepositoryTest {
         val saved = repository.settings.first()
         assertEquals("phone-main", saved.targetDeviceId)
         assertEquals("", saved.deviceToken)
+        assertFalse(saved.replaceAuthorProfilesOnApply)
         assertFalse(saved.backgroundEnabled)
         assertFalse(saved.isConfigured)
     }
@@ -56,10 +57,12 @@ class DeviceApplySettingsRepositoryTest {
             deviceToken = " device-token ",
             backgroundEnabled = true,
             deviceServiceUrl = " 192.0.2.10:8420/ ",
+            replaceAuthorProfilesOnApply = true,
         )
         var saved = repository.settings.first()
         assertEquals("device-token", saved.deviceToken)
         assertEquals("http://192.0.2.10:8420", saved.deviceServiceUrl)
+        assertTrue(saved.replaceAuthorProfilesOnApply)
         assertTrue(saved.backgroundEnabled)
         assertTrue(saved.isConfigured)
 

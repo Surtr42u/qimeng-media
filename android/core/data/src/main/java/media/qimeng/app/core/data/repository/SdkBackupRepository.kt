@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.backup.ValidatedBackupPayload
 import media.qimeng.app.core.model.LegacyImportSummary
 import media.qimeng.app.core.network.di.BackupClient
+import media.qimeng.sdk.apis.DefaultApi
 import media.qimeng.sdk.infrastructure.Serializer
 import media.qimeng.sdk.models.LegacyBackupFile
 import okhttp3.OkHttpClient
@@ -41,15 +42,25 @@ class SdkBackupRepository @Inject constructor(
         }
     }
 
-    override suspend fun importBackup(payload: ValidatedBackupPayload): LegacyImportSummary {
-        // 载荷可达数十 MB，logcat 只打口径键（格式/媒体文件数），不打全量
+    override suspend fun importBackup(
+        payload: ValidatedBackupPayload,
+        profileConflict: AuthorProfileConflict,
+    ): LegacyImportSummary {
+        // 载荷可达数十 MB，logcat 只打口径键（格式/媒体文件数/冲突处置），不打全量
         Log.d(
             SdkMediaRepository.LOG_TAG,
             "POST /import/qimeng-backup format=${payload.sdkPayload.format} " +
-                "mediaFiles=${payload.sdkPayload.data.mediaFiles?.size ?: 0}",
+                "mediaFiles=${payload.sdkPayload.data.mediaFiles?.size ?: 0} profileConflict=$profileConflict",
         )
+        val sdkConflict = when (profileConflict) {
+            AuthorProfileConflict.KEEP -> DefaultApi.AuthorProfileConflictApiV1ImportQimengBackupPost.AuthorProfileConflictKeep
+            AuthorProfileConflict.REPLACE -> DefaultApi.AuthorProfileConflictApiV1ImportQimengBackupPost.AuthorProfileConflictReplace
+        }
         val result = withContext(Dispatchers.IO) {
-            apiFactory.createWith(backupClient).apiV1ImportQimengBackupPost(payload.sdkPayload)
+            apiFactory.createWith(backupClient).apiV1ImportQimengBackupPost(
+                payload.sdkPayload,
+                authorProfileConflict = sdkConflict,
+            )
         }
         return LegacyImportSummary(
             mediaFilesTotal = result.mediaFilesTotal,

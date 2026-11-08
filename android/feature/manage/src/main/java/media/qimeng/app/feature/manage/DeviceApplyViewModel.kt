@@ -41,6 +41,8 @@ data class DeviceApplyUiState(
     val deviceTokenDraft: String = "",
     /** 仅设备端点使用的远端地址；空=当前登录服务端（本机模式可填 PC/NAS）。 */
     val deviceServiceUrl: String = "",
+    /** 应用 v2 备份时是否以备份整份替换本机作者档案（replace）；默认保留本机（keep）。 */
+    val replaceAuthorProfilesOnApply: Boolean = false,
     /** 是否已保存过设备令牌（只显示状态，不显示令牌本体）。 */
     val tokenConfigured: Boolean = false,
     val backgroundEnabled: Boolean = false,
@@ -113,6 +115,7 @@ class DeviceApplyViewModel @Inject constructor(
                 it.copy(
                     targetDeviceId = saved.targetDeviceId,
                     deviceServiceUrl = saved.deviceServiceUrl,
+                    replaceAuthorProfilesOnApply = saved.replaceAuthorProfilesOnApply,
                     // 不回填明文：只暴露「已配置」状态。
                     tokenConfigured = saved.deviceToken.isNotBlank(),
                     backgroundEnabled = saved.backgroundEnabled,
@@ -145,6 +148,10 @@ class DeviceApplyViewModel @Inject constructor(
 
     fun onDeviceServiceUrlChange(value: String) {
         _state.update { it.copy(deviceServiceUrl = value, error = null) }
+    }
+
+    fun onReplaceAuthorProfilesChange(enabled: Boolean) {
+        _state.update { it.copy(replaceAuthorProfilesOnApply = enabled, error = null) }
     }
 
     fun onBackgroundEnabledChange(enabled: Boolean) {
@@ -319,6 +326,7 @@ class DeviceApplyViewModel @Inject constructor(
                 deviceToken = effectiveToken,
                 backgroundEnabled = enabled,
                 deviceServiceUrl = deviceServiceUrl,
+                replaceAuthorProfilesOnApply = _state.value.replaceAuthorProfilesOnApply,
             )
             persistedToken = effectiveToken
             val savedUrlNote = if (deviceServiceUrl.isNotEmpty()) "；已保存领取服务端地址" else ""
