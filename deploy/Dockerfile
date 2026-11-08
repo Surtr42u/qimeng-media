@@ -10,7 +10,7 @@
 # 网络备注: Docker Hub 不可达时从受信镜像源拉取相同 digest，替换 FROM 时保留摘要
 #   （fnOS 虚拟机实测: docker pull docker.m.daocloud.io/library/debian:bookworm-slim）。
 # 官方 registry 多架构清单 digest；更新由 Dependabot PR 审核，不随 tag 静默漂移。
-FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 
 # ffmpeg 为缩略图管线/扫描探测/上传视频探测的运行期依赖（ffprobe 同包）；
 # apt 源换 USTC 镜像加速容器内构建（Debian 12 deb822 源文件路径）。
