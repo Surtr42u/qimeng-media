@@ -341,13 +341,30 @@ func (s *Service) Result(ctx context.Context, id string, in ResultInput) (Task, 
 	if Status(row.Status) != StatusClaimed {
 		return Task{}, ErrStateConflict
 	}
+	// 权威状态快照与摘要核验在服务端计算，与客户端上报的增量计数分开存放：
+	// result_json 保持客户端规范化内容（幂等重放逐字节比较），验证结果写入
+	// verification_json，重放不会因库状态变化被误判为 STATE_CONFLICT。
+	verification, verifyErr := s.buildVerification(ctx, taskID, row.ManifestJson, in.DeviceLocalHashes)
+	if verifyErr != nil {
+		// 验证快照是附加证据，不是结果写入的前置条件：读取失败按协议留空
+		// （authoritativeState=null），终态必须照常落账，不能因一次临时
+		// DB 错误让手机的 applied/partial/failed 丢失并最终过期。
+		s.logger.Warn("设备结果权威校验失败（结果照常记录，验证字段留空）",
+			"taskId", taskID, "error", verifyErr)
+		verification = nil
+	}
+	verificationJSON := sql.NullString{}
+	if len(verification) > 0 {
+		verificationJSON = sql.NullString{String: string(verification), Valid: true}
+	}
 	nowText := store.FormatTimestamp(now)
 	affected, err := s.q.FinishDeviceApplyTask(ctx, db.FinishDeviceApplyTaskParams{
-		Status:     string(status),
-		ResultJson: sql.NullString{String: string(canonical), Valid: true},
-		FinishedAt: sql.NullString{String: nowText, Valid: true},
-		UpdatedAt:  nowText,
-		ID:         taskID,
+		Status:           string(status),
+		ResultJson:       sql.NullString{String: string(canonical), Valid: true},
+		VerificationJson: verificationJSON,
+		FinishedAt:       sql.NullString{String: nowText, Valid: true},
+		UpdatedAt:        nowText,
+		ID:               taskID,
 	})
 	if err != nil {
 		return Task{}, err
@@ -623,7 +640,7 @@ func parseNullTimestamp(value sql.NullString) *time.Time {
 }
 
 func taskFromRow(row db.DeviceApplyTask) Task {
-	return Task{
+	task := Task{
 		ID:               row.ID,
 		TargetDeviceID:   row.TargetDeviceID,
 		Status:           Status(row.Status),
@@ -635,6 +652,14 @@ func taskFromRow(row db.DeviceApplyTask) Task {
 		FinishedAt:       parseNullTimestamp(row.FinishedAt),
 		ExpiresAt:        parseTimestamp(row.ExpiresAt),
 	}
+	if row.VerificationJson.Valid && strings.TrimSpace(row.VerificationJson.String) != "" {
+		// 旧行/损坏行不能让详情整页失败：验证快照是附加证据，解析失败按
+		// 未验证处理（结果正文仍可读）。
+		if verification, err := decodeVerification(row.VerificationJson.String); err == nil {
+			task.Verification = verification
+		}
+	}
+	return task
 }
 
 func taskFromListRow(row db.ListDeviceApplyTasksRow) Task {
@@ -660,6 +685,96 @@ func segmentFromRow(row db.DeviceApplySegment) Segment {
 		SHA256:  row.Sha256,
 		RelPath: row.RelPath,
 	}
+}
+
+// verificationRecord 是 verification_json 的线上结构（与 OpenAPI
+// DeviceApplyResult 的验证字段同名）。
+type verificationRecord struct {
+	AuthoritativeState   map[string]int64     `json:"authoritativeState"`
+	ExpectedStateMatches *bool                `json:"expectedStateMatches,omitempty"`
+	ExpectedStateDiff    map[string]StateDiff `json:"expectedStateDiff,omitempty"`
+	HashVerified         *bool                `json:"hashVerified,omitempty"`
+}
+
+// buildVerification reads the authoritative business-state counts from the
+// same database and compares them with the manifest's expectedState (when
+// declared) and the phone's reported segment hashes.
+func (s *Service) buildVerification(ctx context.Context, taskID, manifestJSON string, hashes []LocalHash) ([]byte, error) {
+	stateRow, err := s.q.GetDeviceApplyAuthoritativeState(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("deviceapply: 读取权威业务状态: %w", err)
+	}
+	state := map[string]int64{
+		"assets":          stateRow.Assets,
+		"authors":         stateRow.Authors,
+		"assetAuthorRefs": stateRow.AssetAuthorRefs,
+		"tags":            stateRow.Tags,
+		"assetTagRefs":    stateRow.AssetTagRefs,
+		"viewEvents":      stateRow.ViewEvents,
+	}
+	var manifest struct {
+		ExpectedState map[string]int64 `json:"expectedState"`
+	}
+	if strings.TrimSpace(manifestJSON) != "" {
+		if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
+			return nil, fmt.Errorf("deviceapply: manifest 解析失败: %w", err)
+		}
+	}
+	record := verificationRecord{AuthoritativeState: state}
+	if len(manifest.ExpectedState) > 0 {
+		matches := true
+		diff := map[string]StateDiff{}
+		for key, expected := range manifest.ExpectedState {
+			actual := state[key]
+			if actual != expected {
+				matches = false
+				diff[key] = StateDiff{Expected: expected, Actual: actual}
+			}
+		}
+		record.ExpectedStateMatches = &matches
+		if len(diff) > 0 {
+			record.ExpectedStateDiff = diff
+		}
+	}
+	if len(hashes) > 0 {
+		segmentRows, err := s.q.ListDeviceApplySegments(ctx, taskID)
+		if err != nil {
+			return nil, fmt.Errorf("deviceapply: 读取段清单: %w", err)
+		}
+		registered := make(map[SegmentKind]string, len(segmentRows))
+		for i := range segmentRows {
+			registered[SegmentKind(segmentRows[i].Kind)] = segmentRows[i].Sha256
+		}
+		verified := len(hashes) == len(registered)
+		for _, hash := range hashes {
+			sha, ok := registered[hash.Kind]
+			if !ok || sha != hash.SHA256 {
+				verified = false
+			}
+		}
+		record.HashVerified = &verified
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return nil, fmt.Errorf("deviceapply: 验证快照序列化失败: %w", err)
+	}
+	return encoded, nil
+}
+
+func decodeVerification(raw string) (*Verification, error) {
+	var record verificationRecord
+	if err := json.Unmarshal([]byte(raw), &record); err != nil {
+		return nil, err
+	}
+	if len(record.AuthoritativeState) == 0 {
+		return nil, errors.New("deviceapply: 验证快照缺少权威状态")
+	}
+	return &Verification{
+		AuthoritativeState:   record.AuthoritativeState,
+		ExpectedStateMatches: record.ExpectedStateMatches,
+		ExpectedStateDiff:    record.ExpectedStateDiff,
+		HashVerified:         record.HashVerified,
+	}, nil
 }
 
 type resultRecord struct {

@@ -116,6 +116,20 @@ func TestMaintenanceCreateAndReplayHTTP(t *testing.T) {
 		t.Fatalf("幂等重放 ID 不一致: %s != %s", replay.Id, first.Id)
 	}
 
+	// 同幂等键不同载荷：载荷指纹不同 -> 409 STATE_CONFLICT，不得把旧任务
+	// 当成成功重放返回（任务书 §8.3 冲突保护）。
+	conflictPayload := map[string]interface{}{"query": "different"}
+	conflictBody := body
+	conflictBody.Payload = &conflictPayload
+	conflictRec := maintenanceRequest(t, s, http.MethodPost, "/api/v1/maintenance/jobs", conflictBody)
+	if conflictRec.Code != http.StatusConflict {
+		t.Fatalf("同键不同载荷状态 = %d，期望 409: %s", conflictRec.Code, conflictRec.Body.String())
+	}
+	var conflict gen.Error
+	if err := json.Unmarshal(conflictRec.Body.Bytes(), &conflict); err != nil || conflict.Code != codeStateConflict {
+		t.Fatalf("同键不同载荷错误 = %+v err=%v", conflict, err)
+	}
+
 	badKind := body
 	badKind.Kind = "bogus"
 	rec := maintenanceRequest(t, s, http.MethodPost, "/api/v1/maintenance/jobs", badKind)

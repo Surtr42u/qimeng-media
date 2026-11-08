@@ -104,6 +104,12 @@ val ClearIcon: ImageVector = materialIcon(
     pathData = "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
 )
 
+/** 复制（Material content_copy 官方 path；详情信息弹窗「复制文件名」用，2026-11-07） */
+val CopyIcon: ImageVector = materialIcon(
+    name = "QimengCopy",
+    pathData = "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z",
+)
+
 // ---------- 网格列数图标（旧版 drawable/ic_grid_* 的 pathData 逐字拷贝；2~5 档=M4-2A-B2，1 档=任务Y Y4a 首页顶栏图标化补齐） ----------
 
 /** 1 列（旧版 ic_grid_1：单列双行大方块；首页列数 1~2 档切换用——任务Y Y4a，2026-09-12） */

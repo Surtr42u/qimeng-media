@@ -25,7 +25,7 @@ python -X utf8 tools/audit_library.py --db <数据目录>/qimeng.db --backup <�
 
 ## 作者公开档案受控填充
 
-公开身份研究、平台来源、判定口径、头像核验与跨 AI 证据交接见[作者资料研究指南](AUTHOR_RESEARCH.md)。通用方法随仓库维护，真实作者名单、查询缓存和待复核交接包保留在忽略的本地 audit 目录。
+公开身份研究、平台来源、判定口径、头像核验与跨 AI 证据交接见[作者资料研究指南](AUTHOR_RESEARCH.md)；识图优先序、作品归属证据分级与低 token 抓取约定见[识图与作品归属核实](IMAGE_RESEARCH.md)。通用方法随仓库维护，真实作者名单、查询缓存和待复核交接包保留在忽略的本地 audit 目录。
 
 `import_creator_profiles.py`仅通过正式API填充研究报告中的公开档案，不读取媒体、数据库或凭据文件。输入是忽略目录中的JSON报告；默认离线dry-run，只输出候选/跳过数量，不输出作者名、链接或令牌：
 
@@ -81,6 +81,8 @@ Web CI 在 build/Vitest 后运行锁定 Playwright 的 Chromium 交互回归；�
 
 `release_manifest.py` 校验本机服务端 `-version` 与当前 Git/发布版本身份，生成 schema/协议/SDK 锁及产物哈希清单，默认拒绝 dirty 正式交付；`--development` 仅记录工作区验证。`cold_backup.py create/verify/restore` 复用标准库复制/哈希，停写确认后创建副本并只恢复到不存在的目录。执行顺序、安全边界与命令见 [恢复与升级](../docs/RESTORE.md#ai-升级与回退执行清单)，均不自动部署或操作运行库。自测只使用合成临时目录。
 
+`migrate_backup_layout.py --root <维护根>` 只读核对旧三代维护目录，并仅在显式 `--apply` 时复制生成「当前/上次」两代布局（当前=旧最新，上次=旧「（上次）」；「（上上次）」只列入可清理清单）。默认 `--check` 输出 JSON 核对可读性与 `.sha256`；**绝不删除或移动**旧文件，目标已存在且内容不同时拒绝覆盖，退出码 0=通过（可含警告）/1=阻塞问题或复制失败/2=输入参数错误。迁移步骤、回退路径与旧 flat3 兼容见[作者镜像两代分代目录](../docs/api/authors.md#作者总表镜像的两代分代目录2026-11-07)，测试只用临时合成目录。
+
 `python tools/check_migrations.py` 对 HEAD 检查暂存/工作区的历史 SQL；`--base <sha>` 同时覆盖基线之后提交的改动。PR CI 用 base SHA，master push 用 before SHA，新增 migration 允许，既有 SQL 修改/删除/改名失败；缺失基线报错而非静默跳过。测试仅建立临时合成 Git 仓库。
 
 Go `go test ./internal/architecture` 和 Web `npm test` 的 architecture 测试负责直接依赖边界，口径见 ARCHITECTURE §5.1。执行模型无可靠完整名称/变体时，交付记录如实标记未知，不沿用旧署名。当前维护状态见 [HANDOVER](../docs/HANDOVER.md)。
@@ -110,8 +112,12 @@ Web 云端浏览器检查将合成作者管理场景的窄屏/桌面截图与失
 
 [媒体复核与双端整理](MEDIA_RESEARCH_IMPORT.md)说明新目录逐文件清单、Google/Lens留证、命名延续、正式入库、标签同步及作者总表当天增量交付；身份查询继续以[作者研究指南](AUTHOR_RESEARCH.md)为入口。
 
-外部AI维护的工具契约、规则发现、本地维护权限、作者清理与无前台跨端维护、头像/链接/简介写入教程及后台任务入口见[任务书](../docs/AI_MAINTENANCE_TASKBOOK.md)。当前研究/导入工具继续按各自已有能力使用，任务书中的新工具和常驻执行器待分阶段交付。
+外部AI接入平台与维护系统的现行执行清单、工具契约、本地维护权限、作者清理与无前台跨端维护见[统一任务书 V2](../docs/AI_PLATFORM_TASKBOOK.md)与[ADR-0056](../docs/adr/0056-独立AI接入平台架构.md)；旧[外部 AI 维护任务书](../docs/AI_MAINTENANCE_TASKBOOK.md)只作历史需求与设计来源。
 
-AI 维护规则包与只读查询 CLI（P1，写入能力 planned）见 [ai_maintenance/README.md](ai_maintenance/README.md)。
+AI 工具平台（显式工具注册表、规则包、统一 CLI、计划与受控写入、流式备份导出、设备结果包、外部执行器受控领取、research_kit 适配、stdio MCP 适配器）见 [ai_maintenance/README.md](ai_maintenance/README.md)。旧脚本 [import_creator_profiles.py](import_creator_profiles.py) 已转发到统一实现，仅保留兼容入口。研究/备份产物默认写 `ai_maintenance/.work/`（已忽略），不进入源码树。
+
+组图命名（作品编号按作品递增、组内页码独立）的唯一实现是 [ai_maintenance/media_naming.py](ai_maintenance/media_naming.py) 纯规划/校验引擎（计划指纹、并发锁、回读报告；测试 [test_media_naming.py](test_media_naming.py)）；工具层 media.organize.prepare/apply 只做适配、加锁执行与回读，不复制第二套命名算法。
 
 研究用途的 Google Lens/Google 文本搜索 sidecar（loopback + token，仅 PC/NAS，默认不启用，嵌入式/移动端禁用）见 [research_sidecar/README.md](research_sidecar/README.md)。
+
+低 token 识图/作者核实批处理工具包（Lens/Yandex/SauceNAO/FxTwitter/Kemono/ffprobe/dHash/头像/编排）见 [research_kit/README.md](research_kit/README.md)；结果、帧与缓存只放忽略目录，不写媒体库或数据库。

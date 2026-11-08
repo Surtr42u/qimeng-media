@@ -70,6 +70,13 @@ const (
 	codeResearchSidecarError       = "RESEARCH_SIDECAR_ERROR"
 	// 持久维护任务账本（ADR-0054）：非法状态迁移/终态不可变更。
 	codeStateConflict = "STATE_CONFLICT"
+	// 独立 AI 客户端凭据（ADR-0057 P1）：身份有效但缺少目标动作所需 scope，
+	// 或动作尚未向 AI 开放（需管理员会话）。2026-11-08 起已纳入 OpenAPI
+	// （Forbidden 响应）；语义细节见 SECURITY「独立 AI 客户端凭据」节。
+	codeForbiddenScope = "FORBIDDEN_SCOPE"
+	// 外部执行器租约失效（过期/暂停/取消/终态/被重领）：执行器必须停止，
+	// 不得继续写步骤或终态（ADR-0058 fencing 语义）。
+	codeLeaseLost = "LEASE_LOST"
 )
 
 // contentTypeJSON 全部 JSON 响应的 Content-Type 唯一取值（charset 显式

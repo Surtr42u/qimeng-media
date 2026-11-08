@@ -53,8 +53,9 @@
 -- The source predicate is likewise copied verbatim from browse.sql
 -- (source_is_other = the user-facing OTHER bucket: NULL source AND not
 -- cos-linked -- cos assets never enter the source system, enrich.go).
--- The q predicate is likewise copied verbatim from browse.sql (FTS
--- instr/lower substring AND-combination over a JSON keyword array).
+-- The q predicate is likewise copied verbatim from browse.sql: the shared
+-- qimeng_search_token(all_text, token)=1 scalar function (digit-run and
+-- group-page semantics documented in browse.sql / internal/store/searchtoken).
 
 -- name: FacetPartitionCounts :one
 -- Partition pill is reported in full (it excludes itself), so the two
@@ -92,7 +93,7 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+              AND qimeng_search_token(f.all_text, qk.value) = 1)))
     -- subset constraints: favorite=1 -> only favorited assets; history=1
     -- -> only assets with a kind='open' view event (see file header).
     AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
@@ -142,7 +143,7 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+              AND qimeng_search_token(f.all_text, qk.value) = 1)))
     -- subset constraints (see file header): same two predicates as every
     -- other query in this file.
     AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
@@ -204,7 +205,7 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+              AND qimeng_search_token(f.all_text, qk.value) = 1)))
     -- subset constraints (see file header).
     AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
         SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
@@ -250,7 +251,7 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+              AND qimeng_search_token(f.all_text, qk.value) = 1)))
     -- subset constraints (see file header).
     AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
         SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
@@ -298,7 +299,7 @@ WHERE a.cos_work IS NOT NULL
       WHERE NOT EXISTS (
           SELECT 1 FROM assets_fts f
           WHERE f.rowid = a.rowid
-            AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+            AND qimeng_search_token(f.all_text, qk.value) = 1)))
   -- subset constraints (see file header).
   AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
       SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
@@ -348,7 +349,7 @@ WHERE
       WHERE NOT EXISTS (
           SELECT 1 FROM assets_fts f
           WHERE f.rowid = a.rowid
-            AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+            AND qimeng_search_token(f.all_text, qk.value) = 1)))
   -- subset constraints (see file header).
   AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
       SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))

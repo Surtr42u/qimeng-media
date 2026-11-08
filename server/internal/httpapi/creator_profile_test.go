@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"qimeng-media/server/internal/creatorprofile"
@@ -97,5 +98,70 @@ func TestCreatorProfileRequiredFieldsDoNotEraseStoredData(t *testing.T) {
 	if cleared.Nickname != "" || cleared.Biography != "" || cleared.AvatarURL != "" || cleared.HomepageURL != "" ||
 		len(cleared.EvidenceURLs) != 0 || cleared.Status != "empty" || cleared.AutoRefresh || cleared.TrackUpdates || cleared.FeedURL != "" {
 		t.Fatalf("explicit clear did not apply: %+v", cleared)
+	}
+}
+
+func TestCreatorProfileRemarkRoundTripAndLimit(t *testing.T) {
+	env := newTestEnv(t)
+	code, author := env.createAuthor(t, "profile_remark")
+	if code != http.StatusOK || author.Id == nil {
+		t.Fatalf("create author: status %d", code)
+	}
+	path := "/api/v1/authors/" + *author.Id + "/profile"
+	empty := readCreatorProfile(t, env, path)
+	base := map[string]any{
+		"nickname": "", "biography": "", "avatarUrl": "", "homepageUrl": "",
+		"evidenceUrls": []string{}, "status": "empty", "autoRefresh": false,
+		"feedUrl": "", "trackUpdates": false,
+	}
+	put := func(t *testing.T, revision int64, remark any, expected int) {
+		t.Helper()
+		payload := make(map[string]any, len(base)+2)
+		for key, value := range base {
+			payload[key] = value
+		}
+		payload["revision"] = revision
+		if remark != nil {
+			payload["remark"] = remark
+		}
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := env.do(t, http.MethodPut, path, string(encoded))
+		defer closeBody(response)
+		if response.StatusCode != expected {
+			t.Fatalf("put profile: status %d, want %d", response.StatusCode, expected)
+		}
+	}
+	const special = "作者已退圈，X/Patreon 官方账号已删除，身份证据仅存 Wayback 存档"
+	put(t, empty.Revision, special, http.StatusOK)
+	saved := readCreatorProfile(t, env, path)
+	if saved.Remark != special {
+		t.Fatalf("roundtrip remark: got %q, want %q", saved.Remark, special)
+	}
+	// 省略 remark 的旧客户端保存其他字段时不能清空备注。
+	put(t, saved.Revision, nil, http.StatusOK)
+	kept := readCreatorProfile(t, env, path)
+	if kept.Remark != special {
+		t.Fatalf("omitted remark cleared: got %q, want %q", kept.Remark, special)
+	}
+	// 显式空字符串才是用户要求清空。
+	put(t, kept.Revision, "", http.StatusOK)
+	cleared := readCreatorProfile(t, env, path)
+	if cleared.Remark != "" {
+		t.Fatalf("explicit empty remark not cleared: got %q", cleared.Remark)
+	}
+	// 500 个 rune 合法，501 个拒绝且不写入。
+	maxRunes := strings.Repeat("备", 500)
+	put(t, cleared.Revision, maxRunes, http.StatusOK)
+	full := readCreatorProfile(t, env, path)
+	if full.Remark != maxRunes {
+		t.Fatalf("max-length remark roundtrip failed: got %d runes", len([]rune(full.Remark)))
+	}
+	put(t, full.Revision, strings.Repeat("备", 501), http.StatusBadRequest)
+	unchanged := readCreatorProfile(t, env, path)
+	if !reflect.DeepEqual(unchanged, full) {
+		t.Fatalf("overlong remark modified profile: got %+v, want %+v", unchanged, full)
 	}
 }

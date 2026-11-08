@@ -144,6 +144,59 @@ const (
 	DefaultLocalSyncStableAge = 60 * time.Second
 )
 
+// 维护任务 worker 默认值（ADR-0054「2026-11-07 实现补充」）。与
+// maintenance 包同名常量同值互指（config 不 import maintenance，backup 三键
+// 同款惯例，改须两处同步）；config.Load 末尾按这些值兜底。
+const (
+	// DefaultMaintenanceWorkerEnabled 默认启用 worker：它只消费已注册
+	// handler 的 kind（当前只有 backup_export，本地快照、不出网），未注册
+	// kind（asset_research/author_cleanup/custom）保持 queued 供外部执行器。
+	DefaultMaintenanceWorkerEnabled = true
+	// DefaultMaintenanceWorkerPollInterval 是空转轮询间隔（默认 5s）：一轮
+	// 只是两条索引查询，过密只会空跑 SQLite 事务。
+	DefaultMaintenanceWorkerPollInterval = 5 * time.Second
+	// DefaultMaintenanceWorkerLeaseTTL 是租约有效期（默认 2 分钟）：须远大于
+	// 单步执行时长与心跳间隔；进程崩溃后最多等一个 TTL 即被重新领取。
+	DefaultMaintenanceWorkerLeaseTTL = 2 * time.Minute
+	// DefaultMaintenanceWorkerConcurrency 是并发任务数上限（默认 1）：
+	// 账本写入走 SQLite 单写者、备份类步骤是重 IO，默认串行最稳。
+	DefaultMaintenanceWorkerConcurrency = 1
+	// MaxMaintenanceWorkerConcurrency 是并发硬上限：SQLite 单写者 + 重 IO
+	// 步骤，超过这个量级不会提升吞吐，只会放大锁竞争与磁盘压力。
+	MaxMaintenanceWorkerConcurrency = 8
+)
+
+// MaintenanceWorkerConfig 是持久维护任务 worker 配置（ADR-0054）。
+type MaintenanceWorkerConfig struct {
+	// Enabled 是 worker 总开关；false = 不启动领取循环（账本 HTTP 端点不受
+	// 影响，任务保持 queued）。默认 true。
+	Enabled bool `yaml:"enabled"`
+	// PollInterval 是空转轮询间隔；<=0 = 用 DefaultMaintenanceWorkerPollInterval。
+	PollInterval time.Duration `yaml:"poll_interval"`
+	// LeaseTTL 是租约有效期；<=0 = 用 DefaultMaintenanceWorkerLeaseTTL。
+	LeaseTTL time.Duration `yaml:"lease_ttl"`
+	// Concurrency 是同时执行的任务数；<=0 = 用 DefaultMaintenanceWorkerConcurrency，
+	// 超过 MaxMaintenanceWorkerConcurrency 按上限收敛（有界并发）。
+	Concurrency int `yaml:"concurrency"`
+}
+
+// AI 客户端接入默认值（ADR-0057 P2：按客户端限流）。0 = 不限制是显式
+// 可选语义（本地单机调试/受信批处理），生产默认给一个宽松但有界的上限。
+const (
+	// DefaultAIRateLimitPerMinute 是单 AI 客户端每分钟请求上限（默认 600）。
+	DefaultAIRateLimitPerMinute = 600
+	// DefaultAIRateLimitBurst 是单客户端突发容量（默认 120）。
+	DefaultAIRateLimitBurst = 120
+)
+
+// AIConfig 是独立 AI 客户端接入限制。
+type AIConfig struct {
+	// RateLimitPerMinute 是单客户端每分钟请求上限；0 = 不限制。
+	RateLimitPerMinute int `yaml:"rate_limit_per_minute"`
+	// RateLimitBurst 是令牌桶突发容量；<=0 按每分钟上限的 1/5（至少 10）推导。
+	RateLimitBurst int `yaml:"rate_limit_burst"`
+}
+
 // LocalSyncConfig 本机文件夹自动同步通道配置（ADR-0030）：同步根直接子
 // 文件夹名=库名，媒体走直传同款校验与入库后源文件移入库根；同步根直接下
 // 的 *.txt 走作者片段导入（keep 语义）后归档进 <同步根>/.synced/。
@@ -242,6 +295,10 @@ type Config struct {
 	// Research 是媒体研究流水线（服务端 provider 网关 + 本机 Lens sidecar）
 	// 配置，默认关闭（ADR-0053；嵌入式/Android 形态同样默认关闭）。
 	Research ResearchConfig `yaml:"research"`
+	// MaintenanceWorker 是持久维护任务 worker（ADR-0054 实现补充）配置。
+	MaintenanceWorker MaintenanceWorkerConfig `yaml:"maintenance_worker"`
+	// AI 是独立 AI 客户端接入限制（限流；权限仍由 scope 强制）。
+	AI AIConfig `yaml:"ai"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -277,6 +334,16 @@ func Load(path string) (*Config, error) {
 			LensPerHour:       DefaultResearchLensPerHour,
 			LensPerDay:        DefaultResearchLensPerDay,
 			ProviderPerMinute: DefaultResearchProviderPerMinute,
+		},
+		MaintenanceWorker: MaintenanceWorkerConfig{
+			Enabled:      DefaultMaintenanceWorkerEnabled,
+			PollInterval: DefaultMaintenanceWorkerPollInterval,
+			LeaseTTL:     DefaultMaintenanceWorkerLeaseTTL,
+			Concurrency:  DefaultMaintenanceWorkerConcurrency,
+		},
+		AI: AIConfig{
+			RateLimitPerMinute: DefaultAIRateLimitPerMinute,
+			RateLimitBurst:     DefaultAIRateLimitBurst,
 		},
 	}
 
@@ -328,6 +395,21 @@ func Load(path string) (*Config, error) {
 	if cfg.Scanner.PollInterval <= 0 {
 		cfg.Scanner.PollInterval = DefaultScannerPollInterval
 	}
+	// 维护任务 worker 三键兜底：ticker 周期为 0 会 panic，租约 TTL <=0 会被
+	// Claim 拒绝，并发 <=0 会让 worker 永不领取；并发另设硬上限保证有界。
+	// Enabled 不兜底：false 是合法开关形态（账本端点仍可用）。
+	if cfg.MaintenanceWorker.PollInterval <= 0 {
+		cfg.MaintenanceWorker.PollInterval = DefaultMaintenanceWorkerPollInterval
+	}
+	if cfg.MaintenanceWorker.LeaseTTL <= 0 {
+		cfg.MaintenanceWorker.LeaseTTL = DefaultMaintenanceWorkerLeaseTTL
+	}
+	if cfg.MaintenanceWorker.Concurrency <= 0 {
+		cfg.MaintenanceWorker.Concurrency = DefaultMaintenanceWorkerConcurrency
+	}
+	if cfg.MaintenanceWorker.Concurrency > MaxMaintenanceWorkerConcurrency {
+		cfg.MaintenanceWorker.Concurrency = MaxMaintenanceWorkerConcurrency
+	}
 	// 研究段：预算兜底后强制校验（端点只允许回环、配置端点必须带凭据）。
 	// 与 backup/trash 同款「加载末尾统一兜底」位置；校验失败拒绝启动，避免
 	// 运行时才发现 sidecar 地址写错或凭据缺失。
@@ -352,6 +434,8 @@ func applyEnv(cfg *Config) error {
 		applyBackupEnv,
 		applyTrashEnv,
 		applyLocalSyncEnv,
+		applyMaintenanceWorkerEnv,
+		applyAIEnv,
 		applyScannerEnv,
 		applyResearchEnv,
 	} {
@@ -570,6 +654,45 @@ func applyLocalSyncEnv(cfg *Config) error {
 	return nil
 }
 
+// applyMaintenanceWorkerEnv 覆盖维护任务 worker 四键：空值 = 未设置、保留
+// yaml/默认（Enabled 的 yaml false 是合法语义，env 同款只在非空时覆盖）。
+// 并发拒绝 <1 或 >硬上限：有界并发是可靠性要求，不让配置通道绕过。
+func applyMaintenanceWorkerEnv(cfg *Config) error {
+	if v := os.Getenv("QIMENG_MAINTENANCE_WORKER_ENABLED"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_MAINTENANCE_WORKER_ENABLED=%q 不是合法布尔值（1/true/0/false）: %w", v, err)
+		}
+		cfg.MaintenanceWorker.Enabled = b
+	}
+	if v := os.Getenv("QIMENG_MAINTENANCE_WORKER_POLL_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_MAINTENANCE_WORKER_POLL_INTERVAL=%q 不是合法时长（如 5s、30s）: %w", v, err)
+		}
+		cfg.MaintenanceWorker.PollInterval = d
+	}
+	if v := os.Getenv("QIMENG_MAINTENANCE_WORKER_LEASE_TTL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_MAINTENANCE_WORKER_LEASE_TTL=%q 不是合法时长（如 2m、90s）: %w", v, err)
+		}
+		cfg.MaintenanceWorker.LeaseTTL = d
+	}
+	if v := os.Getenv("QIMENG_MAINTENANCE_WORKER_CONCURRENCY"); v != "" {
+		n, err := strconv.Atoi(v)
+		// 分支拆开：n<1 时 err==nil，%w 包 nil 会渲染成 %!w(<nil>) 畸形消息。
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_MAINTENANCE_WORKER_CONCURRENCY=%q 不是合法整数: %w", v, err)
+		}
+		if n < 1 || n > MaxMaintenanceWorkerConcurrency {
+			return fmt.Errorf("环境变量 QIMENG_MAINTENANCE_WORKER_CONCURRENCY=%q 须为 1–%d 的正整数", v, MaxMaintenanceWorkerConcurrency)
+		}
+		cfg.MaintenanceWorker.Concurrency = n
+	}
+	return nil
+}
+
 // splitList 按给定单字节分隔符集合切列表，空段与首尾空白跳过/裁剪
 // （避免把 "" 或 " b" 当成有效条目）。splitPathList 的通用底座；
 // Host 白名单等非路径列表复用。
@@ -637,4 +760,30 @@ func (c *Config) SlogLevel() slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// applyAIEnv 覆盖 AI 客户端限流两键。RateLimitPerMinute=0 是显式关闭限流
+// 的合法语义（仅建议本地单机），负值拒绝；burst 至少 1。
+func applyAIEnv(cfg *Config) error {
+	if v := os.Getenv("QIMENG_AI_RATE_LIMIT_PER_MINUTE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_AI_RATE_LIMIT_PER_MINUTE=%q 不是合法整数: %w", v, err)
+		}
+		if n < 0 {
+			return fmt.Errorf("环境变量 QIMENG_AI_RATE_LIMIT_PER_MINUTE=%q 不能为负（0=关闭限流）", v)
+		}
+		cfg.AI.RateLimitPerMinute = n
+	}
+	if v := os.Getenv("QIMENG_AI_RATE_LIMIT_BURST"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_AI_RATE_LIMIT_BURST=%q 不是合法整数: %w", v, err)
+		}
+		if n < 1 {
+			return fmt.Errorf("环境变量 QIMENG_AI_RATE_LIMIT_BURST=%q 须为正整数", v)
+		}
+		cfg.AI.RateLimitBurst = n
+	}
+	return nil
 }

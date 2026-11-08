@@ -14,6 +14,8 @@ data class LegacyImportSummary(
     val assetsMatched: Int? = null,
     /** 导入的作者数 */
     val authorsImported: Int? = null,
+    /** 作者-资产关联写入数（设备结果包回读用；旧服务端/旧备份可能为空） */
+    val authorRefsImported: Int? = null,
     /** 导入的标签数 */
     val tagsImported: Int? = null,
     /** ViewEvent 回放条数；同批次重复导入为 0 */

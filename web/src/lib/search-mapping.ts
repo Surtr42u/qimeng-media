@@ -1,4 +1,4 @@
-import type { CountRange, SizeRange } from '@/api/generated'
+import type { AssetSummary, CountRange, SizeRange } from '@/api/generated'
 
 /**
  * 搜索页「原型文案档位 → 协议参数」映射（2026-09-07 自 SearchPage 抽离——
@@ -31,6 +31,19 @@ function localDate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+/**
+ * 搜索结果卡标题：完整文件名优先，COS 作品名只作回退。
+ *
+ * 搜索（2026-11-07 语义修订）按文件名/目录/作者/标签等多字段匹配，纯数字词与
+ * 组图页码都在文件名里；卡片必须让用户对认「为什么命中」——COS 资产此前
+ * 标题取 cosWork，作品编号/组图页码（如「朱诺 11 (2).png」）不可见。这里只做
+ * 展示取值，不重写任何匹配规则。文件名/作品名都缺失的存量返回空串，由调用方
+ * 决定空标题呈现。
+ */
+export function searchResultTitle(asset: Pick<AssetSummary, 'fileName' | 'cosWork'>): string {
+  return asset.fileName?.trim() || asset.cosWork?.trim() || ''
 }
 
 /** 分区文案 → useAssetsTotal 的分区 key（列表参数的三态组装在 listParams 唯一组装点内联） */

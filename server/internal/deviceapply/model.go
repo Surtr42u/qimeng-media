@@ -127,6 +127,9 @@ type Manifest struct {
 	RulesFingerprint string            `json:"rulesFingerprint"`
 	TTLSeconds       int               `json:"ttlSeconds,omitempty"`
 	Segments         []ManifestSegment `json:"segments"`
+	// ExpectedState 是应用后的权威业务状态绝对计数（可选）。键限定为
+	// AuthoritativeStateKeys；服务端在回传结果时与库内真实计数比较。
+	ExpectedState map[string]int64 `json:"expectedState,omitempty"`
 }
 
 // ManifestSegment declares one segment's kind, byte count, SHA-256 and
@@ -178,6 +181,44 @@ type Task struct {
 	SegmentCount     int
 	Segments         []Segment
 	Result           *Result
+	// Verification 是服务端在回传时计算的权威状态快照与摘要核验；旧任务
+	// 或未回传结果时为 nil。
+	Verification *Verification
+}
+
+// AuthoritativeStateKeys 是权威业务状态计数的全部合法键（OpenAPI
+// expectedState / authoritativeState 共用）。
+var AuthoritativeStateKeys = []string{
+	"assets", "authors", "assetAuthorRefs", "tags", "assetTagRefs", "viewEvents",
+}
+
+// ValidAuthoritativeStateKey reports whether key is a supported count key.
+func ValidAuthoritativeStateKey(key string) bool {
+	switch key {
+	case "assets", "authors", "assetAuthorRefs", "tags", "assetTagRefs", "viewEvents":
+		return true
+	default:
+		return false
+	}
+}
+
+// Verification 是结果回传时由服务端计算的核验快照。
+type Verification struct {
+	// AuthoritativeState 是回传时刻库内真实计数（绝对口径）。
+	AuthoritativeState map[string]int64
+	// ExpectedStateMatches 仅当 manifest 声明 expectedState 时非 nil。
+	ExpectedStateMatches *bool
+	// ExpectedStateDiff 仅在不一致时非空。
+	ExpectedStateDiff map[string]StateDiff
+	// HashVerified 仅当手机回传了 deviceLocalHashes 时非 nil；要求登记段
+	// 全部回传且逐段摘要一致。
+	HashVerified *bool
+}
+
+// StateDiff 是一个计数键的期望/实际差异。
+type StateDiff struct {
+	Expected int64 `json:"expected"`
+	Actual   int64 `json:"actual"`
 }
 
 // ListOptions controls the device-addressed newest-first keyset list.

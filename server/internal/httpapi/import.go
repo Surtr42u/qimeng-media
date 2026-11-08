@@ -4,16 +4,27 @@ import (
 	"errors"
 	"net/http"
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/portablebackup"
 )
 
 // PostApiV1ImportQimengBackup 保留64MiB独立请求上限，业务由 portablebackup 编排。
-func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Request, params gen.PostApiV1ImportQimengBackupParams) {
+	conflict := portablebackup.AuthorProfileConflictKeep
+	if params.AuthorProfileConflict != nil {
+		conflict = string(*params.AuthorProfileConflict)
+	}
+	switch conflict {
+	case portablebackup.AuthorProfileConflictKeep, portablebackup.AuthorProfileConflictReplace:
+	default:
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "authorProfileConflict 只允许 keep 或 replace")
+		return
+	}
 	var req portablebackup.BackupImport
 	if !decodeJSONWithLimit(w, r, &req, portablebackup.ImportMaxBody) {
 		return
 	}
-	result, err := s.portable.Import(r.Context(), &req)
+	result, err := s.portable.Import(r.Context(), &req, portablebackup.ImportOptions{AuthorProfileConflict: conflict})
 	if err != nil {
 		if errors.Is(err, portablebackup.ErrInvalidBackup) {
 			writeErr(w, http.StatusBadRequest, codeBadRequest, err.Error())

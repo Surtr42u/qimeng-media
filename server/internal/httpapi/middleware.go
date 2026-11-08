@@ -117,7 +117,9 @@ func (t *topRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		// 其余全部要求 Bearer token（含 SSE：浏览器 EventSource 无法带
 		// header，验收页用 fetch 流式读 SSE 而不是开 query 参数口子）。
-		auth.RequireToken(t.s.authState.verify)(t.api).ServeHTTP(w, r)
+		// 默认链先验管理员会话（行为不变），未命中再验独立 AI 客户端凭据
+		// 并做 scope 强制/写审计（ADR-0057 P1，见 aiclient.go）。
+		t.s.bearerChain(t.api).ServeHTTP(w, r)
 	}
 }
 

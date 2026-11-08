@@ -58,6 +58,52 @@
 - **签名直链**：`/media/orig/...?exp=...&sig=HMAC(路径+过期时间, 服务端密钥)`——浏览器/播放器无需带 header 即可加载，但链接有时效。**exp 窗口对齐（ADR-0027，2026-10-01 起）**：exp = 下一窗口上界 + TTL（窗长=TTL=`token_ttl` 缺省 6h，对齐 Unix 纪元整点），同一窗口内所有响应签出**逐字节相同**的 URL（浏览器 HTTP 缓存/ETag 得以命中，URL 格式与参数未变、三端零适配）；有效期恒 ∈ (6h, 12h]，**吊销粒度=窗口级**——泄露直链最长存活约 2×TTL（粗于旧「请求级 6h」，风险接受换缓存命中），总闸不变 = 删除 media-secret 文件换密钥立即吊销全部存量直链。
 - token 泄露应急（多会话模型口径）：受控设备直接 `POST /auth/logout` 吊销对应会话；**注意「自己再登录一次」不再吊销旧 token**（旧模型的挤兑行为已废除）。全部会话吊销 = 停服清空 `auth_sessions` 表（或删除数据目录重建）；直链吊销仍走删除 `media-secret` 文件。「管理端一键重置全部 token」为规划项。
 
+## 独立 AI 客户端凭据、scope 与审计（ADR-0057 P1/P2，2026-11-08）
+
+外部 AI 执行器不再只能持有全局管理员 Bearer。新增独立 AI 客户端身份（migration 0025 的
+`ai_clients` 表），由服务端强制 scope 并把写操作记入只增审计表 `ai_audit`。管理员会话行为不变。
+2026-11-08 P2 增补：HTTP 凭据管理/审计查询端点、写面 scope 扩展、按客户端限流与外部执行器
+受控领取通道（ADR-0058）。
+
+- **凭据与生命周期**：`ai_clients` 存 id/label/`token_hash`（SHA-256，复用 `auth.TokenHash`）/scope 集合/`device_ids`/created_at/expires_at/revoked_at/last_used_at。明文 token 只在创建/轮换响应或 `qimeng ai-client create|rotate` 的 stdout 输出一次，绝不写日志、文件或审计；库内任何查询都只返回哈希。过期、已撤销、scope 非法的客户端一律拒绝（未知 scope fail-closed）。
+- **管理入口**：`GET/POST /api/v1/ai-clients`、`DELETE /api/v1/ai-clients/{clientId}`、`POST /api/v1/ai-clients/{clientId}/rotate` 与 `GET /api/v1/ai-audit` 只接受**管理员会话**；AI 客户端 Bearer 在这些路径上一律 403 `FORBIDDEN_SCOPE`（即使持有 `admin` scope，避免 AI 给自己发凭据/读审计）。本地 CLI `qimeng ai-client create|list|revoke|rotate` 继续可用（直接打开同一 SQLite）。
+- **鉴权顺序**：仍然只有一条 `Authorization: Bearer` 通道。服务端先按管理员会话（auth_sessions）校验，未命中再按 AI 客户端凭据校验；两者身份分离、不能互相升级。失效 token 统一 401 `UNAUTHORIZED`（不暴露"这是 AI token 但已撤销"之类的细分）。
+- **scope 强制（服务端，不依赖工具层声明）**：AI 客户端命中后按 method+path 映射所需 scope；未映射的写请求一律 403 `FORBIDDEN_SCOPE`（默认拒绝，新端点不会被 AI 自动继承）。读请求兜底要求 `read`，维护/备份/研究/设备等域使用各自 scope。管理员会话不受 scope 限制。scope 与映射（唯一权威在 `server/internal/httpapi/aiclient.go`）：
+
+| scope | 允许动作 |
+|---|---|
+| `read` | GET/HEAD 业务只读查询（库/资产/作者/标签/统计/回收站列表等）；不含 `/metrics`、`/api/v1/client-logs`、`/api/v1/config`、`/api/v1/system/status` 等管理/诊断面 |
+| `research` | 研究网关（`/api/v1/research/*`；服务端仍默认关闭） |
+| `author.write` | 作者新建/改名/档案/来源区/导入镜像等可回读写入（不含删除/合并） |
+| `author.destructive` | `POST /authors/merge` 与 `DELETE /authors/{id}` 等不可逆动作，需单独授予 |
+| `asset.author.write` | `PUT /api/v1/assets/{id}/authors` 资产作者关联替换 |
+| `asset.write` | 资产元数据编辑、标签关联、点赞/收藏/进度、时间轴标签、浏览事件；不含删除 |
+| `asset.upload` | 上传通道（`POST /assets/upload`、`/uploads*` 会话/分片/完成/取消） |
+| `asset.delete` | 删除资产（先进回收站）与回收站永久删除/清空（不可逆，需单独授予） |
+| `tag.write` | 标签定义创建/删除 |
+| `source.write` | 来源自定义词表与分组维护 |
+| `library.write` | 库注册/扫描/启停/移除 |
+| `media.organize` | `POST /api/v1/assets/{id}/move` 移动/命名整理、`POST /dirs` 建目录（不删除原件） |
+| `trash.restore` | `POST /api/v1/trash/{id}/restore` 从回收站恢复（不删除/不清空） |
+| `backup.export` | 快照列表/创建/删除/导出（`/api/v1/backups*`、`GET /api/v1/export/qimeng-backup`） |
+| `backup.restore` | `POST /api/v1/import/qimeng-backup` 恢复/导入（高风险，默认不授予 AI） |
+| `maintenance.read` / `maintenance.write` | 维护任务账本读 / 创建/暂停/恢复/取消/触发本机同步 |
+| `maintenance.execute` | 外部执行器受控通道：领取/续租/步骤/工件/终态（受租约 fencing 约束，见下） |
+| `device.apply` | 设备结果包登记/列表/详情/领取/段下载/回传/取消（受 `device_ids` 二次约束） |
+| `admin` | 管理面保留 scope；不开放任何业务路由，AI 即使持有也不能管理凭据/读审计 |
+
+- **按客户端限流**：AI 客户端请求经过进程内令牌桶（默认 600 次/分钟、突发 120；`QIMENG_AI_RATE_LIMIT_PER_MINUTE` / `QIMENG_AI_RATE_LIMIT_BURST`，0 = 关闭）。超限返回 429 `RATE_LIMITED` + `Retry-After`（整数秒）；被拒绝的探测请求同样消耗配额。限流是单实例内存实现；多实例共享限流未实现，不能把它当成跨实例配额。
+- **外部执行器租约（ADR-0058）**：`/api/v1/maintenance/executor/*` 的领取由服务端生成每次唯一的 fencing `leaseToken`（客户端不得自选）；续租/写步骤/工件/终态都必须携带该 token。暂停、取消、终态、租约过期或任务被重新领取后旧 token 一律 409 `LEASE_LOST`，旧执行器不能再续租或写任何证据。租约 30–1800 秒（默认 120）；`completedSteps` 返回账本全量已完成/跳过步骤名，执行器按名跳过副作用（详情端点的 50 条窗口不用于恢复判断）。
+- **设备级隔离（Android 后台执行适配）**：`ai_clients.device_ids` 是 JSON 设备标签数组；`device.apply` 客户端只能：
+  - 列表查询自己绑定的 `targetDevice`；
+  - 创建 manifest 时 `targetDeviceId` 必须在绑定列表内（handler 预检，越权请求不落库）；
+  - 详情/领取/段下载/回传/取消先读任务再校验 `targetDeviceId`，越权请求不改变任务状态。
+  未绑定任何设备的客户端不能使用设备端点；管理员会话不受设备级限制。设备标签仍是不透明标签（真实设备配对属于 G6，后续阶段）。Android 本机模式的设备令牌由 App 用**本机管理员会话**调用 `POST /api/v1/ai-clients` 生成（label `android-local-<device>`、scope `device.apply`、`deviceIds` 绑定），明文只落 App DataStore，不回显、不写日志；不得把会话 token 当设备 token 使用。
+- **审计**：AI 客户端的所有写请求（含被 403 拒绝的）追加一行 `ai_audit`：client_id/method/path/action/status_code/request_id/created_at；不记录请求体/响应体。action 默认是所需 scope，设备域补充操作与目标（如 `device.apply:claim:phone-main`、`device.apply:result:applied`），便于追踪哪台手机领取/回传了什么。request_id 优先取 `X-Request-Id`（有界可打印 ASCII），否则服务端随机生成。审计写失败只记错误日志、不阻断业务；管理员会话不写该表。`GET /api/v1/ai-audit` 支持 clientId/action 前缀/keyset 分页，仅管理员会话可读。
+- **缓存生效窗口**：服务端内存缓存客户端最多 `DefaultCacheTTL = 5s`；本地 CLI 在另一进程改库后，撤销/轮换/新建最多约 5 秒生效。`last_used_at` 按分钟节流 best-effort 更新。鉴权缓存刷新失败按 401 处理（fail-closed），不让陈旧缓存继续放行。
+- **设备结果包权威回读**：manifest 可选 `expectedState`（绝对计数，键限定 assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents）；回传时服务端读取库内真实计数、与期望比较，并核对手机回传的段摘要。验证快照写入独立的可空列 `verification_json`（migration 0026），不参与 `result_json` 的幂等重放比较；旧任务/旧客户端不受影响。
+- **已知边界/未实现**：无 Web 管理/审计 UI（HTTP 端点与 CLI 已有）；无多实例共享限流；高风险动作仍靠独立 scope，未加动作级确认凭据（G3）；设备身份仍是标签非认证（G6）；管理员 Bearer 仍是全权凭据，AI 工具层应使用受限客户端 token；`ai_audit` 只增、无自动裁剪/归档（容量随写请求增长，当前单机规模接受，后续可加保留策略）；真实设备/模拟器后台执行与 NAS 部署仍未验收。
+
 ## 开发模式（红线 5 的受限例外）
 
 - **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。
@@ -203,6 +249,7 @@ SQLite 默认 WAL/FULL：通过连接 DSN 对每条连接设置同步，优先�
 4. 超大 body、超限分页 → 413/400
 5. 白名单外扩展名、伪造扩展名（.jpg 实为 .exe）→ 400
 6. 删除资产 → 文件出现在回收站而非消失
+7. AI 客户端：缺少 scope / 未映射写请求 → 403 `FORBIDDEN_SCOPE`；过期、撤销、轮换后的旧 token → 401；AI 写请求（含被拒绝）落 `ai_audit`，管理员请求不落；设备端点按 `device_ids` 越权 → 403 且不改变任务状态；按客户端限流超限 → 429 `RATE_LIMITED` + `Retry-After`；外部执行器租约失效 → 409 `LEASE_LOST` 且不能续租/写步骤/回传终态；AI 客户端访问凭据管理/审计端点 → 403（仅管理员会话）
 
 ## 已知安全边界（2026-09-17 全检审计记档，均为风险接受而非遗漏）
 
@@ -251,7 +298,7 @@ Web只操作浏览器明确授权的DirectoryHandle，句柄限当前origin并�
 
 Android本机模式选择统一根目录时，以master镜像模式绑定作者资料/作者总表.txt，先导入TXT再选目录及以后更换目录都将当前作者和实际关联写到新位置。原目录文件保留。远程连接不把手机路径写给远端。偏好提交失败会恢复先前镜像配置，补偿失败与原错误一并保留。主表摘要识别尚未导入的外部编辑，自动写回暂停并提示先导入；确认导入后的原文可由服务端片段识别，继续合成主表。
 
-目录SHA-256按备份原始字节计算，校验文件上限1KiB。摘要为文件一致性检查，不能认证备份来源。导入前本机状态保存失败则不提交导入，保存纳入最新、上次、上上次三代轮换；自动备份通过摘要拒绝覆盖被外部替换的待导入文件。Web自动写回只查询已有授权，不在后台弹权限；单文件提交及摘要分开，未完成的配对由读前校验拒绝，不宣称目录跨文件原子性。
+目录SHA-256按备份原始字节计算，校验文件上限1KiB。摘要为文件一致性检查，不能认证备份来源。导入前本机状态保存失败则不提交导入，保存按「当前/上次」两代目录轮换（旧 flat3 三代布局兼容读取）；自动备份通过摘要拒绝覆盖被外部替换的待导入文件。Web自动写回只查询已有授权，不在后台弹权限；单文件提交及摘要分开，未完成的配对由读前校验拒绝，不宣称目录跨文件原子性。
 
 Android目录编排的镜像配置同步SDK调用及路径解析均在IO上下文内执行，主线程只呈现状态；导入前快照沿同一边界。
 

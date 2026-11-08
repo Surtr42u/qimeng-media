@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PLAYS_TO_RANGE, SIZE_TO_RANGE, dateRangeFor, partitionKey } from './search-mapping'
+import { PLAYS_TO_RANGE, SIZE_TO_RANGE, dateRangeFor, partitionKey, searchResultTitle } from './search-mapping'
 
 describe('PLAYS_TO_RANGE', () => {
   it('播放档映射全表（边界以 browse.sql 为准：none=0/low=1-5/mid=5-20/high=>20）', () => {
@@ -68,6 +68,24 @@ describe('dateRangeFor', () => {
     expect(dateRangeFor('全部')).toBeUndefined()
     expect(dateRangeFor('按年份区间')).toBeUndefined()
     expect(dateRangeFor('不存在的档')).toBeUndefined()
+  })
+})
+
+describe('searchResultTitle', () => {
+  it('完整文件名优先于 COS 作品名（作品编号/组图页码必须可见）', () => {
+    expect(searchResultTitle({ fileName: '朱诺 11 (2).png', cosWork: '朱诺' })).toBe('朱诺 11 (2).png')
+  })
+
+  it('文件名缺失才回退 COS 作品名；两者都缺返回空串', () => {
+    expect(searchResultTitle({ cosWork: '朱诺' })).toBe('朱诺')
+    expect(searchResultTitle({ fileName: '  ', cosWork: '朱诺' })).toBe('朱诺')
+    expect(searchResultTitle({})).toBe('')
+    expect(searchResultTitle({ fileName: '   ', cosWork: '   ' })).toBe('')
+  })
+
+  it('只清理首尾空白，不改写文件名中的编号/页码/扩展名', () => {
+    expect(searchResultTitle({ fileName: ' 作品 1 (10) .mp4 ' })).toBe('作品 1 (10) .mp4')
+    expect(searchResultTitle({ fileName: '作品 110.mp4' })).toBe('作品 110.mp4')
   })
 })
 

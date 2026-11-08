@@ -159,6 +159,93 @@ research:
 - Lens 证据只记 `frameSha256/textSha256/耗时/启发式摘要`，不含图片字节。
 - 证据不入库、不参与业务查询；保留期由部署方自行清理（v1 无自动轮转）。
 
+## 客户端研究流水线（方法学）
+
+本节只约束"客户端如何用这些端点组合出可复核结论"，不新增协议字段。完整识图方法见[识图与作品归属核实](../../tools/IMAGE_RESEARCH.md)，身份判定与档案写入见[公开作者身份研究与证据留档](../../tools/AUTHOR_RESEARCH.md)。
+
+### 研究顺序
+
+| 步 | 动作 | 依据 |
+|---|---|---|
+| 1 | 读 `GET /research/context`，确认 `enabled`、provider 矩阵与剩余预算 | 关闭时不要发查询/Lens |
+| 2 | 用 Lens 定作品归属（原帖、作品 ID、作者线索） | `POST /research/lens`；单实例串行，按 `frameSha256` 去重 |
+| 3 | 用 provider 取平台字段核身份（X 优先，其次官方平台） | `POST /research/providers/{provider}/query` |
+| 4 | 交叉核对稳定数字 ID、互链与时间，记录排除项 | 平台字段决定证据等级，Lens 只给线索 |
+| 5 | 结论以 candidate 写入档案，主代理复核后才 verified | 研究结果不落库；写库走作者档案 API |
+
+Lens 仅在 `sidecar.available=true` 时使用，否则直接走 provider 或人工。单文件 Lens 预算 1–3 次、失败最多重试 1 次、批量 JSONL 与断点续跑见[识图与作品归属核实](../../tools/IMAGE_RESEARCH.md#token-降本)。顺序上的硬约束是"先作品、后身份"：不能拿 Lens 页面出现的同名账号直接当作者。
+
+### 证据落盘与 status 语义
+
+| 观察 | 可支持的结论 |
+|---|---|
+| provider `status=ok`，平台字段含稳定账号/作品 ID 与互链 | 可到 likely；人工确认后才 confirmed |
+| provider `status=ok`，但只有同名或简介相似 | candidate |
+| provider `not_found` | 只证明该平台该次查询无对象，不等于账号不存在 |
+| provider `blocked`/`rate_limited`/`provider_unavailable` | 本次失败；换 provider 或人工，不据此排除账号 |
+| Lens `status=ok`（含空 `links`） | 最多 candidate；`topTitles`/`topDomains`/`cites` 是正文启发式 |
+| Lens `blocked`/`timeout`/`upload_rejected`/`sidecar_unavailable` | 无结论；429/503 按退避，不形成重试风暴 |
+
+服务端证据文件（`<dataDir>/research-evidence/...`）只含公开字段与哈希；客户端自己的批次记录写本地 JSONL，不把原文 HTML 或图片字节入库、入仓。
+
+### provider 与 Lens 配合
+
+| 已有线索 | 先查 | 再查 |
+|---|---|---|
+| 只有图片/视频帧 | Lens 整图，必要时四角水印或面部裁剪 | fxtwitter(author) 或 pixiv(author/work) 核对账号/作品 |
+| 作品数字 ID | pixiv(work) 或 e621(post) | 作者主页与互链 |
+| 账号或 handle | fxtwitter(author) | Pixiv、Iwara 等官方页 |
+| 标签/角色 | yandere(tags)、e621(tags) | 作品页 → 作者 |
+| 旧链接或失效页 | wayback(url) | 现平台页 |
+| 创意工坊物品 | steam(workshop) | 作者主页 |
+
+Lens 与 provider 互不替代：Lens 失败不影响 provider，provider 失败也不影响已拿到的作品线索。
+
+### 外部 AI 的 JSON 契约建议
+
+给外部 AI 的研究交接建议（本地文件，不是 API schema；字段与 `CreatorProfileWrite`、`ResearchProviderResult`、`ResearchLensResult` 对齐）：
+
+```json
+{
+  "jobId": "local-20261108-01",
+  "createdAt": "2026-11-08T00:00:00Z",
+  "target": { "authorId": "内部 authorId", "originalName": "内部原名", "imageSha256": "64 位小写十六进制" },
+  "candidates": [
+    {
+      "source": "lens|fxtwitter|pixiv|iwara|patreon",
+      "workUrl": "https://example.com/work",
+      "platformId": "平台数字 ID",
+      "authorHandle": "@example",
+      "confidence": "confirmed|likely|candidate|unresolved",
+      "rejectedReason": "仅被排除的候选填写"
+    }
+  ],
+  "evidence": [
+    {
+      "kind": "provider|lens|metadata|hash",
+      "ref": "provider+operation+target 或 frame",
+      "status": "ok|not_found|blocked|rate_limited|provider_unavailable|timeout|upload_rejected|sidecar_unavailable",
+      "frameSha256": "可选",
+      "fetchedAt": "RFC3339",
+      "summary": "候选标题/域名/ID，不含原文 HTML"
+    }
+  ],
+  "authorProfile": {
+    "nickname": "公开昵称",
+    "homepageUrl": "https://example.com",
+    "avatarUrl": "https://example.com/avatar.png",
+    "evidenceUrls": ["https://example.com/about"],
+    "status": "candidate",
+    "xProfile": { "url": "https://x.com/example", "biography": "原文", "biographyZh": "译文" }
+  }
+}
+```
+
+- `authorProfile` 是 `CreatorProfileWrite` 的摘要，实际 PUT 仍需 `revision`、`autoRefresh`、`feedUrl`、`trackUpdates` 等必填字段（以 OpenAPI 为准）；长度上限：nickname ≤200，biography/avatarUrl/homepageUrl/evidenceUrls 单项 ≤2000，evidenceUrls ≤8，xProfile.biography ≤1000，biographyZh ≤2000。
+- `status` 只取 candidate/verified。研究阶段写 candidate；verified 需 HTTPS 主页与非空有效证据，且经主代理复核。
+- 同一 `authorId` 的 job 可续跑；`candidates[].confidence` 按[识图文档的证据分级](../../tools/IMAGE_RESEARCH.md#证据分级)填写，不把 Lens 命中当 confirmed。
+- 契约只描述交接内容，不新增端点或字段；实际调用以 [OpenAPI](../../api/openapi.yaml) 为准。
+
 ## 安全与部署条件
 
 - **出口**：只走内建安全 HTTP 客户端——仅 https、provider 域名白名单、禁重定向与环境代理、DNS 解析后校验公网地址、超时 20s、响应上限 2MiB。不提供任意 URL 抓取面。

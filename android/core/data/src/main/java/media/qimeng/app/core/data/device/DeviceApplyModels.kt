@@ -1,0 +1,90 @@
+package media.qimeng.app.core.data.device
+
+/**
+ * 设备结果包 Worker 的域模型（2026-11-07 task-17，ADR-0055）。
+ *
+ * 生成 SDK 的 `media.qimeng.sdk.models.DeviceApply*` 只在 [DeviceApplyRemote] 边缘映射，
+ * 本包其余逻辑（目标筛选、段校验、回读、结果映射、设置持久化）不依赖 SDK；
+ * feature 侧只消费这些域类型，保持 `feature → core` 单向（ADR-0014）。
+ */
+
+/** 结果包段类型；字符串值与 `api/openapi.yaml` 的 DeviceApplySegmentKind 逐字一致。 */
+enum class DeviceSegmentKind(val wireName: String) {
+    /** 作者主表 TXT（≤1MiB），应用走 POST /api/v1/authors/import-txt。 */
+    MASTER_TXT("masterTxt"),
+
+    /** v2 便携备份（≤64MiB），应用走 POST /api/v1/import/qimeng-backup。 */
+    V2_BACKUP("v2Backup"),
+    ;
+
+    companion object {
+        fun fromWire(value: String): DeviceSegmentKind? = entries.firstOrNull { it.wireName == value }
+    }
+}
+
+/** 服务端账本状态机（openapi DeviceApplyTaskStatus）；[isTerminal] 与协议语义一致。 */
+enum class DeviceTaskStatus {
+    PENDING,
+    CLAIMED,
+    APPLIED,
+    PARTIAL,
+    FAILED,
+    CANCELLED,
+    EXPIRED,
+    ;
+
+    val isTerminal: Boolean get() = this != PENDING && this != CLAIMED
+}
+
+/** 回传终态（openapi DeviceApplyResultStatus）。 */
+enum class DeviceResultStatus { APPLIED, PARTIAL, FAILED }
+
+/**
+ * 列表摘要（不含段清单/结果正文）。
+ *
+ * [expiresAtMillis] 来自服务端账本到期时刻：只用于客户端领取前二次过滤（服务端已惰性
+ * 标记过期并默认不返回过期任务，这里防御旧服务端/响应被替换）。默认 [Long.MAX_VALUE]
+ * 兼容既有构造点（测试替身不显式声明到期时视为不过期）。
+ *
+ * [createdAtMillis]/[segmentCount] 只供设置页「最近设备任务」只读展示（2026-11-08），
+ * 领取/应用路径不依赖它们；默认值兼容既有构造点。
+ */
+data class DeviceApplySummary(
+    val id: String,
+    val targetDeviceId: String,
+    val status: DeviceTaskStatus,
+    val protocolVersion: Int,
+    val rulesFingerprint: String,
+    val expiresAtMillis: Long = Long.MAX_VALUE,
+    val createdAtMillis: Long = 0L,
+    val segmentCount: Int = 0,
+)
+
+/** manifest 声明的段（bytes/sha256 来自服务端登记账本，expectedReadback 原样透传）。 */
+data class DeviceApplySegment(
+    val kind: DeviceSegmentKind,
+    val bytes: Long,
+    val sha256: String,
+    val expectedReadback: Map<String, Any>? = null,
+)
+
+/** 任务详情（领取/详情共用）。 */
+data class DeviceApplyDetail(
+    val id: String,
+    val targetDeviceId: String,
+    val status: DeviceTaskStatus,
+    val protocolVersion: Int,
+    val rulesFingerprint: String,
+    val segments: List<DeviceApplySegment>,
+)
+
+/** 手机本地复算的段摘要（回传 deviceLocalHashes）。 */
+data class DeviceLocalHash(val kind: DeviceSegmentKind, val sha256: String)
+
+/** 待回传结果（readback 为任意 JSON 对象；message 由服务端限制 2000 字符）。 */
+data class DeviceApplyReport(
+    val status: DeviceResultStatus,
+    val readback: Map<String, Any> = emptyMap(),
+    val deviceLocalHashes: List<DeviceLocalHash> = emptyList(),
+    val message: String? = null,
+)

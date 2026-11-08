@@ -18,6 +18,16 @@ data class BackupFileStatus(
     val lastModifiedMillis: Long,
 )
 
+/**
+ * 解析后的备份槽内容（2026-11-07 task-13）：[fileName] 是真实文件名——
+ * 两代布局上次代是独立目录里的 `影库备份.json`，旧 flat3 是 `影库备份（上次）.json`，
+ * 确认弹窗与校验链必须用真实名而不是槽别名；[bytes] 已做摘要前置核对。
+ */
+data class ManagedBackupFile(
+    val fileName: String,
+    val bytes: ByteArray,
+)
+
 /** 固定的两个备份槽；不接受任意文件名或路径。 */
 enum class BackupFileKind(val fileName: String) {
     MANUAL(AutoBackupRunner.BACKUP_FILE_NAME),

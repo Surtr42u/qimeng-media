@@ -1,0 +1,10 @@
+# research_kit 本地兜底忽略：真实缓存/证据默认放根目录 build/research-kit.local/（已由根 .gitignore 忽略）。
+# 若有人把产物写到本目录，也不能入库。
+/cache/
+/evidence/
+/frames/
+/avatars/
+/out/
+*.results.jsonl
+__pycache__/
+*.pyc

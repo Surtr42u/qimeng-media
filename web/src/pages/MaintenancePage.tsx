@@ -1,5 +1,6 @@
 import { ShieldAlert } from 'lucide-react'
 import { MaintenanceOverview } from '@/components/manage/MaintenanceOverview'
+import { MaintenanceJobCenter } from '@/components/maintenance/MaintenanceJobCenter'
 import { Pill } from '@/components/ui/pill'
 import { useClientLogs } from '@/hooks/use-client-logs'
 import { useMaintenanceMonitor } from '@/hooks/use-maintenance-monitor'
@@ -28,7 +29,7 @@ export default function MaintenancePage() {
         <Pill onClick={() => { void monitor.refetch() }} disabled={monitor.isFetching}>重试监控</Pill>
       </div>}
       <MaintenanceOverview monitor={monitor} trashLabel={trashLabel} logsLabel={logsLabel} />
-
+      <MaintenanceJobCenter />
     </div>
   )
 }

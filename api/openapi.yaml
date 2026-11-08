@@ -1356,8 +1356,20 @@ paths:
         非法 v2 在任何写入前拒绝；通过校验后各段独立提交，后段失败保留前段并返回错误，
         已提交变更仍推进修订号/失效推荐并发布 library.changed，不表示整份导入成功。
         作者/标签/关联沿既有合并规则，标签按改动时间裁决、TXT 按 keep 重建关联。
+        作者档案默认 keep 保留本机已有资料；query authorProfileConflict=replace 时以备份整份替换并计入 authorProfilesReplaced。
         scanSources/settings 段不导入（SAF 目录概念不存在，响应 warnings 提示重新配置库）；
         albumRules 段无对应能力，忽略。
+      parameters:
+        - name: authorProfileConflict
+          in: query
+          # x-enum-varnames：显式前缀，避免 oapi-codegen v2.8.0 的裸值常量全局
+          # 去重把既有 AuthorSourcesWriteRequestMode 的 Replace/Append 改名。
+          # 不写 default：openapi-generator 的 Kotlin 生成器把 enum default 生成为
+          # `...Post.keep`（小写裸值）而常量名为 x-enum-varnames 的 CamelCase，导致
+          # Unresolved reference（CI android sdk:compileKotlin 实测）；缺省语义由服务端
+          # 缺省 keep + description 表述，调用方不传即 keep。
+          schema: { type: string, enum: [keep, replace], x-enum-varnames: [AuthorProfileConflictKeep, AuthorProfileConflictReplace] }
+          description: 作者档案（昵称/简介/主页/证据/xProfile/头像）与备份不一致时的处置；不传=keep（保留本机既有资料，默认），replace=以备份整份替换（含离线头像，Revision+1，不再计入 conflict 提示）
       requestBody:
         required: true
         content:
@@ -1571,6 +1583,7 @@ paths:
         "200": { description: 幂等重放（返回既有任务，不重复创建）, content: { application/json: { schema: { $ref: "#/components/schemas/MaintenanceJob" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/StateConflict" }
     get:
       summary: 维护任务列表（状态过滤 + 新建倒序 keyset 分页）
       description: |
@@ -1648,6 +1661,196 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/StateConflict" }
+
+  # ---------- 外部 AI 执行器：维护任务受控领取（ADR-0058） ----------
+  # 在既有维护账本上开放受控执行通道：领取返回本次租约 fencing token，
+  # 续租/步骤/工件/终态都必须携带该 token；暂停、取消、终态或租约过期后
+  # 旧 token 立即失效，旧执行器不能再续租/写步骤/回传终态。
+  /api/v1/maintenance/executor/claim:
+    post:
+      summary: 领取一个可执行的维护任务（受控租约 + fencing token）
+      description: |
+        原子领取该 kind 最旧的 queued/inventory/research/planned/applying/verifying
+        任务，返回任务详情、本次租约 token 与到期时刻。没有可执行任务时返回
+        204（无正文）。同一任务被重新领取会生成新的 token；旧 token 在暂停、
+        取消、终态或租约过期后不能再续租/写步骤/工件/回传终态，避免旧执行器
+        产生重复副作用。completedSteps 返回全部已完成/跳过步骤名（不受详情
+        端点最近 50 条限制），执行器按名跳过已完成步骤。backup_export 由 Go
+        worker 内置 handler 负责，外部执行器领取返回 400 INVALID_PARAM。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClaimMaintenanceJobRequest" }
+      responses:
+        "200": { description: 已领取, content: { application/json: { schema: { $ref: "#/components/schemas/MaintenanceLease" } } } }
+        "204": { description: 当前没有可领取任务（无正文） }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/maintenance/executor/jobs/{id}/heartbeat:
+    post:
+      summary: 续租（必须携带本次领取的 leaseToken）
+      description: |
+        续租仅对仍持有未过期租约的 owner 生效；租约过期、任务被暂停/取消、
+        终态或被重新领取时返回 409 LEASE_LOST。leaseSeconds 缺省沿用服务端
+        默认（120 秒，30–1800）。
+      parameters: [ { $ref: "#/components/parameters/MaintenanceJobId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HeartbeatMaintenanceJobRequest" }
+      responses:
+        "200": { description: 续租成功, content: { application/json: { schema: { $ref: "#/components/schemas/MaintenanceLeaseStatus" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/LeaseLost" }
+  /api/v1/maintenance/executor/jobs/{id}/steps:
+    post:
+      summary: 登记任务步骤（受租约围栏，幂等 upsert）
+      description: |
+        执行器上报步骤状态与明细，按 (job, step) 幂等 upsert。步骤名是恢复
+        时跳过已完成步骤的稳定键。租约失效返回 409 LEASE_LOST。detail 为任意
+        JSON 对象（≤16KiB）。服务端按上报状态自动补 startedAt/finishedAt。
+      parameters: [ { $ref: "#/components/parameters/MaintenanceJobId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordMaintenanceStepRequest" }
+      responses:
+        "200": { description: 已登记, content: { application/json: { schema: { $ref: "#/components/schemas/MaintenanceJob" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/LeaseLost" }
+  /api/v1/maintenance/executor/jobs/{id}/artifacts:
+    post:
+      summary: 登记任务工件元数据（受租约围栏，去重）
+      description: |
+        工件正文不进入 SQLite；同一个 (job, kind, uri) 重复登记是 no-op。
+        租约失效返回 409 LEASE_LOST。
+      parameters: [ { $ref: "#/components/parameters/MaintenanceJobId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordMaintenanceArtifactRequest" }
+      responses:
+        "200": { description: 已登记, content: { application/json: { schema: { $ref: "#/components/schemas/MaintenanceJob" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/LeaseLost" }
+  /api/v1/maintenance/executor/jobs/{id}/complete:
+    post:
+      summary: 回传终态（completed/partial/failed，受租约围栏）
+      description: |
+        只有仍持有未过期租约的执行器可以回传终态。completed 会清空错误字段。
+        终态写入会同时清空租约：成功响应丢失后的重复回传返回 409 LEASE_LOST，
+        不做幂等重放（执行器应停止并查询任务详情核对，而不是重试同一 token）。
+        暂停/取消/过期/被重领同样返回 409 LEASE_LOST；终态不可再被领取或改写。
+      parameters: [ { $ref: "#/components/parameters/MaintenanceJobId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompleteMaintenanceJobRequest" }
+      responses:
+        "200": { description: 已回传终态, content: { application/json: { schema: { $ref: "#/components/schemas/MaintenanceJob" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/LeaseLost" }
+
+  # ---------- AI 客户端凭据管理（ADR-0057 P2，仅管理员会话） ----------
+  # 这些端点只接受管理员会话（AI 客户端 bearer 一律 403，不因持有 admin
+  # scope 开放）。明文 token 只在创建/轮换响应出现一次，不写日志/审计。
+  /api/v1/ai-clients:
+    get:
+      summary: AI 客户端列表（不含 token 与哈希）
+      description: 返回全部 AI 客户端公开信息（标签、scope、设备绑定、过期/撤销/最近使用），不含明文 token 或哈希。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AiClientList" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: 创建 AI 客户端（明文 token 只返回一次）
+      description: |
+        创建一个受限 AI 客户端并绑定 scope/设备标签。响应中的 token 只在本次
+        返回一次，服务端只保存 SHA-256 哈希。scope 白名单见 AiClientScope；
+        未知 scope 400。设备绑定用于 device.apply 的设备级隔离。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAiClientRequest" }
+      responses:
+        "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/AiClientSecret" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/ai-clients/{clientId}:
+    delete:
+      summary: 撤销 AI 客户端（幂等）
+      description: 撤销后客户端立即不能认证（服务端缓存 TTL 内生效）；账本行与审计保留。
+      parameters: [ { $ref: "#/components/parameters/AiClientId" } ]
+      responses:
+        "200": { description: 已撤销, content: { application/json: { schema: { $ref: "#/components/schemas/AiClient" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/ai-clients/{clientId}/rotate:
+    post:
+      summary: 轮换 AI 客户端 token（旧 token 立即失效）
+      description: |
+        生成新明文 token 并替换哈希；旧 token 立即不可认证。已撤销的客户端
+        拒绝轮换（409 STATE_CONFLICT）。
+      parameters: [ { $ref: "#/components/parameters/AiClientId" } ]
+      responses:
+        "200": { description: 已轮换, content: { application/json: { schema: { $ref: "#/components/schemas/AiClientSecret" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/StateConflict" }
+  /api/v1/ai-audit:
+    get:
+      summary: AI 写操作审计查询（新建倒序 keyset 分页）
+      description: |
+        只读查询 AI 客户端写请求审计（含被拒绝的）。clientId 可选精确过滤；
+        action 可选前缀过滤；limit 1–200（缺省 50）；cursor 使用上一页
+        nextCursor。只返回元数据，不含请求/响应正文或凭据。
+      parameters:
+        - name: clientId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 100 }
+          description: 精确过滤客户端 ID
+        - name: action
+          in: query
+          required: false
+          schema: { type: string, maxLength: 120 }
+          description: 动作前缀过滤（如 author.）
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+          description: 上一页 nextCursor；非法游标 400 INVALID_CURSOR
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AiAuditList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   # ---------- 设备结果包（PC→手机无前台维护服务端，ADR-0055） ----------
   # 本切片只交付服务端账本/端点：targetDeviceId 是不透明标签，无配对、无设备身份
@@ -1820,6 +2023,7 @@ components:
     UploadId:  { name: id,        in: path, required: true, schema: { type: string, format: uuid }, description: 断点续传上传会话 ID（POST /api/v1/uploads 返回） }
     TrashId:   { name: trashId,   in: path, required: true, schema: { type: string } }
     BackupName: { name: name, in: path, required: true, schema: { type: string, pattern: "^qimeng-\\d{8}-\\d{6}\\.db$" }, description: 快照文件名（qimeng-YYYYMMDD-HHMMSS.db，本地时间） }
+    AiClientId: { name: clientId, in: path, required: true, schema: { type: string, maxLength: 100 }, description: AI 客户端 ID（创建/列表返回） }
     MaintenanceJobId: { name: id, in: path, required: true, schema: { type: string, format: uuid }, description: 维护任务 ID（创建响应返回） }
     DeviceApplyTaskId: { name: id, in: path, required: true, schema: { type: string, format: uuid }, description: 设备结果包任务 ID（创建响应返回） }
 
@@ -1829,6 +2033,8 @@ components:
     NotFound:    { description: 不存在,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     Conflict:    { description: 冲突,     content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     RateLimited: { description: 尝试过于频繁（auth 端点进程内限速）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Forbidden: { description: 'FORBIDDEN_SCOPE：AI 客户端缺少所需 scope，或该操作仅限管理员会话', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    LeaseLost: { description: 'LEASE_LOST：租约已过期、任务被暂停/取消/终态或被重新领取，执行器必须停止', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     UploadConflict: { description: 'UPLOAD_ID_CONFLICT：上传任务 ID 已用于不同目标、名称、大小、源时间或传输通道', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     UploadedAssetGone: { description: 'UPLOAD_ASSET_GONE：任务已经完成但资产已删除，拒绝自动重新上传', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     UploadCapacity: { description: 'UPLOAD_CAPACITY：在途会话数量或暂存总预算达到上限', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
@@ -2124,6 +2330,134 @@ components:
         items: { type: array, items: { $ref: "#/components/schemas/MaintenanceJobSummary" } }
         nextCursor: { type: [string, "null"], description: 下一页游标；null = 已到底 }
 
+    ClaimMaintenanceJobRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind: { $ref: "#/components/schemas/MaintenanceJobKind" }
+        leaseSeconds: { type: integer, minimum: 30, maximum: 1800, default: 120, description: 本次租约时长（秒）；缺省 120 }
+
+    MaintenanceLease:
+      type: object
+      description: 受控领取结果：任务详情 + 本次租约 fencing token
+      required: [job, leaseToken, leaseUntil, completedSteps]
+      properties:
+        job: { $ref: "#/components/schemas/MaintenanceJob" }
+        leaseToken: { type: string, minLength: 1, maxLength: 200, description: 本次领取的 fencing token；续租/步骤/工件/终态必须原样回传 }
+        leaseUntil: { type: string, format: date-time, description: 租约到期时刻；过期后必须重新领取 }
+        completedSteps: { type: array, items: { type: string }, description: 全部已完成/跳过步骤名（按 step 升序，不受详情端点最近 50 条限制）；执行器按名跳过已完成步骤 }
+
+    MaintenanceLeaseStatus:
+      type: object
+      required: [jobId, leaseUntil]
+      properties:
+        jobId: { type: string, format: uuid }
+        leaseUntil: { type: string, format: date-time }
+
+    HeartbeatMaintenanceJobRequest:
+      type: object
+      required: [leaseToken]
+      properties:
+        leaseToken: { type: string, minLength: 1, maxLength: 200 }
+        leaseSeconds: { type: integer, minimum: 30, maximum: 1800, default: 120 }
+
+    RecordMaintenanceStepRequest:
+      type: object
+      required: [leaseToken, step, status]
+      properties:
+        leaseToken: { type: string, minLength: 1, maxLength: 200 }
+        step: { type: string, minLength: 1, maxLength: 100, description: 稳定步骤名（恢复时按名跳过已完成步骤） }
+        status: { $ref: "#/components/schemas/MaintenanceStepStatus" }
+        attempt: { type: integer, minimum: 0, default: 0 }
+        detail: { type: object, additionalProperties: true, description: '步骤明细（任意 JSON 对象，≤16KiB；缺省空对象）' }
+
+    RecordMaintenanceArtifactRequest:
+      type: object
+      required: [leaseToken, kind, uri, sha256, bytes]
+      properties:
+        leaseToken: { type: string, minLength: 1, maxLength: 200 }
+        kind: { type: string, minLength: 1, maxLength: 50 }
+        uri: { type: string, minLength: 1, maxLength: 500 }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        bytes: { type: integer, format: int64, minimum: 0 }
+
+    CompleteMaintenanceJobRequest:
+      type: object
+      required: [leaseToken, status]
+      properties:
+        leaseToken: { type: string, minLength: 1, maxLength: 200 }
+        status:
+          type: string
+          enum: [completed, partial, failed]
+          x-enum-varnames: [MaintenanceCompleteCompleted, MaintenanceCompletePartial, MaintenanceCompleteFailed]
+        errorCode: { type: string, maxLength: 100, description: 失败/部分完成错误码；completed 时忽略 }
+        errorMessage: { type: string, maxLength: 2000, description: 失败/部分完成说明；completed 时忽略 }
+
+    AiClientScope:
+      type: string
+      description: |
+        AI 客户端最小授权范围（精确匹配，无通配/继承）。未映射的写请求默认
+        403；admin 为管理面保留，不开放任何业务路由。
+      enum: [read, research, author.write, author.destructive, asset.author.write, asset.write, asset.upload, asset.delete, tag.write, source.write, library.write, media.organize, trash.restore, backup.export, backup.restore, maintenance.read, maintenance.write, maintenance.execute, device.apply, admin]
+      x-enum-varnames: [AiScopeRead, AiScopeResearch, AiScopeAuthorWrite, AiScopeAuthorDestructive, AiScopeAssetAuthorWrite, AiScopeAssetWrite, AiScopeAssetUpload, AiScopeAssetDelete, AiScopeTagWrite, AiScopeSourceWrite, AiScopeLibraryWrite, AiScopeMediaOrganize, AiScopeTrashRestore, AiScopeBackupExport, AiScopeBackupRestore, AiScopeMaintenanceRead, AiScopeMaintenanceWrite, AiScopeMaintenanceExecute, AiScopeDeviceApply, AiScopeAdmin]
+
+    AiClient:
+      type: object
+      description: AI 客户端公开信息（不含 token 或哈希）
+      required: [id, label, scopes, deviceIds, createdAt]
+      properties:
+        id: { type: string, maxLength: 100 }
+        label: { type: string, maxLength: 120 }
+        scopes: { type: array, items: { $ref: "#/components/schemas/AiClientScope" } }
+        deviceIds: { type: array, items: { type: string, maxLength: 100 }, description: 绑定的设备标签（device.apply 设备级隔离） }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: [string, "null"], format: date-time }
+        revokedAt: { type: [string, "null"], format: date-time }
+        lastUsedAt: { type: [string, "null"], format: date-time }
+
+    AiClientList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AiClient" } }
+
+    CreateAiClientRequest:
+      type: object
+      required: [label, scopes]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 120, description: 管理可读名称 }
+        scopes: { type: array, minItems: 1, maxItems: 20, items: { $ref: "#/components/schemas/AiClientScope" }, description: 至少一个 scope；未知值 400 }
+        deviceIds: { type: array, maxItems: 100, items: { type: string, minLength: 1, maxLength: 100 }, description: 可选设备标签绑定 }
+        expiresInSeconds: { type: integer, minimum: 60, maximum: 31536000, description: 可选有效期（秒）；缺省永不过期 }
+
+    AiClientSecret:
+      type: object
+      description: 创建/轮换响应：明文 token 只出现这一次
+      required: [client, token]
+      properties:
+        client: { $ref: "#/components/schemas/AiClient" }
+        token: { type: string, minLength: 1, description: 明文 Bearer token；服务端只保存哈希，不写日志/审计 }
+
+    AiAuditEntry:
+      type: object
+      required: [id, clientId, method, path, action, statusCode, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        clientId: { type: string }
+        method: { type: string }
+        path: { type: string }
+        action: { type: string }
+        statusCode: { type: integer }
+        requestId: { type: string, description: 请求关联 ID（调用方可带 X-Request-Id；缺省服务端生成） }
+        createdAt: { type: string, format: date-time }
+
+    AiAuditList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AiAuditEntry" } }
+        nextCursor: { type: [string, "null"], description: 下一页游标；null = 已到底 }
+
     DeviceApplyTaskStatus:
       type: string
       description: |
@@ -2159,6 +2493,7 @@ components:
         rulesFingerprint: { type: string, pattern: '^[0-9a-f]{64}$', description: 规则包指纹（64 位小写十六进制；服务端只校验格式并记录，不重算规则包） }
         ttlSeconds: { type: integer, minimum: 300, maximum: 604800, default: 86400, description: 包有效期（秒）；缺省 86400，过期由读取/领取/回传路径惰性标记 }
         segments: { type: array, minItems: 1, maxItems: 2, items: { $ref: "#/components/schemas/DeviceApplyManifestSegment" }, description: 段清单，kind 不得重复；请求体必须携带同名文件段 }
+        expectedState: { type: object, additionalProperties: { type: integer, format: int64, minimum: 0 }, description: '应用后的权威业务状态绝对计数（≤16KiB，可选）。支持键：assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents；提供时服务端在回传结果时与库内真实计数比较并给出 expectedStateMatches/expectedStateDiff' }
 
     DeviceApplySegment:
       type: object
@@ -2204,6 +2539,10 @@ components:
         deviceLocalHashes: { type: array, maxItems: 2, items: { $ref: "#/components/schemas/DeviceApplyLocalHash" }, description: '按 kind 排序后的本地摘要（无则 []）' }
         message: { type: string, description: 可选说明 }
         reportedAt: { type: string, format: date-time, description: 结果写入时刻（= finishedAt） }
+        authoritativeState: { type: [object, "null"], additionalProperties: { type: integer, format: int64 }, description: '服务端在回传时读取的权威业务计数（assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents）；旧结果或读取失败为 null' }
+        expectedStateMatches: { type: [boolean, "null"], description: 'manifest.expectedState 与实际权威计数是否逐键相等；未声明 expectedState 或读取失败为 null' }
+        expectedStateDiff: { type: [object, "null"], additionalProperties: true, description: '不一致时的逐键 {expected,actual}；一致或未声明为 null' }
+        hashVerified: { type: [boolean, "null"], description: '手机回传的 deviceLocalHashes 是否逐段等于登记段摘要；未回传摘要为 null' }
 
     DeviceApplyTaskSummary:
       type: object
@@ -2705,6 +3044,10 @@ components:
         revision: { type: integer, format: int64, minimum: 0 }
         nickname: { type: string, maxLength: 200 }
         biography: { type: string, maxLength: 2000 }
+        remark:
+          type: string
+          maxLength: 500
+          description: 特殊情况备注：仅当作者已退圈、X/Patreon 等官方账号全部删除、身份证据只能来自 Wayback 等存档时填写；常规作者留空。省略或 null 保留已有值，显式空字符串清空。该字段随 v2 备份 profileJson 同步。
         avatarUrl: { type: string, maxLength: 2000 }
         homepageUrl: { type: string, maxLength: 2000 }
         evidenceUrls: { type: array, maxItems: 8, items: { type: string, maxLength: 2000 } }
@@ -2731,6 +3074,10 @@ components:
             lastCheckedAt: { type: string }
             lastSuccessAt: { type: string }
             lastError: { type: string }
+            remark:
+              type: string
+              maxLength: 500
+              description: 特殊情况备注：仅当作者已退圈、X/Patreon 等官方账号全部删除、身份证据只能来自 Wayback 等存档时填写；常规作者留空。该字段随 v2 备份 profileJson 同步。
             candidate: { $ref: "#/components/schemas/CreatorProfileCandidate" }
             updates: { type: array, maxItems: 30, items: { $ref: "#/components/schemas/CreatorUpdate" } }
     Author:
@@ -3183,8 +3530,8 @@ components:
       type: object
       required: [authorId, displayName]
       properties:
-        avatarData: { type: string, maxLength: 2796204, description: 可选离线头像的标准Base64；解码后最多2MiB且必须是PNG/JPEG/GIF/WebP，须同条profileJson绑定头像来源；已有资料只在来源一致且缺离线头像时补齐 }
-        profileJson: { type: string, maxLength: 262144, description: 作者公开附属档案JSON；可选v2扩展，旧备份缺省无操作；导入不覆盖本端已有档案且关闭自动维护 }
+        avatarData: { type: string, maxLength: 2796204, description: 可选离线头像的标准Base64；解码后最多2MiB且必须是PNG/JPEG/GIF/WebP，须同条profileJson绑定头像来源；默认keep只在来源一致且缺离线头像时补齐，authorProfileConflict=replace 时随档案整份覆盖 }
+        profileJson: { type: string, maxLength: 262144, description: 作者公开附属档案JSON；可选v2扩展，旧备份缺省无操作；默认keep不覆盖本端已有档案且关闭自动维护，authorProfileConflict=replace 时以备份整份替换（含Revision+1） }
         authorId:         { type: string, description: 常规作者原样；COS 作者带 cos_ 前缀原样保留 }
         displayName:      { type: string }
         createdAtMillis:  { type: integer, format: int64 }
@@ -3319,6 +3666,7 @@ components:
         txtFragmentsImported:   { type: integer, description: TXT 片段新增+替换数（§10「TXT 片段」；旧版客户端忽略此字段） }
         txtFragmentsSkipped:    { type: integer, description: TXT 片段未产生变更的跳过数（内容相同幂等跳过＋单片段导入失败跳过，失败有 Warn 日志） }
         authorsImported:        { type: integer }
+        authorProfilesReplaced: { type: integer, description: 本次因 replace 被整份替换的作者档案数；keep/未传时缺省 }
         authorRefsImported:     { type: integer, description: 关联写入数（含因资产未匹配而跳过之外的净写入） }
         authorRefsSkipped:      { type: integer, description: 关联因资产未匹配而跳过数 }
         tagsImported:           { type: integer }

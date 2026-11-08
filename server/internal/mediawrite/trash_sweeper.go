@@ -3,6 +3,7 @@ package mediawrite
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 
@@ -64,10 +65,32 @@ func (s *Service) SweepTrashOnce() {
 		return
 	}
 	retention := s.TrashRetentionDays()
+	// 先定格本轮到期集：同名条目的 TXT 作品行只有在「没有其他未到期同名
+	// 条目仍可恢复」时才能删；本轮一起到期的同名条目共享同一次清理。
+	expired := make([]bool, len(entries))
+	for i := range entries {
+		expired[i] = filing.TrashExpired(entries[i].Meta, s.now(), retention)
+	}
 	removed := 0
-	for _, e := range entries {
-		if !filing.TrashExpired(e.Meta, s.now(), retention) {
+	for i, e := range entries {
+		if !expired[i] {
 			continue
+		}
+		fileName := path.Base(e.Meta.OriginalPath)
+		restorable := false
+		for j := range entries {
+			if j != i && !expired[j] && path.Base(entries[j].Meta.OriginalPath) == fileName {
+				restorable = true
+				break
+			}
+		}
+		if !restorable {
+			// 物理清除前同事务清理 TXT 作品行；失败则保留条目下轮重试，
+			// 不能先删文件留下无法追溯的 TXT 行。
+			if err := s.dropTrashWorks(context.Background(), e.Meta.AssetID, fileName); err != nil {
+				s.logger.Warn("回收站到期条目清理TXT作品行失败（下轮重试）", "id", e.ID, "err", err)
+				continue
+			}
 		}
 		filing.InvalidateRestoreIntents(s.cfg.DataDir, e.Meta.LibraryID)
 		if err := os.RemoveAll(filepath.Dir(e.MetaFile)); err != nil {

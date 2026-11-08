@@ -48,8 +48,9 @@ func RebuildIndex(ctx context.Context, conn *sql.DB) error {
 //
 // 语义（DOMAIN_RULES §3，旧项目 applyFilter 口径）：按空格拆分、每个
 // 非空词为一个关键词；多词为 AND 关系（每个词必须命中搜索维度的至少
-// 一个）。关键词不做大小写归一——SQL 侧用 lower() 统一折叠（browse.sql
-// 的 q_json 谓词），Go 侧转写小写会与该谓词语义双写漂移。
+// 一个）。关键词不做大小写归一或编号解析——匹配统一交给 SQL 侧共享函数
+// qimeng_search_token（internal/store/searchtoken，ASCII 折叠 + 数字独立
+// 数字段 + 组图页码），Go 侧再写一份会与该实现双写漂移。
 // 返回子串为空时返回 nil（调用方以 NULL 语义跳过搜索条件）。
 func ParseQuery(q string) []string {
 	var out []string

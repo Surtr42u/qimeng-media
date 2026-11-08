@@ -1,10 +1,32 @@
 """作者档案导入工具回归；全部合成数据，API替身不访问真实服务。"""
 import contextlib
+import os
+import shutil
+import uuid
 import io
 import json
 import tempfile
 from pathlib import Path
 import unittest
+
+_TEMP_ROOT = (Path(__file__).resolve().parents[1]
+              / "tools" / "ai_maintenance" / ".test-temp")
+try:
+    _TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+except OSError:
+    _TEMP_ROOT = Path(tempfile.gettempdir())
+
+
+@contextlib.contextmanager
+def temp_dir():
+    """测试临时目录：本机沙箱对 mkdtemp(0700) 目录写入受限，改用默认权限目录。"""
+    path = _TEMP_ROOT / ("case-" + uuid.uuid4().hex)
+    os.makedirs(path)
+    try:
+        yield str(path)
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
 from unittest.mock import Mock, patch
 from urllib import error
 
@@ -112,7 +134,7 @@ class ImportProfileTest(unittest.TestCase):
         self.assertEqual(1, importer.apply_plan(api, self.plan())["conflicts"])
 
     def test_default_dry_run_reads_no_token_and_prints_only_counts(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temp_dir() as directory:
             path = Path(directory) / "research.local"
             path.write_text(json.dumps({"records": [record()]}), encoding="utf-8")
             output = io.StringIO()
@@ -139,6 +161,31 @@ class ImportProfileTest(unittest.TestCase):
             with self.assertRaises(importer.ImportFailure):
                 importer.validate_base_url(url)
         self.assertEqual("http://127.0.0.1:18430", importer.validate_base_url("http://127.0.0.1:18430/"))
+
+
+class ConvergenceTest(unittest.TestCase):
+    """旧入口只做转发：写入算法只有 ai_maintenance.profile_import 一份。"""
+
+    def test_legacy_entry_forwards_to_core_implementation(self):
+        from ai_maintenance import profile_import
+        self.assertIs(importer.plan_records, profile_import.plan_records)
+        self.assertIs(importer.apply_plan, profile_import.apply_plan)
+        self.assertIs(importer.pristine, profile_import.pristine)
+        self.assertIs(importer.API, profile_import.API)
+        self.assertIs(importer.public_url, profile_import.public_url)
+
+    def test_qimeng_base_url_fallback_warns_without_echoing_value(self):
+        with temp_dir() as directory:
+            path = Path(directory) / "research.local"
+            path.write_text(json.dumps({"records": [record()]}), encoding="utf-8")
+            output, errors = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, {"QIMENG_BASE_URL": "http://127.0.0.1:18430"}, clear=True), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                status = importer.main([str(path)])
+            self.assertEqual(0, status)
+            self.assertIn("QIMENG_BASE_URL 已弃用", errors.getvalue())
+            self.assertNotIn("127.0.0.1", errors.getvalue())
+            self.assertTrue(json.loads(output.getvalue())["dry_run"])
 
 
 if __name__ == "__main__":

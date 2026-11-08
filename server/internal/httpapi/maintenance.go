@@ -159,6 +159,8 @@ func (s *Server) writeMaintenanceError(w http.ResponseWriter, what string, err e
 	switch {
 	case errors.Is(err, maintenance.ErrNotFound):
 		writeErr(w, http.StatusNotFound, codeNotFound, "维护任务不存在")
+	case errors.Is(err, maintenance.ErrLeaseLost):
+		writeErr(w, http.StatusConflict, codeLeaseLost, "租约已失效：任务被暂停/取消/终态或已重新领取")
 	case errors.Is(err, maintenance.ErrStateConflict):
 		writeErr(w, http.StatusConflict, codeStateConflict, "维护任务当前状态不允许该操作")
 	case errors.Is(err, maintenance.ErrInvalidCursor):
