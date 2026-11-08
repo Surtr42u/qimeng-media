@@ -63,10 +63,10 @@ class DeviceApplyLocalTokenRepository @Inject constructor(
         if (serverConfig.currentToken().isNullOrBlank()) {
             return@withLock LocalDeviceTokenResult.Rejected(ADMIN_SESSION_REQUIRED_MESSAGE)
         }
-        // 读失败不阻断：默认关闭后台领取，令牌仍可保存（用户之后可手动开启）。
-        val backgroundEnabled = runSuspendCatching {
-            settingsRepository.settings.first().backgroundEnabled
-        }.getOrDefault(false)
+        // 读失败不阻断：默认关闭后台领取/无领取服务端，令牌仍可保存（用户之后可手动开启/补填）。
+        // 这里保留已保存的领取服务端地址，避免「生成本机令牌」顺手清掉跨端配置。
+        val savedSettings = runSuspendCatching { settingsRepository.settings.first() }.getOrNull()
+        val backgroundEnabled = savedSettings?.backgroundEnabled ?: false
         // 第一步：只做网络创建/轮换，错误按 HTTP/网络分类返回；明文 token 暂存在局部变量。
         val provisioned = try {
             withContext(ioDispatcher) {
@@ -125,7 +125,13 @@ class DeviceApplyLocalTokenRepository @Inject constructor(
         // 第二步：只持久化 token。写盘失败时 token 已存在服务端，用户再点一次会走
         // rotate 换新 token（不会每次新增客户端）。
         try {
-            settingsRepository.save(target, provisioned.first, backgroundEnabled)
+            settingsRepository.save(
+                targetDeviceId = target,
+                deviceToken = provisioned.first,
+                backgroundEnabled = backgroundEnabled,
+                deviceServiceUrl = savedSettings?.deviceServiceUrl.orEmpty(),
+                replaceAuthorProfilesOnApply = savedSettings?.replaceAuthorProfilesOnApply ?: false,
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {

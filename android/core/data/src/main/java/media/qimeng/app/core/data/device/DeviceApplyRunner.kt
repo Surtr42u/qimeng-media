@@ -16,8 +16,10 @@ import media.qimeng.app.core.data.backup.MaintenanceFolderRepository
 import media.qimeng.app.core.data.di.IoDispatcher
 import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.data.embedded.LocalServerWarmup
+import media.qimeng.app.core.data.repository.AuthorProfileConflict
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.BackupRepository
+import media.qimeng.app.core.data.repository.LibraryRepository
 import media.qimeng.app.core.data.repository.StagingRepository
 import media.qimeng.app.core.data.util.runSuspendCatching
 import media.qimeng.app.core.network.ServerAddress
@@ -46,6 +48,12 @@ import media.qimeng.sdk.infrastructure.ServerException
  * 不使用前台服务；本机模式替身服务仍由既有 EmbeddedServerService 拉起（后台 FGS
  * 限制见文档）。进程内 Mutex 让周期链与手动链串行；进程死亡后的重放依赖服务端
  * 幂等（TXT 同名重建、v2 事件身份幂等），不持久化段级进度。
+ *
+ * 跨端领取（2026-11-08）：设备端点默认使用当前登录服务端；设置
+ * [DeviceApplySettings.deviceServiceUrl] 后改走该远端地址（本机模式从 PC/NAS 领取），
+ * claim/下载/回传全部以远端账本为准，段应用/两代备份仍走当前登录会话（本机库）。
+ * 远端地址与当前登录服务端不同且本轮至少一段应用成功时，应用后尽力触发本机库重扫：
+ * scan 是异步 202，资产稍后入库；重扫失败只记日志并在最终摘要附提示，不改变任务终态。
  */
 @Singleton
 class DeviceApplyRunner @Inject constructor(
@@ -58,6 +66,7 @@ class DeviceApplyRunner @Inject constructor(
     private val staging: StagingRepository,
     private val authorRepository: AuthorRepository,
     private val backupRepository: BackupRepository,
+    private val libraryRepository: LibraryRepository,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
 
@@ -86,6 +95,15 @@ class DeviceApplyRunner @Inject constructor(
         if (serverConfig.currentToken().isNullOrBlank()) {
             return@withLock retry(manual, "当前登录会话不可用，稍后重试")
         }
+        // 设备端点可独立指向远端（本机模式从 PC/NAS 领取）；段应用/两代备份仍用当前会话。
+        val invalidDeviceServiceUrl = "领取服务端地址无效，请检查格式（http/https）或留空"
+        val deviceBaseUrl = DeviceApplyPolicy.resolveDeviceServiceUrl(serverUrl, settings.deviceServiceUrl)
+            ?: return@withLock record(
+                manual,
+                invalidDeviceServiceUrl,
+                DeviceApplyRunResult.Completed(invalidDeviceServiceUrl),
+            )
+        val crossDevicePull = deviceBaseUrl != serverUrl
         if (ServerAddress.isLocalModePreset(serverUrl)) {
             val started = runSuspendCatching {
                 embeddedServerController.ensureStartedIfLocalMode(serverUrl)
@@ -115,7 +133,7 @@ class DeviceApplyRunner @Inject constructor(
             PreconditionState.Ready -> Unit
         }
 
-        val remote = remoteFactory.create(serverUrl, settings.deviceToken)
+        val remote = remoteFactory.create(deviceBaseUrl, settings.deviceToken)
         val listed = try {
             withContext(ioDispatcher) {
                 // P2-2（task-21）：claimed 是「上次领取后进程被杀/回传失败」的可恢复态；
@@ -158,9 +176,11 @@ class DeviceApplyRunner @Inject constructor(
         var applied = 0
         var partial = 0
         var failed = 0
+        var localRescanAttempted = false
+        var localRescanFailed = false
         for (summary in targets) {
             val outcome = try {
-                process(remote, summary, settings.targetDeviceId)
+                process(remote, summary, settings.targetDeviceId, settings.replaceAuthorProfilesOnApply)
             } catch (e: ClientException) {
                 if (e.statusCode == HTTP_UNAUTHORIZED || e.statusCode == HTTP_FORBIDDEN) {
                     val message = "设备 AI 令牌在领取/下载时被拒绝；请在设置页更新专用设备令牌"
@@ -184,8 +204,22 @@ class DeviceApplyRunner @Inject constructor(
                     return@withLock record(manual, message, DeviceApplyRunResult.Completed(message))
                 }
             }
+            // 跨端且已有段成功应用：立即触发一次本机库重扫（scan 202 异步，资产稍后入库）。
+            // 只扫一次：同轮后续任务导入的是业务表，不改变库目录里的媒体文件集合。
+            if (crossDevicePull &&
+                !localRescanAttempted &&
+                (outcome is TaskOutcome.Applied || outcome is TaskOutcome.Partial)
+            ) {
+                localRescanAttempted = true
+                localRescanFailed = !triggerLocalLibraryRescan()
+            }
         }
-        val message = "设备结果包处理完成：成功 $applied，部分 $partial，失败 $failed"
+        val summaryMessage = "设备结果包处理完成：成功 $applied，部分 $partial，失败 $failed"
+        val message = if (localRescanFailed) {
+            "$summaryMessage；本机重扫触发失败，请到 数据管理 → 库管理 重新扫描"
+        } else {
+            summaryMessage
+        }
         return@withLock record(manual, message, DeviceApplyRunResult.Completed(message))
     }
 
@@ -193,6 +227,7 @@ class DeviceApplyRunner @Inject constructor(
         remote: DeviceApplyRemote,
         summary: DeviceApplySummary,
         expectedTargetDeviceId: String,
+        replaceAuthorProfiles: Boolean,
     ): TaskOutcome {
         val claimed = try {
             withContext(ioDispatcher) { remote.claim(summary.id) }
@@ -296,7 +331,14 @@ class DeviceApplyRunner @Inject constructor(
                                 }
 
                                 is BackupValidator.Result.Ok -> {
-                                    val summaryResult = backupRepository.importBackup(validated.payload)
+                                    val summaryResult = backupRepository.importBackup(
+                                        validated.payload,
+                                        if (replaceAuthorProfiles) {
+                                            AuthorProfileConflict.REPLACE
+                                        } else {
+                                            AuthorProfileConflict.KEEP
+                                        },
+                                    )
                                     segmentResults += SegmentApplyResult(segment.kind, applied = true)
                                     readbacks += SegmentReadback(
                                         segment.kind,
@@ -450,6 +492,19 @@ class DeviceApplyRunner @Inject constructor(
     } catch (e: IOException) {
         throw e
     }
+
+    /**
+     * 跨端领取后触发本机库重扫（尽力而为）：扫的是当前登录会话指向的库，本机模式即手机
+     * 本地库。scan 是异步 202，资产稍后入库；失败只记日志，由最终摘要提示用户手动扫描，
+     * 不改变结果包终态，也不阻塞回传。
+     */
+    private suspend fun triggerLocalLibraryRescan(): Boolean = runSuspendCatching {
+        libraryRepository.libraries().forEach { library ->
+            libraryRepository.scan(library.id)
+        }
+    }.onFailure { failure ->
+        Log.w(DeviceApplyWorkSpec.LOG_TAG, "跨端领取后触发本机库重扫失败", failure)
+    }.isSuccess
 
     private fun importRejectionMessage(statusCode: Int): String = when (statusCode) {
         HTTP_UNAUTHORIZED, HTTP_FORBIDDEN -> "当前登录会话无权导入，请重新登录后重试"

@@ -13,6 +13,7 @@ import media.qimeng.app.core.data.events.ViewEventQueue
 import media.qimeng.app.core.data.events.ViewEventOutcome
 import media.qimeng.app.core.data.events.ViewEventSender
 import media.qimeng.app.core.data.events.ViewEventSendResult
+import media.qimeng.app.core.data.repository.AuthorProfileConflict
 import media.qimeng.app.core.data.repository.BackupAutoPrefs
 import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
@@ -626,7 +627,10 @@ private class FakeBackupRepository : BackupRepository {
         return exportEnvelopeJson
     }
 
-    override suspend fun importBackup(payload: ValidatedBackupPayload): LegacyImportSummary {
+    override suspend fun importBackup(
+        payload: ValidatedBackupPayload,
+        profileConflict: AuthorProfileConflict,
+    ): LegacyImportSummary {
         // 调用记录先于抛错：失败路径也要能断言「端点确实被调用过」
         importCalls.add(payload)
         importError?.let { throw it }

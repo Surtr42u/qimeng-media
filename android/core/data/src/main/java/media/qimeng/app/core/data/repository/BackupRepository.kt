@@ -3,6 +3,9 @@ package media.qimeng.app.core.data.repository
 import media.qimeng.app.core.data.backup.ValidatedBackupPayload
 import media.qimeng.app.core.model.LegacyImportSummary
 
+/** 导入时作者档案（昵称/简介/主页/证据/xProfile/头像）冲突处置；服务端 authorProfileConflict 的域内投影。 */
+enum class AuthorProfileConflict { KEEP, REPLACE }
+
 /**
  * 当前v2备份端口（U10-6b，Web 文件管理页 BackupCard 对等物，DOMAIN_RULES §10）：
  * 导出 = GET /export/qimeng-backup 全量信封；导入 = POST /import/qimeng-backup
@@ -23,6 +26,13 @@ interface BackupRepository {
     /**
      * 导入备份载荷（幂等合并）；结果含匹配计数与迁移 warnings（旧版独有段的丢弃清单）。
      * 载荷必须来自 [media.qimeng.app.core.data.backup.BackupValidator.validate] 的真校验链。
+     *
+     * [profileConflict] 作者档案与备份不一致时的处置：默认 [AuthorProfileConflict.KEEP]
+     * （保留本机既有资料），[AuthorProfileConflict.REPLACE] 以备份整份替换（含离线头像，
+     * Revision+1）。设备结果包跨端同步选后者可把 PC 的新资料带到本机。
      */
-    suspend fun importBackup(payload: ValidatedBackupPayload): LegacyImportSummary
+    suspend fun importBackup(
+        payload: ValidatedBackupPayload,
+        profileConflict: AuthorProfileConflict = AuthorProfileConflict.KEEP,
+    ): LegacyImportSummary
 }

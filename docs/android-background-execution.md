@@ -51,13 +51,13 @@
 新增/修改（以工作树为准，统一由 Lead 提交）：
 
 - `android/core/data/.../device/`：`DeviceApplyRunner`（编排本地前置→列表→领取/恢复→下载-应用-回读-回传）、`DeviceApplyPreconditions`（claim 前登录会话/维护根/全文件访问门禁）、`DeviceApplyWorker`/`DeviceApplyScheduler`/`DeviceApplyWorkSpec`（WorkManager 周期+立即、约束、unique work）、`DeviceApplyRemote`（SDK 设备端点，pending+claimed 分状态查询）、`DeviceApplyPolicy`（可领取/可恢复过滤/设备标签/开关）、`DeviceApplyAuthorization`（设备标签+令牌校验）、`DeviceApplySegmentVerifier`（size/sha256）、`DeviceApplyResultPlanner`（applied/partial/failed + readback）、`DeviceApplyLocalBackup`（导入前本地备份/清理）、`DeviceApplyReadback`、`DeviceApplyBootstrapper`、`DeviceApplySettingsRepository`、`DeviceApplyModels`。
-- UI：`feature/manage/DeviceApplyScreen.kt`/`DeviceApplyViewModel.kt` + `MaintenanceScreen` 入口：设备标签、设备令牌（口令式，保存后只显示已配置/替换/清除，不回显明文）、后台领取开关、立即执行；无令牌时提示不能用会话 token 做设备级授权。
+- UI：`feature/manage/DeviceApplyScreen.kt`/`DeviceApplyViewModel.kt` + `MaintenanceScreen` 入口：设备标签、设备令牌（口令式，保存后只显示已配置/替换/清除，不回显明文）、后台领取开关、立即执行、「应用时覆盖作者资料」开关（默认关；开启后 v2 备份段按 replace 整份替换本机作者档案，关闭=keep）；无令牌时提示不能用会话 token 做设备级授权。
 - 依赖接线：`QimengApplication`、`core/data/di/DataModule`、`SdkBackupRepository`、`LegacyImportModels` 的最小适配；JVM 单测（纯逻辑）随实现补充，见 §7。
 
 ## 6. 设备令牌与 Go 权限衔接
 
 1. 管理员在 **运行目标服务端的 Go 主机**执行 `qimeng ai-client create --label phone-main --scopes read,device.apply --device-ids phone-main`（参数以 `server/cmd/qimeng/ai_client_cmd.go` 为准），只显示一次明文令牌。令牌写入该服务端本机 SQLite，因此只能用于同一服务端实例；纯手机内嵌单机模式（令牌库在手机上）目前无法用 PC 命令创建令牌，仅远端模式可用；
-2. 在手机设置页填写设备标签（与 device_ids 一致）与设备令牌，开启后台领取；
+2. 在手机设置页填写设备标签（与 device_ids 一致）与设备令牌，开启后台领取；本机模式可另填「领取服务端地址（可选）」做跨端领取：设备端点走 PC/NAS、段应用仍落本机库，跨端且本轮有段应用成功后会异步触发本机库重扫（202，资产稍后入库）；
 3. Worker 用该令牌调用设备结果包端点；Go 侧按 scope+device_ids 校验，越权请求 403 且写审计；
 4. 撤销/轮换：`qimeng ai-client revoke/rotate <id>`；服务端有短缓存，撤销在数秒内生效；
 5. 管理员会话仍可人工操作，但设备后台执行不应长期使用管理员 Bearer。

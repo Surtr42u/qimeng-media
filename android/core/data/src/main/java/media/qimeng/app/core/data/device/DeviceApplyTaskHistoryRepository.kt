@@ -20,7 +20,9 @@ import media.qimeng.sdk.infrastructure.ServerException
  * 必须使用**专用设备令牌**客户端（[DeviceApplyRemoteFactory]），不能用登录会话：
  * 设备端点按 device.apply + device_ids 做设备级隔离，会话 token 只是管理员身份，
  * 无法证明「这台手机就是目标设备」。本类不领取、不下载、不回传，只读列表；
- * 领取/应用仍由 [DeviceApplyRunner] 在后台完成。
+ * 领取/应用仍由 [DeviceApplyRunner] 在后台完成。地址与 Runner 同源解析
+ * （[DeviceApplyPolicy.resolveDeviceServiceUrl]：设置页领取服务端地址，空=当前登录服务端），
+ * 保证本机模式下看到的是实际领取所用的远端账本。
  */
 @Singleton
 class DeviceApplyTaskHistoryRepository @Inject constructor(
@@ -44,8 +46,12 @@ class DeviceApplyTaskHistoryRepository @Inject constructor(
         if (serverUrl.isNullOrBlank()) {
             return DeviceApplyRecentTasksResult.Failed("尚未登录服务器，无法读取设备任务")
         }
+        val deviceServiceUrl = DeviceApplyPolicy.resolveDeviceServiceUrl(serverUrl, settings.deviceServiceUrl)
+        if (deviceServiceUrl == null) {
+            return DeviceApplyRecentTasksResult.Failed("领取服务端地址无效，请检查格式（http/https）或留空")
+        }
         return try {
-            val remote = remoteFactory.create(serverUrl, settings.deviceToken)
+            val remote = remoteFactory.create(deviceServiceUrl, settings.deviceToken)
             val tasks = withContext(ioDispatcher) {
                 remote.listRecent(settings.targetDeviceId, limit = limit)
             }
