@@ -5,10 +5,13 @@ if (Get-NetTCPConnection -LocalPort 8420 -State Listen -ErrorAction SilentlyCont
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $fixtureRoot = Join-Path $env:RUNNER_TEMP ('qimeng-launcher-' + [guid]::NewGuid().ToString('N'))
 $fixtureServer = Join-Path $fixtureRoot 'server'
+$fixtureTools = Join-Path $fixtureRoot 'tools'
 $fixtureExe = Join-Path $fixtureServer 'qimeng-server.exe'
 New-Item -ItemType Directory -Path $fixtureServer -Force | Out-Null
+New-Item -ItemType Directory -Path $fixtureTools -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot '_server-common.cmd') -Destination $fixtureRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot '启动-无头后端.bat') -Destination $fixtureRoot
+Copy-Item -LiteralPath (Join-Path $repoRoot 'tools\ensure-listen-port.ps1') -Destination $fixtureTools
 $sourcePath = Join-Path $fixtureRoot 'synthetic.go'
 @'
 package main

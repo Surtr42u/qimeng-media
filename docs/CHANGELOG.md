@@ -1,4 +1,12 @@
 
+## fix(tools): Windows 启动前预检 winnat 保留端口（2026-11-10 第七百二十二笔）
+
+执行 AI：DeepSeek V4.1 Flash（子代理：Windows 启动端口预检）
+
+- 新增 `tools/ensure-listen-port.ps1`（PowerShell 7.1+，无 5.1 回退）：启动前检查已有 IPv4/IPv6 监听与 `0.0.0.0` 绑定，识别 WSAEACCES 和 `netsh` 保留段；仅在确认无 WSL/Docker/Hyper-V 负载时临时停止 `winnat`，有负载时只打印手动命令，绝不结束进程。
+- `_server-common.cmd` 三种启动模式在拉起新服务前调用预检（使用 `pwsh`，缺失时明确报错并停止）；设置 `QIMENG_LISTEN` 时保持用户值，预检按其中端口检查。启动器回归夹具同步复制预检脚本；新增合成 `netsh` 解析测试并接入 Windows CI。
+- 文档：`server/README.md` 新增故障排查（保留段、`winnat`、退出码、`QIMENG_LISTEN`），`deploy/README.md`/`tools/README.md` 补入口。验证：真实 8420 占用识别（exit 3）、空闲 18420（exit 0）、合成保留段解析（pwsh 7.6.9）；未在活跃 WSL/Docker 环境验证自动停服分支。
+
 ## feat(tools): AI 工具平台 1.1.0：43 工具、执行器/设备/研究/回收站能力（2026-11-08 第七百二十一笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理：合并/Go 权限/执行器/设备核验/集成；子代理：AI 工具平台、Android、文档）
@@ -260,10 +268,3 @@
 - 新增 `GET /api/v1/research/context`、`POST /api/v1/research/providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵，矩阵外 400 INVALID_PARAM）、`POST /api/v1/research/lens`（multipart file ≤20MiB，loopback sidecar）；错误映射含 400/401/413/429/502/503/504 与 `RESEARCH_DISABLED`、`RESEARCH_SIDECAR_*` 码，provider 上游失败以 200+status 表达。协议先改 OpenAPI，再 `make sdk` 生成三端并同批重算 `api/sdk.lock`；Go 枚举用 `x-enum-varnames` 规避 oapi-codegen v2.8.0 的常量去重冲突（否则既有 `Ok` 常量被改名、编译失败）。
 - 新包 `server/internal/research`：provider 接口与注册表、安全 HTTP 出口（仅 https、域名白名单、禁重定向与环境代理、DNS 解析后校验公网地址、20s 超时/2MiB 响应上限）、进程内预算（provider 每分钟、Lens 每小时/每日，时钟可注入、UTC 对齐）、sidecar 客户端（loopback 校验、Bearer、/healthz、/lens multipart、超时映射）与证据落盘（剥会话参数、只记哈希/公开字段、不入库）。配置新增 `research` 段与 `QIMENG_RESEARCH_*`，默认关闭，启动期校验端点/凭据/预算；嵌入式/Android 默认关闭且不新增监听面。
 - 验证边界：research 与 httpapi 测试全部使用 httptest 假上游、假 sidecar 与合成数据，不访问真实平台、不触碰 8420 真库；**未安装 Lens sidecar、未在真实实例验收真实平台查询**，现装 PC/手机仍为 264b9d83。文档同批：`docs/api/research.md`、ADR-0053 与索引、能力地图、HANDOVER 研究交接、llms 导航，规则包增研究能力/工作流/手册节。第六百六十三笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
-
-## feat(tools): 外部 AI 维护规则包与只读 CLI（2026-11-06 第六百九十二笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 新增 `tools/ai_maintenance/`：`rules.json` 为唯一手写领域规则源，`rulepack.py` 从规则源与 `api/openapi.yaml` 原始字节生成稳定规则包（`openapiSha256`、路径、字段上限、能力、作者动作、备份/错误/工作流/权限），端点缺失时自动把 `supported/available` 降级为 planned；当前 OpenAPI 的 `/authors/merge` 只标 `apiStatus=available`，写入仍 planned。`cli.py` 提供只读 `context/health/libraries/assets/authors/author-profile/author-sources`，无任何写入命令，`author.cleanup`、设备结果包、MCP 等仍为 planned；`tools/README.md` 加一行入口。
-- 凭据只从 `QIMENG_API_BASE`/`QIMENG_API_TOKEN` 读取，错误不回显 token；网络命令拒绝重定向、禁用环境代理、20 秒超时、2 MiB 响应上限。`tools/test_ai_maintenance.py` 覆盖规则包必需键/指纹稳定性/未知端点降级与 CLI 配置、认证头、分页、HTTP/超时错误分类、重定向拒绝；仅临时目录与 127.0.0.1 stub，不访问真实 8420/外网。

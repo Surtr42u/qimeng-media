@@ -74,11 +74,12 @@ echo.
 rem Watcher: silently wait until port 8420 is reachable (server started and
 rem listening), then open the web UI in your default browser automatically.
 rem Gives up after ~60s without opening anything (e.g. startup error).
-start "" /min powershell -NoProfile -WindowStyle Hidden -Command "$ok=$false; for($i=0;$i -lt 120;$i++){try{$c=New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',8420); $c.Close(); $ok=$true; break}catch{Start-Sleep -m 500}}; if($ok){Start-Process 'http://127.0.0.1:8420'}"
-
 call :ensure_binary
 if errorlevel 1 pause
 if errorlevel 1 exit /b 1
+call :ensure_listen_port
+if errorlevel 1 exit /b !errorlevel!
+start "" /min powershell -NoProfile -WindowStyle Hidden -Command "$ok=$false; for($i=0;$i -lt 120;$i++){try{$c=New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',8420); $c.Close(); $ok=$true; break}catch{Start-Sleep -m 500}}; if($ok){Start-Process 'http://127.0.0.1:8420'}"
 qimeng-server.exe
 pause
 exit /b 0
@@ -97,6 +98,8 @@ if not errorlevel 1 (
     echo [headless] backend already running; no second process started.
     goto backend_monitor
 )
+call :ensure_listen_port
+if errorlevel 1 exit /b !errorlevel!
 echo [start] qimeng-server.exe - keep this console open for backend output.
 call :log_banner
 qimeng-server.exe
@@ -125,6 +128,8 @@ if errorlevel 1 (
         pause
         exit /b 1
     )
+    call :ensure_listen_port
+    if errorlevel 1 exit /b !errorlevel!
     call :log_banner
     start "qimeng-server" /min cmd /c "qimeng-server.exe >> console.log 2>&1"
     rem Wait (up to ~60s) until the backend answers, so the shell
@@ -160,6 +165,33 @@ if exist "qimeng-server.exe" exit /b 0
 echo.
 echo [ERROR] Cloud-built backend is missing. Ask AI to deploy the PC bundle.
 exit /b 1
+
+rem Windows NAT driver (winnat) can reserve port 8420 (WSAEACCES). Run the
+rem preflight before starting a NEW server process. QIMENG_LISTEN is inherited
+rem unchanged; when it is set, the script checks the port inside it.
+rem PowerShell 7.1+ (pwsh) is required deliberately - no 5.1 fallback.
+:ensure_listen_port
+where pwsh.exe >nul 2>nul
+if errorlevel 1 (
+    echo.
+    echo [ERROR] PowerShell 7.1 or newer ^(pwsh.exe^) is required for the listen-port preflight.
+    echo [ERROR] Install PowerShell 7.1+ from https://aka.ms/powershell and put "pwsh" in PATH.
+    echo [ERROR] Backend was NOT started.
+    echo.
+    pause
+    exit /b 4
+)
+pwsh -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\ensure-listen-port.ps1"
+set "PREFLIGHT_EXIT=!errorlevel!"
+if not "!PREFLIGHT_EXIT!"=="0" (
+    echo.
+    echo [ERROR] Listen-port preflight failed ^(exit !PREFLIGHT_EXIT!^).
+    echo [ERROR] Backend was NOT started. Read the message above.
+    echo.
+    pause
+    exit /b !PREFLIGHT_EXIT!
+)
+exit /b 0
 
 rem log_banner appends a start banner (timestamp + ready-to-copy URLs)
 rem to server\console.log so the headless backend "outputs" the LAN
