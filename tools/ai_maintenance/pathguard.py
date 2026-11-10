@@ -22,11 +22,13 @@ from . import errors
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_ROOT = Path(__file__).resolve().parent
 WORK_ROOT_ENV = "QIMENG_AI_RESEARCH_DIR"
+MEDIA_ROOTS_ENV = "QIMENG_AI_MEDIA_ROOTS"
 DEFAULT_WORK_ROOT = PACKAGE_ROOT / ".work" / "research"
 TEST_TEMP_ROOT = PACKAGE_ROOT / ".test-temp"
 BUILD_ROOT = REPO_ROOT / "build"
 
 SHA256_CHUNK_BYTES = 1 << 20
+MD5_CHUNK_BYTES = 1 << 20
 
 
 def work_root(env=None) -> Path:
@@ -110,3 +112,79 @@ def sha256_file(path: Path) -> tuple[str, int]:
         raise errors.invalid_input("文件无法读取（不存在或不可访问）",
                                    details={"path": display_path(Path(path))}) from None
     return hasher.hexdigest(), total
+
+
+def md5_file(path: Path, *, max_bytes: int | None = None) -> tuple[str | None, int]:
+    """流式计算文件 MD5；超过 max_bytes 时返回 (None, 已读字节数)。"""
+    hasher = hashlib.md5()
+    total = 0
+    try:
+        with open(path, "rb") as handle:
+            while True:
+                chunk = handle.read(MD5_CHUNK_BYTES)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if max_bytes is not None and total > max_bytes:
+                    return None, total
+                hasher.update(chunk)
+    except OSError:
+        raise errors.invalid_input("文件无法读取（不存在或不可访问）",
+                                   details={"path": display_path(Path(path))}) from None
+    return hasher.hexdigest(), total
+
+
+def media_roots(env=None) -> tuple[Path, ...]:
+    """显式授权的媒体/维护根（QIMENG_AI_MEDIA_ROOTS，逗号/分号分隔绝对路径）。
+
+    未配置时返回空元组：调用方必须拒绝本地扫描，而不是默认放行任意路径。
+    """
+    source = (env if env is not None else os.environ)
+    raw = source.get(MEDIA_ROOTS_ENV, "")
+    if not isinstance(raw, str) or not raw.strip():
+        return ()
+    roots: list[Path] = []
+    for item in raw.replace(";", ",").split(","):
+        text = item.strip()
+        if not text:
+            continue
+        candidate = Path(text)
+        if not candidate.is_absolute():
+            raise errors.configuration_error(MEDIA_ROOTS_ENV + " 只能包含绝对路径")
+        resolved = candidate.resolve(strict=False)
+        if not resolved.is_dir():
+            raise errors.configuration_error(MEDIA_ROOTS_ENV + " 中存在不可访问的目录")
+        roots.append(resolved)
+    return tuple(roots)
+
+
+def _within_any(path: Path, roots: tuple[Path, ...]) -> bool:
+    return any(_within(path, root) for root in roots)
+
+
+def resolve_media_path(value, *, env=None, kind: str = "扫描根目录") -> Path:
+    """校验本地媒体扫描根：必须显式授权、绝对、目录且不得越界。
+
+    授权来源只有 `QIMENG_AI_MEDIA_ROOTS`，以及仓库内被忽略的测试/构建工作根
+    （便于本地测试与排障）。不跟随最终路径之外的符号链接：调用方在遍历时还会
+    跳过符号链接条目。
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise errors.invalid_input(f"{kind} 必须是非空绝对路径")
+    if any(ord(ch) < 32 for ch in value):
+        raise errors.invalid_input(f"{kind} 含控制字符")
+    candidate = Path(value.strip())
+    if not candidate.is_absolute():
+        raise errors.invalid_input(f"{kind} 必须是绝对路径")
+    resolved = candidate.resolve(strict=False)
+    if not resolved.is_dir():
+        raise errors.invalid_input(f"{kind} 不存在或不是目录",
+                                   details={"path": display_path(resolved)})
+    roots = media_roots(env) + (TEST_TEMP_ROOT.resolve(), BUILD_ROOT.resolve(),
+                                work_root(env))
+    if not _within_any(resolved, roots):
+        raise errors.invalid_input(
+            f"{kind} 不在显式授权的媒体根中；请设置 {MEDIA_ROOTS_ENV} 或使用仓库忽略工作根",
+            details={"authorizedRootCount": len(roots), "env": MEDIA_ROOTS_ENV},
+        )
+    return resolved

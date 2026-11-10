@@ -98,6 +98,20 @@ def build_parser() -> argparse.ArgumentParser:
     catalog.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
     catalog.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
 
+    task_context = sub.add_parser(
+        "task-context",
+        help="按任务/领域加载相关工具、Schema 摘要、规则节与 playbook（纯本地）",
+        parents=[json_parent],
+    )
+    task_context.add_argument("--task", metavar="TASK",
+                              help="任务名/playbook/领域/工具 ID，如 media.organize、author.cleanup、backup.sync")
+    task_context.add_argument("--domain", metavar="DOMAIN",
+                              help="领域过滤：author/media/research/backup/device/maintenance/system")
+    task_context.add_argument("--no-schemas", action="store_true", help="不返回工具 Schema 摘要")
+    task_context.add_argument("--max-tools", type=int, metavar="N", help="最多返回工具数（默认 12，上限 24）")
+    task_context.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
+    task_context.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
+
     playbook = sub.add_parser(
         "playbook", help="工作流模板（可选）：列目录或按名称按需读取，不加载完整规则包", parents=[json_parent])
     playbook.add_argument("--name", metavar="NAME", help="playbook 名称，如 author.profile")
@@ -490,6 +504,22 @@ def _run_catalog(args, env) -> int:
     return 0
 
 
+def _run_task_context(args, env) -> int:
+    payload = {}
+    if getattr(args, "task", None):
+        payload["task"] = args.task
+    if getattr(args, "domain", None):
+        payload["domain"] = args.domain
+    if getattr(args, "no_schemas", False):
+        payload["includeSchemas"] = False
+    if getattr(args, "max_tools", None) is not None:
+        payload["maxTools"] = args.max_tools
+    config = _runtime_config(args, env)
+    _, result = execution.execute_tool("platform.context", payload, config=config)
+    _print_json(result, sys.stdout)
+    return 0
+
+
 def _run_playbook(args, env) -> int:
     config = _runtime_config(args, env)
     payload = {}
@@ -580,6 +610,8 @@ def main(argv=None) -> int:
             return _run_version(args, env)
         if args.command == "catalog":
             return _run_catalog(args, env)
+        if args.command == "task-context":
+            return _run_task_context(args, env)
         if args.command == "playbook":
             return _run_playbook(args, env)
         if args.command == "tools":

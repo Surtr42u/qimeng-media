@@ -1,16 +1,16 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-08.2",
+  "rulesVersion": "2026-11-10.1",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
     "adr": "docs/adr/0056-独立AI接入平台架构.md",
     "legacyTaskbook": "docs/AI_MAINTENANCE_TASKBOOK.md",
-    "note": "现行执行清单以 AI_PLATFORM_TASKBOOK.md 与 ADR-0056 为准；旧任务书仅作历史需求与设计来源。规则包运行时自包含，不依赖仓库文档。"
+    "note": "权威关系：协议以 api/openapi.yaml 为准；现行执行清单以 AI_PLATFORM_TASKBOOK.md 与 ADR-0056 为准；本文件是 AI 工具平台唯一手写规则源。旧任务书仅作历史需求与设计来源。规则包运行时自包含，不依赖仓库文档。"
   },
   "guide": {
-    "title": "绮梦影库 AI 工具平台规则包（R3：查询、计划与受控写入）",
-    "summary": "面向外部 AI 的机器可读规则与中文指南。工具包按显式注册表提供只读查询、本机研究工具包（Lens 优先）、受控写入（作者档案/清理/合并、资产作者关联、组图命名）、流式备份导出、设备结果包登记与外部执行器受控领取；所有写入必须先查询现状、生成计划、校验前置版本与指纹、确认后执行并回读。仍为 planned 的能力（如 v2 导入）不得假装执行。",
+    "title": "绮梦影库 AI 工具平台规则包（R3+：查询、计划、受控写入与按需上下文）",
+    "summary": "面向外部 AI 的机器可读规则与中文指南。工具包按显式注册表提供只读查询、本机研究工具包（Lens 优先）、受控写入（作者档案/清理/合并、资产作者关联、组图命名）、流式备份导出、设备结果包登记、外部执行器受控领取与按需任务上下文（platform.context）；所有写入必须先查询现状、生成计划、校验前置版本与指纹、确认后执行并回读。媒体批次整理按内容指纹对齐、保留最大文件、序号延顺并目检拼图；仍为 planned 的能力（如 v2 导入、本地内容扫描的受控合并）不得假装执行。",
     "sections": [
       {
         "heading": "先看边界与版本",
@@ -26,7 +26,8 @@
       {
         "heading": "工具入口与版本查询",
         "points": [
-          "统一入口：python -X utf8 tools/ai_maintenance/cli.py。保留既有只读子命令（context/health/libraries/assets/authors/author-profile/author-sources/research），新增 version、tools list [--json]、tools show <id>、tool call <id>。",
+          "统一入口：python -X utf8 tools/ai_maintenance/cli.py。保留既有只读子命令（context/health/libraries/assets/authors/author-profile/author-sources/research），新增 version、tools list [--json]、tools show <id>、task-context <--task|--domain>、tool call <id>。",
+          "任务开始先用 platform.context（CLI task-context）：按 task/domain 只返回相关工具、Schema 摘要、规则节、playbook、示例、权限与确认要求；不返回全量规则包或全部工具 Schema。",
           "机器可读调用：tool call <toolId> --input-json '<json>' 或 --input-file <path>；成功输出 {tool,toolVersion,status,result}，写入结果含 planFingerprint/idempotencyKey/steps/readback。",
           "tools list 输出每个工具的 version/status/checks/permission/readOnly/sideEffects/requiresConfirmation/timeoutSeconds/inputSchema/outputSchema/errorCodes；inputSchema 与 MCP tools/list 完全一致。",
           "退出码：0 成功；1 远程失败/冲突/前置条件变化/回读不一致；2 用法/配置/Schema/能力/未确认。错误输出为结构化 JSON，不回显 token。",
@@ -103,6 +104,27 @@
           "执行前重新读取目标目录现状并校验计划前置指纹；apply 逐步移动/改名后回读实际文件名。服务端同名自动改名（如 基名 (2).ext）必须作为冲突终止并重新规划，不得当作成功。",
           "仅括号序号（含自动改名产物）不是作品编号；并发/批量必须持锁并在锁内双检现状，防止编号冲突、跳号与重复分配。",
           "命名算法唯一实现在 media_naming.py（ENGINE_VERSION=1.0.0，已安装）；apply 必须在实例+库级锁内双检现状并回读，锁超时/失效即冲突终止；引擎缺失或发布物未安装时工具状态动态降级 planned。"
+        ]
+      },
+      {
+        "heading": "按需上下文（platform.context）",
+        "points": [
+          "任务开始先调用 platform.context（CLI：task-context）并给 task 或 domain，例如 media.organize、author.cleanup、backup.sync；只返回相关工具、Schema 摘要、规则节、playbook、示例、权限与确认要求，不返回全量规则包或全部工具 Schema。",
+          "platform.context 与 platform.catalog / platform.tool.describe / platform.rules / platform.playbook 共用同一注册表与执行路径；CLI 与 MCP 行为一致。",
+          "看见工具不等于有权执行：platform.context 会标注每个相关工具的 permitted；真正执行仍由 execute_tool 在 Schema/计划/远程请求之前强制检查权限。",
+          "task 可解析为 playbook 名、领域名（author/media/research/backup/device/maintenance/system）或工具 ID；无法解析时返回 INVALID_INPUT 并列出可用任务，不得猜测。"
+        ]
+      },
+      {
+        "heading": "媒体批次整理（M71：根目录对齐/最大文件去重/序号延顺/拼图核验/受控合并）",
+        "points": [
+          "媒体批次整理先读 platform.context（task=media.organize）取口径与工具，再调用 media.organize.prepare 的 scan 模式；scan 只读、只扫描显式授权的媒体/维护根（QIMENG_AI_MEDIA_ROOTS），路径规范化并拒绝越界与符号链接逃逸。",
+          "按内容对齐，不按文件名：md5 精确内容；图片用 pHash（dHash64，可选 ffmpeg）；视频用时长+分辨率+抽帧哈希。文件名只作来源/批次/序列线索，不能单独证明同一内容。",
+          "重复内容保留最大文件；SFW/NSFW、v1/v2、P1/P2、4K/2K、voice/unblur 等变体不得因相似而互删；跨变体只有 md5 完全一致才可列为候选，且必须人工确认。",
+          "组图/序号延顺：已有 1 (1)..1 (3) 时新变体进 1 (4)，不覆盖、不重排、不跳到无关编号；补图只追加最大页+1，缺页保留现状；作品编号与页序号分离。",
+          "合并前必须生成计划、影响预览与备份；执行后回读文件数/大小/作者 TXT/DB 关联。本地内容扫描计划只读，受控合并尚未实现（apply planned）；不得直接写 SQLite/TXT，媒体移动/删除只走正式 API 或受控维护流程。",
+          "拼图目检：按组生成带序号/文件名/尺寸或时长标签的 contact sheet，逐张确认顺序、重复与变体；发现重复/错序/变体混入时停止合并并重新分组。",
+          "本地 a b / 文件夹 a b c：共同文件内容一致时才补 c（缺失项）；共同文件不一致时以最大文件为准，停止批量合并并逐项人工核对。"
         ]
       },
       {
@@ -226,6 +248,23 @@
         "endpoint": "GET /api/v1/maintenance/jobs",
         "description": "只读维护任务账本列表/详情；不领取、不执行任务。"
       },
+      "maintenance.jobs": {
+        "status": "api-only",
+        "cli": "tool call maintenance.status（列表/详情）；创建/暂停/恢复/取消暂不注册 AI 工具",
+        "endpoint": "POST/GET /api/v1/maintenance/jobs",
+        "endpoints": [
+          {"method": "POST", "path": "/api/v1/maintenance/jobs",
+           "requestSchema": "CreateMaintenanceJobRequest",
+           "requiredFields": ["kind", "idempotencyKey"], "bodyRequired": true},
+          {"method": "GET", "path": "/api/v1/maintenance/jobs",
+           "parameters": ["status", "limit", "cursor"]},
+          {"method": "GET", "path": "/api/v1/maintenance/jobs/{id}"},
+          {"method": "POST", "path": "/api/v1/maintenance/jobs/{id}/pause"},
+          {"method": "POST", "path": "/api/v1/maintenance/jobs/{id}/resume"},
+          {"method": "POST", "path": "/api/v1/maintenance/jobs/{id}/cancel"}
+        ],
+        "description": "维护任务账本的创建/列表/详情/暂停/恢复/取消（ADR-0054）。API 已存在；AI 工具层只注册只读 maintenance.status 与执行器控制面 maintenance.*，不重复建第二套任务系统。"
+      },
       "author.profile.prepare": {
         "status": "supported",
         "cli": "tool call author.profile.prepare",
@@ -242,9 +281,11 @@
         "status": "supported",
         "cli": "tool call media.organize.prepare",
         "endpoint": "POST /api/v1/assets/{assetId}/move",
-        "description": "组图命名规划（先分组→作品编号→组内页码）；引擎已安装 v1.0.0，缺失/未发布时工具状态动态降级 planned。",
+        "description": "媒体整理规划（只读）：scan 模式按内容指纹对齐/去重/序号延顺/拼图目检（md5/可选 dHash64/视频时长+分辨率+抽帧）；libraryId+groups 模式生成组图命名计划。引擎已安装 v1.0.0，缺失/未发布时工具状态动态降级 planned。",
         "engineVersion": "1.0.0",
-        "engineModule": "tools/ai_maintenance/media_naming.py"
+        "engineModule": "tools/ai_maintenance/media_naming.py",
+        "scanEngineVersion": "1.0.0",
+        "scanEngineModule": "tools/ai_maintenance/media_scan.py"
       }
     },
     "write": {
@@ -275,11 +316,17 @@
       "author.rename": {
         "status": "planned",
         "endpoint": "PUT /api/v1/authors/{authorId}",
-        "description": "改名并迁移身份；409 不自动合并。"
+        "description": "改名并迁移身份；409 不自动合并。",
+        "endpoints": [
+          {"method": "PUT", "path": "/api/v1/authors/{authorId}",
+           "requiredFields": ["displayName"], "bodyRequired": true}
+        ]
       },
       "asset.authors.replace": {
         "status": "planned",
         "endpoint": "PUT /api/v1/assets/{assetId}/authors",
+        "requestSchema": "AssetAuthorsReplaceRequest",
+        "requiredFields": ["authorIds"],
         "description": "整体替换资产作者关联；可带 newAuthorNames 按名新建。"
       },
       "author.merge": {
@@ -297,30 +344,70 @@
         "status": "supported",
         "cli": "tool call author.cleanup.apply",
         "endpoint": "DELETE /api/v1/authors/{authorId}；PUT /api/v1/authors/{authorId}；POST /api/v1/authors/merge",
+        "endpoints": [
+          {"method": "DELETE", "path": "/api/v1/authors/{authorId}"},
+          {"method": "PUT", "path": "/api/v1/authors/{authorId}",
+           "requiredFields": ["displayName"], "bodyRequired": true},
+          {"method": "POST", "path": "/api/v1/authors/merge",
+           "requestSchema": "AuthorMergeRequest",
+           "requiredFields": ["sourceAuthorId", "targetAuthorId"], "bodyRequired": true}
+        ],
         "description": "按已确认计划执行删除/改名/原子合并，逐项回读；失败停止并保留已执行步骤。"
       },
       "backup.import": {
         "status": "planned",
         "endpoint": "POST /api/v1/import/qimeng-backup",
+        "requestSchema": "LegacyBackupImport",
+        "requiredFields": ["format", "schemaVersion", "appIdentifier", "data"],
         "description": "v2 分段导入；导入前先导出，失败保留已提交段。"
       },
       "device.apply.prepare": {
         "status": "supported",
         "cli": "tool call device.apply.prepare",
         "endpoint": "POST /api/v1/device/apply-tasks",
+        "requiredFields": ["manifest"],
         "description": "只读生成设备结果包计划：读本地 TXT/v2 备份、计算 bytes+sha256、按 Go 上限校验并出 manifest 与指纹；不写数据。"
       },
       "device.apply.submit": {
         "status": "supported",
         "cli": "tool call device.apply.submit",
         "endpoint": "POST /api/v1/device/apply-tasks",
+        "requiredFields": ["manifest"],
         "description": "confirm=true 且指纹/版本/实例一致后复核源文件，multipart 登记结果包并回读段清单。"
       },
       "device.apply.status": {
         "status": "supported",
         "cli": "tool call device.apply.status",
         "endpoint": "GET /api/v1/device/apply-tasks/{id}",
+        "endpoints": [
+          {"method": "GET", "path": "/api/v1/device/apply-tasks",
+           "parameters": ["targetDevice", "status", "limit", "cursor"],
+           "requiredParameters": ["targetDevice"]},
+          {"method": "GET", "path": "/api/v1/device/apply-tasks/{id}"}
+        ],
         "description": "只读列表（targetDevice 过滤 + keyset 分页）或详情；不含段正文。"
+      },
+      "device.apply.claim": {
+        "status": "api-only",
+        "endpoint": "POST /api/v1/device/apply-tasks/{id}/claim",
+        "description": "手机领取结果包（pending -> claimed，重复领取幂等）；Android Worker 源码已有但未安装/真机验收，AI 工具层不注册手机侧工具。"
+      },
+      "device.apply.segments": {
+        "status": "api-only",
+        "endpoint": "GET /api/v1/device/apply-tasks/{id}/segments/{kind}",
+        "description": "下载结果包段字节（octet-stream，恒带 X-Content-SHA256）；仅 pending/claimed 且未过期可下载。"
+      },
+      "device.apply.result": {
+        "status": "api-only",
+        "endpoint": "POST /api/v1/device/apply-tasks/{id}/result",
+        "requestSchema": "DeviceApplyResultRequest",
+        "requiredFields": ["status"],
+        "description": "回传手机应用结果（applied/partial/failed 终态；相同结果重放幂等，服务端权威回读 expectedState）。"
+      },
+      "device.apply.cancel": {
+        "status": "api-only",
+        "endpoint": "POST /api/v1/device/apply-tasks/{id}/cancel",
+        "description": "取消结果包（pending/claimed -> cancelled；重复取消幂等，不删除账本行与段文件）。"
       },
       "maintenance.claim": {
         "status": "supported",
@@ -1225,6 +1312,7 @@
     "localExecutor": {
       "hostData": "只读 qimeng-data 内 SQLite/WAL、在线快照与既有导出文件；禁止写事务、VACUUM 或改动文件时间。",
       "maintenanceDirectory": "仅在用户授权根内读写；写入前规范化路径并校验仍在授权根内，保留外部替换保护。",
+      "mediaRoots": "media.organize.prepare 的 scan 只读扫描 QIMENG_AI_MEDIA_ROOTS 中的绝对路径；未配置时拒绝扫描，拒绝越界、../、盘符/UNC 与符号链接逃逸。",
       "businessWrites": "只经正式 API（Bearer admin）与领域服务；禁止直连数据库/SQL、绕过鉴权或客户端拼事务。",
       "testData": "8420 真库禁止测试写入；测试只用隔离实例、临时目录与合成媒体。"
     },
@@ -1244,7 +1332,7 @@
       "asset.write": "资产写入（标签整体替换）；必须计划、确认与回读。",
       "asset.delete": "资产删除：一律移入回收站（非物理删除），需确认与回读。",
       "trash.restore": "回收站恢复；需确认与回读。",
-      "media.organize": "混合媒体命名/移动；必须计划、确认、锁与回读。",
+      "media.organize": "混合媒体整理：scan 只读（内容对齐/去重/序号建议）；命名/移动需计划、确认、锁与回读。",
       "backup.export": "便携备份流式导出；只写授权绝对路径，默认拒绝覆盖。",
       "device.apply": "设备结果包登记/查询；配对与 Android Worker 未实现。",
       "maintenance.execute": "外部 AI 执行器控制面；leaseToken 是 fencing token，只在 claim 结果出现。",
@@ -1305,10 +1393,10 @@
       "资产删除需确认并回读 404；不得按路径猜测或直接操作文件系统。"
     ]
   },
-  "rulepackVersion": "2026-11-08.2",
+  "rulepackVersion": "2026-11-10.1",
   "platform": {
-    "platformVersion": "1.1.0",
-    "toolContractVersion": "1.1.0",
+    "platformVersion": "1.2.0",
+    "toolContractVersion": "1.2.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
   },
@@ -1381,6 +1469,76 @@
       "failure": "lock_timeout/lock_stale 均按冲突终止，不自动删除 stale 锁文件；锁目录可用 QIMENG_AI_LOCK_DIR 覆盖。"
     }
   },
+  "mediaOrganize": {
+    "version": "2026-11-10.1",
+    "title": "媒体批次整理（根目录对齐 / 最大文件去重 / 序号延顺 / 拼图核验 / 受控合并）",
+    "scope": "混合媒体批次、库根目录与来源文件夹之间的内容对齐；不替代正式入库/移动 API。",
+    "principles": [
+      "按内容对齐，不按文件名：md5 用于精确内容；图片用感知哈希（dHash64，可选 ffmpeg）；视频用时长+分辨率+抽帧哈希。",
+      "文件名只作来源、下载批次与序列线索，不能单独证明同一内容；乱码名不得作为分组或编号依据。",
+      "任何删除/覆盖/合并都必须先生成计划、影响预览与备份摘要，再人工确认；不得由扫描工具直接删除文件。",
+      "媒体文件本体与 DB/TXT 分离：扫描只读；实际移动/复制/删除走正式 API 或显式授权的维护流程；禁止脚本直接写 SQLite/TXT。"
+    ],
+    "contentAlignment": {
+      "fingerprints": {
+        "md5": "流式 1MiB 分块；有界文件数与总字节预算，超限标记 skipped 而不是伪造摘要。",
+        "imagePerceptual": "ffmpeg 缩放到 9x8 灰度并计算 dHash64；可选，ffmpeg 缺失时标记 unavailable，不阻断 md5 对齐。",
+        "video": "ffprobe 时长/分辨率 + 15%、50%、85% 抽帧 dHash64；时长差 >1s 或分辨率不同不得判为同一内容。"
+      },
+      "rules": [
+        "md5 相同是同一内容的强证据；pHash/视频指纹只是候选，必须人工确认后才可进入删除候选。",
+        "图片近似判重需同分辨率且 dHash 汉明距离 ≤4；视频需时长/分辨率一致且抽帧距离 ≤6。",
+        "文件名不同但 md5 相同：保留最大文件（同 md5 时大小相同，保留规范命名/最早路径），其余列为 review 候选。",
+        "文件名相同但内容不同：不得按名称覆盖；以最大文件为准，逐项人工核对。"
+      ]
+    },
+    "dedupe": {
+      "keep": "重复内容保留 sizeBytes 最大的文件；同大小优先规范命名与更短相对路径。",
+      "variantTokens": ["sfw", "nsfw", "v1", "v2", "p1", "p2", "4k", "2k", "1080p", "720p", "voice", "unblur", "uncensored", "censored", "raw", "clean", "alt", "variant"],
+      "variantRule": "变体标记（SFW/NSFW、v1/v2、P1/P2、4K/2K、voice/unblur 等）不同的文件不得因相似而互删；跨变体只有 md5 完全一致才可列为候选，并标记 variantMismatch 待人工确认。",
+      "delete": "永不自动删除；只输出 review_remove 候选与 requiresConfirmation=true。删除只走回收站或独立管理操作。",
+      "scope": "只对 image/video 媒体文件生成去重与命名候选；TXT/DB/配置等非媒体文件只读清点，不进入删除或命名计划。"
+    },
+    "sequence": {
+      "existingExample": "已有 1 (1)..1 (3)，新变体进 1 (4)",
+      "rules": [
+        "作品编号与组内页序号分离；同一组多图只占一个作品编号。",
+        "新变体只追加当前最大页+1；不覆盖、不重排、不跳到无关编号。",
+        "缺页保留现状；未确认不得重排整组或改变作品编号。",
+        "补图、改名、移动与重排不得无故改变整组作品编号。",
+        "命名执行仍以 media_naming.py 引擎为准；扫描只给建议，不复制第二套命名算法。"
+      ]
+    },
+    "contactSheet": {
+      "purpose": "拼图目检：按组生成带标签的 contact sheet，逐张确认顺序、重复与变体。",
+      "rules": [
+        "每张缩略图必须带序号、文件名、尺寸/时长标签；组内按页序或建议页序排列。",
+        "每组一张图；组间标签不得混淆；不得把不同 family 混进同一张。",
+        "发现重复、错序、缺页或变体混入时停止批量合并并重新分组。"
+      ]
+    },
+    "alignment": {
+      "scenario": "本地 a b；文件夹 a b c",
+      "rule": "共同文件内容一致时才补缺失项 c；共同文件不一致时以最大文件为准，停止批量合并并逐项人工核对。",
+      "merge": "受控合并：先生成计划/影响预览/备份摘要，确认后在显式授权的维护目录内执行；不得直接写 SQLite/TXT，不得用脚本模拟业务事务。",
+      "readback": "合并/移动后回读文件数、总大小、作者 TXT 与 DB 关联；任一不一致即停止并保留现场。"
+    },
+    "authorization": {
+      "scanRootsEnv": "QIMENG_AI_MEDIA_ROOTS",
+      "rules": [
+        "scan 根必须是 QIMENG_AI_MEDIA_ROOTS 中的绝对路径；仓库内只允许被忽略工作根。",
+        "scan.libraryId 会读取 GET /libraries 的 rootPath 作为扫描根（与 scan.root 二选一），rootPath 仍须落在授权根内。",
+        "路径规范化后必须仍在授权根内；拒绝 ../、盘符/UNC、符号链接逃逸与不可读路径。",
+        "扫描只读：不写文件、不移动、不删除、不请求业务写入 API。"
+      ]
+    },
+    "apply": {
+      "status": "planned",
+      "reason": "本地内容扫描计划为只读建议；受控合并尚未实现。media.organize.apply 仍支持已绑定库的命名计划（media_naming.py）。"
+    },
+    "tools": ["media.organize.prepare", "media.organize.apply"],
+    "ruleSections": ["mediaOrganize", "mediaNaming", "permissions", "errors"]
+  },
   "toolCatalog": {
     "version": "1.0.0",
     "domains": [
@@ -1393,10 +1551,11 @@
       {"id": "system", "label": "平台", "description": "上下文/版本/能力目录与平台元工具"}
     ],
     "discovery": {
+      "context": "platform.context",
       "catalog": "platform.catalog",
       "describe": "platform.tool.describe",
       "rules": "platform.rules",
-      "policy": "工具数量增长时外部 AI 先取精简领域目录（无 Schema），再按需 describe/rules；MCP tools/list 保留完整清单供标准客户端；新增工具只增声明与实现模块，不改统一入口。",
+      "policy": "任务开始先用 platform.context（task/domain）取相关工具、Schema 摘要、规则节与 playbook；工具数量增长时再取精简领域目录（无 Schema），按需 describe/rules；MCP tools/list 保留完整清单供标准客户端；新增工具只增声明与实现模块，不改统一入口。",
       "lazyLoading": "注册表只保存 module:handler 引用，首次执行/描述时才导入实现模块；目录与状态计算不导入 tools_* / media_naming 实现。",
       "versioning": "工具声明 toolVersion 与规则 rulepackVersion 分离；废弃工具用 deprecated/replacedBy 标记并从精简目录默认隐藏。"
     },
@@ -1426,16 +1585,29 @@
     },
     "media.organize": {
       "domain": "media",
-      "title": "混合媒体组图命名整理",
-      "whenToUse": "需要把乱码/下载名图片整理为“作品名 作品编号 (页序号)”时；先按 family 分组并确认。",
-      "risk": "normal",
-      "baseTools": ["maintenance.inventory", "media.organize.prepare", "media.organize.apply"],
+      "title": "混合媒体批次整理（根目录对齐/最大文件去重/序号延顺/拼图核验/受控合并）",
+      "whenToUse": "需要把本地批次与目标文件夹/库根对齐、清理重复内容、延续组图序号或整理乱码下载名时；先按内容指纹生成只读计划并目检，再决定受控合并。",
+      "risk": "high",
+      "ruleSections": ["mediaOrganize", "mediaNaming", "permissions", "errors"],
+      "baseTools": ["media.organize.prepare", "media.organize.apply", "asset.query", "maintenance.inventory", "backup.export"],
       "steps": [
-        {"action": "读取目标目录现状", "tool": "media.organize.prepare", "note": "groups 显式给出 family/files/confidence；乱码不得作为分组依据"},
-        {"action": "人工核对计划", "note": "核对作品编号（一组一个）、页序号 1..n、冲突/缺页/补图预览"},
-        {"action": "执行并回读", "tool": "media.organize.apply", "note": "confirm=true + 计划原样；锁内双检、逐步 move、回读发现自动改名/缺失/多余即失败"}
+        {"action": "读取任务上下文与规则", "tool": "platform.context", "note": "task=media.organize；只加载相关工具/规则，不加载全量规则包"},
+        {"action": "确认授权根与目标批次", "note": "scan.root / targetRoot 必须在 QIMENG_AI_MEDIA_ROOTS 或仓库忽略工作根内；路径规范化并拒绝越界/符号链接逃逸"},
+        {"action": "内容对齐（只读）", "tool": "media.organize.prepare", "note": "scan 模式：md5 + 图片 pHash / 视频时长+分辨率+抽帧；文件名只作线索；输出 fingerprint/impact/suggestions"},
+        {"action": "去重决策", "note": "重复内容保留最大文件；SFW/NSFW、v1/v2、P1/P2、4K/2K、voice/unblur 等变体不得互删；跨变体只有 md5 一致才列为候选"},
+        {"action": "序号延顺", "tool": "media.organize.prepare", "note": "已有 1 (1)..1 (3) 时新变体进 1 (4)；不覆盖、不重排、不跳号；组图命名仍由 media_naming 引擎执行"},
+        {"action": "拼图目检", "note": "按组生成带序号/文件名/尺寸或时长标签的 contact sheet，逐张确认顺序/重复/变体；异常停止合并"},
+        {"action": "对齐与合并计划", "note": "本地 a b / 文件夹 a b c：共同文件一致才补 c；不一致以最大文件为准并逐项核对；生成影响预览与备份摘要"},
+        {"action": "受控合并/命名执行", "tool": "media.organize.apply", "note": "本地内容扫描计划只读（apply planned）；已绑定库的命名计划需 confirm=true、锁内双检、逐步 move 并回读"},
+        {"action": "回读核对", "tool": "asset.query", "note": "回读文件数/大小/作者 TXT/DB 关联；任一不一致停止并保留现场"}
       ],
-      "guardrails": ["不得按图片数量递增作品编号", "不得把同一组拆成多个作品编号", "未确认不重排整组", "回读失败停止并交人工"]
+      "guardrails": [
+        "不得按文件名判定同一内容；乱码名不得作为分组或编号依据",
+        "不得自动删除；review_remove 只是候选，需人工逐条确认并走回收站/正式管理操作",
+        "不得把同一组拆成多个作品编号；未确认不重排整组",
+        "不得用脚本直接写 SQLite/TXT 或模拟业务事务",
+        "本地内容扫描的受控合并尚未实现，不得宣称已执行"
+      ]
     },
     "author.cleanup": {
       "domain": "author",

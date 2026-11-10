@@ -27,10 +27,11 @@
 | `QIMENG_AI_DISABLED_TOOLS` / `QIMENG_AI_READONLY` | 工具禁用/只读开关 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 排障时覆盖 OpenAPI/规则源路径 |
 | `QIMENG_AI_LOCK_DIR` | media.organize 锁目录（受限沙箱可指向可写目录） |
+| `QIMENG_AI_MEDIA_ROOTS` | media.organize.prepare scan 模式允许只读扫描的媒体/维护根（逗号/分号分隔绝对路径；未配置时拒绝扫描） |
 | `QIMENG_AI_RATE_LIMIT_PER_MINUTE` | 单 AI 客户端每分钟请求上限（默认 600；0=关闭限流；服务端 config `ai.rate_limit_per_minute`） |
 | `QIMENG_AI_RATE_LIMIT_BURST` | 令牌桶突发容量（默认 120；须为正整数；服务端 config `ai.rate_limit_burst`） |
 
-- 工具发现默认走 `platform.catalog`（精简目录）→ `platform.tool.describe`（按需 Schema/示例）→ `platform.rules`/`platform.playbook`（按需规则/模板），不一次性加载完整规则包。
+- 工具发现默认走 `platform.context`（按任务/领域取相关工具、Schema 摘要、规则节与 playbook）或 `platform.catalog`（精简目录）→ `platform.tool.describe`（按需 Schema/示例）→ `platform.rules`/`platform.playbook`（按需规则/模板），不一次性加载完整规则包。
 - MCP 客户端配置示例见 [tools/ai_maintenance/README.md](../tools/ai_maintenance/README.md) 的 MCP 节；示例只含占位符，不写入真实 token。
 
 ## 3. 版本与兼容
@@ -44,7 +45,7 @@
 | Go API 版本 | `/api/v1/system/status` 等 | 只增协议优先；AI 平台按工具能力核对降级，不猜测旧参数 |
 
 - 升级 AI 工具包：替换 `tools/ai_maintenance/` 后运行 `version`/`catalog` 自检；不需要重新构建三端。
-- 当前工具包版本：`platformVersion` 1.1.0、`toolContractVersion` 1.1.0、`rulesVersion` 2026-11-08.2，共 43 个工具（含 `backup.export`、`device.apply.prepare/submit/status`、`maintenance.claim/heartbeat/step.record/artifact.record/complete`、研究探测/头像/回收站等新工具）；Python 侧 164 项测试通过。版本以 `version` 输出与 `rules.json` 为准。
+- 当前工具包版本：`platformVersion` 1.2.0、`toolContractVersion` 1.2.0、`rulesVersion` 2026-11-10.1，共 44 个工具（含 `platform.context`、`backup.export`、`device.apply.prepare/submit/status`、`maintenance.claim/heartbeat/step.record/artifact.record/complete`、`media.organize.prepare` scan 模式等）；Python 侧 180 项测试通过。版本以 `version` 输出与 `rules.json` 为准。
 - 升级 Go：先发布协议与实现，再按需更新 AI 工具包；工具会按 `openapiSha256`/能力核对报告 `supported/unavailable/incompatible`。
 - 工具新增/废弃：只增 ToolSpec + 实现模块；废弃用 `deprecated/replacedBy`，精简目录默认隐藏，执行返回 `TOOL_DEPRECATED`。
 

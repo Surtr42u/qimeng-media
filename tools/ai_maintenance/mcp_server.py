@@ -172,12 +172,14 @@ class McpServer:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": (
-                "绮梦影库 AI 工具平台。工具较多时先调用 platform.catalog 取精简领域目录（无 Schema），"
-                "再用 platform.tool.describe 按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节，"
-                "需要工作流模板时用 platform.playbook（可选模板，不是唯一路径）；"
-                "tools/list 仍保留完整工具清单供标准客户端使用。写入工具必须先 prepare 计划、人工确认后"
-                "带 confirm=true 与计划指纹调用 apply。看见工具不代表有权执行（权限由可信执行端强制）；"
-                "不得声称执行了 planned/已禁用工具；不得在参数中放 token。"
+                "绮梦影库 AI 工具平台。开始任务时先调用 platform.context（task=media.organize/"
+                "author.cleanup/backup.sync 等或 domain）取相关工具、Schema 摘要、规则节与 playbook；"
+                "工具较多时也可先调用 platform.catalog 取精简领域目录，再用 platform.tool.describe "
+                "按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节，需要工作流模板时用 "
+                "platform.playbook（可选模板，不是唯一路径）；tools/list 仍保留完整工具清单供标准客户端使用。"
+                "写入工具必须先 prepare 计划、人工确认后带 confirm=true 与计划指纹调用 apply。"
+                "看见工具不代表有权执行（权限由可信执行端强制）；不得声称执行了 planned/已禁用工具；"
+                "不得在参数中放 token。"
             ),
         }
 

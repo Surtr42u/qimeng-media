@@ -3,12 +3,21 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) { throw 'Only run in GitHub Actions' }
 if (Get-NetTCPConnection -LocalPort 8420 -State Listen -ErrorAction SilentlyContinue) { throw 'Runner test port is occupied' }
 $repoRoot = Split-Path -Parent $PSScriptRoot
+# 启动器不得自动唤起浏览器：用户明确禁止；此断言防止后续改动把 watcher 加回来。
+# 只查实际自动打开命令，不能匹配“不会自动打开”的说明文字（-match 不区分大小写）。
+$launcherText = Get-Content -LiteralPath (Join-Path $repoRoot '_server-common.cmd') -Raw
+if ($launcherText -match "Start-Process 'http") {
+    throw 'Launcher must not auto-open a browser'
+}
 $fixtureRoot = Join-Path $env:RUNNER_TEMP ('qimeng-launcher-' + [guid]::NewGuid().ToString('N'))
 $fixtureServer = Join-Path $fixtureRoot 'server'
+$fixtureTools = Join-Path $fixtureRoot 'tools'
 $fixtureExe = Join-Path $fixtureServer 'qimeng-server.exe'
 New-Item -ItemType Directory -Path $fixtureServer -Force | Out-Null
+New-Item -ItemType Directory -Path $fixtureTools -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot '_server-common.cmd') -Destination $fixtureRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot '启动-无头后端.bat') -Destination $fixtureRoot
+Copy-Item -LiteralPath (Join-Path $repoRoot 'tools\ensure-listen-port.ps1') -Destination $fixtureTools
 $sourcePath = Join-Path $fixtureRoot 'synthetic.go'
 @'
 package main

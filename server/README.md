@@ -117,6 +117,28 @@ HTTP入口的应用流量计数由单个Server持有，原子累计实际读取/
 云端生成：向 `codex/codegen/**` 专用分支推送协议/SQL 后，codegen workflow 固定版本执行 sqlc 和 make sdk，下载 generated-sources artifact 取回生成物与 sdk.lock，禁止手改生成文件。随后把锁和受版本控制的 sqlc 输出与实现同批交付，现有完整 CI 仍重算校验；未绕过生成锁门禁。
 
 
+## Windows 启动端口预检
+
+Windows 上 Hyper-V/WSL2/Docker 的 `winnat` 驱动会动态预留 TCP 端口段（实测常见 `8380–8479`，8420 落在其中）。此时 Go 监听 `:8420` 会返回 `WSAEACCES`，启动日志为 `bind: An attempt was made to access a socket in a way forbidden by its access permissions`。端口段由系统动态分配，重启或 NAT 服务重启后可能变化，必须每次启动重新检查。
+
+根目录 `_server-common.cmd` 在拉起新的 `qimeng-server.exe` 前调用 `tools/ensure-listen-port.ps1`（需要 **PowerShell 7.1+**，命令 `pwsh`；缺失时启动器报错并停止，不回退 Windows PowerShell 5.1）。未设置 `QIMENG_LISTEN` 时检查默认 8420；已设置时按其中端口检查且不修改该变量。脚本先检查现有 IPv4/IPv6 监听，再对 `0.0.0.0` 做绑定测试，退出码语义：
+
+| 退出码 | 含义 | 启动器行为 |
+|---|---|---|
+| 0 | 端口可用，或已在无 WSL/Docker/Hyper-V 负载时临时停止 `winnat` 释放端口 | 继续启动 |
+| 2 | 端口在保留段，且检测到 `vmmem`/`vmwp`/`docker`/`wsl` 或运行中的 WSL 发行版 | 不自动停服务，打印手动命令后阻止启动 |
+| 3 | 端口已被其他进程监听 | 打印 PID/进程名，不结束进程，阻止启动 |
+| 4 | 保留段未命中、释放失败、停止 `winnat` 失败或缺少 `pwsh` | 打印保留段与 `QIMENG_LISTEN` 备选，阻止启动 |
+
+排查命令：
+
+```powershell
+netsh interface ipv4 show excludedportrange protocol=tcp
+Get-Service winnat
+```
+
+确认没有 WSL/Docker/Hyper-V 负载时，可在管理员 PowerShell 临时执行 `Stop-Service winnat -Force`，启动后端后再执行 `Start-Service winnat`。停止 `winnat` 会短暂中断 WSL2/Docker 的 NAT 网络；有活跃容器或发行版时脚本不会自动停止它。也可以设置 `QIMENG_LISTEN=:18420`（或 `127.0.0.1:18430` 仅本机）改用其他端口，预检会自动检查该端口；**所有启动入口均不自动打开浏览器**，就绪探测仍按 8420，使用其他端口时请自行访问对应地址或直接运行 `qimeng-server.exe`。
+
 ## 规模与所有权审查
 
 Q04便携备份业务已下沉，Q08将Server的安全/鉴权请求管线移到middleware.go，保留唯一Server与显式装配顺序；原阶段输入/错误/响应与中间件顺序保持。各超线文件的保留/提取理由和云端验证边界见[任务书结构结论](../docs/OPTIMIZATION_TASKBOOK_20261025.md)。

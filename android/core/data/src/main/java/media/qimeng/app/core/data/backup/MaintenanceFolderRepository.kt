@@ -292,20 +292,22 @@ class MaintenanceFolderRepository @Inject constructor(
      * 镜像路径升级为两代布局的「当前/作者资料/作者总表.txt」；旧布局路径在此一次性迁移配置，
      * 旧目录里的文件按兼容约定保留（服务端镜像只改配置，不搬文件）。
      */
-    private suspend fun refreshManagedMaster(layout: MaintenanceLayout, kind: BackupFileKind): Boolean {
-        val target = factory.currentBaseUrl()
-        if (!ServerAddress.isLocalModePreset(target)) return false
-        val api = factory.forServer(target).create()
-        val mirror = api.apiV1AuthorsMirrorGet()
-        if (mirror.mode != AuthorMirrorConfig.Mode.master) return false
-        val expectedPath = File(layout.currentAuthors, AUTHOR_MASTER_FILE).canonicalPath
-        val legacyPath = File(File(layout.root, AUTHORS_DIR), AUTHOR_MASTER_FILE).canonicalPath
-        if (mirror.path != expectedPath && mirror.path != legacyPath) return false
-        if (kind != BackupFileKind.PRE_IMPORT) {
-            api.apiV1AuthorsMirrorPut(masterMirrorConfig(expectedPath))
+    private suspend fun refreshManagedMaster(layout: MaintenanceLayout, kind: BackupFileKind): Boolean =
+        withContext(Dispatchers.IO) {
+            // 镜像读写是阻塞 HTTP：导出由 viewModelScope（Main）触发，不得留在调用方线程。
+            val target = factory.currentBaseUrl()
+            if (!ServerAddress.isLocalModePreset(target)) return@withContext false
+            val api = factory.forServer(target).create()
+            val mirror = api.apiV1AuthorsMirrorGet()
+            if (mirror.mode != AuthorMirrorConfig.Mode.master) return@withContext false
+            val expectedPath = File(layout.currentAuthors, AUTHOR_MASTER_FILE).canonicalPath
+            val legacyPath = File(File(layout.root, AUTHORS_DIR), AUTHOR_MASTER_FILE).canonicalPath
+            if (mirror.path != expectedPath && mirror.path != legacyPath) return@withContext false
+            if (kind != BackupFileKind.PRE_IMPORT) {
+                api.apiV1AuthorsMirrorPut(masterMirrorConfig(expectedPath))
+            }
+            true
         }
-        return true
-    }
 
     suspend fun authorDocuments(): List<AuthorTxtDocument> = mutex.withLock {
         withContext(Dispatchers.IO) {

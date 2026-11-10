@@ -39,6 +39,7 @@ REQUIRED_RULE_KEYS = (
     "workflows",
     "permissions",
     "mediaNaming",
+    "mediaOrganize",
 )
 REQUIRED_PACK_KEYS = (
     "schemaVersion",
@@ -57,6 +58,8 @@ REQUIRED_PACK_KEYS = (
     "workflows",
     "permissions",
     "tools",
+    "mediaNaming",
+    "mediaOrganize",
 )
 
 
@@ -168,82 +171,176 @@ def _endpoint_methods(value) -> tuple[list[str], str | None]:
     return parsed_methods, path.strip()
 
 
-def _requirement_from_entry(entry: dict):
-    methods, path = _endpoint_methods(entry.get("endpoint"))
-    if not path or not methods:
-        return []
-    required_fields = entry.get("requiredFields")
-    fields = tuple(required_fields) if isinstance(required_fields, list) else ()
-    schema_name = entry.get("requestSchema") if isinstance(entry.get("requestSchema"), str) else None
-    parameters = entry.get("parameters") if isinstance(entry.get("parameters"), list) else ()
-    return [
-        openapi.ApiRequirement(path=path, method=method, request_schema=schema_name,
-                               required_body_fields=fields,
-                               body_required=True if (schema_name or fields) else None,
-                               parameters=tuple(parameters))
-        for method in methods
-    ]
+def _requirement_from_mapping(item: dict, fallback: dict | None = None) -> openapi.ApiRequirement | None:
+    """把一个 endpoint 声明（字符串或对象）转换为 ApiRequirement。"""
+    fallback = fallback or {}
+    method = item.get("method") or fallback.get("method")
+    path = item.get("path") or fallback.get("path")
+    if not isinstance(method, str) or not isinstance(path, str) or not method.strip() or not path.strip():
+        return None
+    fields = item.get("requiredFields", fallback.get("requiredFields"))
+    required_fields = tuple(fields) if isinstance(fields, list) else ()
+    schema_name = item.get("requestSchema", fallback.get("requestSchema"))
+    schema_name = schema_name if isinstance(schema_name, str) else None
+    parameters = item.get("parameters", fallback.get("parameters"))
+    required_parameters = item.get("requiredParameters", fallback.get("requiredParameters"))
+    body_required = item.get("bodyRequired", fallback.get("bodyRequired"))
+    if body_required is None and (schema_name or required_fields):
+        body_required = True
+    return openapi.ApiRequirement(
+        path=path.strip(),
+        method=method.strip().upper(),
+        request_schema=schema_name,
+        required_body_fields=required_fields,
+        body_required=body_required if isinstance(body_required, bool) else None,
+        parameters=tuple(parameters) if isinstance(parameters, list) else (),
+        required_parameters=(tuple(required_parameters)
+                             if isinstance(required_parameters, list) else ()),
+    )
+
+
+def _requirements_from_entry(entry: dict):
+    """解析能力的端点声明；返回 (requirements, malformed_code)。
+
+    兼容两种写法：
+    - ``endpoint: "GET/PUT /api/v1/..."``（旧写法，方法从字符串解析）；
+    - ``endpoints: [{method, path, requestSchema, requiredFields, parameters}, ...]``
+      （新写法，适合一个能力覆盖多个路径/方法，并逐端点声明必需字段）。
+    路径存在不等于可用：缺方法、缺字段或方法被删除都会在核对中降级。
+    """
+    requirements: list[openapi.ApiRequirement] = []
+    malformed = ""
+    endpoint = entry.get("endpoint")
+    endpoints = entry.get("endpoints")
+    # endpoints 存在时以逐端点声明为准；endpoint 只保留为人类可读摘要。
+    if endpoint is not None and endpoints is None:
+        methods, path = _endpoint_methods(endpoint)
+        if not path or not methods:
+            malformed = "endpoint_invalid"
+        else:
+            for method in methods:
+                requirement = _requirement_from_mapping({"method": method, "path": path}, entry)
+                if requirement is None:
+                    malformed = malformed or "endpoint_invalid"
+                else:
+                    requirements.append(requirement)
+    if endpoints is not None:
+        if not isinstance(endpoints, list) or not endpoints:
+            malformed = malformed or "endpoints_invalid"
+        else:
+            for item in endpoints:
+                if not isinstance(item, dict):
+                    malformed = malformed or "endpoints_invalid"
+                    continue
+                requirement = _requirement_from_mapping(item, entry)
+                if requirement is None:
+                    malformed = malformed or "endpoint_invalid"
+                else:
+                    requirements.append(requirement)
+    return requirements, malformed
+
+
+def _api_status(capability_status: str) -> str:
+    return "available" if capability_status == "supported" else capability_status
+
+
+def _implementation_status(entry: dict) -> str:
+    value = entry.get("implementationStatus") or entry.get("status") or "unspecified"
+    if value in ("supported", "implemented"):
+        return "implemented"
+    if value in ("planned", "api-only", "unavailable", "incompatible"):
+        return value
+    return str(value)
 
 
 def _check_entry(entry: dict, document) -> dict:
-    """按端点字符串核对一个能力/动作条目，返回状态补丁。"""
-    requirements = _requirement_from_entry(entry)
+    """按端点/方法/请求字段核对一个能力/动作条目，返回状态补丁。
+
+    输出拆成两个维度：
+    - ``implementationStatus``：AI 工具层是否实现（implemented/planned/api-only）；
+    - ``apiStatus``：当前 OpenAPI 端点能力是否可用（available/unavailable/
+      incompatible/not_checked）。
+    ``status`` 保留为兼容字段（combined），不再用单个 planned 混表。
+    """
+    requirements, malformed = _requirements_from_entry(entry)
+    implementation = _implementation_status(entry)
+    patch: dict = {"implementationStatus": implementation}
+    if malformed:
+        patch.update({
+            "capabilityStatus": "incompatible",
+            "apiStatus": "incompatible",
+            "apiStatusReason": malformed,
+            "endpointPresent": False,
+            "methodsPresent": False,
+            "statusReason": malformed,
+        })
+        if implementation in ("implemented", "api-only"):
+            patch["status"] = "incompatible"
+        return patch
     if not requirements:
-        patch = {"capabilityStatus": "not_checked"}
-        if "endpoint" in entry:
-            patch["endpointPresent"] = False
-            patch["methodsPresent"] = False
+        patch["capabilityStatus"] = "not_checked"
+        patch["apiStatus"] = "not_checked"
         return patch
     checks = openapi.check_requirements(document, requirements)
     overall = openapi.overall_status(checks)
     endpoint_present = all(check.code != "endpoint_not_in_openapi" for check in checks)
-    patch = {
+    patch.update({
         "endpointPresent": endpoint_present,
         "methodsPresent": endpoint_present and all(
             check.code != "method_not_in_openapi" for check in checks),
         "capabilityStatus": overall,
+        "apiStatus": _api_status(overall),
         "checks": [check.to_dict() for check in checks],
-    }
-    if overall == "unavailable" and entry.get("status") in ("supported", "available"):
-        patch["status"] = "unavailable"
-        patch["statusReason"] = next((check.code for check in checks
-                                      if check.status == "unavailable"), "endpoint_not_in_openapi")
-    elif overall == "incompatible" and entry.get("status") in ("supported", "available"):
-        patch["status"] = "incompatible"
-        patch["statusReason"] = next((check.code for check in checks
-                                      if check.status == "incompatible"), "capability_incompatible")
-    if "apiStatus" in entry:
-        patch["apiStatus"] = "available" if overall == "supported" else overall
+    })
+    if overall != "supported":
+        patch["apiStatusReason"] = next(
+            (check.code for check in checks if check.status == overall),
+            "capability_incompatible")
+        if implementation in ("implemented", "api-only"):
+            patch["status"] = overall
+            patch["statusReason"] = patch["apiStatusReason"]
     return patch
 
 
+def _tool_implementation_status(spec, status: dict) -> str:
+    if spec.planned or status.get("status") == "planned":
+        return "planned"
+    if spec.handler_ref and not registry.handler_module_available(spec):
+        return "missing"
+    return "implemented"
+
+
 def _apply_tool_status(entry: dict, tool_id: str, document) -> dict:
+    """用注册表工具状态核对能力条目：实现状态与最近一次 API 可用性分开。"""
     spec = registry.get(tool_id)
     if spec is None:
         return _check_entry(entry, document)
     status = registry.tool_status(spec, document)
     checks = status.get("checks", [])
+    capability_status = status.get("capabilityStatus", "not_checked")
+    implementation = _tool_implementation_status(spec, status)
     patch = {
         "toolId": tool_id,
         "toolStatus": status["status"],
-        "capabilityStatus": status.get("capabilityStatus", "supported"),
+        "implementationStatus": implementation,
+        "capabilityStatus": capability_status,
+        "apiStatus": _api_status(capability_status),
         "checks": checks,
         "endpointPresent": not any(check.get("code") == "endpoint_not_in_openapi"
                                    for check in checks),
         "methodsPresent": not any(check.get("code") == "method_not_in_openapi"
                                   for check in checks),
     }
-    capability_status = status.get("capabilityStatus", "supported")
-    if spec.planned or status["status"] == "planned":
-        patch["apiStatus"] = "available" if capability_status == "supported" else capability_status
-        if entry.get("status") != "planned":
+    if status["status"] == "planned":
+        if entry.get("status") not in ("planned", "api-only"):
             patch["status"] = "planned"
+        if status.get("reason"):
+            patch["statusReason"] = status.get("reason", "")
         return patch
     patch["status"] = status["status"]
     if status["status"] != "supported":
         patch["statusReason"] = status.get("reason", "")
-    if "apiStatus" in entry:
-        patch["apiStatus"] = "available" if status["status"] == "supported" else status["status"]
+        patch["apiStatusReason"] = status.get("reason", "")
     return patch
 
 
@@ -268,9 +365,10 @@ def _reconcile_rules(rules: dict, document) -> tuple[dict, dict, dict]:
                 continue
             if name == "merge" and registry.get("author.merge") is not None:
                 status = registry.tool_status(registry.get("author.merge"), document)
-                capability_status = status.get("capabilityStatus", "supported")
+                capability_status = status.get("capabilityStatus", "not_checked")
                 action.update({
-                    "apiStatus": "available" if capability_status == "supported" else capability_status,
+                    "implementationStatus": _implementation_status(action),
+                    "apiStatus": _api_status(capability_status),
                     "endpointPresent": not any(
                         check.get("code") == "endpoint_not_in_openapi"
                         for check in status.get("checks", [])),
@@ -305,6 +403,7 @@ def _reconcile_rules(rules: dict, document) -> tuple[dict, dict, dict]:
             profile["methodsPresent"] = all(
                 check.code != "method_not_in_openapi" for check in checks)
             profile["capabilityStatus"] = overall
+            profile["apiStatus"] = _api_status(overall)
             profile["checks"] = [check.to_dict() for check in checks]
     return capabilities, actions, fields
 
@@ -334,6 +433,7 @@ def build_rulepack(openapi_path: str | Path | None = None,
         "tools": tools,
         "toolConfig": copy.deepcopy(rules["toolConfig"]),
         "mediaNaming": copy.deepcopy(rules["mediaNaming"]),
+        "mediaOrganize": copy.deepcopy(rules["mediaOrganize"]),
         "compatibility": {
             "platformVersion": versions.PLATFORM_VERSION,
             "toolContractVersion": versions.TOOL_CONTRACT_VERSION,
