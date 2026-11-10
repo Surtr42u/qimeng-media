@@ -6,7 +6,7 @@
   "whenToUse": "收到一个本地媒体批次，需要按内容去重、补序号、拼图目检、命名入库或推送到手机时；先只读扫描，目检确认后才执行写入。",
   "targets": ["pc", "nas", "android-embedded"],
   "requires": [],
-  "permissions": ["read", "media.organize", "device.apply"],
+  "permissions": ["read", "media.organize", "device.apply", "local.files.write", "local.device"],
   "inputs": {
     "type": "object",
     "properties": {

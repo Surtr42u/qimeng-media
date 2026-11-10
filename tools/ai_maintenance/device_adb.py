@@ -16,6 +16,8 @@ import shlex
 import shutil
 import subprocess
 
+from . import pathguard
+
 ADB_PRIMITIVE_VERSION = "1.0.0"
 FORBIDDEN_SERIALS = {"emulator-5554"}
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -101,6 +103,10 @@ def ensure_dir(path: str, *, env=None) -> str:
 
 def push_file(local_path: str, remote_dir: str, *, env=None, timeout: float = 300.0) -> dict:
     local = os.path.abspath(local_path)
+    if env is not None:
+        # 推送源是读操作：调用方传入授权环境时再复核一次读写根。
+        local = str(pathguard.resolve_local_path(local, env=env, must_exist=True,
+                                                 kind="本地推送源", mode="read"))
     if not os.path.isfile(local):
         raise AdbError("本地文件不存在：" + local, code="ADB_LOCAL_MISSING")
     remote_dir = ensure_dir(remote_dir, env=env)
@@ -125,6 +131,9 @@ def push_many(items, remote_dir: str, *, env=None, timeout: float = 300.0) -> di
     total = 0
     for local_path, remote_name in items:
         local = os.path.abspath(local_path)
+        if env is not None:
+            local = str(pathguard.resolve_local_path(local, env=env, must_exist=True,
+                                                     kind="本地推送源", mode="read"))
         target_dir = remote_dir
         target_name = remote_name or os.path.basename(local)
         remote_path = posixpath.join(target_dir, target_name)
@@ -152,7 +161,12 @@ def push_many(items, remote_dir: str, *, env=None, timeout: float = 300.0) -> di
 
 
 def pull_file(remote_path: str, local_path: str, *, env=None, timeout: float = 300.0) -> dict:
-    local = os.path.abspath(local_path)
+    if env is not None:
+        # 本地落盘是写操作：必须落在显式写授权根内。
+        local = str(pathguard.resolve_local_path(local_path, env=env, must_exist=False,
+                                                 kind="本地拉取目标", mode="write"))
+    else:
+        local = os.path.abspath(local_path)
     os.makedirs(os.path.dirname(local), exist_ok=True)
     _run([adb_path(env), "-s", serial(env), "pull", remote_path, local], timeout=timeout)
     if not os.path.isfile(local):

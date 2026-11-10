@@ -127,6 +127,102 @@ def invalid_input(message: str, details=None) -> ToolError:
     )
 
 
+def path_not_authorized(kind: str = "路径", *, env_names=(), details=None) -> ToolError:
+    """路径不在可信执行端显式授权的读写根内（默认拒绝）。"""
+    payload = dict(details or {})
+    if env_names:
+        payload.setdefault("env", list(env_names))
+    return ToolError(
+        "PATH_NOT_AUTHORIZED",
+        f"{kind} 不在显式授权的读写根内；默认拒绝未配置目录",
+        category="permission",
+        exit_code=2,
+        recovery=(
+            "由可信执行端通过 QIMENG_AI_READ_ROOTS / QIMENG_AI_WRITE_ROOTS "
+            "（媒体根用 QIMENG_AI_MEDIA_ROOTS）显式授权；模型传参不能扩大授权。"
+        ),
+        details=payload or None,
+    )
+
+
+def path_unsafe(message: str, details=None) -> ToolError:
+    """路径含控制字符、链接/junction/reparse 段或其它不安全形式。"""
+    return ToolError(
+        "PATH_UNSAFE",
+        message,
+        category="usage",
+        exit_code=2,
+        recovery=(
+            "修正路径：不要使用控制字符；写目标及其父段不得是符号链接/junction/reparse；"
+            "不要用 .. 逃逸授权根。"
+        ),
+        details=details,
+    )
+
+
+def file_ref_invalid(message: str = "fileRef 格式非法", details=None) -> ToolError:
+    return ToolError(
+        "FILE_REF_INVALID",
+        message,
+        category="usage",
+        exit_code=2,
+        recovery="重新搜索/调用 make_ref 生成 fileRef；不要手工拼接或修改 fileRef。",
+        details=details,
+    )
+
+
+def file_ref_stale(message: str = "fileRef 指向的文件已变化", details=None) -> ToolError:
+    return ToolError(
+        "FILE_REF_STALE",
+        message,
+        category="conflict",
+        exit_code=1,
+        recovery="文件已删除或被替换；重新搜索生成新 fileRef 后再执行，不要复用旧 ref。",
+        details=details,
+    )
+
+
+def file_ref_unavailable(message: str = "fileRef 的 storage 未配置", details=None) -> ToolError:
+    return ToolError(
+        "FILE_REF_UNAVAILABLE",
+        message,
+        category="config",
+        exit_code=2,
+        recovery="检查 QIMENG_AI_STORAGES 是否仍配置该 storageId；错误只列变量名/ID，不回显物理路径。",
+        details=details,
+    )
+
+
+def recipe_step_uncertain(step_id: str, details=None) -> ToolError:
+    """恢复时发现上次运行停在副作用步骤（可能已写入）。"""
+    payload = dict(details or {})
+    payload.setdefault("step", step_id)
+    return ToolError(
+        "RECIPE_STEP_UNCERTAIN",
+        f"步骤 {step_id} 在副作用执行中被中断；不能直接续跑",
+        category="conflict",
+        exit_code=1,
+        recovery=(
+            "先回读目标/设备并人工核对是否已部分写入；确认后新建运行（不要直接续跑同一状态）。"
+        ),
+        details=payload,
+    )
+
+
+def recipe_artifact_tampered(step_id: str, details=None) -> ToolError:
+    """恢复时已完成步骤的产物存在性/字节数/sha256 不符。"""
+    payload = dict(details or {})
+    payload.setdefault("step", step_id)
+    return ToolError(
+        "RECIPE_ARTIFACT_TAMPERED",
+        f"步骤 {step_id} 的产物缺失或被修改；停止续跑",
+        category="verification",
+        exit_code=1,
+        recovery="人工核对运行目录与产物；不要信任被修改的 state.json/artifacts，确认后新建运行。",
+        details=payload,
+    )
+
+
 def configuration_error(message: str) -> ToolError:
     return ToolError(
         "CONFIGURATION_ERROR",

@@ -24,7 +24,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import errors, pathguard
+from . import errors, fileref, pathguard
 from .runtime import ToolContext
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -82,7 +82,8 @@ def _node_binary(env) -> str:
 
 
 def _input_path(ctx: ToolContext, value, kind: str) -> str:
-    return str(pathguard.resolve_local_path(value, env=ctx.env, must_exist=True, kind=kind))
+    return str(pathguard.resolve_local_path(value, env=ctx.env, must_exist=True,
+                                            kind=kind, mode="read"))
 
 
 def _output_dir(ctx: ToolContext, value, tool_label: str, *, required: bool = False) -> Path:
@@ -94,7 +95,8 @@ def _output_dir(ctx: ToolContext, value, tool_label: str, *, required: bool = Fa
         directory = root / (time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
                             + "-" + os.urandom(4).hex())
     else:
-        directory = pathguard.resolve_local_path(value, env=ctx.env, kind="outDir")
+        directory = pathguard.resolve_local_path(value, env=ctx.env, kind="outDir",
+                                                  mode="write")
     return pathguard.ensure_directory(directory)
 
 
@@ -198,9 +200,12 @@ def _artifacts(paths, *, limit: int = MAX_ARTIFACTS) -> list[dict]:
     return rows
 
 
-def _directory_artifacts(directory: Path, *, limit: int = MAX_ARTIFACTS) -> list[dict]:
-    """有界枚举目录内普通文件（按相对路径排序）；不跟随符号链接。"""
-    rows: list[dict] = []
+def _directory_artifacts(directory: Path, *, limit: int = MAX_ARTIFACTS) -> list[Path]:
+    """有界枚举目录内普通文件（按相对路径排序）；不跟随符号链接。
+
+    返回路径列表而不是已序列化的工件字典：调用方会与其它路径合并后再交给
+    ``_artifacts`` 统一去重/摘要，避免 dict 与 Path 混用。
+    """
     collected: list[Path] = []
     for root, dirs, files in os.walk(directory):
         dirs.sort()
@@ -210,7 +215,7 @@ def _directory_artifacts(directory: Path, *, limit: int = MAX_ARTIFACTS) -> list
                 break
         if len(collected) >= limit:
             break
-    return _artifacts(collected, limit=limit)
+    return collected
 
 
 def _write_log(directory: Path, name: str, raw: bytes) -> Path | None:
@@ -392,11 +397,30 @@ def research_author_probe(ctx: ToolContext, payload: dict) -> dict:
 
 def research_media_probe(ctx: ToolContext, payload: dict) -> dict:
     files = payload.get("files")
-    if not isinstance(files, list) or not files:
-        raise errors.invalid_input("files 必须是非空数组")
-    if len(files) > MAX_MEDIA_FILES:
-        raise errors.invalid_input(f"files 最多 {MAX_MEDIA_FILES} 项")
-    resolved = [_input_path(ctx, item, "files[]") for item in files]
+    file_refs = payload.get("fileRefs")
+    if files is None:
+        files = []
+    if file_refs is None:
+        file_refs = []
+    if not isinstance(files, list):
+        raise errors.invalid_input("files 必须是数组")
+    if not isinstance(file_refs, list):
+        raise errors.invalid_input("fileRefs 必须是数组")
+    if not files and not file_refs:
+        raise errors.invalid_input("files 或 fileRefs 必须提供非空数组")
+    if len(files) + len(file_refs) > MAX_MEDIA_FILES:
+        raise errors.invalid_input(f"files+fileRefs 最多 {MAX_MEDIA_FILES} 项")
+    resolved = []
+    placeholders: dict[str, str] = {}
+    for index, item in enumerate(files, 1):
+        path = _input_path(ctx, item, "files[]")
+        resolved.append(path)
+        placeholders.setdefault(path, f"<media:{index}>")
+    for index, item in enumerate(file_refs, 1):
+        path = str(fileref.resolve_input(None, item, env=ctx.env, mode="read",
+                                         kind="fileRefs[]"))
+        resolved.append(path)
+        placeholders.setdefault(path, f"<fileRef:{index}>")
     directory = _output_dir(ctx, None, "media-probe")
     out = directory / "media-probe.jsonl"
     if payload.get("frameDir") is None:
@@ -404,7 +428,7 @@ def research_media_probe(ctx: ToolContext, payload: dict) -> dict:
     else:
         frame_dir = pathguard.ensure_directory(
             pathguard.resolve_local_path(payload.get("frameDir"), env=ctx.env,
-                                         kind="frameDir"))
+                                         kind="frameDir", mode="write"))
     argv = _python() + [str(_script("media_probe.py"))] + resolved + [
         "--out", str(out), "--frame-dir", str(frame_dir)]
     frames = payload.get("frames")
@@ -414,10 +438,16 @@ def research_media_probe(ctx: ToolContext, payload: dict) -> dict:
         argv += ["--frames", frames]
     run = _execute(argv, env=_clean_env(ctx), timeout=_timeout(payload))
     artifact_paths = [out] + _directory_artifacts(frame_dir, limit=MAX_ARTIFACTS - 2)
-    return _result(run, script="media_probe.py", args=argv[1:],
-                   artifact_paths=artifact_paths, directory=directory,
-                   notes=["帧抽到 <frameDir>/frames（默认工作根），只作识图输入，不入媒体库。",
-                          "缺少 ffmpeg/ffprobe 时脚本以退出码 2 报环境错误；不要把它当识别结果。"])
+    display_args = argv[1:]
+    notes = ["帧抽到 <frameDir>/frames（默认工作根），只作识图输入，不入媒体库。",
+             "缺少 ffmpeg/ffprobe 时脚本以退出码 2 报环境错误；不要把它当识别结果。"]
+    if file_refs:
+        # fileRef 输入的隐私收益：展示用 args 把已解析媒体路径替换成占位符，
+        # 不替换脚本/输出目录/抽帧目录等执行元数据。
+        display_args = [placeholders.get(item, item) for item in argv[1:]]
+        notes.append("fileRef 输入不会把物理路径放进结果；args 中媒体路径以 <fileRef:N>/<media:N> 显示。")
+    return _result(run, script="media_probe.py", args=display_args,
+                   artifact_paths=artifact_paths, directory=directory, notes=notes)
 
 
 # --------------------------------------------------------------------------- #

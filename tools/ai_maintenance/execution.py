@@ -24,6 +24,18 @@ READONLY_ENV = "QIMENG_AI_READONLY"
 OPENAPI_ENV = "QIMENG_AI_OPENAPI"
 RULES_ENV = "QIMENG_AI_RULES"
 GRANTED_PERMISSIONS_ENV = "QIMENG_AI_GRANTED_PERMISSIONS"
+def known_permissions() -> frozenset[str]:
+    """已声明权限全集；唯一权威是 registry.PERMISSIONS（含本地原语权限）。"""
+    return frozenset(registry.PERMISSIONS.keys())
+
+
+def _primitive_ids() -> frozenset[str]:
+    """惰性读取原语 ID，避免 execution ↔ recipes 顶层循环导入。"""
+    try:
+        from . import recipes as recipes_module
+        return frozenset(recipes_module.PRIMITIVE_SPECS)
+    except (ImportError, AttributeError):
+        return frozenset()
 
 
 class RuntimeConfig:
@@ -41,7 +53,7 @@ class RuntimeConfig:
         # 已声明权限（保持既有 CLI 行为）；QIMENG_AI_GRANTED_PERMISSIONS 或
         # rules.json toolConfig.grantedPermissions 可收窄。可信执行端必须据此
         # 在调用前强制拒绝，而不是依赖模型自觉不调用 Go。
-        self.granted_permissions = (frozenset(registry.PERMISSIONS.keys())
+        self.granted_permissions = (known_permissions()
                                     if granted_permissions is None else granted_permissions)
         self._document = None
         self._openapi_sha256 = ""
@@ -94,9 +106,10 @@ def load_config(env=None) -> RuntimeConfig:
         raise errors.configuration_error("rules.json toolConfig.disabled 必须是数组")
     for tool_id in _parse_list(env.get(DISABLED_TOOLS_ENV, "")):
         disabled.add(tool_id)
-    unknown = sorted(item for item in disabled if registry.get(item) is None)
+    unknown = sorted(item for item in disabled
+                     if registry.get(item) is None and item not in _primitive_ids())
     if unknown:
-        raise errors.configuration_error("禁用列表包含未知工具 ID：" + ", ".join(unknown))
+        raise errors.configuration_error("禁用列表包含未知工具/原语 ID：" + ", ".join(unknown))
     read_only_mode = bool(tool_config.get("readOnlyMode")) or \
         env.get(READONLY_ENV, "").strip().lower() in TRUE_VALUES
     granted = _parse_granted_permissions(env, tool_config)
@@ -107,6 +120,7 @@ def load_config(env=None) -> RuntimeConfig:
 
 def _parse_granted_permissions(env, tool_config: dict) -> frozenset[str]:
     """解析可信执行端授予的权限；未配置=全部已声明权限（兼容旧行为）。"""
+    known = known_permissions()
     raw = env.get(GRANTED_PERMISSIONS_ENV, "").strip()
     configured = tool_config.get("grantedPermissions")
     if raw:
@@ -114,30 +128,62 @@ def _parse_granted_permissions(env, tool_config: dict) -> frozenset[str]:
     elif isinstance(configured, list):
         values = [str(item).strip() for item in configured if str(item).strip()]
     else:
-        return frozenset(registry.PERMISSIONS.keys())
+        return known
     if values == ["all"]:
-        return frozenset(registry.PERMISSIONS.keys())
-    unknown = sorted(item for item in values if item not in registry.PERMISSIONS)
+        return known
+    unknown = sorted(item for item in values if item not in known)
     if unknown:
         raise errors.configuration_error(
             "授予列表包含未知权限：" + ", ".join(unknown) +
-            "（合法值：" + ", ".join(sorted(registry.PERMISSIONS.keys())) + "）")
+            "（合法值：" + ", ".join(sorted(known)) + "）")
     return frozenset(values)
+
+
+def _policy_status(spec, config: RuntimeConfig) -> tuple[str, str]:
+    """工具与原语共用的拒绝规则；返回 (kind, reason)，kind 为空表示允许。
+
+    spec 只需鸭子类型具备 id/permission/read_only/side_effects；工具与原语
+    因此走同一套禁用/只读/权限判断，避免两套规则漂移。
+    """
+    name = str(getattr(spec, "id", "") or "")
+    permission = str(getattr(spec, "permission", "") or "")
+    read_only = bool(getattr(spec, "read_only", False))
+    side_effects = bool(getattr(spec, "side_effects", False))
+    if name in config.disabled:
+        return "disabled", "在 toolConfig.disabled / QIMENG_AI_DISABLED_TOOLS 中禁用"
+    if config.read_only_mode and (side_effects or not read_only):
+        return "readonly", "readOnlyMode 开启：禁止副作用工具/原语"
+    if permission not in config.granted_permissions:
+        return "permission", permission
+    return "", ""
+
+
+def policy_denial(spec, config: RuntimeConfig) -> str:
+    """返回拒绝原因（空串表示允许）；工具与原语共用同一策略。"""
+    return _policy_status(spec, config)[1]
+
+
+def policy_denied_error(spec, config: RuntimeConfig):
+    """把 policy_denial 的判定映射成稳定 ToolError；允许时返回 None。"""
+    kind, reason = _policy_status(spec, config)
+    if not kind:
+        return None
+    name = str(getattr(spec, "id", "") or "")
+    if kind == "permission":
+        return errors.permission_denied(name, reason,
+                                        sorted(config.granted_permissions))
+    return errors.tool_disabled(name, reason)
 
 
 def permission_reason(spec: registry.ToolSpec, config: RuntimeConfig) -> str:
     """返回未授予权限的说明；空串表示允许执行。权限声明≠有权限，必须执行端强制。"""
-    if spec.permission in config.granted_permissions:
-        return ""
-    return spec.permission
+    kind, reason = _policy_status(spec, config)
+    return reason if kind == "permission" else ""
 
 
 def disabled_reason(spec: registry.ToolSpec, config: RuntimeConfig) -> str:
-    if spec.id in config.disabled:
-        return "在 toolConfig.disabled / QIMENG_AI_DISABLED_TOOLS 中禁用"
-    if config.read_only_mode and (spec.side_effects or not spec.read_only):
-        return "readOnlyMode 开启：禁止副作用工具"
-    return ""
+    kind, reason = _policy_status(spec, config)
+    return reason if kind in ("disabled", "readonly") else ""
 
 
 def _client_context(spec: registry.ToolSpec, env) -> ToolContext:
