@@ -87,7 +87,9 @@ AI 不需要先读源码/完整文档才知道做什么：任务入口是**任�
 - 原语唯一实现：`media_primitives`（抽帧/dHash/拼图/缓存）、`device_adb`（显式真机）、`client`（统一 HTTP）；禁止为单个任务再写临时脚本。
 - 运行目标能力先核对（`pc` / `android-embedded` / `nas`）：缺 ffmpeg/adb/research 时给出环境变量提示，不跑到一半才失败。
 - 未知作者链路：`author.discover` = 抽帧/Google Lens 识图 → Bing/平台搜索 → `author.query` 查重 → 未命中才 `author.create` → `author.profile.prepare/update`（candidate，人工确认）→ `asset.authors.apply` → 回读。档案字段/证据/头像规则仍以 `tools/AUTHOR_RESEARCH.md` 与 `rules.json fields` 为准。
-- 这是“按需加载”而不是“全量读取”：默认禁止把 `context` 全量规则包（约 477KB）或全部工具 Schema 一次性塞进模型上下文；需要细节时再 `platform.tool.describe` / `platform.rules` / `platform.playbook`。
+- 本地文件定位（2026-11-10 定向优化）：未入库文件用 `files.storages` → `files.search` 取得 `fileRef` + 相对路径 + `nextCursor`，后续 `media.probe`/`file.hash`/recipe 原语复用；**不把物理绝对路径反复放进模型上下文**。已入库资产/作者/标签/业务关联仍只走 Go `/api/v1`；本地工具不得修改已入库资产的业务状态或建立第二份事实。
+- `fileRef` 失效/替换返回 `FILE_REF_STALE`（重新搜索），伪造/越界返回 `FILE_REF_INVALID`；读以 `QIMENG_AI_STORAGES` 为授权，写还需 `QIMENG_AI_WRITE_ROOTS`。原 `path` 参数保持兼容。
+- 这是“按需加载”而不是“全量读取”：默认禁止把 `context` 全量规则包（约 490KB）或全部工具 Schema 一次性塞进模型上下文；需要细节时再 `platform.tool.describe` / `platform.rules` / `platform.playbook`。`platform.rules` 支持有界点路径（如 `playbooks.media.organize`），截断结果必须显式标记。
 
 ## 2. GitHub 当前实现基线
 
@@ -166,8 +168,8 @@ AI 不需要先读源码/完整文档才知道做什么：任务入口是**任�
 2. 支持按领域发现工具、按需获取单个工具的 Schema、规则说明与示例，避免把完整规则包一次性塞入模型上下文。
 3. 工具执行器按需加载相应代码模块；外部 AI 通过稳定工具接口调用，不要求阅读 Python 源码。
 4. 模块内可独立增加、修改、废弃工具，并记录工具版本、规则版本和依赖的 Go API 能力；废弃工具默认从精简目录隐藏并保留替代指引。
-5. CLI 与 MCP 必须共享注册与执行逻辑，按需加载不产生两套行为；MCP 保留标准完整 `tools/list`，同时提供符合协议的精简分类发现入口。
-6. 区分权限与能力发现：AI 能看见某工具不代表有权执行，权限必须在可信执行端强制检查（`QIMENG_AI_GRANTED_PERMISSIONS` 或规则配置），未授权返回稳定错误码。
+5. CLI 与 MCP 必须共享注册与执行逻辑，按需加载不产生两套行为；MCP 保留标准完整 `tools/list`，同时提供符合协议的精简分类发现入口。`QIMENG_AI_MCP_DOMAINS` 过滤业务工具时始终保留 `platform.*` 与 `files.storages` 安全发现元工具；标准客户端仍可能加载完整 `tools/list`，过滤只减少暴露面，不承诺上下文节省。
+6. 区分权限与能力发现：AI 能看见某工具不代表有权执行，权限必须在可信执行端强制检查（`QIMENG_AI_GRANTED_PERMISSIONS` 或规则配置），未授权返回稳定错误码。工具状态拆分为 registered / implemented / contract / runtime / locallyAuthorized / serverVerified，不把“没实现/没配置/没权限/服务端未验证”混成一个 `supported`。
 7. 评估当前管理员 Bearer 的绕过风险：AI 工具层隐藏 token 不能阻止模型直接调用 Go API；正式开放 AI 写入前应实现受限凭据或受限服务端权限，本轮只在文档与规则中记录风险与边界。
 8. 增加大量工具注册、模块缺失、版本不兼容、规则变更、并发调用及禁用工具的自动化测试。
 9. 保留现有 `/api/v1` 与三端调用方式，优先只调整 `tools/ai_maintenance/`，不为工具分类改写 Go 业务核心。
@@ -390,14 +392,15 @@ AI 模型不直接持有 Go 管理员 Token。AI 模型不直接获取任意 she
 
 ### 11.2 操作权限
 
-至少区分：只读查询、研究辅助、作者资料写入、媒体整理、高风险维护（作者删除/合并/批量改名）、管理员维护（备份恢复、迁移及管理员诊断）。权限必须绑定目标实例、目标库、授权目录和操作类型。工具注册表声明权限不等于真正完成权限隔离，必须有可信执行端或服务端强制校验。
+至少区分：只读查询、研究辅助、作者资料写入、媒体整理、高风险维护（作者删除/合并/批量改名）、管理员维护（备份恢复、迁移及管理员诊断），以及本地文件写（`local.files.write`）与设备原语（`local.device`）。权限必须绑定目标实例、目标库、授权目录和操作类型。工具与原语注册表声明权限不等于真正完成权限隔离，必须有可信执行端或服务端强制校验；`QIMENG_AI_READONLY`/`QIMENG_AI_DISABLED_TOOLS`/`QIMENG_AI_GRANTED_PERMISSIONS` 对原语同样生效，不依赖模型自觉。
 
 ### 11.3 安全不变量
 
 - 业务写入只能调用正式 Go API。
 - 不直接修改 SQLite、WAL 或 TXT 业务真相。
 - 本地只读数据库审计仅限经过授权的可信维护工具。
-- 文件操作限制在授权目录。
+- 文件操作限制在授权目录：读根与写根分别显式配置（`QIMENG_AI_READ_ROOTS`/`QIMENG_AI_WRITE_ROOTS`，媒体根计入读根；逻辑存储用 `QIMENG_AI_STORAGES`），未授权目录默认拒绝；写路径拒绝符号链接/junction/reparse 逃逸，默认不覆盖、不删除源。
+- 未入库文件可在授权目录直接处理；已入库资产/索引/作者/标签/业务关联只能走正式 Go API。`fileRef` 不能绕过路径授权，失效后必须重新搜索。
 - 外部网页和模型输出视为不可信数据。
 - 证据内容不能改变工具规则、权限或目标实例。
 - 不导出管理员 Token、模型密钥、完整备份。

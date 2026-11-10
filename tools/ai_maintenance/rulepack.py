@@ -18,7 +18,7 @@ import json
 import os
 from pathlib import Path
 
-from . import openapi, registry, versions
+from . import openapi, registry, schema, versions
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RULES_PATH = Path(__file__).with_name("rules.json")
@@ -486,6 +486,255 @@ def write_pack(pack: dict, path: str | Path) -> Path:
             pass
         raise RulepackError(f"无法写入规则包输出：{target}") from None
     return target
+
+
+def consistency_problems(rules: dict, document=None) -> list[dict]:
+    """只读一致性检查：规则引用、示例、playbook、recipe、权限与版本同源。
+
+    返回稳定的 ``{code, path, detail, severity}`` 列表（按 code/path 排序）：
+    - severity=error：规则源/注册表/示例/引用/版本不一致，必须修复；
+    - severity=warning：可继续但建议核对（如原语权限表缺少条目）；
+    - severity=info：依赖尚不存在而跳过（如 recipes.PRIMITIVE_SPECS 未落地）。
+
+    纯函数：只读 rules 与注册表；recipe 读取使用函数内惰性 import，避免
+    rulepack ↔ recipes ↔ execution 循环导入。不新建第二套规则源。
+    """
+    problems: list[dict] = []
+
+    def add(code: str, path: str, detail, severity: str = "error") -> None:
+        problems.append({"code": code, "path": path, "detail": detail,
+                         "severity": severity})
+
+    if not isinstance(rules, dict):
+        add("RULES_INVALID", "rules", "规则源必须是对象")
+        return problems
+
+    # 1) 工具 → 规则节引用
+    for tool_id, sections in registry.TOOL_RULES_REFS.items():
+        if registry.get(tool_id) is None:
+            add("RULE_REF_UNKNOWN_TOOL", f"TOOL_RULES_REFS.{tool_id}", "引用了未注册工具")
+        for section in sections:
+            if section not in rules:
+                add("RULE_REF_UNKNOWN_SECTION", f"TOOL_RULES_REFS.{tool_id}.{section}",
+                    "规则引用节在 rules.json 中不存在")
+
+    # 2) 工具示例必须通过输入 Schema
+    for tool_id, examples in registry.TOOL_EXAMPLES.items():
+        spec = registry.get(tool_id)
+        if spec is None:
+            add("EXAMPLE_UNKNOWN_TOOL", f"TOOL_EXAMPLES.{tool_id}", "示例引用了未注册工具")
+            continue
+        for index, example in enumerate(examples):
+            found = schema.validate(example, spec.input_schema)
+            if found:
+                add("EXAMPLE_SCHEMA_MISMATCH", f"TOOL_EXAMPLES.{tool_id}[{index}]",
+                    {"errors": found})
+
+    # 3) playbook 的 baseTools / ruleSections
+    playbooks = rules.get("playbooks")
+    if playbooks is not None and not isinstance(playbooks, dict):
+        add("PLAYBOOK_INVALID", "playbooks", "playbooks 必须是对象")
+    elif isinstance(playbooks, dict):
+        for name, playbook in playbooks.items():
+            path = f"playbooks.{name}"
+            if not isinstance(playbook, dict):
+                add("PLAYBOOK_INVALID", path, "playbook 必须是对象")
+                continue
+            base_tools = playbook.get("baseTools")
+            if not isinstance(base_tools, list) or not base_tools:
+                add("PLAYBOOK_INVALID", path + ".baseTools", "baseTools 必须是非空数组")
+            else:
+                for tool_id in base_tools:
+                    spec = registry.get(tool_id) if isinstance(tool_id, str) else None
+                    if spec is None:
+                        add("PLAYBOOK_UNKNOWN_TOOL", path + ".baseTools", {"tool": tool_id})
+                        continue
+                    if spec.deprecated:
+                        add("PLAYBOOK_DEPRECATED_TOOL", path + ".baseTools",
+                            {"tool": tool_id, "replacedBy": spec.replaced_by})
+                    status = registry.tool_status(spec, document)
+                    if spec.planned or status.get("status") == "planned":
+                        add("PLAYBOOK_PLANNED_TOOL", path + ".baseTools",
+                            {"tool": tool_id, "reason": status.get("reason", "")})
+            rule_sections = playbook.get("ruleSections")
+            if rule_sections is None:
+                continue
+            if not isinstance(rule_sections, list):
+                add("PLAYBOOK_INVALID", path + ".ruleSections", "ruleSections 必须是数组")
+                continue
+            for section in rule_sections:
+                if section not in rules:
+                    add("PLAYBOOK_UNKNOWN_SECTION", path + ".ruleSections",
+                        {"section": section})
+
+    # 4) 领域 → 默认规则节
+    for domain, sections in registry.DOMAIN_RULE_SECTIONS.items():
+        for section in sections:
+            if section not in rules:
+                add("DOMAIN_RULE_SECTION_MISSING",
+                    f"DOMAIN_RULE_SECTIONS.{domain}", {"section": section})
+
+    # 5) recipe：工具/原语步骤已注册且权限被 recipe.permissions 覆盖
+    try:
+        from . import recipes as recipes_module  # 惰性导入，避免循环依赖
+    except Exception as exc:  # noqa: BLE001 - 依赖缺失按 info 跳过，不掩盖其他问题
+        add("RECIPE_MODULE_UNAVAILABLE", "recipes", type(exc).__name__, "info")
+        recipes_module = None
+    if recipes_module is not None:
+        primitive_specs = getattr(recipes_module, "PRIMITIVE_SPECS", None)
+        if primitive_specs is None:
+            add("PRIMITIVE_SPECS_MISSING", "recipes.PRIMITIVE_SPECS",
+                "原语权限声明表尚未落地：跳过原语权限覆盖检查", "info")
+        try:
+            listed = recipes_module.list_recipes(None)
+        except Exception as exc:  # noqa: BLE001
+            add("RECIPE_LIST_FAILED", "recipes", type(exc).__name__)
+            listed = []
+        for item in listed:
+            recipe_id = item.get("id") if isinstance(item, dict) else None
+            if not isinstance(recipe_id, str) or not recipe_id:
+                add("RECIPE_INVALID", "recipes", {"item": item})
+                continue
+            path = f"recipes.{recipe_id}"
+            if item.get("status") != "ok":
+                add("RECIPE_INVALID", path,
+                    item.get("error") or item.get("code") or "recipe 校验失败")
+                continue
+            try:
+                recipe = recipes_module.get_recipe(recipe_id, None)
+            except Exception as exc:  # noqa: BLE001
+                add("RECIPE_LOAD_FAILED", path, type(exc).__name__)
+                continue
+            declared = set(recipe.get("permissions") or [])
+            for step in recipe.get("steps") or []:
+                if not isinstance(step, dict):
+                    continue
+                step_id = step.get("id")
+                step_path = f"{path}.steps.{step_id}"
+                if step.get("tool"):
+                    spec = registry.get(step["tool"])
+                    if spec is None:
+                        add("RECIPE_UNKNOWN_TOOL", step_path, {"tool": step["tool"]})
+                    elif spec.permission not in declared:
+                        add("RECIPE_PERMISSION_NOT_DECLARED", step_path,
+                            {"tool": step["tool"], "permission": spec.permission})
+                elif step.get("primitive"):
+                    primitive_id = step["primitive"]
+                    if primitive_id not in recipes_module.PRIMITIVES:
+                        add("RECIPE_UNKNOWN_PRIMITIVE", step_path,
+                            {"primitive": primitive_id})
+                        continue
+                    if not isinstance(primitive_specs, dict):
+                        continue
+                    primitive_spec = primitive_specs.get(primitive_id)
+                    if primitive_spec is None:
+                        add("PRIMITIVE_SPEC_MISSING", step_path,
+                            {"primitive": primitive_id}, "warning")
+                        continue
+                    if isinstance(primitive_spec, dict):
+                        permission = primitive_spec.get("permission")
+                    else:
+                        permission = getattr(primitive_spec, "permission", None)
+                    if permission and permission not in declared:
+                        add("RECIPE_PERMISSION_NOT_DECLARED", step_path,
+                            {"primitive": primitive_id, "permission": permission})
+
+    # 6) rules.json toolCatalog 中引用的工具 ID（只校验已存在的 tools 条目）
+    catalog = rules.get("toolCatalog")
+    if catalog is not None and not isinstance(catalog, dict):
+        add("TOOLCATALOG_INVALID", "toolCatalog", "toolCatalog 必须是对象")
+    elif isinstance(catalog, dict):
+        entries = catalog.get("tools")
+        if entries is not None and not isinstance(entries, list):
+            add("TOOLCATALOG_INVALID", "toolCatalog.tools", "tools 必须是数组")
+        elif isinstance(entries, list):
+            seen: set[str] = set()
+            for index, entry in enumerate(entries):
+                path = f"toolCatalog.tools[{index}]"
+                if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+                    add("TOOLCATALOG_INVALID", path, "条目必须含字符串 id")
+                    continue
+                tool_id = entry["id"]
+                if tool_id in seen:
+                    add("TOOLCATALOG_DUPLICATE", path, {"tool": tool_id})
+                seen.add(tool_id)
+                spec = registry.get(tool_id)
+                if spec is None:
+                    add("TOOLCATALOG_UNKNOWN_TOOL", path, {"tool": tool_id})
+                    continue
+                if entry.get("domain") not in (None, spec.domain):
+                    add("TOOLCATALOG_DOMAIN_MISMATCH", path,
+                        {"tool": tool_id, "declared": entry.get("domain"),
+                         "registered": spec.domain})
+                if entry.get("permission") not in (None, spec.permission):
+                    add("TOOLCATALOG_PERMISSION_MISMATCH", path,
+                        {"tool": tool_id, "declared": entry.get("permission"),
+                         "registered": spec.permission})
+        domains = catalog.get("domains")
+        known_domains = {item["id"] for item in registry.DOMAINS}
+        if isinstance(domains, list):
+            for index, entry in enumerate(domains):
+                domain_id = entry.get("id") if isinstance(entry, dict) else None
+                if domain_id not in known_domains:
+                    add("TOOLCATALOG_UNKNOWN_DOMAIN", f"toolCatalog.domains[{index}]",
+                        {"domain": domain_id})
+
+    # 7) 权限：工具权限都在 PERMISSIONS，规则说明与声明不矛盾
+    declared_permissions = rules.get("permissions")
+    tool_permissions = (declared_permissions.get("toolPermissions")
+                        if isinstance(declared_permissions, dict) else None)
+    if not isinstance(tool_permissions, dict):
+        add("PERMISSION_TABLE_MISSING", "permissions.toolPermissions",
+            "缺少权限说明表")
+    else:
+        for name in sorted(registry.PERMISSIONS):
+            if name not in tool_permissions:
+                add("PERMISSION_UNDESCRIBED", f"permissions.toolPermissions.{name}",
+                    "工具权限缺少规则说明")
+        for name in sorted(tool_permissions):
+            if name not in registry.PERMISSIONS:
+                add("PERMISSION_UNKNOWN", f"permissions.toolPermissions.{name}",
+                    "规则声明了未注册的工具权限")
+    for spec in registry.TOOLS:
+        path = f"tools.{spec.id}"
+        if spec.permission not in registry.PERMISSIONS:
+            add("TOOL_PERMISSION_UNKNOWN", path + ".permission",
+                {"permission": spec.permission})
+        if spec.side_effects and spec.read_only:
+            add("TOOL_FLAGS_CONTRADICT", path, "sideEffects 与 readOnly 同时为真")
+        if spec.side_effects and spec.permission == "read":
+            add("TOOL_PERMISSION_CONTRADICT", path,
+                "有副作用工具不能声明 read 权限")
+
+    # 8) 版本一致性
+    platform = rules.get("platform") if isinstance(rules.get("platform"), dict) else {}
+    for key, expected in (("platformVersion", versions.PLATFORM_VERSION),
+                          ("toolContractVersion", versions.TOOL_CONTRACT_VERSION)):
+        if platform.get(key) != expected:
+            add("VERSION_MISMATCH", f"platform.{key}",
+                {"expected": expected, "actual": platform.get(key)})
+    if platform.get("planVersion") not in (None, versions.PLAN_VERSION):
+        add("VERSION_MISMATCH", "platform.planVersion",
+            {"expected": versions.PLAN_VERSION, "actual": platform.get("planVersion")})
+    rulepack_version = rules.get("rulepackVersion")
+    if not isinstance(rulepack_version, str) or not rulepack_version.strip():
+        add("RULEPACK_VERSION_MISSING", "rulepackVersion",
+            "rulepackVersion 必须是非空字符串")
+    if "rulesVersion" in rules and rules.get("rulesVersion") != rulepack_version:
+        add("RULEPACK_VERSION_DRIFT", "rulesVersion",
+            {"rulepackVersion": rulepack_version, "rulesVersion": rules.get("rulesVersion")})
+    # toolCatalog.version 是目录结构版本（如 1.0.0），与 rulepackVersion 语义不同：
+    # 只校验非空，不要求与规则版本相等。
+    if isinstance(catalog, dict):
+        catalog_version = catalog.get("version")
+        if not isinstance(catalog_version, str) or not catalog_version.strip():
+            add("TOOLCATALOG_VERSION_INVALID", "toolCatalog.version",
+                "目录结构版本必须是非空字符串")
+
+    problems.sort(key=lambda item: (item["code"], item["path"],
+                                    json.dumps(item["detail"], ensure_ascii=False,
+                                               sort_keys=True)))
+    return problems
 
 
 def render_markdown(pack: dict) -> str:

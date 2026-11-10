@@ -13,8 +13,11 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
+import shutil
 import threading
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 from . import openapi, versions
 
@@ -102,7 +105,23 @@ PERMISSIONS = {
     "device.apply": "设备结果包：登记/查询 PC→手机结果包（配对与手机 Worker 未实现）。",
     "maintenance.execute": "外部 AI 执行器控制面：领取租约/续报步骤/工件/终态；leaseToken 是能力凭据。",
     "admin.maintenance": "管理员维护：数据库/迁移/恢复等默认不向 AI 开放的能力。",
+    "local.files.write": "授权写根内的本地文件操作（复制/整理/派生图）：不写业务数据，不修改已入库资产/索引/标签。",
+    "local.device": "adb 推送/拉取：必须显式设备序列号（无默认设备），只操作授权真机。",
 }
+
+# 可用性维度（2026-11-10）：`status` 保持既有合并语义（supported/unavailable/
+# incompatible/planned）供现有消费端使用；`availability` 把注册、实现、契约、运行时、
+# 本地授权与服务端验证拆开，避免把“没权限/没配置/没实现”混成同一个 supported。
+CONTRACT_AVAILABILITY = {
+    "supported": "compatible",
+    "unavailable": "unavailable",
+    "incompatible": "incompatible",
+    "not_checked": "not_checked",
+}
+RUNTIME_READY = "ready"
+RUNTIME_UNCONFIGURED = "unconfigured"
+RUNTIME_MISSING_DEPENDENCY = "missing_dependency"
+RUNTIME_NOT_CHECKED = "not_checked"
 
 COMMON_ERROR_CODES = (
     {"code": "UNKNOWN_TOOL", "category": "usage", "exitCode": 2,
@@ -139,6 +158,20 @@ COMMON_ERROR_CODES = (
      "recovery": "读取冲突载荷，人工核对后重新计划；409 不得静默覆盖。"},
     {"code": "LEASE_LOST", "category": "conflict", "exitCode": 1,
      "recovery": "维护任务租约已失效（过期/暂停/取消/被重领）：重新 claim 取得新 leaseToken，旧 token 的写入不会被接受。"},
+    {"code": "PATH_NOT_AUTHORIZED", "category": "permission", "exitCode": 2,
+     "recovery": "路径不在显式授权根内：由可信执行端配置授权根（存储/媒体根/工作根）后重试；不要绕过边界或扫描未授权目录。"},
+    {"code": "PATH_UNSAFE", "category": "usage", "exitCode": 2,
+     "recovery": "路径包含越界/符号链接逃逸/盘符或 UNC 等不安全形态：改用授权根内的规范化相对路径；不要尝试绕过。"},
+    {"code": "FILE_REF_INVALID", "category": "usage", "exitCode": 2,
+     "recovery": "fileRef 格式非法或不属于当前执行端：重新调用 files.search 获取；不要手工拼接、猜测 storage 或跨执行端复用。"},
+    {"code": "FILE_REF_STALE", "category": "conflict", "exitCode": 1,
+     "recovery": "文件已移动/改名/变化或不存在：重新 files.search 获取新 fileRef；不要用旧引用继续读取或写入。"},
+    {"code": "FILE_REF_UNAVAILABLE", "category": "config", "exitCode": 2,
+     "recovery": "本地文件发现未配置或实现缺失：检查 QIMENG_AI_STORAGES 是否仍配置该 storageId、fileref 是否随发行物安装；不要伪造 storage、路径或 fileRef。"},
+    {"code": "RECIPE_STEP_UNCERTAIN", "category": "conflict", "exitCode": 1,
+     "recovery": "步骤结果不确定（超时/中断/写入未回读）：停止自动续跑，先回读目标现状并交人工核对，再决定是否重跑。"},
+    {"code": "RECIPE_ARTIFACT_TAMPERED", "category": "verification", "exitCode": 1,
+     "recovery": "步骤产物 sha256/指纹与记录不一致：停止执行并保留现场，重新运行该步骤或人工核对；不要信任被改动的产物。"},
     {"code": "PLAN_INVALID", "category": "plan", "exitCode": 2,
      "recovery": "重新调用 prepare 生成计划，不要手工拼造或修改计划。"},
     {"code": "PLAN_FINGERPRINT_MISMATCH", "category": "plan", "exitCode": 1,
@@ -912,21 +945,25 @@ TOOLS: tuple[ToolSpec, ...] = (
                         "kemono 无 --out：stdout 存为 kemono-result.json 工件（256KiB 上限）"),
     ),
     ToolSpec(
-        id="research.media.probe", version="1.0.0", kind="query",
-        description="media_probe.py：ffprobe 元数据 + SHA-256 + 15/50/85% 帧抽取（只作识图输入）。",
+        id="research.media.probe", version="1.1.0", kind="query",
+        description="media_probe.py：ffprobe 元数据 + SHA-256 + 15/50/85% 帧抽取（只作识图输入）；支持绝对路径或 files.search 返回的 fileRef。",
         handler_ref="ai_maintenance.tools_research:research_media_probe",
         permission="research", read_only=False, side_effects=True,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "files": {"type": "array", "minItems": 1, "maxItems": 50,
                       "items": {"type": "string"},
-                      "description": "媒体文件绝对路径列表"},
+                      "description": "媒体文件绝对路径列表（与 fileRefs 至少提供一个）"},
+            "fileRefs": {"type": "array", "minItems": 1, "maxItems": 20,
+                         "items": {"type": "string", "minLength": 1, "maxLength": 2048},
+                         "description": "files.search 返回的不透明 fileRef 列表（与 files 至少提供一个；失效需重新搜索）"},
             "frames": _string("抽帧百分比，如 15,50,85", 1, 40),
             "frameDir": _string("帧输出目录绝对路径（默认本次工作目录/frames）"),
             "timeoutSeconds": _RESEARCH_TIMEOUT,
-        }, required=("files",)),
+        }),
         output_schema=_RESEARCH_OUTPUT,
-        runtime_checks=("缺少 ffmpeg/ffprobe 时脚本退出码 2（环境错误），不当作识别结果",),
+        runtime_checks=("files 与 fileRefs 至少提供一个；fileRef 由 files.search 生成，失效需重新搜索",
+                        "缺少 ffmpeg/ffprobe 时脚本退出码 2（环境错误），不当作识别结果",),
     ),
     ToolSpec(
         id="research.avatar.fetch", version="1.0.0", kind="query",
@@ -1009,6 +1046,96 @@ TOOLS: tuple[ToolSpec, ...] = (
                         "整体替换会刷新全部标签关联时间；逐条解除用 DELETE /assets/{assetId}/tags/{tag}",
                         "确认前重新读取资产标签并与计划摘要比对",
                         "不新建/删除标签池条目"),
+    ),
+    # ---- 本地文件发现（未入库文件；fileRef 由 fileref 唯一实现）----
+    ToolSpec(
+        id="files.storages", version="1.0.0", kind="query",
+        description="列出已配置的本地文件存储（storageId/writable/configured），不返回物理绝对路径；无配置时返回空列表与设置提示。",
+        handler_ref="ai_maintenance.tools_files:files_storages", network=False,
+        permission="read",
+        input_schema=_schema({}),
+        output_schema=_schema({
+            "storages": {"type": "array", "maxItems": 64,
+                         "items": _schema({
+                             "storageId": _string("不透明存储 ID", 1, 120),
+                             "writable": _boolean("该存储是否允许本地写入（local.files.write）"),
+                         }, required=("storageId", "writable"))},
+            "configured": _boolean("是否已配置至少一个存储"),
+            "available": _boolean("本地文件发现实现是否可用"),
+            "hint": _string("不可用/未配置时的设置提示"),
+        }, required=("storages", "configured", "available")),
+        runtime_checks=("只读：不创建/覆盖/删除文件，不需要确认",
+                        "绝不返回物理绝对路径；storage 配置由可信执行端维护",
+                        "fileref 缺失或未配置时返回 available=false + hint，不伪造结果"),
+    ),
+    ToolSpec(
+        id="files.search", version="1.0.0", kind="query",
+        description="在授权存储内有界搜索本地文件，返回不透明 fileRef、相对路径与分页游标；只读、跳过符号链接/隐藏项。",
+        handler_ref="ai_maintenance.tools_files:files_search", network=False,
+        permission="read",
+        input_schema=_schema({
+            "storageId": _string("存储 ID（存在多个存储时必填；取自 files.storages）", 1, 120),
+            "query": _string("按相对路径/文件名子串过滤（不区分大小写）", 1, 200),
+            "extensions": {"type": "array", "maxItems": 10,
+                           "items": {"type": "string", "pattern": r"^\.?[A-Za-z0-9]{1,10}$",
+                                     "description": "扩展名（可带前导点，如 jpg 或 .jpg）"}},
+            "mediaType": {"type": "string", "enum": ["image", "video", "other", "any"],
+                          "default": "any", "description": "按扩展名粗分类过滤"},
+            "modifiedAfter": _string("修改时间下界（ISO-8601，含）", 1, 40),
+            "modifiedBefore": _string("修改时间上界（ISO-8601，含）", 1, 40),
+            "limit": _integer("每页条数（默认 20，上限 50）", 1, 50, 20),
+            "cursor": _string("上一页 nextCursor（不透明，原样使用；不要与行内 storageId 重组）", 1, 2048),
+            "recursive": _boolean("递归子目录（默认 true）", True),
+            "maxDepth": _integer("最大递归深度（默认 4，上限 8）", 0, 8, 4),
+            "includeHidden": _boolean("包含隐藏文件/目录（默认 false）", False),
+        }),
+        output_schema=_schema({
+            "files": {"type": "array", "maxItems": 50,
+                      "items": _schema({
+                          "fileRef": _string("不透明文件引用（只能由 files.search 生成）", 1, 4096),
+                          "name": _string("文件名", 1, 512),
+                          "storageId": _string("fileRef 所属存储 ID（嵌套存储时取最具体项）", 1, 120),
+                          "relativePath": _string("相对该 storage 的 POSIX 路径", 1, 1024),
+                          "mediaType": {"type": "string", "enum": ["image", "video", "other"]},
+                          "size": _integer("字节数", 0),
+                          "modifiedAt": _string("修改时间（ISO-8601 UTC）", 1, 40),
+                      }, required=("fileRef", "name", "storageId", "relativePath",
+                                   "mediaType", "size", "modifiedAt"))},
+            "count": _integer("本页条数", 0, 50),
+            "truncated": _boolean("是否还有下一页（或扫描达到硬上限）"),
+            "nextCursor": {"type": ["string", "null"],
+                           "description": "下一页游标；truncated=false 时为 null"},
+            "limits": _schema({
+                "limit": _integer("本页上限", 1, 50),
+                "maxLimit": _integer("单页硬上限", 1, 50),
+                "maxScanEntries": _integer("单次扫描条目硬上限", 1),
+                "maxDepth": _integer("递归深度硬上限", 0, 8),
+                "maxExtensions": _integer("扩展名过滤上限", 1),
+            }, required=("limit", "maxLimit", "maxScanEntries", "maxDepth", "maxExtensions")),
+            "scanned": _schema({
+                "entries": _integer("已访问目录条目数", 0),
+                "files": _integer("已识别普通文件数", 0),
+                "directories": _integer("已进入目录数", 0),
+                "skippedHidden": _integer("跳过的隐藏项", 0),
+                "skippedSymlinks": _integer("跳过的符号链接/junction", 0),
+                "skippedDepth": _integer("因深度上限未进入的目录", 0),
+                "scanLimitReached": _boolean("是否触发扫描条目硬上限"),
+                "matched": _integer("游标过滤后、本页之前的命中数", 0),
+                "matchedBeforeCursor": _integer("应用 cursor 前的命中总数", 0),
+                "elapsedMs": _integer("扫描耗时毫秒", 0),
+            }, required=("entries", "files", "directories", "skippedHidden",
+                         "skippedSymlinks", "skippedDepth", "scanLimitReached")),
+            "available": _boolean("本地文件发现实现是否可用"),
+            "storageId": _string("本次搜索使用的存储 ID", 1, 120),
+            "hint": _string("不可用/未配置时的设置提示"),
+        }, required=("files", "count", "truncated", "nextCursor", "limits",
+                     "scanned", "available")),
+        runtime_checks=("只读：不写文件、不移动/改名、不修改业务数据",
+                        "扫描条目硬上限 20000；每页最多 50；递归深度上限 8",
+                        "跳过符号链接/junction/隐藏项（includeHidden=true 才包含隐藏项）",
+                        "cursor 只编码 storageId + 已扫描相对路径，解析时重新校验存储根",
+                        "不返回绝对路径或整棵目录树；fileRef 由 fileref 生成",
+                        "已入库资产/索引/作者/标签必须走 Go API，不能用本地搜索替代"),
     ),
     # ---- 元工具：领域能力目录与按需描述（2026-11-07 扩展性优化）----
     # 工具数量增长后，外部 AI 先取 platform.catalog（精简、无 Schema），再按需
@@ -1100,6 +1227,7 @@ _DOMAIN_PREFIXES = (
     ("asset.", "media"),
     ("library.", "media"),
     ("trash.", "media"),
+    ("files.", "media"),
     ("media.", "media"),
     ("backup.", "backup"),
     ("device.", "device"),
@@ -1178,6 +1306,9 @@ TOOL_EXAMPLES: dict = {
                                "outDir": "<仓库外绝对路径>/avatars"},),
     "trash.list": ({},),
     "trash.restore": ({"trashId": "<trashId>", "confirm": True},),
+    "files.storages": ({},),
+    "files.search": ({"storageId": "<storageId>", "query": "朱诺",
+                      "extensions": ["jpg", "png"], "mediaType": "image", "limit": 20},),
     "asset.trash": ({"assetId": "<assetId>", "confirm": True},),
     "asset.tags.replace": ({"assetId": "<assetId>", "tagIds": ["<tagId>"], "confirm": False},),
     "platform.catalog": ({"domain": "author"},),
@@ -1227,12 +1358,14 @@ TOOL_RULES_REFS: dict = {
     "trash.restore": ("trash", "permissions", "errors"),
     "asset.trash": ("trash", "permissions", "errors"),
     "asset.tags.replace": ("tags", "permissions", "errors"),
+    "files.storages": ("localFiles", "permissions"),
+    "files.search": ("localFiles", "permissions", "errors"),
 }
 
 # 领域 → 默认规则节（platform.rules domain 模式）。
 DOMAIN_RULE_SECTIONS: dict = {
     "author": ("authorActions", "fields", "permissions"),
-    "media": ("mediaOrganize", "mediaNaming", "workflows", "permissions"),
+    "media": ("mediaOrganize", "mediaNaming", "localFiles", "workflows", "permissions"),
     "research": ("research", "permissions"),
     "backup": ("backup", "permissions"),
     "device": ("deviceApply", "permissions"),
@@ -1285,7 +1418,75 @@ def tool_status(spec: ToolSpec, document) -> dict:
             "capabilityStatus": overall}
 
 
-def tool_summary(spec: ToolSpec, document, disabled_reason: str = "") -> dict:
+def _implemented_status(spec: ToolSpec, deep: bool = False) -> bool:
+    """handler 模块/属性是否可解析；planned 工具不算已实现。"""
+    if spec.planned:
+        return False
+    if not spec.handler_ref:
+        return callable(spec.handler)
+    return handler_available(spec) if deep else handler_module_available(spec)
+
+
+def _runtime_status(spec: ToolSpec, env) -> str:
+    """本地执行环境是否具备运行前提；只做可判定的检查，不猜测。"""
+    if spec.planned:
+        return RUNTIME_NOT_CHECKED
+    source = env if env is not None else os.environ
+    if spec.id.startswith("research.image."):
+        configured = str(source.get("QIMENG_RESEARCH_KIT_NODE", "") or "").strip()
+        if configured:
+            if Path(configured).is_file() or shutil.which(configured):
+                return RUNTIME_READY
+            return RUNTIME_MISSING_DEPENDENCY
+        return RUNTIME_READY if shutil.which("node") else RUNTIME_MISSING_DEPENDENCY
+    if spec.id.startswith("files."):
+        try:
+            available = importlib.util.find_spec("ai_maintenance.fileref") is not None
+        except (ImportError, ValueError):
+            available = False
+        return RUNTIME_READY if available else RUNTIME_MISSING_DEPENDENCY
+    if spec.network:
+        missing = [name for name in ("QIMENG_API_BASE", "QIMENG_API_TOKEN")
+                   if not str(source.get(name, "") or "").strip()]
+        return RUNTIME_UNCONFIGURED if missing else RUNTIME_READY
+    return RUNTIME_READY
+
+
+def availability(spec: ToolSpec, document, *, granted_permissions=None, env=None,
+                 deep: bool = False) -> dict:
+    """拆分可用性维度，避免把未实现/未配置/无权限混成同一个 supported。
+
+    - registered：注册表存在（本函数只服务已注册工具，恒为 True）；
+    - implemented：handler 模块/属性可解析（catalog 用 find_spec，describe 可完整）；
+    - contract：与 OpenAPI 的能力核对（compatible/incompatible/unavailable/not_checked）；
+    - runtime：本地执行环境（网络工具是否配置 API、research.image.* 是否有 node、
+      files.* 是否有 fileref）；无法判定时 not_checked；
+    - locallyAuthorized：权限是否在 granted_permissions（None 表示调用方未提供，未知）；
+    - serverVerified：恒为 False —— 服务端 scope 未在本地验证。
+    """
+    status = tool_status(spec, document)
+    contract = CONTRACT_AVAILABILITY.get(
+        str(status.get("capabilityStatus") or "not_checked"), "not_checked")
+    authorized = None if granted_permissions is None else spec.permission in granted_permissions
+    return {
+        "registered": True,
+        "implemented": _implemented_status(spec, deep=deep),
+        "contract": contract,
+        "runtime": _runtime_status(spec, env),
+        "locallyAuthorized": authorized,
+        "serverVerified": False,
+    }
+
+
+def _compact_availability(full: dict) -> dict:
+    """目录用精简可用性：不含 registered（条目存在即已注册）与 serverVerified
+    （由 catalog 顶层统一说明），控制体积。"""
+    return {key: full[key] for key in
+            ("implemented", "contract", "runtime", "locallyAuthorized")}
+
+
+def tool_summary(spec: ToolSpec, document, disabled_reason: str = "", *,
+                 granted_permissions=None, env=None) -> dict:
     status = tool_status(spec, document)
     implementation_version = _engine_version() if spec.id.startswith("media.organize.") else spec.version
     return {
@@ -1298,6 +1499,9 @@ def tool_summary(spec: ToolSpec, document, disabled_reason: str = "") -> dict:
         "status": status["status"],
         "reason": status.get("reason", ""),
         "capabilityStatus": status.get("capabilityStatus", "supported"),
+        # 惰性加载：summary 只做模块可发现性检查（find_spec），不导入实现模块。
+        "availability": availability(spec, document, granted_permissions=granted_permissions,
+                                      env=env),
         "checks": status.get("checks", []),
         "permission": spec.permission,
         "permissionDescription": PERMISSIONS.get(spec.permission, ""),
@@ -1319,7 +1523,8 @@ def tool_summary(spec: ToolSpec, document, disabled_reason: str = "") -> dict:
     }
 
 
-def compact_summary(spec: ToolSpec, document, disabled_reason: str = "") -> dict:
+def compact_summary(spec: ToolSpec, document, disabled_reason: str = "", *,
+                    granted_permissions=None, env=None) -> dict:
     """精简目录条目：不含输入/输出 Schema、错误码全表与运行检查，控制模型上下文。"""
     status = tool_status(spec, document)
     return {
@@ -1330,6 +1535,8 @@ def compact_summary(spec: ToolSpec, document, disabled_reason: str = "") -> dict
         "kind": spec.kind,
         "status": status["status"],
         "reason": status.get("reason", ""),
+        "availability": _compact_availability(
+            availability(spec, document, granted_permissions=granted_permissions, env=env)),
         "permission": spec.permission,
         "readOnly": spec.read_only,
         "sideEffects": spec.side_effects,
@@ -1341,15 +1548,23 @@ def compact_summary(spec: ToolSpec, document, disabled_reason: str = "") -> dict
 
 
 def describe_spec(spec: ToolSpec, document, disabled_reason: str = "", rules: dict | None = None,
-                  rules_excerpt_chars: int = 4000) -> dict:
+                  rules_excerpt_chars: int = 4000, *, granted_permissions=None,
+                  env=None) -> dict:
     """单个工具的按需完整描述（含 Schema、示例、规则摘录与 Go API 依赖）。"""
-    summary = tool_summary(spec, document, disabled_reason)
+    summary = tool_summary(spec, document, disabled_reason,
+                           granted_permissions=granted_permissions, env=env)
+    # 按需 describe 才做完整解析（会导入实现模块以确认属性存在）。
+    summary["availability"] = availability(spec, document,
+                                           granted_permissions=granted_permissions,
+                                           env=env, deep=True)
     refs = TOOL_RULES_REFS.get(spec.id, ())
     excerpts = {}
+    missing_sections = []
     if rules is not None:
         for section in refs:
             value = rules.get(section)
             if value is None:
+                missing_sections.append(section)
                 continue
             encoded = _bounded_json(value, rules_excerpt_chars)
             excerpts[section] = encoded
@@ -1366,6 +1581,7 @@ def describe_spec(spec: ToolSpec, document, disabled_reason: str = "", rules: di
         "examples": [dict(example) for example in TOOL_EXAMPLES.get(spec.id, ())],
         "rulesRefs": list(refs),
         "rulesExcerpt": excerpts,
+        "missingRuleSections": missing_sections,
         "goApiRequirements": requirements,
         "handlerRef": spec.handler_ref,
         "implementationAvailable": handler_available(spec),

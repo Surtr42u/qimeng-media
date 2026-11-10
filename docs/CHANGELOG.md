@@ -1,4 +1,17 @@
 
+## feat(tools): AI 接入层本地文件引用、执行权限与工具契约规范化（2026-11-10 第七百二十三笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：接口协调/集成/文档/验收；子代理 A：本地权限、fileRef、Recipe；子代理 B：注册表、按需上下文、规则、MCP）
+
+- 本地执行域：新增 `QIMENG_AI_READ_ROOTS`/`QIMENG_AI_WRITE_ROOTS` 读写根分离（默认拒绝未授权目录，媒体根计入读根，工作根/`.test-temp/`/`build/` 始终可用）；写路径拒绝根以下符号链接/junction/reparse 与 `..` 逃逸，哈希/复制前后复核，默认不覆盖、不删源。未入库文件可在授权目录直接处理；已入库资产/作者/标签/业务关联仍只走 Go `/api/v1`。
+- 逻辑存储与 fileRef：新增 `QIMENG_AI_STORAGES`、`fileref.py` 与 `files.storages`/`files.search`；只返回 storageId/相对路径/不透明引用（storageId+相对路径+size+mtime），不返回物理绝对路径；文件变化返回 `FILE_REF_STALE`，伪造/越界 `FILE_REF_INVALID`，storage 移除 `FILE_REF_UNAVAILABLE`。`media.probe`/`file.hash`/`media.transfer` 源/`research.media.probe.fileRefs` 可复用 fileRef，原 `path` 参数兼容。
+- 原语统一契约：`PrimitiveSpec` 声明权限/只读/副作用/确认/超时；`execution.policy_denied_error` 对有副作用原语强制 `QIMENG_AI_READONLY`、`QIMENG_AI_DISABLED_TOOLS`（支持原语 ID）与 `QIMENG_AI_GRANTED_PERMISSIONS`，新增 `local.files.write`/`local.device`。recipe 恢复校验产物 bytes/SHA-256、running 副作用步骤返回 `RECIPE_STEP_UNCERTAIN`、工具/原语版本变化拒绝续跑；transfer 仅恢复上下文对相同内容幂等，`TARGET_EXISTS` 语义保持。
+- 工具发现与规则：`files.*` 归 media 域；MCP 领域过滤始终保留 `platform.*` 与 `files.storages`，`tools/list`/`tools/call` 同源；`platform.rules` 支持有界点路径；catalog/context/describe 统一 `truncated` 标记，`platform.context` 优先加载 permissions/localFiles，再按需截断通用规则；工具状态拆分 registered/implemented/contract/runtime/locallyAuthorized/serverVerified；`rulepack.consistency_problems()` 自动检查规则引用、示例 Schema、playbook/recipe 权限覆盖与版本；`schema.py` 关键字与实际实现对齐并拦截未支持关键字。
+- 修复 `research_kit` 目录工件与路径混用：`_directory_artifacts` 返回 `Path` 列表而不是已序列化字典，避免 `research.media.probe`/`research.avatar.fetch` 成功返回时 `TypeError`；新增 fileRef 成功探测回归。
+- 版本/文档：`platformVersion`/`toolContractVersion` 1.4.0、`rulesVersion`/`rulepackVersion` 2026-11-10.3、48 个工具；`tools/ai_maintenance/README`、`docs/AI_PLATFORM_OPERATIONS`、`docs/AI_PLATFORM_TASKBOOK` §1.4/§4.4/§11、`docs/SECURITY`、ADR-0056 补充、HANDOVER/CAPABILITY_MAP 同批更新。
+- 验证：`python -X utf8 -m unittest discover -s tools -p "test_ai_*.py"` 266 项通过（A 39 项、B 24 项、主代理跨模块 6 项）；`python tools/check_docs.py` 0 错误；`consistency_problems` 0 条。隔离合成测量（60 文件/3 层/真实 1 秒 mp4）：路径式 5 次调用/1799 字符/2 次绝对路径暴露 vs fileRef 3 次/1447 字符/0 次，两次流程均定位正确且 `media.probe` 成功；重复 probe+hash 载荷 508→546 字符（fileRef 字符串比短路径长），收益在调用次数、路径隐藏与复用，不宣称固定 token 百分比。
+- 限制：未安装、未接真实 AI 客户端/MCP 客户端、未对真实媒体/8420/NAS/真机执行；stateless cursor 在 20000 条目扫描上限处只能提示收窄而不能翻完；ffprobe/ffmpeg 外部进程读取仍有检查后换链窗口；fileRef 是配置内自描述引用而非签名令牌。
+
 ## fix(tools): Windows 启动前预检 winnat 保留端口（2026-11-10 第七百二十二笔）
 
 执行 AI：DeepSeek V4.1 Flash（子代理：Windows 启动端口预检）
@@ -260,11 +273,3 @@
 - `tools/ai_maintenance/cli.py` 新增只读 `research` 命令组：`research context`（GET /api/v1/research/context，打印 enabled、sidecar configured/available/pending、provider 矩阵与限额）、`research provider --provider <name> --operation <author|post|work|artist|tags|url|workshop|search> --target <值> [--limit N]`（POST /api/v1/research/providers/{provider}/query；CLI 不硬编码矩阵，矩阵外/非法参数由服务端 400 透传）、`research lens --file <本地图片>`（POST /api/v1/research/lens 的 multipart 字段 file；扩展名与 20MiB 本地预检、150 秒超时、摘要只打印 status/frameSha256/topTitles/links 数量，不打印图片内容）。所有命令支持全局 `--json`；缺配置退出码 2 且不回显 token，图片字节不进入任何输出。
 - 规则包与文档同步：`rules.json` 三条 research capabilities 的 `cli` 指向实际命令、研究指南补 CLI 用法并删除「本切片未提供研究 CLI」，规则版本 `2026-11-06.3`；`rulepack.py` 去掉与指南重复的研究节并把 research 命令加入只读命令清单；`tools/ai_maintenance/README.md` 增研究示例与 `RESEARCH_DISABLED`/`RESEARCH_SIDECAR_*`/`RATE_LIMITED`/`INVALID_PARAM` 语义；`docs/api/research.md` 增「命令行工具」小节，注明研究默认关闭、sidecar 需另行部署。
 - 验证边界：`tools/test_ai_maintenance.py` 由 23 项增至 31 项并全部通过，仅用临时目录与 `127.0.0.1` 随机端口 stub（研究成功摘要与 --json、POST 路径/Bearer/JSON 体、multipart 字段与文件名、服务端 400/503 透传、缺配置、token 脱敏、本地文件预检）；未访问真实平台、未安装 sidecar、未触碰 8420 真库，也未改 OpenAPI/Go。`python -X utf8 tools/check_docs.py` 0 错误、`python -X utf8 tools/check_privacy.py --mode worktree` passed。第六百六十四笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
-
-## feat(research): 媒体研究流水线 API 集成（provider 网关 + Lens sidecar）（2026-11-06 第六百九十三笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 新增 `GET /api/v1/research/context`、`POST /api/v1/research/providers/{provider}/query`（fxtwitter/pixiv/yandere/e621/wayback/steam/bing 固定矩阵，矩阵外 400 INVALID_PARAM）、`POST /api/v1/research/lens`（multipart file ≤20MiB，loopback sidecar）；错误映射含 400/401/413/429/502/503/504 与 `RESEARCH_DISABLED`、`RESEARCH_SIDECAR_*` 码，provider 上游失败以 200+status 表达。协议先改 OpenAPI，再 `make sdk` 生成三端并同批重算 `api/sdk.lock`；Go 枚举用 `x-enum-varnames` 规避 oapi-codegen v2.8.0 的常量去重冲突（否则既有 `Ok` 常量被改名、编译失败）。
-- 新包 `server/internal/research`：provider 接口与注册表、安全 HTTP 出口（仅 https、域名白名单、禁重定向与环境代理、DNS 解析后校验公网地址、20s 超时/2MiB 响应上限）、进程内预算（provider 每分钟、Lens 每小时/每日，时钟可注入、UTC 对齐）、sidecar 客户端（loopback 校验、Bearer、/healthz、/lens multipart、超时映射）与证据落盘（剥会话参数、只记哈希/公开字段、不入库）。配置新增 `research` 段与 `QIMENG_RESEARCH_*`，默认关闭，启动期校验端点/凭据/预算；嵌入式/Android 默认关闭且不新增监听面。
-- 验证边界：research 与 httpapi 测试全部使用 httptest 假上游、假 sidecar 与合成数据，不访问真实平台、不触碰 8420 真库；**未安装 Lens sidecar、未在真实实例验收真实平台查询**，现装 PC/手机仍为 264b9d83。文档同批：`docs/api/research.md`、ADR-0053 与索引、能力地图、HANDOVER 研究交接、llms 导航，规则包增研究能力/工作流/手册节。第六百六十三笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。

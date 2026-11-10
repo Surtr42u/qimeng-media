@@ -27,9 +27,12 @@
 | `tools_backup.py` | backup.export：`GET /export/qimeng-backup` 流式落盘（临时文件 + 原子改名）、摘要与预算。 |
 | `tools_device.py` | device.apply.prepare/submit/status：本地段校验、manifest 计划、multipart 登记与回读。 |
 | `tools_maintenance.py` | maintenance.claim/heartbeat/step.record/artifact.record/complete：执行器控制面（leaseToken 是能力凭据）。 |
-| `tools_research.py` | research_kit 适配：argv 组装、路径/超时边界、产物枚举（算法仍在 `../research_kit/`）。 |
+| `tools_research.py` | research_kit 适配：argv 组装、路径/超时边界、产物枚举（算法仍在 `../research_kit/`）；`research.media.probe` 接受 `fileRefs`，返回的 argv 对 fileRef 输入脱敏。 |
+| `tools_files.py` | `files.storages` / `files.search`：授权存储枚举与有界文件搜索，返回不透明 `fileRef` 与相对路径，不返回物理绝对路径。 |
 | `tools_trash.py` | trash.list / trash.restore（需确认 + 回读）。 |
-| `pathguard.py` | 写盘路径边界（绝对路径、仓库外或忽略工作根）与文件摘要。 |
+| `pathguard.py` | 本地读写授权边界：`QIMENG_AI_READ_ROOTS`/`QIMENG_AI_WRITE_ROOTS`/媒体根/忽略工作根、链接与 reparse 检查、TOCTOU 复核与文件摘要。 |
+| `fileref.py` | 逻辑存储与 `fileRef` 唯一实现：`QIMENG_AI_STORAGES`、自描述引用（storageId+相对路径+size+mtime）、失效校验与 path/fileRef 二选一解析。 |
+| `measure_locator.py` | 隔离合成测量：路径式定位 vs `fileRef` 的调用次数、返回字符量、绝对路径暴露与定位正确率；不联网、不读真实媒体。 |
 | `media_naming.py` | **组图命名纯规划/校验引擎**（作品索引、`(1)..(n)` 页码、计划指纹、`SerializedLocks`、回读报告）；ENGINE_VERSION=1.0.0。 |
 | `media_scan.py` | **媒体批次内容扫描（只读）**：md5/可选 dHash64/视频时长+分辨率+抽帧、最大文件去重候选、序号延顺建议、根目录对齐与 contact sheet 计划；SCAN_ENGINE_VERSION=1.0.0。 |
 | `media_primitives.py` | **媒体原语唯一实现**：ffprobe 元数据、dHash64、百分比抽帧、拼图生成与 `(path,size,mtime,参数)` 缓存；media_scan 与 recipe 共用。 |
@@ -49,6 +52,9 @@
 | [test_ai_platform_20261108.py](../test_ai_platform_20261108.py) | 外部 AI 工具平台回归（41 项）：备份 3MiB 流式落盘、设备 prepare/submit/status、执行器 200/204/409、研究 argv/边界/超时、回收站与标签。 |
 | [test_ai_platform_20261110.py](../test_ai_platform_20261110.py) | 规则漂移（endpoint+method+必需字段、apiStatus/实现状态分离）、`platform.context` 输出/权限/CLI+MCP 一致性、media.organize scan 的对齐/去重/序号/越界与 apply planned。 |
 | [test_ai_recipes.py](../test_ai_recipes.py) | recipe/原语回归：任务卡边界、工具引用、门禁与续跑、条件跳过、能力缺失、author.create、name 查重、视频抽帧/dHash 缓存与拼图。 |
+| [test_ai_files_refs.py](../test_ai_files_refs.py) | 本地执行域回归（39 项）：读写根授权、未授权/穿越/链接/junction 拒绝、fileRef 生成/失效/替换、原语只读/权限/门禁、transfer 覆盖与恢复幂等、产物篡改/running 步骤/版本变化、研究结果脱敏。 |
+| [test_ai_contract_consistency.py](../test_ai_contract_consistency.py) | 契约一致性：领域发现与 MCP 元工具可见性、工具状态维度、规则点路径/截断、示例 Schema、playbook/recipe 引用、files 工具契约、版本同源。 |
+| [test_ai_integration_local_files.py](../test_ai_integration_local_files.py) | 主代理跨模块验收：files.search → fileRef → media.probe/file.hash → recipe 复用、失效、分页与 MCP 领域过滤。 |
 
 生成物默认输出到 stdout；`--out` 写入文件。本目录 `.gitignore` 已忽略 `rulepack.json`；
 建议写到被忽略的 `build/ai-maintenance/`。
@@ -69,7 +75,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 ```
 
 `context`/`version`/`tools list`/`tools show` 纯本地：不联网、不需要 token。
-注意：`context` 输出完整规则包（约 477KB，面向排障/CI）；模型上下文请优先用
+注意：`context` 输出完整规则包（约 490KB，面向排障/CI）；模型上下文请优先用
 `task`（2–4KB 任务卡）或 `task-context --task ...`，不要默认整包读取。
 
 ## 配置
@@ -80,20 +86,23 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | --- | --- | --- |
 | `QIMENG_API_BASE` | 网络工具必填 | `http://127.0.0.1:8420` 形式的 origin；不能带子路径、查询、片段或用户信息。`http` 只允许回环/私有地址，远程用 `https` 或既有隧道。 |
 | `QIMENG_API_TOKEN` | 网络工具必填 | Bearer token：管理员会话 token 或独立 AI 客户端 token（推荐，见下节）；只从环境读取，不打印、不写日志、不写入规则包/结果。 |
-| `QIMENG_AI_DISABLED_TOOLS` | 可选 | 逗号分隔的工具 ID，单独禁用工具。 |
-| `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求前拒绝全部有副作用工具。 |
+| `QIMENG_AI_DISABLED_TOOLS` | 可选 | 逗号分隔的工具或原语 ID（如 `media.transfer`），单独禁用。 |
+| `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求/执行原语前拒绝全部有副作用工具与原语。 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
 | `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
-| `QIMENG_AI_MCP_DOMAINS` | 可选 | 逗号分隔的领域白名单；只暴露这些域的 MCP 工具，减少 tools/list 与误调用面。 |
+| `QIMENG_AI_MCP_DOMAINS` | 可选 | 逗号分隔的领域白名单；只暴露这些域的业务工具与 `files.storages`，减少误调用面。全部 `platform.*` 安全发现元工具始终可见（只读、不扩大权限）。标准 MCP 客户端仍可能加载完整 `tools/list`，此过滤不是上下文节省保证。 |
 | `QIMENG_AI_TARGET` | 可选 | 运行目标：`pc` / `android-embedded` / `nas`（默认 pc）；recipe 据此核对能力。 |
 | `QIMENG_AI_RECIPE_DIR` | 可选 | recipe 目录覆盖（默认 `tools/ai_maintenance/recipes`）。 |
-| `QIMENG_AI_MEDIA_CACHE` | 可选 | 媒体原语缓存目录（默认 `build/ai-maintenance/cache/media`）；按 path/size/mtime/参数失效。 |
+| `QIMENG_AI_MEDIA_CACHE` | 可选 | 媒体原语缓存目录（默认 `build/ai-maintenance/cache/media`）；按 path/size/mtime/参数失效；目录不在写授权根时静默禁用缓存，不影响主流程。 |
 | `QIMENG_AI_FFMPEG` / `QIMENG_AI_FFPROBE` / `QIMENG_AI_FONT` | 可选 | ffmpeg/ffprobe/拼图字体覆盖；也兼容旧的 `QIMENG_FFMPEG`/`QIMENG_FFPROBE`。 |
 | `QIMENG_ADB` / `QIMENG_ADB_SERIAL` | 设备推送必填 | adb 路径与**显式真机序列号**；没有默认设备，拒绝 `emulator-5554`。 |
 | `QIMENG_AI_LOCK_DIR` | 可选 | media.organize.apply 的命名锁目录（默认系统临时目录）；受限沙箱下可指向可写目录。 |
 | `QIMENG_AI_RESEARCH_DIR` | 可选 | research.* 与写盘工具的忽略工作根（默认 `tools/ai_maintenance/.work/research`，已加入 `.gitignore`）；必须是绝对路径。 |
-| `QIMENG_AI_MEDIA_ROOTS` | media.organize scan 必填 | 逗号/分号分隔的绝对路径：允许 `media.organize.prepare` scan 模式只读扫描的媒体/维护根。未配置时拒绝本地扫描；仓库内只允许忽略工作根。 |
-| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/asset.write/asset.delete/trash.restore/media.organize/backup.export/device.apply/maintenance.execute/admin.maintenance 或 all）。未配置=授予全部已声明权限（兼容旧 CLI）；生产执行器应显式收窄。工具可见≠有权执行，execute_tool 在调用前强制检查。 |
+| `QIMENG_AI_READ_ROOTS` | 本地读取必填 | 逗号/分号分隔的绝对路径：允许读取/扫描的目录。未配置的目录默认拒绝；`QIMENG_AI_MEDIA_ROOTS` 同样计入读根。 |
+| `QIMENG_AI_WRITE_ROOTS` | 本地写入必填 | 逗号/分号分隔的绝对路径：允许复制/整理/抽帧/拼图/备份落盘等写操作。与读根分开授权；未配置的目录默认拒绝。 |
+| `QIMENG_AI_MEDIA_ROOTS` | media.organize scan 必填 | 逗号/分号分隔的绝对路径：允许 `media.organize.prepare` scan 模式只读扫描的媒体/维护根，并计入读根。未配置时拒绝本地扫描；仓库内只允许忽略工作根。 |
+| `QIMENG_AI_STORAGES` | 本地文件发现必填 | `storageId=绝对路径` 形式（分号/逗号分隔），声明逻辑存储；storageId 需匹配 `^[a-z][a-z0-9_-]{1,31}$`。storage 根**本身即读授权**；写入该存储还需把根加入 `QIMENG_AI_WRITE_ROOTS`。 |
+| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/asset.write/asset.delete/trash.restore/media.organize/backup.export/device.apply/maintenance.execute/admin.maintenance/local.files.write/local.device 或 all）。未配置=授予全部已声明权限（兼容旧 CLI）；生产执行器应显式收窄。工具可见≠有权执行，execute_tool 与原语策略在调用前强制检查。 |
 
 ```powershell
 $env:QIMENG_API_BASE = "http://127.0.0.1:8420"
@@ -102,6 +111,16 @@ $env:QIMENG_API_TOKEN = "<admin-token>"
 
 真实值不要写进仓库、任务记录、结果包或外部模型上下文。缺配置时退出码为 2，
 错误只列变量名，不回显值。
+
+本地路径默认拒绝：只有显式配置的读根、写根、媒体根、storage 与包内忽略工作根
+（`QIMENG_AI_RESEARCH_DIR`、`.test-temp/`、`build/`）可用。模型传参不能扩大授权。
+普通下载目录的典型配置：
+
+```powershell
+$env:QIMENG_AI_READ_ROOTS = "D:\Downloads"
+$env:QIMENG_AI_WRITE_ROOTS = "D:\Downloads\organized"
+$env:QIMENG_AI_STORAGES = "downloads=D:\Downloads"
+```
 
 ### 独立 AI 客户端 token（ADR-0057 P1，推荐）
 
@@ -132,6 +151,53 @@ $env:QIMENG_API_TOKEN = "<ai-client-token>"
 - 撤销/轮换在服务端进程缓存 TTL（约 5 秒）内生效；本地管理命令先跑幂等 migration，不需要停服。
 
 scope 与强制矩阵的权威说明见 [SECURITY「独立 AI 客户端凭据」](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p1p22026-11-08) 与 [ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)。2026-11-08 起同时提供管理员会话专用的 HTTP 管理端点（`/api/v1/ai-clients*`、`/api/v1/ai-audit`，AI token 一律 403）；本地 CLI 继续可用。
+
+## 本地文件、逻辑存储与 fileRef
+
+本地文件能力与 Go 业务 API 的边界：
+
+| 对象 | 允许方式 | 禁止 |
+| --- | --- | --- |
+| 未入库文件（下载/待整理） | 在显式授权的读/写根内直接搜索、哈希、抽帧、拼图、复制、命名整理 | 绕过授权根、删除源文件、默认覆盖、写入仓库源码树 |
+| 已入库资产（索引/作者/标签/业务关联/正式媒体路径） | 现有 Go `/api/v1` 正式工具（计划→确认→执行→回读） | 本地工具直接写 SQLite/TXT、直接改库内文件或建立第二份业务事实 |
+
+`files.storages` / `files.search` 只做未入库文件的发现；它们不是全盘搜索，也不替代
+`asset.*` / `author.*` / `media.organize.apply`。搜索有界：默认每页 20、上限 50，
+单次扫描最多 20000 个目录条目，递归深度上限 8，默认跳过符号链接/junction/隐藏项；
+`truncated`/`scanned.scanLimitReached` 必须为真时才表示结果不完整。
+
+推荐流程（不把物理路径交给模型）：
+
+```text
+1. files.storages                          → 取 storageId / writable
+2. files.search {storageId, query, ...}    → 候选 + fileRef + relativePath + nextCursor
+3. media.probe / file.hash {fileRef}       → 复用已定位文件（也可在 recipe 中引用）
+4. 需要写入时：media.transfer {sourceFileRef, target}（target 必须是写根内路径）
+```
+
+- `fileRef` 自描述、无落盘索引：编码 storageId、相对路径、size 与 mtime；解析时重新
+  校验 storage 配置、相对路径规范化、根内约束、存在性与 size/mtime。删除/替换/修改后
+  返回 `FILE_REF_STALE`，重新 `files.search` 即可；伪造/越界返回 `FILE_REF_INVALID`，
+  storage 未配置返回 `FILE_REF_UNAVAILABLE`。
+- `fileRef` 不能绕过写授权：读只需要 storage 配置；写仍要求目标存储根在
+  `QIMENG_AI_WRITE_ROOTS` 内。原 `path` 参数完全兼容，不要求一次性迁移。
+- `research.media.probe` 接受 `files`（绝对路径）与 `fileRefs` 二选一或合并；fileRef
+  输入在返回摘要中以 `<fileRef:N>` 占位，不回显解析后的物理路径。
+- 原语与工具共用同一策略：`QIMENG_AI_READONLY`、`QIMENG_AI_DISABLED_TOOLS`、
+  `QIMENG_AI_GRANTED_PERMISSIONS` 在调用前强制检查。`media.contact_sheet` 是派生图
+  （`local.files.write`，无需确认）；`media.transfer`/`device.push`/`device.pull` 需要
+  本次运行已通过人工 gate。默认不覆盖、不删除源；复制后回读大小与 SHA-256。
+- recipe 恢复：校验已完成步骤产物的 bytes/SHA-256；上次停在副作用步骤（`running`）
+  时返回 `RECIPE_STEP_UNCERTAIN`，要求回读/人工核对后新建运行；工具或原语版本变化
+  返回 `RECIPE_STATE_VERSION`。`media.transfer` 只在恢复上下文对“目标存在且内容一致”
+  幂等复用，内容不同仍 `TARGET_EXISTS`。
+
+隔离合成测量（`python -X utf8 tools/ai_maintenance/measure_locator.py --json`，60 个文件/
+3 层/同名干扰项/真实 1 秒 mp4）：路径式基线 5 次调用、返回 1799 字符、暴露 2 次物理
+绝对路径；fileRef 流程 3 次调用、1447 字符、0 次绝对路径暴露；两条流程均正确定位并
+完成 `media.probe`（`scanStatus=ok`）。重复 probe+hash 的载荷 508→546 字符（fileRef
+字符串比短路径长），收益在调用次数、绝对路径隐藏与跨步骤复用，而不是重复载荷本身。
+以上为合成环境实测，不代表所有目录规模或 token 比例。
 
 ## 版本与兼容
 
@@ -282,7 +348,8 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 | `device.apply.prepare/submit/status` | supported | PC 侧结果包：prepare 只读出 manifest/指纹（masterTxt ≤1MiB、v2Backup ≤64MiB），submit 重新复核源文件后 multipart 登记并回读段清单，status 列表/详情。Android Worker/配对仍未实现。 |
 | `maintenance.claim` / `heartbeat` / `step.record` / `artifact.record` / `complete` | supported | 外部 AI 执行器控制面（ADR-0058）：领取租约/fencing token、续租、幂等步骤、工件元数据、终态回传；409 统一映射 `LEASE_LOST`。 |
 | `research.image.pipeline` / `research.image.search` | supported | research_kit 适配：Lens→Yandex→SauceNAO 阶梯与单工具调用，只返回退出码/产物/有界摘要。 |
-| `research.author.probe` / `research.media.probe` / `research.avatar.fetch` | supported | fxtwitter/kemono 公开字段、ffprobe 抽帧、头像下载；算法在 `../research_kit/`。 |
+| `files.storages` / `files.search` | supported | 本地文件发现：授权 storage 枚举、有界搜索、分页与不透明 `fileRef`；只读、不返回物理绝对路径。 |
+| `research.author.probe` / `research.media.probe` / `research.avatar.fetch` | supported | fxtwitter/kemono 公开字段、ffprobe 抽帧、头像下载；算法在 `../research_kit/`；`research.media.probe` 支持 `fileRefs`。 |
 | `trash.list` / `trash.restore` | supported | 回收站只读列表与恢复（需 confirm、前置检查与回读）。 |
 | `asset.trash` / `asset.tags.replace` | supported | 删除一律进回收站（回读 404）；标签整体替换（读详情出计划、确认指纹、回读）。 |
 | `platform.context` / `platform.catalog` / `platform.tool.describe` / `platform.rules` / `platform.playbook` | supported | 按任务/领域取相关工具、Schema 摘要、规则节、示例与 playbook；精简领域目录；按需工具 Schema/示例/规则摘录；可选工作流模板（纯本地、只读；不写业务数据）。 |
@@ -314,17 +381,22 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 
 ## 安全边界
 
-- 只读工具绝不写；写工具全部走正式 `/api/v1`，禁止直连 SQLite/TXT、绕过领域服务
-  或客户端拼事务。
+- 业务写工具全部走正式 `/api/v1`，禁止直连 SQLite/TXT、绕过领域服务或客户端拼事务；
+  本地文件原语只写 `QIMENG_AI_WRITE_ROOTS` 内的未入库文件/派生图，不写业务数据，
+  也不直接改已入库资产。默认不覆盖目标、不删除源文件。
+- 本地读写根默认拒绝：读根/写根分离，storage 配置本身是读授权；仓库源码树仍拒绝。
+  写路径的根以下链接/junction/reparse 段、`..` 逃逸与控制字符一律拒绝；复制后回读
+  目标仍在写根内且 size/SHA-256 一致。
 - token 只来自 `QIMENG_API_TOKEN`；CLI/MCP 参数中不允许出现 token，输出/错误/日志
   不回显 token（上游错误体也按 token 兜底脱敏）。
 - 未确认计划不得执行；`QIMENG_AI_READONLY=1` 或 `rules.json` `toolConfig.readOnlyMode`
-  可在本地一刀关闭全部副作用工具。
+  可在本地一刀关闭全部副作用工具与原语。
 - 8420 真库禁止测试写入；测试只用临时目录、合成数据与 127.0.0.1 stub。
-- **权限与发现分离**：catalog/describe 只声明权限；`execute_tool` 在 Schema/计划/远程请求
-  之前按 `QIMENG_AI_GRANTED_PERMISSIONS`（或 `rules.json` `toolConfig.grantedPermissions`）
-  强制拒绝未授权工具（`PERMISSION_DENIED`）。未配置时默认授予全部已声明权限只是兼容旧
-  CLI；生产执行器应显式收窄并审计。看见工具≠有权执行，CLI 与 MCP 走同一检查。
+- **权限与发现分离**：catalog/describe 只声明权限；`execute_tool` 与原语策略在
+  Schema/计划/远程请求/文件操作之前按 `QIMENG_AI_GRANTED_PERMISSIONS`（或
+  `rules.json` `toolConfig.grantedPermissions`）强制拒绝未授权工具/原语
+  （`PERMISSION_DENIED`）。未配置时默认授予全部已声明权限只是兼容旧 CLI；生产执行器
+  应显式收窄并审计。看见工具≠有权执行，CLI 与 MCP 走同一检查。
 - **受限凭据（ADR-0057 P1 已实现）**：服务端新增独立 AI 客户端凭据与 scope 强制（`qimeng ai-client` 本地管理、`ai_audit` 写审计）。生产执行端应使用 `-scopes` 收窄的 AI token，而不是管理员 Bearer；未映射写请求默认 403，删除/合并/恢复需各自高风险 scope。工具层隐藏 token 仍不能阻止“执行环境直接调 Go API”：管理员 Bearer 仍是全权凭据，只注入可信执行端进程环境、不下发给模型，AI 写入只用于受信本机维护；模型侧可见的只是工具声明。剩余边界与路线见 [Go API 缺口与 AI 客户端权限模型](../../docs/AI_PLATFORM_API_GAPS.md)、[ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)、[SECURITY](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p1p22026-11-08)。
 - 本机沙箱若限制系统临时目录/目录权限，测试临时目录放在被忽略的
   `tools/ai_maintenance/.test-temp/`。
@@ -348,7 +420,12 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
   再调用 `platform.catalog`（精简领域目录）与 `platform.tool.describe` 取单个工具 Schema/
   示例，用 `platform.rules` 按需读规则节、`platform.playbook` 读可选模板；descriptor 附带
   `_meta.domain` 便于分组展示。MCP 调用独立线程执行、有副作用工具串行，调用期间仍处理取消通知。
-- `initialize` 的 instructions 已提示“先 platform.context / catalog 后 describe”的发现顺序与权限边界。
+- `QIMENG_AI_MCP_DOMAINS` 只收窄业务工具；全部 `platform.*` 与 `files.storages` 安全发现
+  元工具始终可见，`tools/list` 与 `tools/call` 使用同一可见集合，不扩大执行权限。标准 MCP
+  客户端通常会在初始化时加载完整 `tools/list`，因此**服务端过滤不能承诺减少客户端上下文**；
+  真正的按需加载来自客户端主动调用 `platform.context` / `catalog` / `recipe`。
+- `initialize` 的 instructions 已提示“先 platform.context / catalog 后 describe”的发现顺序、
+  fileRef 失效需重新搜索，以及权限边界。
 
 ### MCP 客户端配置示例（占位符，不含真实 token）
 
@@ -394,9 +471,11 @@ python -X utf8 tools/check_docs.py
 CLI/MCP 目录与完整 tools list 一致）。2026-11-08 批次另覆盖：备份导出 3MiB 流式
 落盘（超过旧 2MiB JSON 上限）与摘要、覆盖/预算拒绝、设备 prepare→submit（multipart
 capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 token 不落错误、
-研究 argv/路径边界/超时/缺失脚本、回收站与标签计划-确认-回读。全部使用合成数据与
-回环 stub；命名引擎自身另跑 `python -m unittest test_media_naming`。当前
-`test_ai_*.py` 全套 180 项通过（含新增 `test_ai_platform_20261110.py` 16 项）。
+研究 argv/路径边界/超时/缺失脚本、回收站与标签计划-确认-回读。2026-11-10 批次另覆盖
+本地读写根/链接与 reparse 拒绝、fileRef 生成/失效/替换、原语只读/权限/门禁、recipe
+产物篡改与 running 步骤、规则一致性/MCP 元工具可见性、files.search 分页与状态维度。
+全部使用合成数据与回环 stub；命名引擎自身另跑 `python -m unittest test_media_naming`。
+当前 `test_ai_*.py` 全套 266 项通过。
 
 ## 备份导出、设备结果包与执行器控制面
 

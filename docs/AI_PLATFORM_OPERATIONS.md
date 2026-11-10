@@ -23,15 +23,21 @@
 |---|---|
 | `QIMENG_API_BASE` | Go 服务 origin（本机/局域网/NAS）；远程必须 https 或既有隧道 |
 | `QIMENG_API_TOKEN` | 受信执行端持有的凭据；优先使用专用 AI 客户端令牌（`/api/v1/ai-clients` 或 `qimeng ai-client` 生成）而非管理员 Bearer |
-| `QIMENG_AI_GRANTED_PERMISSIONS` | 工具层权限收窄（未配置=全部声明权限，兼容旧 CLI） |
-| `QIMENG_AI_DISABLED_TOOLS` / `QIMENG_AI_READONLY` | 工具禁用/只读开关 |
+| `QIMENG_AI_GRANTED_PERMISSIONS` | 工具/原语层权限收窄（未配置=全部声明权限，兼容旧 CLI）；含 `local.files.write`、`local.device` |
+| `QIMENG_AI_DISABLED_TOOLS` / `QIMENG_AI_READONLY` | 工具或原语禁用/只读开关；只读模式阻止全部副作用工具与原语 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 排障时覆盖 OpenAPI/规则源路径 |
 | `QIMENG_AI_LOCK_DIR` | media.organize 锁目录（受限沙箱可指向可写目录） |
-| `QIMENG_AI_MEDIA_ROOTS` | media.organize.prepare scan 模式允许只读扫描的媒体/维护根（逗号/分号分隔绝对路径；未配置时拒绝扫描） |
+| `QIMENG_AI_READ_ROOTS` | 本地只读授权根（逗号/分号分隔绝对路径）；未显式授权的目录默认拒绝，模型传参不能扩大授权 |
+| `QIMENG_AI_WRITE_ROOTS` | 本地写入授权根；读根与写根分开，写操作不能借读根落盘；工作根/`.test-temp/`/`build/` 始终可读写 |
+| `QIMENG_AI_MEDIA_ROOTS` | media.organize.prepare scan 模式允许只读扫描的媒体/维护根（同时计入读根；未配置时拒绝扫描） |
+| `QIMENG_AI_STORAGES` | 逻辑存储 `storageId=绝对路径`（分号/逗号分隔）；storage 根本身即读授权，写入还需加入 `QIMENG_AI_WRITE_ROOTS`；`files.*` 用它生成/解析 fileRef |
 | `QIMENG_AI_RATE_LIMIT_PER_MINUTE` | 单 AI 客户端每分钟请求上限（默认 600；0=关闭限流；服务端 config `ai.rate_limit_per_minute`） |
 | `QIMENG_AI_RATE_LIMIT_BURST` | 令牌桶突发容量（默认 120；须为正整数；服务端 config `ai.rate_limit_burst`） |
 
 - 工具发现默认走 `platform.context`（按任务/领域取相关工具、Schema 摘要、规则节与 playbook）或 `platform.catalog`（精简目录）→ `platform.tool.describe`（按需 Schema/示例）→ `platform.rules`/`platform.playbook`（按需规则/模板），不一次性加载完整规则包。
+- 本地未入库文件：`files.storages` → `files.search` 返回 `fileRef`/相对路径/分页游标，后续 `media.probe`/`file.hash`/recipe 原语复用；不向模型返回物理绝对路径。已入库资产/作者/标签/业务关联仍只走 Go `/api/v1`；本地工具不得修改业务状态或建立第二份事实。
+- `QIMENG_AI_MCP_DOMAINS` 只收窄业务工具，全部 `platform.*` 与 `files.storages` 发现元工具始终可见；标准 MCP 客户端仍可能加载完整 `tools/list`，过滤只减少暴露面，不是上下文节省保证。
+- 工具状态拆分为 registered / implemented / contract / runtime / locallyAuthorized / serverVerified；`serverVerified=false` 表示服务端 scope 未在本地验证，最终权限仍由 Go 强制。
 - MCP 客户端配置示例见 [tools/ai_maintenance/README.md](../tools/ai_maintenance/README.md) 的 MCP 节；示例只含占位符，不写入真实 token。
 
 ## 3. 版本与兼容
@@ -45,7 +51,7 @@
 | Go API 版本 | `/api/v1/system/status` 等 | 只增协议优先；AI 平台按工具能力核对降级，不猜测旧参数 |
 
 - 升级 AI 工具包：替换 `tools/ai_maintenance/` 后运行 `version`/`catalog` 自检；不需要重新构建三端。
-- 当前工具包版本：`platformVersion` 1.2.0、`toolContractVersion` 1.2.0、`rulesVersion` 2026-11-10.1，共 44 个工具（含 `platform.context`、`backup.export`、`device.apply.prepare/submit/status`、`maintenance.claim/heartbeat/step.record/artifact.record/complete`、`media.organize.prepare` scan 模式等）；Python 侧 180 项测试通过。版本以 `version` 输出与 `rules.json` 为准。
+- 当前工具包版本：`platformVersion` 1.4.0、`toolContractVersion` 1.4.0、`rulesVersion` 2026-11-10.3，共 48 个工具（含 `platform.context`/`platform.recipe`、`files.storages`/`files.search`、`backup.export`、`device.apply.prepare/submit/status`、`maintenance.claim/heartbeat/step.record/artifact.record/complete`、`media.organize.prepare` scan 模式等）；Python 侧 266 项测试通过。版本以 `version` 输出与 `rules.json` 为准。
 - 升级 Go：先发布协议与实现，再按需更新 AI 工具包；工具会按 `openapiSha256`/能力核对报告 `supported/unavailable/incompatible`。
 - 工具新增/废弃：只增 ToolSpec + 实现模块；废弃用 `deprecated/replacedBy`，精简目录默认隐藏，执行返回 `TOOL_DEPRECATED`。
 
@@ -71,3 +77,5 @@
 - HTTP 独立服务、常驻守护进程、系统服务/容器编排未实现（用户明确本轮不急于实现）。
 - 真实 AI 客户端（Codex/Claude 等）接入、真实 Go 实例联调、安装到 PC/手机、NAS 硬件验收均未执行。
 - AI 客户端 HTTP 管理、审计查询与按客户端限流已于 2026-11-08 落地；仍缺管理 UI、多实例共享限流与按执行器并发配额。外部执行器通道已交付，但只做过 Go 侧测试，未接真实执行器/真机/NAS 联调。
+- 本地文件发现/fileRef 只做过隔离合成测试（60 文件、3 层、真实 1 秒 mp4）与 Windows 本机路径检查；未在真实媒体目录、网络文件系统、跨卷复制、NAS 或多用户权限下验收。stateless cursor 在 20000 条目扫描上限处只能提示收窄，不能保证翻完超大目录；ffprobe/ffmpeg 外部进程读取仍有检查后换链窗口。
+- 版本升到 1.4.0 后，旧工具包生成的计划会按 `PLAN_VERSION_MISMATCH` 被拒绝；需用当前工具包重新 prepare。

@@ -85,7 +85,7 @@ class RulepackCapabilityTest(unittest.TestCase):
         profile = pack["capabilities"]["write"]["author.profile.update"]
         self.assertEqual("implemented", profile["implementationStatus"])
         self.assertEqual("available", profile["apiStatus"])
-        self.assertEqual("2026-11-10.2", pack["rulepackVersion"])
+        self.assertEqual("2026-11-10.3", pack["rulepackVersion"])
         self.assertIn("mediaOrganize", pack)
         self.assertEqual(["media.organize.prepare", "media.organize.apply"],
                          pack["mediaOrganize"]["tools"])

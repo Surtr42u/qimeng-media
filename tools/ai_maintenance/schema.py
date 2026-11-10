@@ -1,11 +1,17 @@
 """工具输入/输出 Schema 的轻量校验器（JSON Schema 子集，标准库）。
 
 工具契约声明的 Schema 由本模块校验；只实现工具实际用到的关键字，避免引入
-第三方依赖或过度宽松的「校验」：
+第三方依赖或过度宽松的「校验」。支持的断言关键字见 ``SUPPORTED_KEYWORDS``，
+纯注解关键字见 ``ANNOTATION_KEYWORDS``（不参与校验，仅供模型理解）：
 
 type / required / properties / additionalProperties / enum / const /
 minimum / maximum / minLength / maxLength / minItems / maxItems /
-items / pattern / oneOf(仅用于简单联合) / anyOf。
+items / pattern。
+
+``additionalProperties`` 支持 false（拒绝未声明字段）、true（不限制）与对象
+Schema（对未在 properties 中声明的字段按该 Schema 校验）。未支持的关键字
+（如 format/allOf/minProperties/oneOf/anyOf）不应出现在工具 Schema 中，
+由契约一致性测试扫描拦截。
 
 校验失败返回结构化错误列表（path/message），供 CLI/MCP 稳定分类为
 INVALID_INPUT，而不是让 handler 内部抛 KeyError。
@@ -22,6 +28,14 @@ _TYPES = {
     "number": (int, float),
     "integer": int,
 }
+
+# 本模块真正实现断言的关键字；工具 Schema 只能使用这些 + 注解关键字。
+SUPPORTED_KEYWORDS = frozenset({
+    "type", "required", "properties", "additionalProperties", "enum", "const",
+    "minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems",
+    "items", "pattern",
+})
+ANNOTATION_KEYWORDS = frozenset({"description", "title", "default", "examples"})
 
 _MAX_ERRORS = 20
 
@@ -99,12 +113,20 @@ def _validate(value, schema, path: str, errors: list[dict]) -> None:
                 if key not in value:
                     errors.append({"path": path, "message": "缺少必需字段 " + str(key)})
         properties = schema.get("properties")
+        additional = schema.get("additionalProperties")
         if isinstance(properties, dict):
             for key, item in value.items():
                 if key in properties:
                     _validate(item, properties[key], f"{path}.{key}" if path else key, errors)
-                elif schema.get("additionalProperties") is False:
+                elif additional is False:
                     errors.append({"path": path, "message": "不允许的字段 " + str(key)})
+                elif isinstance(additional, dict):
+                    _validate(item, additional, f"{path}.{key}" if path else key, errors)
+        elif additional is False and value:
+            errors.append({"path": path, "message": "不允许任何字段"})
+        elif isinstance(additional, dict):
+            for key, item in value.items():
+                _validate(item, additional, f"{path}.{key}" if path else key, errors)
 
 
 def validate(value, schema) -> list[dict]:

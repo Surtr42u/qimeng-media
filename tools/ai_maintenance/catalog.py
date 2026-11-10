@@ -29,6 +29,8 @@ CONTEXT_MAX_TOOLS = 24
 CONTEXT_RULES_LIMIT = 12000
 CONTEXT_SCHEMA_DEPTH = 2
 CONTEXT_AVAILABLE_TASKS = 40
+# platform.rules 点路径：最多 4 段对象键（如 playbooks.media.organize）。
+MAX_RULE_PATH_SEGMENTS = 4
 
 # 任务别名：让外部 AI 用业务语言（backup.sync 等）找到同一组工具/模板。
 TASK_ALIASES: dict = {
@@ -54,8 +56,11 @@ def _disabled_reason(ctx, tool_id: str) -> str:
 
 
 def _compact(ctx, spec) -> dict:
-    return registry.compact_summary(spec, getattr(ctx, "document", None),
-                                    _disabled_reason(ctx, spec.id))
+    return registry.compact_summary(
+        spec, getattr(ctx, "document", None), _disabled_reason(ctx, spec.id),
+        granted_permissions=getattr(ctx, "granted_permissions", None),
+        env=getattr(ctx, "env", None),
+    )
 
 
 def _bounded(value, limit: int = RULES_EXCERPT_LIMIT):
@@ -106,6 +111,9 @@ def platform_catalog(ctx, payload: dict) -> dict:
         "domains": domain_rows,
         "tools": tools,
         "toolCount": len(tools),
+        "truncated": False,
+        # 目录条目的 availability 不含 serverVerified（体积）；服务端 scope 一律未在本地验证。
+        "serverVerified": False,
         "recipes": [
             {"id": item["id"], "title": item["title"],
              "requires": item.get("requires") or [], "targets": item.get("targets") or []}
@@ -136,9 +144,17 @@ def platform_tool_describe(ctx, payload: dict) -> dict:
         getattr(ctx, "document", None),
         _disabled_reason(ctx, tool_id),
         rules=getattr(ctx, "rules", None),
+        granted_permissions=getattr(ctx, "granted_permissions", None),
+        env=getattr(ctx, "env", None),
+    )
+    excerpt_truncated = any(
+        isinstance(value, dict) and value.get("truncated") is True
+        for value in (described.get("rulesExcerpt") or {}).values()
     )
     return {
         "tool": described,
+        "truncated": excerpt_truncated,
+        "missingRuleSections": list(described.get("missingRuleSections") or ()),
         "rulepackVersion": str(getattr(ctx, "rulepack_version", "") or ""),
         "discovery": {
             "catalog": "platform.catalog",
@@ -149,8 +165,65 @@ def platform_tool_describe(ctx, payload: dict) -> dict:
     }
 
 
+def _split_section_path(value) -> list[str]:
+    """校验 platform.rules 的点路径：最多 4 段对象键，拒绝空段/./../下标/控制字符。"""
+    if not isinstance(value, str) or not value:
+        raise errors.invalid_input("sections[] 必须是非空字符串")
+    if len(value) > 200:
+        raise errors.invalid_input("sections[] 路径过长（最多 200 字符）")
+    if any(ord(ch) < 32 for ch in value):
+        raise errors.invalid_input("sections[] 路径含控制字符")
+    parts = value.split(".")
+    if len(parts) > MAX_RULE_PATH_SEGMENTS:
+        raise errors.invalid_input(
+            f"sections[] 路径最多 {MAX_RULE_PATH_SEGMENTS} 段",
+            details={"value": value})
+    for part in parts:
+        if not part or part != part.strip() or part in (".", ".."):
+            raise errors.invalid_input("sections[] 路径含空段/空白/点段",
+                                       details={"value": value})
+        if part.isdigit() or "[" in part or "]" in part:
+            raise errors.invalid_input("sections[] 路径不能包含数组下标",
+                                       details={"value": value})
+    return parts
+
+
+def _resolve_rule_section(rules: dict, path: str):
+    """逐段按对象键解析；数组/未知键一律按未知路径拒绝（不猜测）。
+
+    规则键本身可能含点（如 playbook 名 ``media.organize``）：按**最长匹配**把连续
+    多个点段拼成一个对象键，因此 ``playbooks.media.organize`` 能解析到
+    ``rules["playbooks"]["media.organize"]``。
+    """
+    tokens = _split_section_path(path)
+    node = rules
+    index = 0
+    while index < len(tokens):
+        if not isinstance(node, dict):
+            raise errors.invalid_input(
+                "未知规则节：" + path,
+                details={"availableSections": sorted(rules.keys())})
+        matched = None
+        for end in range(len(tokens), index, -1):
+            candidate = ".".join(tokens[index:end])
+            if candidate in node:
+                matched = (candidate, end)
+                break
+        if matched is None:
+            raise errors.invalid_input(
+                "未知规则节：" + path,
+                details={"availableSections": sorted(rules.keys())})
+        node = node[matched[0]]
+        index = matched[1]
+    return node
+
+
 def platform_rules(ctx, payload: dict) -> dict:
-    """按需读取规则节（不加载/回显完整 rules.json）。"""
+    """按需读取规则节（不加载/回显完整 rules.json）。
+
+    ``sections`` 支持点路径（如 ``playbooks.media.organize``），返回的键保留调用方
+    传入的完整路径，便于模型对应；未知路径返回 INVALID_INPUT 与可用顶层节。
+    """
     rules = getattr(ctx, "rules", None)
     if not isinstance(rules, dict):
         raise errors.configuration_error("当前上下文缺少规则源（rules.json 未加载）")
@@ -158,9 +231,12 @@ def platform_rules(ctx, payload: dict) -> dict:
     domain = payload.get("domain")
     sections: list[str] = []
     if isinstance(requested, list) and requested:
-        sections = [item for item in requested if isinstance(item, str) and item]
-        if len(sections) > MAX_RULE_SECTIONS:
+        if len(requested) > MAX_RULE_SECTIONS:
             raise errors.invalid_input(f"sections 最多 {MAX_RULE_SECTIONS} 项")
+        for item in requested:
+            _split_section_path(item)
+            if item not in sections:
+                sections.append(item)
     elif isinstance(domain, str) and domain:
         if domain not in AVAILABLE_DOMAINS:
             raise errors.invalid_input("未知领域：" + domain,
@@ -168,25 +244,27 @@ def platform_rules(ctx, payload: dict) -> dict:
         sections = list(registry.DOMAIN_RULE_SECTIONS.get(domain, ()))
     else:
         sections = ["permissions"]
-    unknown = [name for name in sections if name not in rules]
-    if unknown:
-        raise errors.invalid_input("未知规则节：" + ", ".join(unknown),
-                                   details={"availableSections": sorted(rules.keys())})
+    # 先整体解析，避免部分节已截断后才报未知路径。
+    values = {name: _resolve_rule_section(rules, name) for name in sections}
     selected: dict[str, object] = {}
     used = 0
     truncated: list[str] = []
     for name in sections:
-        excerpt = _bounded(rules[name])
+        excerpt = _bounded(values[name])
         encoded_len = len(json.dumps(excerpt, ensure_ascii=False))
         if used + encoded_len > RULES_TOTAL_LIMIT:
             truncated.append(name)
             continue
         selected[name] = excerpt
         used += encoded_len
+        if isinstance(excerpt, dict) and excerpt.get("truncated") is True:
+            truncated.append(name)
     return {
         "rulepackVersion": str(getattr(ctx, "rulepack_version", "") or ""),
         "sections": selected,
+        "resolvedSections": list(selected.keys()),
         "truncatedSections": truncated,
+        "truncated": bool(truncated),
         "availableSections": sorted(rules.keys()),
         "note": "节选用于按需加载领域规则；完整规则源由可信执行端保管，执行仍以服务端与执行器校验为准。",
     }
@@ -233,6 +311,7 @@ def platform_playbook(ctx, payload: dict) -> dict:
         return {
             "rulepackVersion": str(getattr(ctx, "rulepack_version", "") or ""),
             "playbook": {"name": name, **bounded} if isinstance(bounded, dict) else bounded,
+            "truncated": isinstance(bounded, dict) and bounded.get("truncated") is True,
             "availablePlaybooks": sorted(playbooks.keys()),
             "note": "playbook 是可选模板；执行仍按基础工具的计划/确认/回读与权限校验。",
         }
@@ -242,6 +321,7 @@ def platform_playbook(ctx, payload: dict) -> dict:
                                        details={"availableDomains": list(AVAILABLE_DOMAINS)})
     rows = []
     used = 0
+    truncated_list = False
     for playbook_name in sorted(playbooks.keys()):
         playbook = playbooks.get(playbook_name)
         if not isinstance(playbook, dict):
@@ -251,12 +331,14 @@ def platform_playbook(ctx, payload: dict) -> dict:
         row = _playbook_compact(playbook_name, playbook)
         encoded = len(json.dumps(row, ensure_ascii=False))
         if used + encoded > PLAYBOOK_LIST_LIMIT:
+            truncated_list = True
             break
         rows.append(row)
         used += encoded
     return {
         "rulepackVersion": str(getattr(ctx, "rulepack_version", "") or ""),
         "playbooks": rows,
+        "truncated": truncated_list,
         "availablePlaybooks": sorted(playbooks.keys()),
         "note": "按领域列出可选工作流模板；基础工具可自由组合，不要求按模板执行。",
     }
@@ -268,30 +350,49 @@ def platform_playbook(ctx, payload: dict) -> dict:
 
 
 def _schema_summary(schema, depth: int = CONTEXT_SCHEMA_DEPTH) -> dict:
-    """有界 Schema 摘要（属性名/类型/必填/枚举），不返回完整嵌套 Schema。"""
+    """有界 Schema 摘要（属性名/类型/必填/枚举），不返回完整嵌套 Schema。
+
+    任何裁剪（描述、required、属性数、嵌套深度）都在摘要内标 ``truncated: true``，
+    避免把被截断的 Schema 当成完整契约使用。
+    """
     if not isinstance(schema, dict):
         return {"type": type(schema).__name__}
     summary: dict = {}
+    truncated = False
     for key in ("type", "enum", "default", "minLength", "maxLength",
                 "minimum", "maximum", "minItems", "maxItems", "pattern"):
         if key in schema:
             summary[key] = schema[key]
     if isinstance(schema.get("description"), str):
-        summary["description"] = schema["description"][:200]
+        text = schema["description"]
+        summary["description"] = text[:200]
+        if len(text) > 200:
+            truncated = True
     required = schema.get("required")
     if isinstance(required, list):
         summary["required"] = required[:30]
+        if len(required) > 30:
+            truncated = True
     properties = schema.get("properties")
     if isinstance(properties, dict) and depth > 0:
+        items = list(properties.items())
         summary["properties"] = {
             name: _schema_summary(value, depth - 1)
-            for name, value in list(properties.items())[:30]
+            for name, value in items[:30]
         }
+        if len(items) > 30:
+            truncated = True
+    elif isinstance(properties, dict) and properties:
+        truncated = True
     items = schema.get("items")
     if isinstance(items, dict) and depth > 0:
         summary["items"] = _schema_summary(items, depth - 1)
+    elif isinstance(items, dict) and items:
+        truncated = True
     if "additionalProperties" in schema:
         summary["additionalProperties"] = schema["additionalProperties"]
+    if truncated:
+        summary["truncated"] = True
     return summary
 
 
@@ -406,6 +507,10 @@ def _context_tool(ctx, spec, include_schemas: bool, compact: bool = False) -> di
         "summary": spec.description,
         "status": status["status"],
         "reason": status.get("reason", ""),
+        "availability": registry.availability(
+            spec, getattr(ctx, "document", None),
+            granted_permissions=getattr(ctx, "granted_permissions", None),
+            env=getattr(ctx, "env", None)),
         "permission": spec.permission,
         "permissionDescription": registry.PERMISSIONS.get(spec.permission, ""),
         "permitted": spec.permission in (getattr(ctx, "granted_permissions", frozenset()) or ()),
@@ -440,7 +545,12 @@ def _context_tool(ctx, spec, include_schemas: bool, compact: bool = False) -> di
 
 def _context_rule_sections(tool_ids: list[str], playbook: dict | None,
                            target_domain: str, rules: dict) -> list[str]:
-    sections: list[str] = []
+    # 安全/边界规则优先级高于通用错误与流程模板：总量上限触发截断时，
+    # 不能先把 localFiles/permissions 这类执行必需规则挤掉。
+    sections: list[str] = ["permissions"]
+    if target_domain == "media" or any(
+            tool_id.startswith(("media.", "files.")) for tool_id in tool_ids):
+        sections.append("localFiles")
     if isinstance(playbook, dict) and isinstance(playbook.get("ruleSections"), list):
         sections.extend(item for item in playbook["ruleSections"] if isinstance(item, str))
     for tool_id in tool_ids:
@@ -519,6 +629,8 @@ def platform_context(ctx, payload: dict) -> dict:
             continue
         selected_rules[name] = excerpt
         used += size
+        if isinstance(excerpt, dict) and excerpt.get("truncated") is True:
+            truncated_sections.append(name)
     permission_names = sorted({item["permission"] for item in tools})
     guardrails = []
     if isinstance(playbook, dict):
@@ -529,6 +641,25 @@ def platform_context(ctx, payload: dict) -> dict:
         "不得把真实媒体、令牌或含个人信息的任务记录发送到外部模型上下文。",
     ])
     available_tasks = sorted(playbooks.keys())[:CONTEXT_AVAILABLE_TASKS]
+    schema_truncated = any(
+        isinstance(item.get("schemaSummary"), dict)
+        and any(isinstance(item["schemaSummary"].get(key), dict)
+                and item["schemaSummary"][key].get("truncated") is True
+                for key in ("input", "output"))
+        for item in tools
+    )
+    playbook_truncated = isinstance(bounded_playbook, dict) and \
+        bounded_playbook.get("truncated") is True
+    truncated = bool(truncated_tools) or bool(truncated_sections) or \
+        schema_truncated or playbook_truncated
+    # next 只推荐可执行工具：supported + 已授权 + 未禁用 + 未废弃；不改动 tools 顺序。
+    next_tools = [
+        item["id"] for item in tools
+        if item.get("status") == "supported"
+        and item.get("permitted") is True
+        and not item.get("disabled")
+        and not item.get("deprecated")
+    ][:max_tools]
     return {
         "platformVersion": versions.PLATFORM_VERSION,
         "toolContractVersion": versions.TOOL_CONTRACT_VERSION,
@@ -551,9 +682,10 @@ def platform_context(ctx, payload: dict) -> dict:
             "note": "permitted 只反映可信执行端授予；服务端仍按 AI 客户端 scope 强制校验。",
         },
         "rules": selected_rules,
+        "truncated": truncated,
         "truncatedSections": truncated_sections,
         "guardrails": guardrails,
-        "next": [item["id"] for item in tools if item.get("status") == "supported"][:max_tools],
+        "next": next_tools,
         "discovery": {
             "catalog": "platform.catalog",
             "describe": "platform.tool.describe",
