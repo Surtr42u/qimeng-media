@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "id": "author.profile",
+  "version": "1.0.0",
+  "title": "已有作者补档案：读取现状 → 计划 → 人工确认 → 写入 → 回读",
+  "whenToUse": "作者已存在，需要补全/校正简介、头像、主页、证据或双语资料时；先读 revision 再计划。",
+  "targets": ["pc", "nas", "android-embedded"],
+  "requires": ["api"],
+  "permissions": ["read", "author.profile.write"],
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "authorId": {"type": "string", "maxLength": 512, "description": "作者 ID"},
+      "changes": {
+        "type": "object",
+        "description": "本次明确修改的档案字段（未列出的保持现状）"
+      },
+      "evidence": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {"type": "string", "maxLength": 2000},
+        "description": "公开来源证据"
+      },
+      "allowProtectedOverwrite": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否允许覆盖人工已填字段（默认保护）"
+      },
+      "reason": {"type": "string", "maxLength": 500, "description": "本次修改原因"}
+    },
+    "required": ["authorId", "changes"]
+  },
+  "steps": [
+    {
+      "id": "read",
+      "tool": "author.profile.read",
+      "note": "读取当前档案与 revision",
+      "input": {"authorId": "$inputs.authorId"}
+    },
+    {
+      "id": "prepare",
+      "tool": "author.profile.prepare",
+      "note": "生成完整字段计划；人工已填字段默认保护",
+      "input": {
+        "authorId": "$inputs.authorId",
+        "changes": "$inputs.changes",
+        "evidence": "$inputs.evidence",
+        "allowProtectedOverwrite": "$inputs.allowProtectedOverwrite",
+        "reason": "$inputs.reason"
+      }
+    },
+    {
+      "id": "confirmProfile",
+      "gate": true,
+      "message": "核对计划中的字段、证据与保护字段；确认后才写入"
+    },
+    {
+      "id": "update",
+      "tool": "author.profile.update",
+      "note": "按计划原样提交并回读",
+      "confirm": true,
+      "input": {"plan": "$steps.prepare.output.plan", "confirm": true}
+    },
+    {
+      "id": "readback",
+      "tool": "author.profile.read",
+      "note": "回读 revision 与字段",
+      "input": {"authorId": "$inputs.authorId"}
+    }
+  ],
+  "artifacts": ["档案计划", "档案回读"],
+  "readback": ["revision 递增", "计划字段等于写入值", "未计划字段保持不变"]
+}

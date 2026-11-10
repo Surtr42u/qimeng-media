@@ -32,10 +32,14 @@
 | `pathguard.py` | 写盘路径边界（绝对路径、仓库外或忽略工作根）与文件摘要。 |
 | `media_naming.py` | **组图命名纯规划/校验引擎**（作品索引、`(1)..(n)` 页码、计划指纹、`SerializedLocks`、回读报告）；ENGINE_VERSION=1.0.0。 |
 | `media_scan.py` | **媒体批次内容扫描（只读）**：md5/可选 dHash64/视频时长+分辨率+抽帧、最大文件去重候选、序号延顺建议、根目录对齐与 contact sheet 计划；SCAN_ENGINE_VERSION=1.0.0。 |
+| `media_primitives.py` | **媒体原语唯一实现**：ffprobe 元数据、dHash64、百分比抽帧、拼图生成与 `(path,size,mtime,参数)` 缓存；media_scan 与 recipe 共用。 |
+| `device_adb.py` | **ADB 原语**：显式 `QIMENG_ADB_SERIAL`、逐文件 push/pull、字节数回读、POSIX 远程路径；无默认设备。 |
+| `targets.py` | 运行目标能力档案：pc / android-embedded / nas；recipe 执行前核对 api/ffmpeg/node/adb/mediaRoots/research/lens。 |
+| `recipes.py` + `recipes/` | **可执行编排配方**：JSON 步骤引用工具/原语，支持条件、人工门禁、断点续跑、产物落盘与任务卡。 |
 | `tools_media.py` | media.organize.prepare 适配层：scan 模式调用内容扫描；libraryId+groups 模式调用命名引擎；apply 加锁逐步 move 并回读。 |
 | `profile_import.py` | 作者公开档案受控填充的**唯一写入实现**；旧脚本 `../import_creator_profiles.py` 只转发。 |
 | `rulepack.py` | 生成规则包（分离版本 + 工具状态 + 能力核对），稳定可比较。 |
-| `cli.py` | 统一入口：兼容旧只读子命令 + `version`/`tools`/`tool call`。 |
+| `cli.py` | 统一入口：任务卡/recipe/run + 兼容旧只读子命令 + `version`/`tools`/`tool call`（仓库根 `qai`/`qai.cmd` 为短入口）。 |
 | `mcp_server.py` | stdio MCP 适配器（JSON-RPC 2.0 最小子集），与 CLI 共用注册表与 dispatch。 |
 | [test_ai_maintenance.py](../test_ai_maintenance.py) | 规则包/旧 CLI 合同回归（合成数据、127.0.0.1 stub）。 |
 | [test_ai_catalog.py](../test_ai_catalog.py) | 扩展性回归：精简领域目录/按需 describe+rules、惰性模块加载、模块缺失/废弃/禁用、权限与发现分离、并发、CLI/MCP 一致性（18 项）。 |
@@ -44,6 +48,7 @@
 | [test_media_naming.py](../test_media_naming.py) | 命名引擎纯函数回归（工作编号/页码/补图/缺页/锁/回读）。 |
 | [test_ai_platform_20261108.py](../test_ai_platform_20261108.py) | 外部 AI 工具平台回归（41 项）：备份 3MiB 流式落盘、设备 prepare/submit/status、执行器 200/204/409、研究 argv/边界/超时、回收站与标签。 |
 | [test_ai_platform_20261110.py](../test_ai_platform_20261110.py) | 规则漂移（endpoint+method+必需字段、apiStatus/实现状态分离）、`platform.context` 输出/权限/CLI+MCP 一致性、media.organize scan 的对齐/去重/序号/越界与 apply planned。 |
+| [test_ai_recipes.py](../test_ai_recipes.py) | recipe/原语回归：任务卡边界、工具引用、门禁与续跑、条件跳过、能力缺失、author.create、name 查重、视频抽帧/dHash 缓存与拼图。 |
 
 生成物默认输出到 stdout；`--out` 写入文件。本目录 `.gitignore` 已忽略 `rulepack.json`；
 建议写到被忽略的 `build/ai-maintenance/`。
@@ -53,12 +58,19 @@
 只需要 Python 3.13 标准库。在仓库根执行：
 
 ```powershell
+# 仓库根提供短入口（Windows: qai.cmd；PC/NAS: ./qai），等价于下面的 python 入口
+qai task author.discover
+qai run media.batch --input-file input.json
+qai recipes list
+
 python -X utf8 tools/ai_maintenance/cli.py version
 python -X utf8 tools/ai_maintenance/cli.py context --markdown
 python -X utf8 tools/ai_maintenance/cli.py tools list
 ```
 
 `context`/`version`/`tools list`/`tools show` 纯本地：不联网、不需要 token。
+注意：`context` 输出完整规则包（约 477KB，面向排障/CI）；模型上下文请优先用
+`task`（2–4KB 任务卡）或 `task-context --task ...`，不要默认整包读取。
 
 ## 配置
 
@@ -72,6 +84,12 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求前拒绝全部有副作用工具。 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
 | `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
+| `QIMENG_AI_MCP_DOMAINS` | 可选 | 逗号分隔的领域白名单；只暴露这些域的 MCP 工具，减少 tools/list 与误调用面。 |
+| `QIMENG_AI_TARGET` | 可选 | 运行目标：`pc` / `android-embedded` / `nas`（默认 pc）；recipe 据此核对能力。 |
+| `QIMENG_AI_RECIPE_DIR` | 可选 | recipe 目录覆盖（默认 `tools/ai_maintenance/recipes`）。 |
+| `QIMENG_AI_MEDIA_CACHE` | 可选 | 媒体原语缓存目录（默认 `build/ai-maintenance/cache/media`）；按 path/size/mtime/参数失效。 |
+| `QIMENG_AI_FFMPEG` / `QIMENG_AI_FFPROBE` / `QIMENG_AI_FONT` | 可选 | ffmpeg/ffprobe/拼图字体覆盖；也兼容旧的 `QIMENG_FFMPEG`/`QIMENG_FFPROBE`。 |
+| `QIMENG_ADB` / `QIMENG_ADB_SERIAL` | 设备推送必填 | adb 路径与**显式真机序列号**；没有默认设备，拒绝 `emulator-5554`。 |
 | `QIMENG_AI_LOCK_DIR` | 可选 | media.organize.apply 的命名锁目录（默认系统临时目录）；受限沙箱下可指向可写目录。 |
 | `QIMENG_AI_RESEARCH_DIR` | 可选 | research.* 与写盘工具的忽略工作根（默认 `tools/ai_maintenance/.work/research`，已加入 `.gitignore`）；必须是绝对路径。 |
 | `QIMENG_AI_MEDIA_ROOTS` | media.organize scan 必填 | 逗号/分号分隔的绝对路径：允许 `media.organize.prepare` scan 模式只读扫描的媒体/维护根。未配置时拒绝本地扫描；仓库内只允许忽略工作根。 |
@@ -156,6 +174,32 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.read --input
 python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.prepare --input-file plan-input.json
 ```
 
+### 任务卡与可执行 recipe（优先入口）
+
+不需要先读项目文档：先取 2–4KB 任务卡，按卡上的步骤/输入/门禁执行；执行到某步
+再按需查看该工具 Schema。
+
+```powershell
+# 1) 列配方 / 看任务卡（默认紧凑 JSON，不加载完整规则包）
+python -X utf8 tools/ai_maintenance/cli.py recipes list
+python -X utf8 tools/ai_maintenance/cli.py task author.discover
+
+# 2) 执行：只读步骤先跑，遇到人工门禁停下
+python -X utf8 tools/ai_maintenance/cli.py run author.discover --input-file input.json
+# 3) 人工核对产物后，同一 --state-dir 带 --yes 续跑写入步骤
+python -X utf8 tools/ai_maintenance/cli.py run author.discover --state-dir <runDir> --yes
+```
+
+内置配方：
+- `author.discover`：未知作者——抽帧/Lens → 搜索/查重 → `author.create` → candidate 档案 → 关联 → 回读
+- `author.profile`：已有作者补档案
+- `media.batch`：内容扫描 → 拼图目检 → 命名/关联 → 设备推送 → 回读
+- `device.sync`：备份导出 → 设备结果包登记 → 提交 → 查询
+
+执行器把每步产物写到 `<runDir>/artifacts/*.json`（含 sha256），模型只拿到有界摘要；
+写入步骤必须先过 gate 再带 `--yes`，工具自身仍校验 plan 指纹与 confirm。配方是数据：
+新增编排只加 `recipes/*.json`（必要时加一个原语），不改 CLI/MCP。
+
 `tool call` 成功输出 `{"tool","toolVersion","status":"ok","result":...}`；写入工具
 的结果含 `planFingerprint`/`idempotencyKey`/`steps`/`readback`。`--input-json -`
 或 `--input-file -` 从 stdin 读取。
@@ -188,9 +232,10 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 
 - 领域：author/media/research/backup/device/maintenance/system；目录按领域分组并给
   tools 扁平列表，toolCount/domains 由注册表实时计算。
-- `platform.context` / `platform.catalog` / `platform.tool.describe` / `platform.rules` /
-  `platform.playbook` 与业务工具同一 dispatch、同一权限与禁用检查；MCP tools/list 仍返回
-  完整工具清单（标准协议兼容），客户端也可调用元工具做分类发现。
+- `platform.recipe`（任务卡）/ `platform.context` / `platform.catalog` /
+  `platform.tool.describe` / `platform.rules` / `platform.playbook` 与业务工具同一
+  dispatch、同一权限与禁用检查；MCP tools/list 可用 `QIMENG_AI_MCP_DOMAINS` 收窄，
+  客户端也可调用元工具做分类发现。
 - `platform.context` 只返回相关子集（默认最多 12 个工具），含工具版本、Schema 摘要、
   规则节摘录、playbook、示例、`permitted`/副作用/确认要求；不返回全量 rules/tools。
 - 任务解析顺序：playbook 名 → 领域名 → 工具 ID/前缀 → 别名（`backup.sync` 等）；

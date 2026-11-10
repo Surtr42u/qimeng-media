@@ -77,6 +77,18 @@
 
 独立 AI 平台应能够在 PC/NAS 上独立启动、停止和更新。第一版不强制增加独立 HTTP 服务或监听端口，优先采用本机 CLI 与 MCP stdio。允许独立发布 Python 工具包或等价可维护产物；具体实现语言以现有代码复用、依赖数量、打包难度和测试成本为依据。远程 HTTP、容器化和多 Worker 部署属于后续可选扩展。
 
+### 1.4 执行编排与按需上下文（2026-11-10）
+
+AI 不需要先读源码/完整文档才知道做什么：任务入口是**任务卡 + 可执行 recipe**。
+
+- `qai task <recipe>` 返回 2–4KB 任务卡：目标、输入、步骤、工具/原语、人工门禁、产物与执行命令；不加载完整规则包。
+- `qai run <recipe>` 逐步执行；只读步骤先跑，遇到 gate 停下；人工核对后同一运行目录 `--yes` 续跑写入；每步产物落盘（JSON + sha256），模型只拿有界摘要。
+- recipe 是数据（`tools/ai_maintenance/recipes/*.json`），只引用注册表工具/原语；新增编排不改 CLI/MCP。
+- 原语唯一实现：`media_primitives`（抽帧/dHash/拼图/缓存）、`device_adb`（显式真机）、`client`（统一 HTTP）；禁止为单个任务再写临时脚本。
+- 运行目标能力先核对（`pc` / `android-embedded` / `nas`）：缺 ffmpeg/adb/research 时给出环境变量提示，不跑到一半才失败。
+- 未知作者链路：`author.discover` = 抽帧/Google Lens 识图 → Bing/平台搜索 → `author.query` 查重 → 未命中才 `author.create` → `author.profile.prepare/update`（candidate，人工确认）→ `asset.authors.apply` → 回读。档案字段/证据/头像规则仍以 `tools/AUTHOR_RESEARCH.md` 与 `rules.json fields` 为准。
+- 这是“按需加载”而不是“全量读取”：默认禁止把 `context` 全量规则包（约 477KB）或全部工具 Schema 一次性塞进模型上下文；需要细节时再 `platform.tool.describe` / `platform.rules` / `platform.playbook`。
+
 ## 2. GitHub 当前实现基线
 
 执行者首先重新读取最新 GitHub HEAD、OpenAPI、数据库迁移和交接记录，不得只根据本表判断安装状态。

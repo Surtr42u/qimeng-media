@@ -172,20 +172,29 @@ class McpServer:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": (
-                "绮梦影库 AI 工具平台。开始任务时先调用 platform.context（task=media.organize/"
-                "author.cleanup/backup.sync 等或 domain）取相关工具、Schema 摘要、规则节与 playbook；"
+                "绮梦影库 AI 工具平台。任务级编排先调用 platform.recipe（action=card, recipeId="
+                "author.discover/media.batch/author.profile/device.sync）取 2–4KB 任务卡；"
+                "再按需用 platform.context（task/domain）取相关工具、Schema 摘要、规则节与 playbook；"
                 "工具较多时也可先调用 platform.catalog 取精简领域目录，再用 platform.tool.describe "
                 "按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节，需要工作流模板时用 "
-                "platform.playbook（可选模板，不是唯一路径）；tools/list 仍保留完整工具清单供标准客户端使用。"
+                "platform.playbook（可选模板，不是唯一路径）；默认不要读取全量规则包。"
                 "写入工具必须先 prepare 计划、人工确认后带 confirm=true 与计划指纹调用 apply。"
                 "看见工具不代表有权执行（权限由可信执行端强制）；不得声称执行了 planned/已禁用工具；"
                 "不得在参数中放 token。"
             ),
         }
 
+    def _visible_tools(self) -> list:
+        """QIMENG_AI_MCP_DOMAINS 只暴露相关领域，减少 tools/list 与误调用面。"""
+        raw = str(self.env.get("QIMENG_AI_MCP_DOMAINS", "")).strip()
+        if not raw:
+            return list(registry.TOOLS)
+        allowed = {item.strip() for item in raw.split(",") if item.strip()}
+        return [spec for spec in registry.TOOLS if spec.domain in allowed]
+
     def _tools_list(self) -> dict:
         document = self._load_config().document()
-        return {"tools": [_tool_descriptor(spec, document) for spec in registry.TOOLS]}
+        return {"tools": [_tool_descriptor(spec, document) for spec in self._visible_tools()]}
 
     def _tools_call(self, request_id, params: dict, cancelled: set) -> dict:
         name = params.get("name")
@@ -198,7 +207,8 @@ class McpServer:
             cancelled.discard(request_id)
             return _error_response(request_id, CALL_CANCELLED, "Request cancelled")
         spec = registry.get(name)
-        if spec is None:
+        visible = {item.id for item in self._visible_tools()}
+        if spec is None or name not in visible:
             return _error_response(request_id, INVALID_PARAMS,
                                    "Unknown tool: " + name)
         outcome: queue.Queue = queue.Queue(maxsize=1)

@@ -262,6 +262,41 @@ def _empty_profile(normalized: dict) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# 新建作者
+# --------------------------------------------------------------------------- #
+
+def author_create(ctx: ToolContext, payload: dict) -> dict:
+    """POST /authors：按名新建或复用常规作者（只建作者行，不写 TXT/不关联文件）。"""
+    if payload.get("confirm") is not True:
+        raise errors.not_confirmed("author.create")
+    display_name = payload.get("displayName")
+    problems = validation.validate_author_name(display_name)
+    if problems:
+        raise errors.invalid_input("作者名校验失败", details=problems)
+    created = ctx.client.post("/api/v1/authors", {"displayName": display_name})
+    if not isinstance(created, dict) or not isinstance(created.get("id"), str):
+        raise errors.internal_error("新建作者响应缺少 id")
+    author_id = created["id"]
+    index = _authors_index(ctx.client)
+    author = index.get(author_id)
+    if author is None:
+        raise errors.readback_mismatch("新建作者未出现在作者列表", {"authorId": author_id})
+    return {
+        "status": "applied",
+        "tool": "author.create",
+        "summary": "已按名新建或复用作者（未写 TXT、未关联文件）",
+        "authorId": author_id,
+        "author": _author_snapshot(author),
+        "readback": {
+            "authorId": author_id,
+            "displayName": author.get("displayName"),
+            "type": author.get("type"),
+            "fileCount": author.get("fileCount"),
+        },
+    }
+
+
+# --------------------------------------------------------------------------- #
 # 档案 prepare / update
 # --------------------------------------------------------------------------- #
 

@@ -104,14 +104,24 @@ def asset_query(ctx, payload: dict) -> dict:
 
 def author_query(ctx, payload: dict) -> list:
     data = ctx.client.get("/api/v1/authors")
+    if not isinstance(data, list):
+        raise errors.internal_error("作者列表响应不是数组")
+    name = payload.get("name")
+    if isinstance(name, str) and name.strip():
+        needle = name.strip().casefold()
+        data = [
+            author for author in data
+            if isinstance(author, dict) and (
+                needle in str(author.get("displayName") or "").casefold()
+                or needle in str(author.get("id") or "").casefold()
+            )
+        ]
     page = payload.get("page")
     size = payload.get("size")
     if page is None and size is None:
         return data
     page = 1 if page is None else page
     size = DEFAULT_AUTHOR_PAGE_SIZE if size is None else size
-    if not isinstance(data, list):
-        raise errors.internal_error("作者列表响应不是数组")
     start = (page - 1) * size
     return data[start:start + size]
 

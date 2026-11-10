@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# 绮梦影库 AI 工具平台短入口（PC/NAS）：qai task author.discover / qai run media.batch ...
+# 只做参数转发，不读取 token、不自动启动服务。
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -n "${PYTHON:-}" ]; then
+  PY=$PYTHON
+elif command -v python3 >/dev/null 2>&1; then
+  PY=python3
+else
+  PY=python
+fi
+exec "$PY" -X utf8 "$ROOT/tools/ai_maintenance/cli.py" "$@"
