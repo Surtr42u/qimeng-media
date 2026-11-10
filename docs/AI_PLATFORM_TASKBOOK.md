@@ -89,6 +89,7 @@ AI 不需要先读源码/完整文档才知道做什么：任务入口是**任�
 - 未知作者链路：`author.discover` = 抽帧/Google Lens 识图 → Bing/平台搜索 → `author.query` 查重 → 未命中才 `author.create` → `author.profile.prepare/update`（candidate，人工确认）→ `asset.authors.apply` → 回读。档案字段/证据/头像规则仍以 `tools/AUTHOR_RESEARCH.md` 与 `rules.json fields` 为准。
 - 本地文件定位（2026-11-10 定向优化）：未入库文件用 `files.storages` → `files.search` 取得 `fileRef` + 相对路径 + `nextCursor`，后续 `media.probe`/`file.hash`/recipe 原语复用；**不把物理绝对路径反复放进模型上下文**。已入库资产/作者/标签/业务关联仍只走 Go `/api/v1`；本地工具不得修改已入库资产的业务状态或建立第二份事实。
 - `fileRef` 失效/替换返回 `FILE_REF_STALE`（重新搜索），伪造/越界返回 `FILE_REF_INVALID`；读以 `QIMENG_AI_STORAGES` 为授权，写还需 `QIMENG_AI_WRITE_ROOTS`。原 `path` 参数保持兼容。
+- 本地写入安全（PR #53 修复）：`media.transfer` 拒绝源/目标同路径与硬链接，覆盖先写同目录临时文件并校验后原子替换、失败保留旧目标；`device.pull` 默认拒绝覆盖、拉取临时文件校验后发布。原语 `partial`/`failed` 统一停止后续步骤并保留成功/失败项，恢复只重试失败项；Gate 只授权其后的具体步骤（显式 `authorizes` 或到下一道 gate 之前）。
 - 这是“按需加载”而不是“全量读取”：默认禁止把 `context` 全量规则包（约 490KB）或全部工具 Schema 一次性塞进模型上下文；需要细节时再 `platform.tool.describe` / `platform.rules` / `platform.playbook`。`platform.rules` 支持有界点路径（如 `playbooks.media.organize`），截断结果必须显式标记。
 
 ## 2. GitHub 当前实现基线

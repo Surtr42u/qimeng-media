@@ -13,7 +13,9 @@
 from __future__ import annotations
 
 # 工具包发行版本（语义化版本）。
-PLATFORM_VERSION = "1.4.0"
+# 1.4.1（2026-11-10）：PR #53 合并前安全修复（原语 partial/failed、覆盖/同文件
+# 保护、ADB 拉取、probe 条件副作用、Gate 范围）；工具契约版本保持 1.4.0。
+PLATFORM_VERSION = "1.4.1"
 
 # 工具契约版本（工具 ID/Schema/错误语义）。
 # 1.1.0（2026-11-08）：新增外部执行器控制面、设备结果包、备份导出、研究工具族

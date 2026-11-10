@@ -31,6 +31,7 @@
 | `tools_files.py` | `files.storages` / `files.search`：授权存储枚举与有界文件搜索，返回不透明 `fileRef` 与相对路径，不返回物理绝对路径。 |
 | `tools_trash.py` | trash.list / trash.restore（需确认 + 回读）。 |
 | `pathguard.py` | 本地读写授权边界：`QIMENG_AI_READ_ROOTS`/`QIMENG_AI_WRITE_ROOTS`/媒体根/忽略工作根、链接与 reparse 检查、TOCTOU 复核与文件摘要。 |
+| `safefile.py` | 本地文件安全发布：同文件/硬链接身份判断、同目录临时文件、无覆盖/原子覆盖发布；不承载业务规则。 |
 | `fileref.py` | 逻辑存储与 `fileRef` 唯一实现：`QIMENG_AI_STORAGES`、自描述引用（storageId+相对路径+size+mtime）、失效校验与 path/fileRef 二选一解析。 |
 | `measure_locator.py` | 隔离合成测量：路径式定位 vs `fileRef` 的调用次数、返回字符量、绝对路径暴露与定位正确率；不联网、不读真实媒体。 |
 | `media_naming.py` | **组图命名纯规划/校验引擎**（作品索引、`(1)..(n)` 页码、计划指纹、`SerializedLocks`、回读报告）；ENGINE_VERSION=1.0.0。 |
@@ -55,6 +56,7 @@
 | [test_ai_files_refs.py](../test_ai_files_refs.py) | 本地执行域回归（39 项）：读写根授权、未授权/穿越/链接/junction 拒绝、fileRef 生成/失效/替换、原语只读/权限/门禁、transfer 覆盖与恢复幂等、产物篡改/running 步骤/版本变化、研究结果脱敏。 |
 | [test_ai_contract_consistency.py](../test_ai_contract_consistency.py) | 契约一致性：领域发现与 MCP 元工具可见性、工具状态维度、规则点路径/截断、示例 Schema、playbook/recipe 引用、files 工具契约、版本同源。 |
 | [test_ai_integration_local_files.py](../test_ai_integration_local_files.py) | 主代理跨模块验收：files.search → fileRef → media.probe/file.hash → recipe 复用、失效、分页与 MCP 领域过滤。 |
+| [test_ai_pr53_fixes.py](../test_ai_pr53_fixes.py) | PR #53 安全回归：原语 partial/failed 停止与断点续跑、同文件/硬链接拒绝、安全覆盖与旧目标保留、probe 抽帧权限、Gate 范围、ADB 拉取覆盖保护（模拟 ADB）。 |
 
 生成物默认输出到 stdout；`--out` 写入文件。本目录 `.gitignore` 已忽略 `rulepack.json`；
 建议写到被忽略的 `build/ai-maintenance/`。
@@ -164,7 +166,7 @@ scope 与强制矩阵的权威说明见 [SECURITY「独立 AI 客户端凭据」
 `files.storages` / `files.search` 只做未入库文件的发现；它们不是全盘搜索，也不替代
 `asset.*` / `author.*` / `media.organize.apply`。搜索有界：默认每页 20、上限 50，
 单次扫描最多 20000 个目录条目，递归深度上限 8，默认跳过符号链接/junction/隐藏项；
-`truncated`/`scanned.scanLimitReached` 必须为真时才表示结果不完整。
+`truncated`/`scanned.scanLimitReached` 必须为真时才表示结果不完整。当前 cursor 无状态，每页会重新有界扫描并排序（不建索引/缓存）；超大目录应先收窄 storage/query/extensions，不要依赖连续翻页遍历全部文件。
 
 推荐流程（不把物理路径交给模型）：
 
@@ -187,10 +189,23 @@ scope 与强制矩阵的权威说明见 [SECURITY「独立 AI 客户端凭据」
   `QIMENG_AI_GRANTED_PERMISSIONS` 在调用前强制检查。`media.contact_sheet` 是派生图
   （`local.files.write`，无需确认）；`media.transfer`/`device.push`/`device.pull` 需要
   本次运行已通过人工 gate。默认不覆盖、不删除源；复制后回读大小与 SHA-256。
-- recipe 恢复：校验已完成步骤产物的 bytes/SHA-256；上次停在副作用步骤（`running`）
+- `media.probe` 仅在**含 `frames`** 时抽帧写盘，此时按 `local.files.write` 与写根
+  强制检查；纯元数据/dHash 查询保持只读。只读模式下媒体缓存写入也关闭，避免
+  “声明只读、实际写缓存”。
+- `media.transfer` 先判断源/目标是否同路径、硬链接或同一底层文件，命中一律
+  `SOURCE_TARGET_SAME`（`overwrite=true` 也不能绕过）；覆盖时先写同目录临时文件、
+  校验后原子替换，失败保留旧目标并清理临时文件；恢复时只对“目标存在且内容一致”
+  幂等跳过。
+- `device.pull` 默认拒绝覆盖本地已有文件；先拉临时文件、核对大小后安全发布，
+  失败/链接目标/未授权根均不破坏旧文件。
+- Gate 只授权其后的具体步骤（显式 `authorizes`，否则到下一道 gate 之前）；恢复时
+  核对记录范围，范围变化拒绝续跑；条件跳过的 gate 沿用此前已完成 gate 的授权，
+  保持既有 recipe 流程。一次 `--yes` 仍只通过一个门禁。
+- recipe 恢复：`partial`/`failed` 统一停止后续写入并保留 artifact 中的成功/失败项；
+  恢复时校验已完成/部分完成产物的 bytes/SHA-256；上次停在副作用步骤（`running`）
   时返回 `RECIPE_STEP_UNCERTAIN`，要求回读/人工核对后新建运行；工具或原语版本变化
-  返回 `RECIPE_STATE_VERSION`。`media.transfer` 只在恢复上下文对“目标存在且内容一致”
-  幂等复用，内容不同仍 `TARGET_EXISTS`。
+  返回 `RECIPE_STATE_VERSION`。`partial` 续跑会跳过已成功的 transfer 目标与已推送的 device.push 项，只重试
+  失败项。
 
 隔离合成测量（`python -X utf8 tools/ai_maintenance/measure_locator.py --json`，60 个文件/
 3 层/同名干扰项/真实 1 秒 mp4）：路径式基线 5 次调用、返回 1799 字符、暴露 2 次物理
@@ -475,7 +490,7 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
 本地读写根/链接与 reparse 拒绝、fileRef 生成/失效/替换、原语只读/权限/门禁、recipe
 产物篡改与 running 步骤、规则一致性/MCP 元工具可见性、files.search 分页与状态维度。
 全部使用合成数据与回环 stub；命名引擎自身另跑 `python -m unittest test_media_naming`。
-当前 `test_ai_*.py` 全套 266 项通过。
+当前 `test_ai_*.py` 全套 288 项通过。
 
 ## 备份导出、设备结果包与执行器控制面
 

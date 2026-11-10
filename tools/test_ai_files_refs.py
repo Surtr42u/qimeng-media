@@ -313,7 +313,7 @@ class PrimitivePolicyAndTransferTests(unittest.TestCase):
         second = recipes._primitive_media_transfer(
             {"items": [{"source": str(self.source), "target": str(self.target)}]},
             self.ctx)
-        self.assertEqual("partial", second["status"])
+        self.assertEqual("failed", second["status"])
         self.assertEqual("TARGET_EXISTS", second["failed"][0]["code"])
         resumed = recipes._primitive_media_transfer(
             {"items": [{"source": str(self.source), "target": str(self.target)}],
@@ -325,7 +325,7 @@ class PrimitivePolicyAndTransferTests(unittest.TestCase):
         mismatch = recipes._primitive_media_transfer(
             {"items": [{"source": str(self.source), "target": str(self.target)}],
              "allowIdenticalReuse": True}, self.ctx)
-        self.assertEqual("partial", mismatch["status"])
+        self.assertEqual("failed", mismatch["status"])
         self.assertEqual("TARGET_EXISTS", mismatch["failed"][0]["code"])
 
     def test_transfer_accepts_file_ref_source(self):
@@ -337,15 +337,21 @@ class PrimitivePolicyAndTransferTests(unittest.TestCase):
         self.assertEqual(self.source.read_bytes(), self.target.read_bytes())
 
     def test_partial_copy_failure_removes_only_new_target(self):
-        target = self.work.storage / "nested" / "broken.bin"
-        with mock.patch.object(recipes.shutil, "copyfileobj",
-                               side_effect=OSError("simulated")):
-            result = recipes._primitive_media_transfer(
-                {"items": [{"source": str(self.source), "target": str(target)}]},
-                self.ctx)
+        good_target = self.work.storage / "nested" / "good.bin"
+        blocked_parent = self.work.storage / "blocked"
+        blocked_parent.write_bytes(b"not-a-directory")
+        bad_target = blocked_parent / "broken.bin"
+        result = recipes._primitive_media_transfer(
+            {"items": [
+                {"source": str(self.source), "target": str(good_target)},
+                {"source": str(self.source), "target": str(bad_target)},
+            ]}, self.ctx)
         self.assertEqual("partial", result["status"])
+        self.assertEqual(1, result["completedCount"])
+        self.assertEqual(1, result["failedCount"])
         self.assertEqual("COPY_FAILED", result["failed"][0]["code"])
-        self.assertFalse(target.exists())
+        self.assertTrue(good_target.is_file())
+        self.assertFalse(bad_target.exists())
         self.assertTrue(self.source.is_file())
 
     def test_media_probe_and_hash_file_ref_hide_absolute_paths(self):

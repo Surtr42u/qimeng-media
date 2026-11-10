@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-10.3",
+  "rulesVersion": "2026-11-10.4",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1452,6 +1452,19 @@
       "exposure": "files.storages 只返回 storageId/writable/configured；files.search 只返回 storageId/relativePath/fileRef，绝不返回物理绝对路径。",
       "write": "local.files.write 只覆盖 QIMENG_AI_WRITE_ROOTS 内的本地复制/整理/派生图；不写业务数据，不直接改已入库文件。"
     },
+    "writeSafety": [
+      "media.transfer 先判断源/目标是否同路径、硬链接或同一底层文件；命中一律 SOURCE_TARGET_SAME，overwrite=true 也不能绕过，禁止先截断后读取。",
+      "覆盖已有目标必须写同目录临时文件并校验 size/SHA-256 后再原子替换；校验或发布失败保留旧目标并清理临时文件。",
+      "默认不覆盖、不删除源；恢复执行只对目标存在且内容一致的条目按 alreadyPresent 跳过。",
+      "device.pull 默认拒绝覆盖本地已有目标；先拉临时文件、核对大小后安全发布，失败/链接/未授权根不破坏旧文件。",
+      "media.probe 仅在含 frames 时写帧文件；纯元数据/dHash 查询保持只读，只读模式关闭媒体缓存写入。"
+    ],
+    "recipeSafety": [
+      "工具与原语的 partial/failed 不得记为成功；保留 artifact 中的成功/失败项并停止后续步骤。",
+      "恢复时只重跑非 ok 步骤；已成功且内容一致的 transfer 目标、已推送且远端大小一致的 device.push 条目跳过，只重试失败项。",
+      "Gate 只授权其后的具体步骤（显式 authorizes，否则到下一道 gate 之前）；恢复时核对授权范围，范围变化拒绝续跑。",
+      "一次 --yes 只通过一个门禁；条件跳过的 gate 沿用此前已完成 gate 的授权以保持既有 recipe 流程。"
+    ],
     "search": {
       "bounds": "只读；每页最多 50 条（默认 20）；扫描条目硬上限 20000；递归深度上限 8；跳过符号链接/junction/隐藏项（includeHidden=true 才包含隐藏项）。",
       "cursor": "cursor 无状态，只编码 storageId + 已扫描相对路径；解析时重新校验存储根，拒绝绝对路径、..、跨存储或超长游标。",
@@ -1468,9 +1481,9 @@
       "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
     ]
   },
-  "rulepackVersion": "2026-11-10.3",
+  "rulepackVersion": "2026-11-10.4",
   "platform": {
-    "platformVersion": "1.4.0",
+    "platformVersion": "1.4.1",
     "toolContractVersion": "1.4.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"

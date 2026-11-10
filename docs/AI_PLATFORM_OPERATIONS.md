@@ -51,7 +51,7 @@
 | Go API 版本 | `/api/v1/system/status` 等 | 只增协议优先；AI 平台按工具能力核对降级，不猜测旧参数 |
 
 - 升级 AI 工具包：替换 `tools/ai_maintenance/` 后运行 `version`/`catalog` 自检；不需要重新构建三端。
-- 当前工具包版本：`platformVersion` 1.4.0、`toolContractVersion` 1.4.0、`rulesVersion` 2026-11-10.3，共 48 个工具（含 `platform.context`/`platform.recipe`、`files.storages`/`files.search`、`backup.export`、`device.apply.prepare/submit/status`、`maintenance.claim/heartbeat/step.record/artifact.record/complete`、`media.organize.prepare` scan 模式等）；Python 侧 266 项测试通过。版本以 `version` 输出与 `rules.json` 为准。
+- 当前工具包版本：`platformVersion` 1.4.1、`toolContractVersion` 1.4.0、`rulesVersion` 2026-11-10.4，共 48 个工具（含 `platform.context`/`platform.recipe`、`files.storages`/`files.search`、`backup.export`、`device.apply.prepare/submit/status`、`maintenance.claim/heartbeat/step.record/artifact.record/complete`、`media.organize.prepare` scan 模式等）；Python 侧 288 项测试通过。版本以 `version` 输出与 `rules.json` 为准。
 - 升级 Go：先发布协议与实现，再按需更新 AI 工具包；工具会按 `openapiSha256`/能力核对报告 `supported/unavailable/incompatible`。
 - 工具新增/废弃：只增 ToolSpec + 实现模块；废弃用 `deprecated/replacedBy`，精简目录默认隐藏，执行返回 `TOOL_DEPRECATED`。
 
@@ -78,4 +78,4 @@
 - 真实 AI 客户端（Codex/Claude 等）接入、真实 Go 实例联调、安装到 PC/手机、NAS 硬件验收均未执行。
 - AI 客户端 HTTP 管理、审计查询与按客户端限流已于 2026-11-08 落地；仍缺管理 UI、多实例共享限流与按执行器并发配额。外部执行器通道已交付，但只做过 Go 侧测试，未接真实执行器/真机/NAS 联调。
 - 本地文件发现/fileRef 只做过隔离合成测试（60 文件、3 层、真实 1 秒 mp4）与 Windows 本机路径检查；未在真实媒体目录、网络文件系统、跨卷复制、NAS 或多用户权限下验收。stateless cursor 在 20000 条目扫描上限处只能提示收窄，不能保证翻完超大目录；ffprobe/ffmpeg 外部进程读取仍有检查后换链窗口。
-- 版本升到 1.4.0 后，旧工具包生成的计划会按 `PLAN_VERSION_MISMATCH` 被拒绝；需用当前工具包重新 prepare。
+- 版本升到 1.4.1 后，旧工具包生成的计划会按 `PLAN_VERSION_MISMATCH` 被拒绝；需用当前工具包重新 prepare。

@@ -112,7 +112,9 @@ AI 工具平台在**受信执行端进程内**直接处理未入库文件；这�
 - **符号链接/reparse**：授权根本身允许是用户配置的链接/junction（解析为真实路径）；根以下的写目标与父段拒绝符号链接/junction/reparse，读路径最终 resolve 必须仍在真实根内。哈希/复制在打开前后重新 resolve 复核（TOCTOU）；ffprobe/ffmpeg 外部进程读取仍存在检查后被换链的窗口，与 Go 侧同类边界一致。
 - **逻辑存储**：`QIMENG_AI_STORAGES=storageId=绝对路径;...` 是可信配置。storage 根本身即读授权；写入该存储还要求根在 `QIMENG_AI_WRITE_ROOTS` 内。`files.storages`/`files.search` 只返回 storageId/相对路径/不透明 `fileRef`，不返回物理绝对路径；扫描跳过链接/隐藏项，单次最多 20000 条目、每页最多 50 条。
 - **fileRef**：自描述（storageId + 相对路径 + size + mtime），无落盘索引；解析时重新校验 storage、相对路径规范化、根内约束、存在性与 size/mtime。删除/替换/修改 → `FILE_REF_STALE`；伪造/越界 → `FILE_REF_INVALID`；storage 移除 → `FILE_REF_UNAVAILABLE`。引用不能绕过写授权。
-- **原语权限**：`local.files.write`/`local.device` 与业务写权限分开；`QIMENG_AI_READONLY`、`QIMENG_AI_DISABLED_TOOLS`、`QIMENG_AI_GRANTED_PERMISSIONS` 对有副作用原语同样在执行前强制检查。默认不覆盖目标、不删除源；复制后回读 size/SHA-256。
+- **原语权限**：`local.files.write`/`local.device` 与业务写权限分开；`QIMENG_AI_READONLY`、`QIMENG_AI_DISABLED_TOOLS`、`QIMENG_AI_GRANTED_PERMISSIONS` 对有副作用原语同样在执行前强制检查。`media.probe` 仅在含 `frames` 时按写操作检查；纯元数据查询与只读模式不写缓存。
+- **覆盖与复制安全**：`media.transfer` 拒绝源/目标同路径、硬链接或同一底层文件（`SOURCE_TARGET_SAME`，`overwrite=true` 不能绕过）；覆盖先写同目录临时文件、校验 size/SHA-256 后原子替换，失败保留旧目标并清理临时文件。`device.pull` 默认拒绝覆盖本地已有文件，拉取到临时文件并核对大小后发布；失败、链接目标与未授权根不破坏旧文件。
+- **部分失败与确认范围**：原语 `partial`/`failed` 不再被记为成功，后续步骤停止，artifact 保留成功/失败项；恢复只重试失败项。Gate 只授权其后的具体步骤（显式 `authorizes` 或到下一道 gate 之前），恢复时核对记录范围；条件跳过的 gate 沿用此前已完成 gate 的授权，一次 `--yes` 只通过一个门禁。
 - **边界**：本地工具不得修改已入库资产的索引、作者、标签、业务关联或正式媒体路径；这些只能走 Go `/api/v1` 的计划/确认/回读。`--state-dir` 由操作者提供，只把该运行目录追加为本次运行的写根，不授权其他媒体目标。
 - **未覆盖**：真实 NAS/多用户目录、网络文件系统语义、跨卷复制失败恢复、fileRef 的加密完整性（当前为配置内可达即可读，非签名令牌）未做现场验收；`QIMENG_AI_STORAGES` 中的路径本身仍由管理员保护。
 

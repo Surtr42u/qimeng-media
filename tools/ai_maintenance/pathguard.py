@@ -84,6 +84,11 @@ def _within_any(path: Path, roots) -> bool:
     return any(_within(path, root) for root in roots)
 
 
+def is_linkish(path: Path) -> bool:
+    """公开判断：符号链接、junction 或任意 Windows reparse point。"""
+    return _is_linkish(Path(path))
+
+
 def _is_linkish(path: Path) -> bool:
     """符号链接、junction 或任意 Windows reparse point。"""
     try:

@@ -21,17 +21,16 @@ import json
 import os
 import re
 import secrets
-import shutil
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from . import (device_adb, errors, execution, fileref, media_primitives,
-               pathguard, plans, registry, schema, targets)
+               pathguard, plans, registry, safefile, schema, targets)
 
 RECIPE_SCHEMA_VERSION = 1
-RECIPE_ENGINE_VERSION = "1.0.0"
+RECIPE_ENGINE_VERSION = "1.1.0"
 RECIPE_DIR = Path(__file__).resolve().parent / "recipes"
 MAX_SUMMARY_CHARS = 2000
 MAX_STEP_OUTPUT_BYTES = 8 << 20
@@ -89,7 +88,8 @@ def _primitive_media_scan(payload: dict, ctx: "RunContext") -> dict:
     if scan.get("libraryId"):
         raise RecipeInputError(
             "media.scan 只接受 root；库根扫描需要 API，请直接调用 media.organize.prepare")
-    plan = media_scan.build_scan_plan({"scan": scan}, env=_ctx_env(ctx))
+    plan = media_scan.build_scan_plan({"scan": scan}, env=_ctx_env(ctx),
+                                      cache=not ctx.read_only)
     return {"plan": plan}
 
 
@@ -104,7 +104,8 @@ def _primitive_media_probe(payload: dict, ctx: "RunContext") -> dict:
                                         ".wmv", ".flv", ".mpg", ".mpeg", ".ts"} else "image"
     if kind not in ("image", "video"):
         raise RecipeInputError("kind 只能是 image/video")
-    record = media_primitives.perceptual_record(source, kind, env=_ctx_env(ctx))
+    record = media_primitives.perceptual_record(source, kind, env=_ctx_env(ctx),
+                                                cache=not ctx.read_only)
     result = {"kind": kind, **record}
     if ref_value not in (None, "") and path_value in (None, ""):
         # 只回逻辑引用，不把物理绝对路径放进模型上下文。
@@ -118,7 +119,8 @@ def _primitive_media_probe(payload: dict, ctx: "RunContext") -> dict:
             env=_ctx_env(ctx), must_exist=False, kind="frameDir", mode="write")
         percentages = media_primitives.parse_percentages(payload.get("frames"))
         result["frameFiles"] = media_primitives.extract_frames(
-            source, out_dir, percentages=percentages, kind=kind, env=_ctx_env(ctx))
+            source, out_dir, percentages=percentages, kind=kind, env=_ctx_env(ctx),
+            cache=not ctx.read_only)
     return result
 
 
@@ -141,7 +143,8 @@ def _primitive_media_fingerprint(payload: dict, ctx: "RunContext") -> dict:
     if "sha256" in algorithms:
         result["sha256"], _ = pathguard.sha256_file(source, root=root)
     if "dhash64" in algorithms:
-        record = media_primitives.perceptual_record(source, "image", env=_ctx_env(ctx))
+        record = media_primitives.perceptual_record(source, "image", env=_ctx_env(ctx),
+                                                    cache=not ctx.read_only)
         result["dhash64"] = (record.get("frames") or [None])[0]
         result["dhashStatus"] = record.get("status")
     return result
@@ -224,7 +227,8 @@ def _primitive_device_push(payload: dict, ctx: "RunContext") -> dict:
                                              kind="localPaths", mode="read")
         name = names[index] if index < len(names) else None
         items.append((str(local), name))
-    return device_adb.push_many(items, remote_dir, env=_ctx_env(ctx))
+    return device_adb.push_many(items, remote_dir, env=_ctx_env(ctx),
+                                reuse_pushed=payload.get("reusePushed"))
 
 
 def _primitive_device_pull(payload: dict, ctx: "RunContext") -> dict:
@@ -234,7 +238,8 @@ def _primitive_device_pull(payload: dict, ctx: "RunContext") -> dict:
     # 本地落盘目标是写操作：必须落在显式写授权根内。
     local = pathguard.resolve_local_path(payload.get("localPath"), env=_ctx_env(ctx),
                                          must_exist=False, kind="localPath", mode="write")
-    return device_adb.pull_file(remote, str(local), env=_ctx_env(ctx))
+    return device_adb.pull_file(remote, str(local), env=_ctx_env(ctx),
+                                overwrite=bool(payload.get("overwrite")))
 
 
 def _primitive_file_hash(payload: dict, ctx: "RunContext") -> dict:
@@ -253,6 +258,14 @@ def _transfer_target(item: dict, index: int, ctx: "RunContext") -> Path:
                                         kind=f"items[{index}].target")
 
 
+class _SameFileError(RuntimeError):
+    """源与目标指向同一底层文件（同路径/硬链接）。"""
+
+
+class _VerifyError(RuntimeError):
+    """临时文件复制后大小或 SHA-256 与源不一致。"""
+
+
 def _same_file_content(source: Path, target: Path, ctx: "RunContext") -> bool:
     if not target.is_file():
         return False
@@ -268,45 +281,90 @@ def _same_file_content(source: Path, target: Path, ctx: "RunContext") -> bool:
     return source_hash == target_hash
 
 
-def _copy_exclusive(source: Path, target: Path, *, overwrite: bool) -> None:
-    """复制并保留元数据；默认排他创建，避免检查后被其他进程覆盖。
+def _target_sha256(target: Path, ctx: "RunContext") -> str:
+    root = pathguard.root_for_path(target, mode="write", env=_ctx_env(ctx))
+    return pathguard.sha256_file(target, root=root)[0]
 
-    非覆盖模式下若复制中途失败，只删除本次刚创建的目标半成品；已存在文件
-    与源文件绝不删除。overwrite=True 的失败不自动删除，避免误删原文件。
+
+def _transfer_view(item: dict, source: Path, target: Path) -> dict:
+    """返回给模型的条目视图：fileRef 输入不回显物理绝对路径。"""
+    view: dict = {"targetName": target.name}
+    if item.get("sourceFileRef") not in (None, ""):
+        view["sourceFileRef"] = item["sourceFileRef"]
+        view["sourceName"] = source.name
+    else:
+        view["source"] = str(source)
+    if item.get("targetFileRef") not in (None, ""):
+        view["targetFileRef"] = item["targetFileRef"]
+    else:
+        view["target"] = str(target)
+    return view
+
+
+def _copy_to_temp(source: Path, target: Path) -> tuple[Path, int, str]:
+    """把源复制到目标同目录临时文件，校验 size/SHA-256 后返回。
+
+    源以文件描述符打开，并用 fstat 与目标 stat 比较 dev/ino，避免"检查后
+    源被换成目标硬链接"导致覆盖前截断；本函数不发布目标。
     """
-    target.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_BINARY", 0)
-    flags |= os.O_TRUNC if overwrite else os.O_EXCL
-    descriptor = os.open(target, flags, 0o666)
+    temp = safefile.new_temp_path(target)
     try:
-        with os.fdopen(descriptor, "wb") as output, open(source, "rb") as source_handle:
-            shutil.copyfileobj(source_handle, output, 1 << 20)
-    except BaseException:
-        if not overwrite:
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        descriptor = os.open(source, flags)
+        with os.fdopen(descriptor, "rb") as source_handle, temp.open("wb") as output:
+            source_stat = os.fstat(source_handle.fileno())
+            source_identity = (int(source_stat.st_dev), int(source_stat.st_ino),
+                               int(source_stat.st_size), int(source_stat.st_mtime_ns))
+            if target.exists():
+                try:
+                    target_stat = target.stat()
+                except OSError:
+                    target_stat = None
+                if target_stat is not None and source_stat.st_ino and target_stat.st_ino \
+                        and (int(source_stat.st_dev), int(source_stat.st_ino)) == (
+                            int(target_stat.st_dev), int(target_stat.st_ino)):
+                    raise _SameFileError("源与目标是同一文件（或硬链接）")
+            hasher = hashlib.sha256()
+            total = 0
+            while True:
+                chunk = source_handle.read(1 << 20)
+                if not chunk:
+                    break
+                output.write(chunk)
+                hasher.update(chunk)
+                total += len(chunk)
+            output.flush()
             try:
-                os.unlink(target)
+                os.fsync(output.fileno())
             except OSError:
                 pass
+            end_stat = os.fstat(source_handle.fileno())
+            end_identity = (int(end_stat.st_dev), int(end_stat.st_ino),
+                            int(end_stat.st_size), int(end_stat.st_mtime_ns))
+            if end_identity != source_identity:
+                raise _VerifyError("复制期间源文件发生变化")
+        try:
+            # 只保留时间戳，不复制只读/权限位：避免临时文件变成只读后无法替换或清理。
+            os.utime(temp, ns=(int(source_stat.st_atime_ns),
+                               int(source_stat.st_mtime_ns)))
+        except OSError:
+            pass
+        temp_hash, temp_size = pathguard.sha256_file(temp)
+        if temp_size != total or temp_hash != hasher.hexdigest():
+            raise _VerifyError("临时文件大小或 SHA-256 与源不一致")
+        return temp, total, temp_hash
+    except BaseException:
+        safefile.cleanup(temp)
         raise
-    try:
-        shutil.copystat(source, target)
-    except OSError:
-        pass
-
-
-def _remove_created_target(target: Path) -> None:
-    """只删除本次排他创建的目标半成品；调用方保证不是已存在文件。"""
-    try:
-        os.unlink(target)
-    except OSError:
-        pass
 
 
 def _primitive_media_transfer(payload: dict, ctx: "RunContext") -> dict:
     """按显式 items 复制文件到目标路径；只复制不删除，默认拒绝覆盖。
 
-    `allowIdenticalReuse=True` 仅由 recipe 恢复执行注入：目标已存在且 sha256
-    与源一致时记为 alreadyPresent 跳过；内容不一致仍 TARGET_EXISTS。
+    - 源与目标同路径/硬链接一律拒绝（overwrite 也不能绕过）；
+    - 覆盖时先写同目录临时文件并校验，再原子替换；失败保留旧目标；
+    - `allowIdenticalReuse=True` 仅由 recipe 恢复执行注入：目标已存在且 sha256
+      与源一致时记为 alreadyPresent 跳过；内容不一致仍 TARGET_EXISTS。
     """
     items = payload.get("items")
     if not isinstance(items, list) or not items:
@@ -323,64 +381,55 @@ def _primitive_media_transfer(payload: dict, ctx: "RunContext") -> dict:
             item.get("source"), item.get("sourceFileRef"), env=_ctx_env(ctx),
             mode="read", must_exist=True, kind=f"items[{index}].source")
         target = _transfer_target(item, index, ctx)
+        view = _transfer_view(item, source, target)
+        if safefile.same_file_identity(source, target):
+            failed.append({**view, "code": "SOURCE_TARGET_SAME"})
+            continue
         if target.exists() and not overwrite:
             if allow_identical_reuse and _same_file_content(source, target, ctx):
-                completed.append({"source": str(source), "target": str(target),
-                                  "bytes": target.stat().st_size,
-                                  "sha256": pathguard.sha256_file(
-                                      target, root=pathguard.root_for_path(
-                                          target, mode="write", env=_ctx_env(ctx)))[0],
+                completed.append({**view, "bytes": target.stat().st_size,
+                                  "sha256": _target_sha256(target, ctx),
                                   "alreadyPresent": True})
                 continue
-            failed.append({"source": str(source), "target": str(target),
-                           "code": "TARGET_EXISTS"})
+            failed.append({**view, "code": "TARGET_EXISTS"})
             continue
         try:
-            _copy_exclusive(source, target, overwrite=overwrite)
-        except FileExistsError:
-            if allow_identical_reuse and _same_file_content(source, target, ctx):
-                completed.append({"source": str(source), "target": str(target),
-                                  "bytes": target.stat().st_size,
-                                  "sha256": pathguard.sha256_file(
-                                      target, root=pathguard.root_for_path(
-                                          target, mode="write", env=_ctx_env(ctx)))[0],
-                                  "alreadyPresent": True})
-                continue
-            failed.append({"source": str(source), "target": str(target),
-                           "code": "TARGET_EXISTS"})
+            temp, copied_bytes, source_hash = _copy_to_temp(source, target)
+        except _SameFileError:
+            failed.append({**view, "code": "SOURCE_TARGET_SAME"})
+            continue
+        except _VerifyError:
+            failed.append({**view, "code": "VERIFY_MISMATCH"})
             continue
         except OSError as exc:
-            failed.append({"source": str(source), "target": str(target),
-                           "code": "COPY_FAILED", "message": type(exc).__name__})
+            failed.append({**view, "code": "COPY_FAILED",
+                           "message": type(exc).__name__})
             continue
-        # 复制后再次校验：目标仍必须在授权写根内，且大小/hash 与源一致。
         try:
-            pathguard.authorize_existing(target, mode="write", env=_ctx_env(ctx),
-                                         kind=f"items[{index}].target")
-            target_root = pathguard.root_for_path(target, mode="write", env=_ctx_env(ctx))
-            source_root = pathguard.root_for_path(source, mode="read", env=_ctx_env(ctx))
-            expected = source.stat().st_size
-            actual = target.stat().st_size
-            source_hash, _ = pathguard.sha256_file(source, root=source_root)
-            target_hash, _ = pathguard.sha256_file(target, root=target_root)
-        except (OSError, errors.ToolError) as exc:
-            if not overwrite:
-                _remove_created_target(target)
-            failed.append({"source": str(source), "target": str(target),
-                           "code": "VERIFY_MISMATCH", "message": type(exc).__name__})
+            if overwrite:
+                safefile.publish_replace(temp, target)
+            else:
+                safefile.publish_no_replace(temp, target)
+        except FileExistsError:
+            safefile.cleanup(temp)
+            if allow_identical_reuse and _same_file_content(source, target, ctx):
+                completed.append({**view, "bytes": target.stat().st_size,
+                                  "sha256": _target_sha256(target, ctx),
+                                  "alreadyPresent": True})
+                continue
+            failed.append({**view, "code": "TARGET_EXISTS"})
             continue
-        if expected != actual or source_hash != target_hash:
-            if not overwrite:
-                _remove_created_target(target)
-            failed.append({"source": str(source), "target": str(target),
-                           "code": "VERIFY_MISMATCH",
-                           "expectedBytes": expected, "actualBytes": actual})
+        except OSError as exc:
+            safefile.cleanup(temp)
+            failed.append({**view, "code": "PUBLISH_FAILED",
+                           "message": type(exc).__name__})
             continue
-        total += actual
-        completed.append({"source": str(source), "target": str(target),
-                          "bytes": actual, "sha256": target_hash})
-    return {"status": "ok" if not failed else "partial",
+        total += copied_bytes
+        completed.append({**view, "bytes": copied_bytes, "sha256": source_hash})
+    status = "ok" if not failed else ("partial" if completed else "failed")
+    return {"status": status,
             "copied": completed, "failed": failed, "bytes": total,
+            "completedCount": len(completed), "failedCount": len(failed),
             "alreadyPresent": sum(1 for item in completed if item.get("alreadyPresent"))}
 
 
@@ -429,9 +478,11 @@ PRIMITIVE_SPECS: dict[str, PrimitiveSpec] = {
         runtime_checks=("扫描根必须在 QIMENG_AI_MEDIA_ROOTS/读授权根内", "跳过符号链接/junction"),
     ),
     "media.probe": PrimitiveSpec(
-        "media.probe", description="ffprobe 元数据 + dHash64；可选按百分比抽帧（缓存）",
+        "media.probe", version="1.1.0",
+        description="ffprobe 元数据 + dHash64；可选按百分比抽帧（含 frames 时写盘）",
         permission="read", read_only=True, side_effects=False,
-        runtime_checks=("输入文件只读；fileRef 或 path 二选一",),
+        runtime_checks=("输入文件只读；fileRef 或 path 二选一",
+                        "含 frames 时按条件副作用处理：需要 local.files.write 与写根，只读模式拒绝"),
     ),
     "media.fingerprint": PrimitiveSpec(
         "media.fingerprint", description="md5/sha256/dHash64 内容指纹（缓存）",
@@ -444,10 +495,13 @@ PRIMITIVE_SPECS: dict[str, PrimitiveSpec] = {
         runtime_checks=("输出目录必须是写授权根", "entries 文件只读"),
     ),
     "media.transfer": PrimitiveSpec(
-        "media.transfer", description="按显式 items 复制文件到目标路径，sha256 回读；默认拒绝覆盖",
+        "media.transfer", version="1.1.0",
+        description="按显式 items 复制文件到目标路径，sha256 回读；默认拒绝覆盖/同文件",
         permission="local.files.write", read_only=False, side_effects=True,
         requires_confirmation=True,
-        runtime_checks=("源只读、目标写授权；默认排他创建", "恢复时目标一致可 alreadyPresent 跳过"),
+        runtime_checks=("源只读、目标写授权；同路径/硬链接拒绝",
+                        "覆盖写同目录临时文件并校验后原子替换，失败保留旧目标",
+                        "恢复时目标一致可 alreadyPresent 跳过"),
     ),
     "file.hash": PrimitiveSpec(
         "file.hash", description="文件 md5/sha256/dHash64",
@@ -458,16 +512,20 @@ PRIMITIVE_SPECS: dict[str, PrimitiveSpec] = {
         permission="read", read_only=True, side_effects=False,
     ),
     "device.push": PrimitiveSpec(
-        "device.push", description="逐文件 adb push 并回读字节数",
+        "device.push", version=device_adb.ADB_PRIMITIVE_VERSION,
+        description="逐文件 adb push 并回读字节数",
         permission="local.device", read_only=False, side_effects=True,
         requires_confirmation=True,
         runtime_checks=("必须显式 QIMENG_ADB_SERIAL，拒绝默认模拟器", "本地源只读"),
     ),
     "device.pull": PrimitiveSpec(
-        "device.pull", description="adb pull 并回读本地字节数",
+        "device.pull", version=device_adb.ADB_PRIMITIVE_VERSION,
+        description="adb pull 并回读本地字节数；默认拒绝覆盖已有目标",
         permission="local.device", read_only=False, side_effects=True,
         requires_confirmation=True,
-        runtime_checks=("本地目标是写授权根", "必须显式 QIMENG_ADB_SERIAL"),
+        runtime_checks=("本地目标是写授权根；目标/父级链接拒绝",
+                        "先拉临时文件、核对大小后安全发布；失败保留旧文件",
+                        "必须显式 QIMENG_ADB_SERIAL"),
     ),
     "select.first": PrimitiveSpec(
         "select.first", description="取第一个非空值（用于已有 ID / 新建 ID / 查重命中的优先级选择）",
@@ -476,6 +534,34 @@ PRIMITIVE_SPECS: dict[str, PrimitiveSpec] = {
 }
 
 PRIMITIVE_SUMMARY = {key: spec.description for key, spec in PRIMITIVE_SPECS.items()}
+
+
+def effective_primitive_spec(primitive_id: str, payload) -> PrimitiveSpec:
+    """按实际输入计算原语策略：media.probe 含 frames 时是写盘操作。
+
+    纯元数据/dHash 仍是 read/只读；只有确实抽帧才提升为 local.files.write。
+    不把普通媒体查询整体升级为高权限写操作。
+    """
+    spec = PRIMITIVE_SPECS[primitive_id]
+    if primitive_id == "media.probe" and isinstance(payload, dict) and payload.get("frames"):
+        return replace(spec, permission="local.files.write", read_only=False,
+                       side_effects=True, requires_confirmation=False,
+                       runtime_checks=tuple(spec.runtime_checks) + (
+                           "本次含 frames：写帧文件需要 local.files.write 与写授权根",))
+    return spec
+
+
+def _step_permission(step: dict) -> str:
+    """recipe 静态权限需求；含 frames 的 probe 按写权限保守计算。"""
+    if "tool" in step:
+        spec = registry.get(step["tool"])
+        return spec.permission if spec is not None else ""
+    primitive_id = step.get("primitive")
+    if primitive_id == "media.probe" and isinstance(step.get("input"), dict) \
+            and "frames" in step["input"]:
+        return "local.files.write"
+    spec = PRIMITIVE_SPECS.get(primitive_id) if primitive_id else None
+    return spec.permission if spec is not None else ""
 
 
 # --------------------------------------------------------------------------- #
@@ -618,6 +704,33 @@ def validate_recipe(recipe: dict) -> dict:
                     f"step {step['id']}.when 引用了不存在的步骤：{reference}",
                     code="RECIPE_INVALID",
                 )
+    for index, step in enumerate(steps):
+        if not step.get("gate") or "authorizes" not in step:
+            continue
+        values = step.get("authorizes")
+        if not isinstance(values, list) or not values:
+            raise RecipeError(f"step {step['id']}.authorizes 必须是非空数组",
+                              code="RECIPE_INVALID")
+        seen_authorized: set[str] = set()
+        for value in values:
+            if not isinstance(value, str) or value not in declared:
+                raise RecipeError(
+                    f"step {step['id']}.authorizes 引用了不存在的步骤：{value}",
+                    code="RECIPE_INVALID")
+            if value in seen_authorized:
+                raise RecipeError(
+                    f"step {step['id']}.authorizes 重复引用：{value}",
+                    code="RECIPE_INVALID")
+            seen_authorized.add(value)
+            target_index = next(i for i, item in enumerate(steps) if item["id"] == value)
+            if target_index <= index:
+                raise RecipeError(
+                    f"step {step['id']}.authorizes 只能授权其后的步骤：{value}",
+                    code="RECIPE_INVALID")
+            if steps[target_index].get("gate"):
+                raise RecipeError(
+                    f"step {step['id']}.authorizes 不能授权另一道门禁：{value}",
+                    code="RECIPE_INVALID")
     for capability in recipe.get("requires") or []:
         if capability not in _KNOWN_CAPABILITIES:
             raise RecipeError("未知能力声明：" + str(capability), code="RECIPE_INVALID")
@@ -639,15 +752,7 @@ def _required_step_permissions(recipe: dict) -> dict[str, list[str]]:
     """收集 recipe 每个 tool/primitive 步骤所需权限（gate 不占权限）。"""
     required: dict[str, list[str]] = {}
     for step in recipe["steps"]:
-        permission = ""
-        if "tool" in step:
-            spec = registry.get(step["tool"])
-            if spec is not None:
-                permission = spec.permission
-        elif "primitive" in step:
-            primitive = PRIMITIVE_SPECS.get(step["primitive"])
-            if primitive is not None:
-                permission = primitive.permission
+        permission = _step_permission(step)
         if permission:
             required.setdefault(permission, []).append(step["id"])
     return required
@@ -684,12 +789,14 @@ def _validate_condition(condition, step_id: str) -> None:
 
 class RunContext:
     def __init__(self, env, run_dir: Path, current_step: str = "",
-                 capabilities=None, resuming: bool = False):
+                 capabilities=None, resuming: bool = False,
+                 read_only: bool = False):
         self.env = env
         self.run_dir = run_dir
         self.current_step = current_step
         self.capabilities = dict(capabilities or {})
         self.resuming = bool(resuming)
+        self.read_only = bool(read_only)
         self._path_env = None
 
     @property
@@ -925,7 +1032,8 @@ def _tool_output(result):
 
 def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
               outputs: dict, config, confirm: bool,
-              gate_confirmed: bool = False) -> Any:
+              gate_confirmed: bool = False, *, payload=None,
+              authorized: bool | None = None, previous_output=None) -> Any:
     if step.get("gate"):
         if not confirm:
             raise RecipeError(
@@ -934,25 +1042,20 @@ def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
                 details={"step": step["id"], "gate": step.get("message", "")},
             )
         return {"status": "confirmed", "step": step["id"]}
-    payload = resolve_value(step.get("input") or {}, inputs, outputs, ctx)
+    if payload is None:
+        payload = resolve_value(step.get("input") or {}, inputs, outputs, ctx)
     if not isinstance(payload, dict):
         raise RecipeError("步骤输入解析后不是对象", code="RECIPE_INVALID")
+    allowed = gate_confirmed if authorized is None else authorized
     if "tool" in step:
-        if step.get("confirm") and confirm:
+        if step.get("confirm") and allowed:
             payload = dict(payload)
             payload["confirm"] = True
         _spec, result = execution.execute_tool(step["tool"], payload, env=ctx.env,
                                                config=config)
-        output = _tool_output(result)
-        if isinstance(output, dict) and output.get("status") in ("failed", "partial"):
-            raise RecipeError(
-                "步骤返回失败状态，停止后续写入",
-                code="RECIPE_STEP_FAILED",
-                details={"step": step["id"], "status": output.get("status"),
-                         "message": output.get("summary") or output.get("message")},
-            )
-        return output
-    primitive_spec = PRIMITIVE_SPECS[step["primitive"]]
+        # partial/failed 由 run_recipe 统一记录产物并停止；这里不丢结果。
+        return _tool_output(result)
+    primitive_spec = effective_primitive_spec(step["primitive"], payload)
     denial = execution.policy_denial(primitive_spec, config)
     if denial:
         denied = execution.policy_denied_error(primitive_spec, config)
@@ -960,9 +1063,9 @@ def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
             raise denied
         raise errors.tool_disabled(primitive_spec.id, denial)
     if primitive_spec.side_effects and primitive_spec.requires_confirmation \
-            and not gate_confirmed:
+            and not allowed:
         raise RecipeError(
-            f"原语 {primitive_spec.id} 有副作用，必须先通过人工门禁",
+            f"原语 {primitive_spec.id} 有副作用，必须先通过授权到本步骤的人工门禁",
             code="RECIPE_CONFIRMATION_REQUIRED",
             details={"step": step["id"], "primitive": primitive_spec.id},
         )
@@ -970,6 +1073,12 @@ def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
         # 恢复执行时允许“目标已存在且内容一致”按 alreadyPresent 跳过；默认调用不变。
         payload = dict(payload)
         payload.setdefault("allowIdenticalReuse", True)
+    if ctx.resuming and step["primitive"] == "device.push" \
+            and isinstance(previous_output, dict):
+        pushed = previous_output.get("pushed")
+        if isinstance(pushed, list) and pushed:
+            payload = dict(payload)
+            payload.setdefault("reusePushed", pushed)
     primitive = PRIMITIVES[step["primitive"]]
     try:
         return primitive(payload, ctx)
@@ -995,25 +1104,58 @@ def _step_version(step: dict) -> str:
     return ""
 
 
-def _step_side_effects(step: dict) -> bool:
+def _step_side_effects(step: dict, payload=None) -> bool:
+    """步骤是否可能写盘/写设备；含 frames 的 media.probe 按写操作计算。"""
     if step.get("gate"):
         return False
     if "tool" in step:
         spec = registry.get(step["tool"])
         return bool(spec and (spec.side_effects or not spec.read_only))
-    primitive = PRIMITIVE_SPECS.get(step["primitive"])
-    return bool(primitive and (primitive.side_effects or not primitive.read_only))
+    primitive_id = step.get("primitive")
+    spec = PRIMITIVE_SPECS.get(primitive_id)
+    if spec is None:
+        return False
+    if primitive_id == "media.probe":
+        if isinstance(payload, dict):
+            return bool(payload.get("frames"))
+        return isinstance(step.get("input"), dict) and "frames" in step["input"]
+    return bool(spec.side_effects or not spec.read_only)
+
+
+def _gate_scope(recipe: dict, gate_index: int) -> list[str]:
+    """门禁授权的具体步骤：显式 authorizes，或到下一道 gate 之前的步骤。"""
+    steps = recipe["steps"]
+    gate = steps[gate_index]
+    explicit = gate.get("authorizes")
+    if isinstance(explicit, list):
+        return [item for item in explicit if isinstance(item, str)]
+    scope: list[str] = []
+    for step in steps[gate_index + 1:]:
+        if step.get("gate"):
+            break
+        step_id = step.get("id")
+        if isinstance(step_id, str):
+            scope.append(step_id)
+    return scope
+
+
+def _gate_scope_index(recipe: dict) -> dict[str, list[str]]:
+    return {step["id"]: _gate_scope(recipe, index)
+            for index, step in enumerate(recipe["steps"]) if step.get("gate")}
 
 
 def _verify_completed_artifacts(run_dir: Path, state: dict) -> None:
-    """恢复前逐个校验已完成步骤产物的存在、bytes 和 sha256。"""
+    """恢复前逐个校验已完成/部分完成/失败步骤产物的存在、bytes 和 sha256。"""
     for step_id, record in (state.get("steps") or {}).items():
-        if not isinstance(record, dict) or record.get("status") != "ok":
+        if not isinstance(record, dict) or record.get("status") not in (
+                "ok", "partial", "failed"):
             continue
         artifact = record.get("artifact")
         if not artifact:
-            raise errors.recipe_artifact_tampered(
-                step_id, {"reason": "missing_artifact_name"})
+            if record.get("status") == "ok":
+                raise errors.recipe_artifact_tampered(
+                    step_id, {"reason": "missing_artifact_name"})
+            continue
         path = run_dir / "artifacts" / str(artifact)
         try:
             raw = path.read_bytes()
@@ -1045,6 +1187,93 @@ def _legacy_artifact_state(state: dict) -> bool:
                 and record.get("bytes") is None:
             return True
     return False
+
+
+_PRE_EXECUTION_ERRORS = frozenset({
+    "TOOL_DISABLED", "PERMISSION_DENIED", "NOT_CONFIRMED",
+    "RECIPE_CONFIRMATION_REQUIRED", "TOOL_NOT_IMPLEMENTED",
+    "CAPABILITY_UNAVAILABLE", "CAPABILITY_INCOMPATIBLE",
+})
+
+
+def _mark_pre_execution_failure(state: dict, recipe: dict, code: str,
+                                message: str) -> None:
+    """把“执行前就被拒绝”的 running 步骤标为 failed，避免恢复时误判不确定。
+
+    只覆盖统一执行器/原语策略在进入 handler 之前抛出的错误；handler 内部
+    失败仍保留 running，由恢复流程按 RECIPE_STEP_UNCERTAIN 要求人工回读。
+    """
+    if code not in _PRE_EXECUTION_ERRORS:
+        return
+    for step in recipe["steps"]:
+        record = (state.get("steps") or {}).get(step["id"]) or {}
+        if record.get("status") != "running":
+            continue
+        record["status"] = "failed"
+        record["sideEffects"] = False
+        record["finishedAt"] = _now()
+        record["error"] = {"code": code, "message": message}
+        state["steps"][step["id"]] = record
+
+
+def _step_counts(output) -> dict:
+    """把常见列表字段转成计数，便于恢复时快速区分已完成/失败项。"""
+    if not isinstance(output, dict):
+        return {}
+    counts = {}
+    for key in ("copied", "failed", "pushed", "sheets", "files", "items"):
+        value = output.get(key)
+        if isinstance(value, list):
+            counts[key] = len(value)
+    return counts
+
+
+def _record_step_result(state: dict, run_dir: Path, step: dict, output,
+                        previous_record: dict, artifacts: list,
+                        *, status: str = "ok", extra: dict | None = None) -> dict:
+    """把步骤结果（含 partial/failed）落盘为 artifact 并更新 state。"""
+    step_id = step["id"]
+    artifact = _artifact_name(step_id)
+    artifact_path = run_dir / "artifacts" / artifact
+    encoded = json.dumps(output, ensure_ascii=False)
+    if len(encoded.encode("utf-8")) > MAX_STEP_OUTPUT_BYTES:
+        raise RecipeError("步骤产物超过上限，停止运行", code="RECIPE_OUTPUT_TOO_LARGE",
+                          details={"step": step_id})
+    _write_json_atomic(artifact_path, output)
+    artifact_bytes = artifact_path.read_bytes()
+    artifact_sha = hashlib.sha256(artifact_bytes).hexdigest()
+    entry = {
+        "step": step_id,
+        "path": str(artifact_path),
+        "sha256": artifact_sha,
+        "bytes": len(artifact_bytes),
+    }
+    artifacts.append(entry)
+    record_payload = {
+        "status": status,
+        "startedAt": previous_record.get("startedAt") or _now(),
+        "finishedAt": _now(),
+        "summary": summarize_output(output),
+        "artifact": artifact,
+        "sha256": artifact_sha,
+        "bytes": len(artifact_bytes),
+        "artifacts": [entry],
+        "counts": _step_counts(output),
+    }
+    if extra:
+        record_payload.update(extra)
+    if "tool" in step:
+        tool_spec = registry.get(step["tool"])
+        if tool_spec is not None:
+            record_payload["toolVersion"] = tool_spec.version
+    elif "primitive" in step:
+        primitive_spec = PRIMITIVE_SPECS.get(step["primitive"])
+        if primitive_spec is not None:
+            record_payload["primitiveVersion"] = primitive_spec.version
+    state["steps"][step_id] = record_payload
+    state["updatedAt"] = _now()
+    _write_json_atomic(run_dir / "state.json", state)
+    return record_payload
 
 
 def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,
@@ -1137,10 +1366,16 @@ def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,
                              "primitive": step.get("primitive"),
                              "recorded": recorded, "current": current},
                 )
-        # 上次崩溃在副作用步骤写入中：不能直接续跑。
+        # 上次崩溃在副作用步骤写入中：不能直接续跑。优先用执行前记录的
+        # sideEffects（含 frames 的 media.probe 等条件副作用），旧状态回退静态判断。
         for step in recipe["steps"]:
             record = (state.get("steps") or {}).get(step["id"]) or {}
-            if record.get("status") == "running" and _step_side_effects(step):
+            if record.get("status") != "running":
+                continue
+            side_effects = record.get("sideEffects")
+            if side_effects is None:
+                side_effects = _step_side_effects(step)
+            if side_effects:
                 raise errors.recipe_step_uncertain(
                     step["id"], {"recipe": recipe["id"], "runId": run_dir.name})
         _verify_completed_artifacts(run_dir, state)
@@ -1151,17 +1386,31 @@ def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,
             outputs[step_id] = _load_output(run_dir, record)
     artifacts: list[dict] = []
     ctx = RunContext(env, run_dir, capabilities=target.get("capabilities"),
-                     resuming=resuming)
+                     resuming=resuming, read_only=config.read_only_mode)
+    gate_scopes = _gate_scope_index(recipe)
+    authorized_steps: set[str] = set()
+    # 恢复时只沿用已完成 gate 的授权，并核对授权范围没有漂移。
+    for step in recipe["steps"]:
+        if not step.get("gate"):
+            continue
+        record = (state.get("steps") or {}).get(step["id"]) or {}
+        if record.get("status") != "ok":
+            continue
+        scope = list(gate_scopes.get(step["id"], []))
+        recorded_scope = record.get("authorizedSteps")
+        if recorded_scope is not None and list(recorded_scope) != scope:
+            raise RecipeError(
+                "门禁授权范围已变化；请新建运行，不要沿用旧确认",
+                code="RECIPE_STATE_VERSION",
+                details={"gate": step["id"], "recorded": recorded_scope,
+                         "current": scope},
+            )
+        authorized_steps.update(scope)
     # 一次运行只通过一个 gate：--yes 表示“本次已核对到下一个门禁”，
     # 后续步骤若再遇到门禁会再次停下，避免一次 --yes 越过多个人工审核点。
-    # 已完成的 gate（上次运行人工确认过）继续为后续副作用原语提供确认依据。
     gate_passed_this_run = False
-    gate_authorized = any(
-        step.get("gate") and (state.get("steps") or {}).get(step["id"], {}).get("status") == "ok"
-        for step in recipe["steps"]
-    )
     try:
-        for step in recipe["steps"]:
+        for index, step in enumerate(recipe["steps"]):
             step_id = step["id"]
             record = state["steps"].get(step_id) or {}
             if record.get("status") == "ok":
@@ -1170,9 +1419,26 @@ def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,
             condition = step.get("when")
             if condition is not None and not evaluate_condition(condition, inputs, outputs, ctx):
                 state["steps"][step_id] = {"status": "skipped", "updatedAt": _now()}
+                # 兼容既有 recipe：条件跳过的 gate 不再构成新的审核点，其范围内
+                # 的步骤沿用此前已完成 gate 的授权（例如 media.batch 无命名计划
+                # 但仍要推送设备时，confirmReview 之后不要卡死 devicePush）。
+                if step.get("gate") and authorized_steps:
+                    authorized_steps.update(gate_scopes.get(step_id, []))
                 continue
             ctx.current_step = step_id
-            state["steps"][step_id] = {"status": "running", "startedAt": _now()}
+            resolved_payload = None
+            if not step.get("gate"):
+                resolved_payload = resolve_value(step.get("input") or {}, inputs, outputs, ctx)
+                if not isinstance(resolved_payload, dict):
+                    raise RecipeError("步骤输入解析后不是对象", code="RECIPE_INVALID")
+            previous_output = None
+            if record.get("status") in ("partial", "failed") and record.get("artifact"):
+                previous_output = _load_output(run_dir, record)
+            state["steps"][step_id] = {
+                "status": "running",
+                "startedAt": _now(),
+                "sideEffects": _step_side_effects(step, resolved_payload),
+            }
             _write_json_atomic(run_dir / "state.json", state)
             if dry_run:
                 state["steps"][step_id] = {"status": "planned", "updatedAt": _now()}
@@ -1185,60 +1451,83 @@ def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,
                         details={"step": step_id, "gate": step.get("message", "")},
                     )
                 gate_passed_this_run = True
-                gate_authorized = True
-                output = {"status": "confirmed", "step": step_id}
+                scope = list(gate_scopes.get(step_id, []))
+                authorized_steps.update(scope)
+                output = {"status": "confirmed", "step": step_id,
+                          "authorizedSteps": scope}
             else:
                 output = _run_step(step, recipe, ctx, inputs, outputs, config,
-                                   gate_authorized, gate_authorized)
+                                   confirm, False, payload=resolved_payload,
+                                   authorized=step_id in authorized_steps,
+                                   previous_output=previous_output)
             outputs[step_id] = output
-            artifact = _artifact_name(step_id)
-            artifact_path = run_dir / "artifacts" / artifact
-            encoded = json.dumps(output, ensure_ascii=False)
-            if len(encoded.encode("utf-8")) > MAX_STEP_OUTPUT_BYTES:
-                raise RecipeError("步骤产物超过上限，停止运行", code="RECIPE_OUTPUT_TOO_LARGE",
-                                  details={"step": step_id})
-            _write_json_atomic(artifact_path, output)
-            artifact_bytes = artifact_path.read_bytes()
-            artifact_sha = hashlib.sha256(artifact_bytes).hexdigest()
-            artifacts.append({
-                "step": step_id,
-                "path": str(artifact_path),
-                "sha256": artifact_sha,
-                "bytes": len(artifact_bytes),
-            })
-            record_payload = {
-                "status": "ok",
-                "startedAt": record.get("startedAt") or _now(),
-                "finishedAt": _now(),
-                "summary": summarize_output(output),
-                "artifact": artifact,
-                "sha256": artifact_sha,
-                "bytes": len(artifact_bytes),
-                "artifacts": [artifacts[-1]],
-            }
-            if "tool" in step:
-                tool_spec = registry.get(step["tool"])
-                if tool_spec is not None:
-                    record_payload["toolVersion"] = tool_spec.version
-            elif "primitive" in step:
-                primitive_spec = PRIMITIVE_SPECS.get(step["primitive"])
-                if primitive_spec is not None:
-                    record_payload["primitiveVersion"] = primitive_spec.version
-            state["steps"][step_id] = record_payload
-            state["updatedAt"] = _now()
-            _write_json_atomic(run_dir / "state.json", state)
+            result_status = output.get("status") if isinstance(output, dict) else None
+            if result_status in ("partial", "failed"):
+                extra = {}
+                if step.get("gate"):
+                    extra["authorizedSteps"] = list(output.get("authorizedSteps") or [])
+                record_payload = _record_step_result(
+                    state, run_dir, step, output, record, artifacts,
+                    status=result_status, extra=extra)
+                code = ("RECIPE_STEP_PARTIAL" if result_status == "partial"
+                        else "RECIPE_STEP_FAILED")
+                completed_items = output.get("copied")
+                if not isinstance(completed_items, list):
+                    completed_items = output.get("pushed") if isinstance(
+                        output.get("pushed"), list) else []
+                failed_items = output.get("failed") if isinstance(
+                    output.get("failed"), list) else []
+                failures = []
+                for item in failed_items[:20]:
+                    if not isinstance(item, dict):
+                        continue
+                    failures.append({
+                        "code": item.get("code"),
+                        "source": item.get("sourceRef") or item.get("source"),
+                        "target": item.get("targetFileRef") or item.get("targetName")
+                        or item.get("target"),
+                    })
+                state["status"] = result_status
+                state["error"] = {
+                    "code": code,
+                    "message": "步骤部分成功，已停止后续写入" if result_status == "partial"
+                    else "步骤失败，已停止后续写入",
+                    "details": {
+                        "step": step_id, "status": result_status,
+                        "completedCount": len(completed_items),
+                        "failedCount": len(failed_items),
+                        "failures": failures,
+                        "artifact": record_payload.get("artifact"),
+                        "resume": "核对失败项后同 --state-dir 续跑；已成功项会跳过",
+                    },
+                }
+                state["updatedAt"] = _now()
+                _write_json_atomic(run_dir / "state.json", state)
+                raise RecipeError(state["error"]["message"], code=code,
+                                  details=state["error"]["details"])
+            extra = {}
+            if step.get("gate"):
+                extra["authorizedSteps"] = list(output.get("authorizedSteps") or [])
+            _record_step_result(state, run_dir, step, output, record, artifacts,
+                                status="ok", extra=extra)
         state["status"] = "completed"
         state["finishedAt"] = _now()
         state["updatedAt"] = _now()
         _write_json_atomic(run_dir / "state.json", state)
     except RecipeError as exc:
-        state["status"] = ("awaiting_confirmation"
-                           if exc.code == "RECIPE_CONFIRMATION_REQUIRED" else "failed")
+        _mark_pre_execution_failure(state, recipe, exc.code, str(exc))
+        if exc.code == "RECIPE_CONFIRMATION_REQUIRED":
+            state["status"] = "awaiting_confirmation"
+        elif exc.code in ("RECIPE_STEP_PARTIAL", "RECIPE_STEP_FAILED"):
+            state["status"] = "partial" if exc.code == "RECIPE_STEP_PARTIAL" else "failed"
+        else:
+            state["status"] = "failed"
         state["error"] = {"code": exc.code, "message": str(exc), "details": exc.details}
         state["updatedAt"] = _now()
         _write_json_atomic(run_dir / "state.json", state)
         raise
     except errors.ToolError as exc:
+        _mark_pre_execution_failure(state, recipe, exc.code, exc.message)
         state["status"] = "failed"
         state["error"] = {"code": exc.code, "message": exc.message,
                           "details": exc.details}
@@ -1267,6 +1556,7 @@ def _step_list(state: dict) -> list[dict]:
             "id": step_id,
             "status": record.get("status"),
             "summary": record.get("summary") or {},
+            "counts": record.get("counts") or {},
             "artifact": record.get("artifact"),
         })
     return items
@@ -1275,6 +1565,9 @@ def _step_list(state: dict) -> list[dict]:
 def _next_hint(state: dict, recipe: dict) -> str:
     if state.get("status") == "awaiting_confirmation":
         return "人工核对任务卡/产物后，带 --yes 续跑同一 --state-dir 完成写入"
+    if state.get("status") == "partial":
+        return ("步骤部分成功，后续写入已停止；核对 artifact 的 completed/failed 项，"
+                "修复失败项后同 --state-dir 续跑（已成功项会跳过）")
     if state.get("status") == "completed":
         return "按 recipe 的 readback/artifacts 核对；不要凭摘要宣称已写入"
     return "查看 state.json 的 error；修正后新建运行，不要盲改旧状态"
@@ -1369,7 +1662,8 @@ def task_card(recipe_id: str, env=None) -> dict:
         "inputs": _card_inputs(recipe["inputs"]),
         "steps": steps,
         "gates": gates,
-        "resumePolicy": "恢复时已完成的门禁不重复要求 --yes；未完成的门禁仍需逐次 --yes（一次运行只通过一个门禁）。",
+        "resumePolicy": ("恢复时已完成的门禁不重复要求 --yes（授权范围未变化时）；未完成的门禁仍需逐次 --yes"
+                         "（一次运行只通过一个门禁）。partial/failed 只重试未完成项，已成功的 transfer 目标跳过。"),
         "artifacts": recipe.get("artifacts") or [],
         "readback": recipe.get("readback") or [],
         "commands": {

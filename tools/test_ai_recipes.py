@@ -306,7 +306,7 @@ class MediaPrimitiveTests(unittest.TestCase):
         self.assertEqual("hello", target.read_text(encoding="utf-8"))
         again = recipes._primitive_media_transfer(
             {"items": [{"source": str(source), "target": str(target)}]}, ctx)
-        self.assertEqual("partial", again["status"])
+        self.assertEqual("failed", again["status"])
         self.assertEqual("TARGET_EXISTS", again["failed"][0]["code"])
 
     def test_contact_sheet_renders_labeled_grid(self):

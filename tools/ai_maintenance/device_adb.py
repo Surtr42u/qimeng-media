@@ -15,10 +15,11 @@ import posixpath
 import shlex
 import shutil
 import subprocess
+from pathlib import Path
 
-from . import pathguard
+from . import pathguard, safefile
 
-ADB_PRIMITIVE_VERSION = "1.0.0"
+ADB_PRIMITIVE_VERSION = "1.1.0"
 FORBIDDEN_SERIALS = {"emulator-5554"}
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -124,8 +125,27 @@ def push_file(local_path: str, remote_dir: str, *, env=None, timeout: float = 30
     return {"local": local, "remote": remote_path, "bytes": expected}
 
 
-def push_many(items, remote_dir: str, *, env=None, timeout: float = 300.0) -> dict:
-    """items: [(local_path, remote_name)] 或 [(local_path, None)]；逐个推送并回读。"""
+def push_many(items, remote_dir: str, *, env=None, timeout: float = 300.0,
+              reuse_pushed=None) -> dict:
+    """items: [(local_path, remote_name)] 或 [(local_path, None)]；逐个推送并回读。
+
+    `reuse_pushed` 只由 recipe 恢复执行注入：上一次 partial/failed 结果中已成功
+    推送的 (local, remote, bytes) 若远端大小仍一致，则记为 alreadyPresent 跳过，
+    避免重试重复覆盖已成功的文件。远端大小一致不等于内容哈希一致；这是恢复
+    场景的保守复用，最终以回读字节数为准。
+    """
+    reusable: dict[tuple[str, str], int] = {}
+    for row in reuse_pushed or []:
+        if not isinstance(row, dict):
+            continue
+        local_value = row.get("local") or row.get("localPath")
+        remote_value = row.get("remote")
+        bytes_value = row.get("bytes")
+        if not isinstance(local_value, str) or not isinstance(remote_value, str) \
+                or not isinstance(bytes_value, int):
+            continue
+        key = (os.path.normcase(os.path.abspath(local_value)), remote_value)
+        reusable[key] = bytes_value
     pushed = []
     failed = []
     total = 0
@@ -137,6 +157,23 @@ def push_many(items, remote_dir: str, *, env=None, timeout: float = 300.0) -> di
         target_dir = remote_dir
         target_name = remote_name or os.path.basename(local)
         remote_path = posixpath.join(target_dir, target_name)
+        reuse_bytes = reusable.get(
+            (os.path.normcase(os.path.abspath(local)), remote_path))
+        if reuse_bytes is not None:
+            try:
+                local_bytes = os.path.getsize(local)
+            except OSError:
+                local_bytes = None
+            try:
+                actual = remote_size(remote_path, env=env)
+            except AdbError:
+                actual = None
+            if local_bytes == reuse_bytes and actual is not None \
+                    and actual == reuse_bytes:
+                pushed.append({"local": local, "remote": remote_path,
+                               "bytes": actual, "alreadyPresent": True})
+                total += actual
+                continue
         try:
             if target_name != os.path.basename(local):
                 ensure_dir(target_dir, env=env)
@@ -157,21 +194,65 @@ def push_many(items, remote_dir: str, *, env=None, timeout: float = 300.0) -> di
             failed.append({"local": local, "remote": remote_path, "code": exc.code,
                            "message": str(exc)})
     return {"pushed": pushed, "failed": failed, "bytes": total,
+            "alreadyPresent": sum(1 for row in pushed if row.get("alreadyPresent")),
             "status": "ok" if not failed else "partial"}
 
 
-def pull_file(remote_path: str, local_path: str, *, env=None, timeout: float = 300.0) -> dict:
+def pull_file(remote_path: str, local_path: str, *, env=None, timeout: float = 300.0,
+              overwrite: bool = False) -> dict:
+    """adb pull 到本地；默认拒绝覆盖，先拉临时文件、校验后安全发布。
+
+    - 本地目标必须是显式写授权根内的普通路径（env 非空时由 pathguard 强制）；
+    - 目标已存在且 overwrite=False → LOCAL_TARGET_EXISTS；
+    - 目标或父级链接/reparse 拒绝，避免经链接写到授权根外；
+    - 拉取失败/大小不符时清理临时文件，旧目标保持不变；
+    - 覆盖成功用同目录临时文件 + os.replace，失败时旧目标仍在。
+    """
     if env is not None:
         # 本地落盘是写操作：必须落在显式写授权根内。
         local = str(pathguard.resolve_local_path(local_path, env=env, must_exist=False,
                                                  kind="本地拉取目标", mode="write"))
     else:
         local = os.path.abspath(local_path)
-    os.makedirs(os.path.dirname(local), exist_ok=True)
-    _run([adb_path(env), "-s", serial(env), "pull", remote_path, local], timeout=timeout)
-    if not os.path.isfile(local):
-        raise AdbError("拉取后本地文件不存在", code="ADB_PULL_MISSING")
-    return {"remote": remote_path, "local": local, "bytes": os.path.getsize(local)}
+    target = Path(local)
+    if pathguard.is_linkish(target):
+        raise AdbError("本地拉取目标是符号链接/junction/reparse，拒绝写入",
+                       code="ADB_TARGET_UNSAFE")
+    if target.exists() and not overwrite:
+        raise AdbError("本地拉取目标已存在；默认拒绝覆盖",
+                       code="LOCAL_TARGET_EXISTS",
+                       details={"targetName": target.name})
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = safefile.new_temp_path(target)
+    try:
+        _run([adb_path(env), "-s", serial(env), "pull", remote_path, str(temporary)],
+             timeout=timeout)
+        if not temporary.is_file():
+            raise AdbError("拉取后本地临时文件不存在", code="ADB_PULL_MISSING")
+        actual = temporary.stat().st_size
+        expected = remote_size(remote_path, env=env)
+        if expected is not None and actual != expected:
+            raise AdbError(
+                "拉取后字节数不一致",
+                code="ADB_SIZE_MISMATCH",
+                details={"remote": remote_path, "expected": expected, "actual": actual},
+            )
+        try:
+            if overwrite:
+                safefile.publish_replace(temporary, target)
+            else:
+                safefile.publish_no_replace(temporary, target)
+        except FileExistsError:
+            raise AdbError("本地拉取目标已存在；默认拒绝覆盖",
+                           code="LOCAL_TARGET_EXISTS",
+                           details={"targetName": target.name}) from None
+        except OSError as exc:
+            raise AdbError("本地拉取结果发布失败：" + type(exc).__name__,
+                           code="ADB_PUBLISH_FAILED") from None
+        return {"remote": remote_path, "local": local, "bytes": actual,
+                "overwritten": bool(overwrite)}
+    finally:
+        safefile.cleanup(temporary)
 
 
 def move_remote(source: str, target: str, *, env=None) -> dict:

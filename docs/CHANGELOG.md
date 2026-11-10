@@ -1,4 +1,17 @@
 
+## fix(tools): PR #53 本地执行安全与 Recipe 失败一致性（2026-11-10 第七百二十四笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：审查修复/集成/文档；子代理 A/B 修复范围见 PR #53）
+
+- P0 原语部分失败：工具与原语结果统一在 recipe 循环检查；`partial`/`failed` 写入 artifact（保留成功/失败项）后停止后续步骤，不再记为 ok。恢复只重跑非 ok 步骤，`media.transfer` 对已成功且内容一致的目标、`device.push` 对已推送且远端大小一致的条目按 `alreadyPresent` 跳过，只重试失败项；执行前被策略拒绝的步骤标 failed 而非不确定。
+- P0 覆盖安全：`media.transfer` 在任何写入前用 `os.path.samefile`/`dev+ino` 拒绝源目标同路径、硬链接或同一底层文件（`overwrite=true` 不能绕过，避免先截断后读取）；覆盖改为同目录临时文件 + size/SHA-256 校验 + `os.replace`，失败保留旧目标并清理临时文件；无覆盖发布优先硬链接，不支持时退回排他占位 + 原子替换。新增 `safefile.py` 承载文件身份/临时文件/发布，不复制业务逻辑。
+- P1 只读一致性：`media.probe` 仅在含 `frames` 时提升为 `local.files.write` 条件副作用；纯元数据/dHash 查询仍只读；只读模式关闭 probe/fingerprint/scan 的媒体缓存写入，避免“声明只读、实际写盘”。
+- P1 Gate 范围：Gate 只授权其后的具体步骤（显式 `authorizes`，否则到下一道 gate 之前）；恢复时核对 `authorizedSteps`，范围漂移拒绝续跑；条件跳过的 gate 沿用此前已完成 gate 的授权以保持既有 recipe 流程；一次 `--yes` 仍只通过一个门禁。
+- P1 ADB 拉取：`device.pull` 默认拒绝已有本地目标；先拉同目录临时文件、核对远端大小后安全发布；失败/链接目标/未授权根不破坏旧文件；仍强制显式 `QIMENG_ADB_SERIAL` 并拒绝默认模拟器。
+- 可选：transfer 对 fileRef 源不再回显绝对路径（返回 `sourceFileRef`/`sourceName`/`targetName`）；`files.search` 仍无状态 cursor、每页有界重扫并排序，超过 20000 条目只提示收窄，未改为索引/缓存（记录为已知限制）。
+- 版本：`platformVersion` 1.4.1、`rulepackVersion` 2026-11-10.4；`media.probe`/`media.transfer` 原语 1.1.0、`ADB_PRIMITIVE_VERSION` 1.1.0、`RECIPE_ENGINE_VERSION` 1.1.0；`author.discover` 1.0.1 增加 `local.files.write`。
+- 验证：`python -X utf8 -m unittest discover -s tools -p "test_ai_*.py"` 288 项通过（新增 `test_ai_pr53_fixes.py` 22 项，覆盖部分失败/恢复、同文件/硬链接、安全覆盖、probe 权限、Gate 范围、模拟 ADB 拉取）；`check_docs` 0 错误、隐私检查通过、规则一致性 0 条。未接真实设备/NAS/真实媒体；普通路径检查与 `os.replace` 之间仍有极短竞态窗口，ffprobe/ffmpeg 读取换链窗口未消除。
+
 ## feat(tools): AI 接入层本地文件引用、执行权限与工具契约规范化（2026-11-10 第七百二十三笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理：接口协调/集成/文档/验收；子代理 A：本地权限、fileRef、Recipe；子代理 B：注册表、按需上下文、规则、MCP）
@@ -265,11 +278,3 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 - 署名补全（2026-10-23，用户明确确认）：2026-10-22 第五百七十五至第五百八十四笔原标未知，补为 GPT-6.1 Sol；各笔执行分工和历史验证边界不变。
 - 署名更正（2026-10-20，用户明确确认）：2026-10-19～20 的第五百三十八至第五百四十五笔原误署 GPT-6 或仅署 Codex，统一更正为 GPT-6.1 Sol；保留各条主代理/执行子代理及复核分工。
-
-## feat(tools): 研究核验 CLI 命令（context/provider/lens）（2026-11-07 第六百九十四笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- `tools/ai_maintenance/cli.py` 新增只读 `research` 命令组：`research context`（GET /api/v1/research/context，打印 enabled、sidecar configured/available/pending、provider 矩阵与限额）、`research provider --provider <name> --operation <author|post|work|artist|tags|url|workshop|search> --target <值> [--limit N]`（POST /api/v1/research/providers/{provider}/query；CLI 不硬编码矩阵，矩阵外/非法参数由服务端 400 透传）、`research lens --file <本地图片>`（POST /api/v1/research/lens 的 multipart 字段 file；扩展名与 20MiB 本地预检、150 秒超时、摘要只打印 status/frameSha256/topTitles/links 数量，不打印图片内容）。所有命令支持全局 `--json`；缺配置退出码 2 且不回显 token，图片字节不进入任何输出。
-- 规则包与文档同步：`rules.json` 三条 research capabilities 的 `cli` 指向实际命令、研究指南补 CLI 用法并删除「本切片未提供研究 CLI」，规则版本 `2026-11-06.3`；`rulepack.py` 去掉与指南重复的研究节并把 research 命令加入只读命令清单；`tools/ai_maintenance/README.md` 增研究示例与 `RESEARCH_DISABLED`/`RESEARCH_SIDECAR_*`/`RATE_LIMITED`/`INVALID_PARAM` 语义；`docs/api/research.md` 增「命令行工具」小节，注明研究默认关闭、sidecar 需另行部署。
-- 验证边界：`tools/test_ai_maintenance.py` 由 23 项增至 31 项并全部通过，仅用临时目录与 `127.0.0.1` 随机端口 stub（研究成功摘要与 --json、POST 路径/Bearer/JSON 体、multipart 字段与文件名、服务端 400/503 透传、缺配置、token 脱敏、本地文件预检）；未访问真实平台、未安装 sidecar、未触碰 8420 真库，也未改 OpenAPI/Go。`python -X utf8 tools/check_docs.py` 0 错误、`python -X utf8 tools/check_privacy.py --mode worktree` passed。第六百六十四笔完整原样移入 docs/history/CHANGELOG-20261028.md，近期日志保持 30 笔。
