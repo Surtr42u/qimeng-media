@@ -125,6 +125,38 @@ class RecipeRunnerTests(unittest.TestCase):
         artifacts = list((run_dir / "artifacts").glob("*.json"))
         self.assertEqual(3, len(artifacts))  # lookup + gate + create
 
+    def test_one_gate_per_invocation(self):
+        recipe = {
+            "schemaVersion": 1,
+            "id": "test.two-gates",
+            "version": "1.0.0",
+            "title": "两个门禁",
+            "whenToUse": "测试",
+            "requires": [],
+            "inputs": {"type": "object", "properties": {"name": {"type": "string"}},
+                       "required": ["name"]},
+            "steps": [
+                {"id": "lookup", "tool": "author.query", "input": {"name": "$inputs.name"}},
+                {"id": "gateOne", "gate": True, "message": "第一道门"},
+                {"id": "create", "tool": "author.create", "confirm": True,
+                 "input": {"displayName": "$inputs.name"}},
+                {"id": "gateTwo", "gate": True, "message": "第二道门"},
+            ],
+        }
+        (self.recipe_dir / "test.two-gates.json").write_text(
+            json.dumps(recipe, ensure_ascii=False), encoding="utf-8")
+        run_dir = Path(self.temp.name) / "two-gates"
+        with mock.patch.object(recipes.execution, "execute_tool", side_effect=self._fake_execute):
+            with self.assertRaises(recipes.RecipeError) as caught:
+                recipes.run_recipe("test.two-gates", {"name": "Alice"}, env=self.env,
+                                   state_dir=str(run_dir), confirm=True)
+            self.assertEqual("RECIPE_CONFIRMATION_REQUIRED", caught.exception.code)
+            self.assertEqual("gateTwo", caught.exception.details["step"])
+            result = recipes.run_recipe("test.two-gates", {"name": "Alice"}, env=self.env,
+                                        state_dir=str(run_dir), confirm=True, resume=True)
+        self.assertEqual("completed", result["status"])
+        self.assertEqual(["author.query", "author.create"], [item[0] for item in self.calls])
+
     def test_skipped_step_does_not_call_tool(self):
         run_dir = Path(self.temp.name) / "skip"
         with mock.patch.object(recipes.execution, "execute_tool", side_effect=self._fake_execute):

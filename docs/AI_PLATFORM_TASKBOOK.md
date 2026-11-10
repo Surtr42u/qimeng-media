@@ -82,7 +82,7 @@
 AI 不需要先读源码/完整文档才知道做什么：任务入口是**任务卡 + 可执行 recipe**。
 
 - `qai task <recipe>` 返回 2–4KB 任务卡：目标、输入、步骤、工具/原语、人工门禁、产物与执行命令；不加载完整规则包。
-- `qai run <recipe>` 逐步执行；只读步骤先跑，遇到 gate 停下；人工核对后同一运行目录 `--yes` 续跑写入；每步产物落盘（JSON + sha256），模型只拿有界摘要。
+- `qai run <recipe>` 逐步执行；只读步骤先跑，遇到 gate 停下；人工核对后同一运行目录 `--yes` 通过下一个门禁（多门禁需重复确认）；每步产物落盘（JSON + sha256），模型只拿有界摘要。
 - recipe 是数据（`tools/ai_maintenance/recipes/*.json`），只引用注册表工具/原语；新增编排不改 CLI/MCP。
 - 原语唯一实现：`media_primitives`（抽帧/dHash/拼图/缓存）、`device_adb`（显式真机）、`client`（统一 HTTP）；禁止为单个任务再写临时脚本。
 - 运行目标能力先核对（`pc` / `android-embedded` / `nas`）：缺 ffmpeg/adb/research 时给出环境变量提示，不跑到一半才失败。

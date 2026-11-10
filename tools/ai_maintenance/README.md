@@ -186,7 +186,7 @@ python -X utf8 tools/ai_maintenance/cli.py task author.discover
 
 # 2) 执行：只读步骤先跑，遇到人工门禁停下
 python -X utf8 tools/ai_maintenance/cli.py run author.discover --input-file input.json
-# 3) 人工核对产物后，同一 --state-dir 带 --yes 续跑写入步骤
+# 3) 人工核对产物后，同一 --state-dir 带 --yes 通过“下一个”门禁；多门禁需重复确认
 python -X utf8 tools/ai_maintenance/cli.py run author.discover --state-dir <runDir> --yes
 ```
 
@@ -197,7 +197,7 @@ python -X utf8 tools/ai_maintenance/cli.py run author.discover --state-dir <runD
 - `device.sync`：备份导出 → 设备结果包登记 → 提交 → 查询
 
 执行器把每步产物写到 `<runDir>/artifacts/*.json`（含 sha256），模型只拿到有界摘要；
-写入步骤必须先过 gate 再带 `--yes`，工具自身仍校验 plan 指纹与 confirm。配方是数据：
+写入步骤必须先过 gate 再带 `--yes`；一次 `--yes` 只通过下一个门禁，工具自身仍校验 plan 指纹与 confirm。配方是数据：
 新增编排只加 `recipes/*.json`（必要时加一个原语），不改 CLI/MCP。
 
 `tool call` 成功输出 `{"tool","toolVersion","status":"ok","result":...}`；写入工具

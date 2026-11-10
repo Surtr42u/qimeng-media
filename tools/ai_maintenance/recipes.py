@@ -751,6 +751,9 @@ def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,
             outputs[step_id] = _load_output(run_dir, record)
     artifacts: list[dict] = []
     ctx = RunContext(env, run_dir, capabilities=target.get("capabilities"))
+    # 一次运行只通过一个 gate：--yes 表示“本次已核对到下一个门禁”，
+    # 后续步骤若再遇到门禁会再次停下，避免一次 --yes 越过多个人工审核点。
+    gate_confirmed = False
     try:
         for step in recipe["steps"]:
             step_id = step["id"]
@@ -768,7 +771,18 @@ def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,
             if dry_run:
                 state["steps"][step_id] = {"status": "planned", "updatedAt": _now()}
                 continue
-            output = _run_step(step, recipe, ctx, inputs, outputs, config, confirm)
+            if step.get("gate"):
+                if not confirm or gate_confirmed:
+                    raise RecipeError(
+                        step.get("message") or "需要人工确认后才能继续",
+                        code="RECIPE_CONFIRMATION_REQUIRED",
+                        details={"step": step_id, "gate": step.get("message", "")},
+                    )
+                gate_confirmed = True
+                output = {"status": "confirmed", "step": step_id}
+            else:
+                output = _run_step(step, recipe, ctx, inputs, outputs, config,
+                                   gate_confirmed)
             outputs[step_id] = output
             artifact = _artifact_name(step_id)
             artifact_path = run_dir / "artifacts" / artifact
