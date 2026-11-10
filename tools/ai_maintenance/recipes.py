@@ -71,6 +71,9 @@ def _primitive_media_scan(payload: dict, ctx: "RunContext") -> dict:
     scan = payload.get("scan")
     if not isinstance(scan, dict):
         raise RecipeInputError("media.scan 需要 scan 对象")
+    if scan.get("libraryId"):
+        raise RecipeInputError(
+            "media.scan 只接受 root；库根扫描需要 API，请直接调用 media.organize.prepare")
     plan = media_scan.build_scan_plan({"scan": scan}, env=ctx.env)
     return {"plan": plan}
 
