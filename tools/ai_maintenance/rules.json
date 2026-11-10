@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-10.2",
+  "rulesVersion": "2026-11-10.4",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1060,6 +1060,48 @@
         "category": "internal",
         "exitCode": 1,
         "recovery": "工具缺陷；保留输入与详情。"
+      },
+      {
+        "code": "PATH_NOT_AUTHORIZED",
+        "category": "permission",
+        "exitCode": 2,
+        "recovery": "路径不在显式授权根内；由可信执行端配置授权根后重试。"
+      },
+      {
+        "code": "PATH_UNSAFE",
+        "category": "usage",
+        "exitCode": 2,
+        "recovery": "修正路径：去掉控制字符、链接/junction 段与 .. 逃逸。"
+      },
+      {
+        "code": "FILE_REF_INVALID",
+        "category": "usage",
+        "exitCode": 2,
+        "recovery": "重新 files.search/make_ref 生成 fileRef；不要手工拼接。"
+      },
+      {
+        "code": "FILE_REF_STALE",
+        "category": "conflict",
+        "exitCode": 1,
+        "recovery": "文件已变化；重新搜索生成新 fileRef 后再执行。"
+      },
+      {
+        "code": "FILE_REF_UNAVAILABLE",
+        "category": "config",
+        "exitCode": 2,
+        "recovery": "检查 QIMENG_AI_STORAGES 是否仍配置该 storageId。"
+      },
+      {
+        "code": "RECIPE_STEP_UNCERTAIN",
+        "category": "conflict",
+        "exitCode": 1,
+        "recovery": "先回读目标并人工核对；确认后新建运行，不要直接续跑。"
+      },
+      {
+        "code": "RECIPE_ARTIFACT_TAMPERED",
+        "category": "verification",
+        "exitCode": 1,
+        "recovery": "人工核对产物；不要信任被修改的 state.json/artifacts。"
       }
     ]
   },
@@ -1344,7 +1386,9 @@
       "backup.export": "便携备份流式导出；只写授权绝对路径，默认拒绝覆盖。",
       "device.apply": "设备结果包登记/查询；配对与 Android Worker 未实现。",
       "maintenance.execute": "外部 AI 执行器控制面；leaseToken 是 fencing token，只在 claim 结果出现。",
-      "admin.maintenance": "管理员维护（导入/恢复/数据库等）；当前版本不向 AI 开放写入。"
+      "admin.maintenance": "管理员维护（导入/恢复/数据库等）；当前版本不向 AI 开放写入。",
+      "local.files.write": "授权写根内的本地文件操作（复制/整理/派生图）；只处理未入库文件，不等于允许修改已入库资产的业务状态。",
+      "local.device": "adb 推送/拉取；必须显式 QIMENG_ADB_SERIAL（无默认设备），只操作授权真机，拒绝 emulator-5554。"
     },
     "adminTools": [
       "v2 导入（backup.import）仍为 planned；数据库审计、迁移、备份恢复、环境诊断保持独立管理员工具，不进入 AI 工具注册表。",
@@ -1401,10 +1445,46 @@
       "资产删除需确认并回读 404；不得按路径猜测或直接操作文件系统。"
     ]
   },
-  "rulepackVersion": "2026-11-10.2",
+  "localFiles": {
+    "scope": "未入库文件的本地发现与受控处理；已入库资产/索引/作者/标签/业务关联必须走 Go /api/v1。",
+    "storages": {
+      "config": "可信执行端用 QIMENG_AI_STORAGES 声明 storageId=绝对路径（ID 匹配 ^[a-z][a-z0-9_-]{1,31}$ 且唯一）；storage 根本身即读授权。",
+      "exposure": "files.storages 只返回 storageId/writable/configured；files.search 只返回 storageId/relativePath/fileRef，绝不返回物理绝对路径。",
+      "write": "local.files.write 只覆盖 QIMENG_AI_WRITE_ROOTS 内的本地复制/整理/派生图；不写业务数据，不直接改已入库文件。"
+    },
+    "writeSafety": [
+      "media.transfer 先判断源/目标是否同路径、硬链接或同一底层文件；命中一律 SOURCE_TARGET_SAME，overwrite=true 也不能绕过，禁止先截断后读取。",
+      "覆盖已有目标必须写同目录临时文件并校验 size/SHA-256 后再原子替换；校验或发布失败保留旧目标并清理临时文件。",
+      "默认不覆盖、不删除源；恢复执行只对目标存在且内容一致的条目按 alreadyPresent 跳过。",
+      "device.pull 默认拒绝覆盖本地已有目标；先拉临时文件、核对大小后安全发布，失败/链接/未授权根不破坏旧文件。",
+      "media.probe 仅在含 frames 时写帧文件；纯元数据/dHash 查询保持只读，只读模式关闭媒体缓存写入。"
+    ],
+    "recipeSafety": [
+      "工具与原语的 partial/failed 不得记为成功；保留 artifact 中的成功/失败项并停止后续步骤。",
+      "恢复时只重跑非 ok 步骤；已成功且内容一致的 transfer 目标、已推送且远端大小一致的 device.push 条目跳过，只重试失败项。",
+      "Gate 只授权其后的具体步骤（显式 authorizes，否则到下一道 gate 之前）；恢复时核对授权范围，范围变化拒绝续跑。",
+      "一次 --yes 只通过一个门禁；条件跳过的 gate 沿用此前已完成 gate 的授权以保持既有 recipe 流程。"
+    ],
+    "search": {
+      "bounds": "只读；每页最多 50 条（默认 20）；扫描条目硬上限 20000；递归深度上限 8；跳过符号链接/junction/隐藏项（includeHidden=true 才包含隐藏项）。",
+      "cursor": "cursor 无状态，只编码 storageId + 已扫描相对路径；解析时重新校验存储根，拒绝绝对路径、..、跨存储或超长游标。",
+      "truncated": "扫描达到硬上限或还有下一页时必须 truncated=true 并给 hint，不得把未搜全说成完整结果。"
+    },
+    "fileRef": [
+      "fileRef 只能由 files.search（或 fileref.make_ref）生成，不透明且自描述；不得手工拼接或修改。",
+      "文件移动/改名/替换/大小或 mtime 变化后 fileRef 立即失效（FILE_REF_STALE）：必须重新搜索，不要复用旧引用。",
+      "fileRef 不属于当前执行端或 storage 已移除时返回 FILE_REF_INVALID/FILE_REF_UNAVAILABLE；不得猜测 storage 或退回绝对路径。"
+    ],
+    "boundary": [
+      "未入库文件（授权根内、尚未进入媒体库）可直接在授权目录读取、复制、整理或生成派生图。",
+      "已入库资产、索引、作者、标签与业务关联的修改必须走 Go /api/v1 正式端点与计划/确认/回读，不得直接改文件、SQLite 或 TXT。",
+      "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
+    ]
+  },
+  "rulepackVersion": "2026-11-10.4",
   "platform": {
-    "platformVersion": "1.3.0",
-    "toolContractVersion": "1.3.0",
+    "platformVersion": "1.4.1",
+    "toolContractVersion": "1.4.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
   },
@@ -1559,6 +1639,10 @@
       {"id": "maintenance", "label": "后台维护", "description": "维护任务账本查询、清点与外部执行器受控领取"},
       {"id": "system", "label": "平台", "description": "上下文/版本/能力目录与平台元工具"}
     ],
+    "tools": [
+      {"id": "files.storages", "domain": "media", "summary": "列出已配置的本地文件存储（storageId/writable），不返回物理绝对路径。", "permission": "read", "readOnly": true, "sideEffects": false, "requiresConfirmation": false},
+      {"id": "files.search", "domain": "media", "summary": "在授权存储内有界搜索本地文件，返回不透明 fileRef、相对路径与分页游标。", "permission": "read", "readOnly": true, "sideEffects": false, "requiresConfirmation": false}
+    ],
     "discovery": {
       "recipe": "platform.recipe（action=card 取 2–4KB 任务卡；默认不加载工具 Schema/完整规则）",
       "context": "platform.context",
@@ -1567,7 +1651,8 @@
       "rules": "platform.rules",
       "policy": "任务开始先用 platform.context（task/domain）取相关工具、Schema 摘要、规则节与 playbook；工具数量增长时再取精简领域目录（无 Schema），按需 describe/rules；MCP tools/list 保留完整清单供标准客户端；新增工具只增声明与实现模块，不改统一入口。",
       "lazyLoading": "注册表只保存 module:handler 引用，首次执行/描述时才导入实现模块；目录与状态计算不导入 tools_* / media_naming 实现。",
-      "versioning": "工具声明 toolVersion 与规则 rulepackVersion 分离；废弃工具用 deprecated/replacedBy 标记并从精简目录默认隐藏。"
+      "versioning": "工具声明 toolVersion 与规则 rulepackVersion 分离；废弃工具用 deprecated/replacedBy 标记并从精简目录默认隐藏。",
+      "localFiles": "未入库文件先用 files.storages/files.search 发现（只读、有界、不返回绝对路径）；已入库资产/索引/作者/标签与业务关联必须走 Go API。"
     },
     "permissions": {
       "model": "发现与权限分离：catalog/describe 只声明权限；execution 在调用前按 QIMENG_AI_GRANTED_PERMISSIONS 或 toolConfig.grantedPermissions 强制拒绝未授权工具。",

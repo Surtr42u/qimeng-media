@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "id": "author.discover",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "title": "未知作者：识图/搜索 → 查重 → 新建 → 填档案 → 关联 → 回读",
   "whenToUse": "发现一个未知作者或只有作品/昵称线索时；先识图与公开来源核验，查重后仍不存在才新建，按 candidate 写档案并人工确认。",
   "targets": ["pc", "nas", "android-embedded"],
   "requires": ["api"],
-  "permissions": ["read", "research", "author.profile.write", "asset.authors.write"],
+  "permissions": ["read", "research", "author.profile.write", "asset.authors.write", "local.files.write"],
   "inputs": {
     "type": "object",
     "properties": {

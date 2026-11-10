@@ -104,6 +104,20 @@
 - **设备结果包权威回读**：manifest 可选 `expectedState`（绝对计数，键限定 assets/authors/assetAuthorRefs/tags/assetTagRefs/viewEvents）；回传时服务端读取库内真实计数、与期望比较，并核对手机回传的段摘要。验证快照写入独立的可空列 `verification_json`（migration 0026），不参与 `result_json` 的幂等重放比较；旧任务/旧客户端不受影响。
 - **已知边界/未实现**：无 Web 管理/审计 UI（HTTP 端点与 CLI 已有）；无多实例共享限流；高风险动作仍靠独立 scope，未加动作级确认凭据（G3）；设备身份仍是标签非认证（G6）；管理员 Bearer 仍是全权凭据，AI 工具层应使用受限客户端 token；`ai_audit` 只增、无自动裁剪/归档（容量随写请求增长，当前单机规模接受，后续可加保留策略）；真实设备/模拟器后台执行与 NAS 部署仍未验收。
 
+### 本地 AI 执行器路径与文件引用（2026-11-10）
+
+AI 工具平台在**受信执行端进程内**直接处理未入库文件；这条路径独立于 Go 库根校验，边界由执行端强制：
+
+- **读写根分离**：`QIMENG_AI_READ_ROOTS` / `QIMENG_AI_WRITE_ROOTS`（逗号/分号分隔绝对路径）；`QIMENG_AI_MEDIA_ROOTS` 计入读根；包内忽略工作根（`QIMENG_AI_RESEARCH_DIR`、`.test-temp/`、`build/`）始终可读写。未配置目录默认拒绝，模型参数不能扩大授权。仓库源码树仍拒绝（只允许忽略工作根）。
+- **符号链接/reparse**：授权根本身允许是用户配置的链接/junction（解析为真实路径）；根以下的写目标与父段拒绝符号链接/junction/reparse，读路径最终 resolve 必须仍在真实根内。哈希/复制在打开前后重新 resolve 复核（TOCTOU）；ffprobe/ffmpeg 外部进程读取仍存在检查后被换链的窗口，与 Go 侧同类边界一致。
+- **逻辑存储**：`QIMENG_AI_STORAGES=storageId=绝对路径;...` 是可信配置。storage 根本身即读授权；写入该存储还要求根在 `QIMENG_AI_WRITE_ROOTS` 内。`files.storages`/`files.search` 只返回 storageId/相对路径/不透明 `fileRef`，不返回物理绝对路径；扫描跳过链接/隐藏项，单次最多 20000 条目、每页最多 50 条。
+- **fileRef**：自描述（storageId + 相对路径 + size + mtime），无落盘索引；解析时重新校验 storage、相对路径规范化、根内约束、存在性与 size/mtime。删除/替换/修改 → `FILE_REF_STALE`；伪造/越界 → `FILE_REF_INVALID`；storage 移除 → `FILE_REF_UNAVAILABLE`。引用不能绕过写授权。
+- **原语权限**：`local.files.write`/`local.device` 与业务写权限分开；`QIMENG_AI_READONLY`、`QIMENG_AI_DISABLED_TOOLS`、`QIMENG_AI_GRANTED_PERMISSIONS` 对有副作用原语同样在执行前强制检查。`media.probe` 仅在含 `frames` 时按写操作检查；纯元数据查询与只读模式不写缓存。
+- **覆盖与复制安全**：`media.transfer` 拒绝源/目标同路径、硬链接或同一底层文件（`SOURCE_TARGET_SAME`，`overwrite=true` 不能绕过）；覆盖先写同目录临时文件、校验 size/SHA-256 后原子替换，失败保留旧目标并清理临时文件。`device.pull` 默认拒绝覆盖本地已有文件，拉取到临时文件并核对大小后发布；失败、链接目标与未授权根不破坏旧文件。
+- **部分失败与确认范围**：原语 `partial`/`failed` 不再被记为成功，后续步骤停止，artifact 保留成功/失败项；恢复只重试失败项。Gate 只授权其后的具体步骤（显式 `authorizes` 或到下一道 gate 之前），恢复时核对记录范围；条件跳过的 gate 沿用此前已完成 gate 的授权，一次 `--yes` 只通过一个门禁。
+- **边界**：本地工具不得修改已入库资产的索引、作者、标签、业务关联或正式媒体路径；这些只能走 Go `/api/v1` 的计划/确认/回读。`--state-dir` 由操作者提供，只把该运行目录追加为本次运行的写根，不授权其他媒体目标。
+- **未覆盖**：真实 NAS/多用户目录、网络文件系统语义、跨卷复制失败恢复、fileRef 的加密完整性（当前为配置内可达即可读，非签名令牌）未做现场验收；`QIMENG_AI_STORAGES` 中的路径本身仍由管理员保护。
+
 ## 开发模式（红线 5 的受限例外）
 
 - **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。

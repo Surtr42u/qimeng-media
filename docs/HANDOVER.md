@@ -40,7 +40,7 @@
 - 维护任务外部执行器受控通道（claim/heartbeat/steps/artifacts/complete + fencing leaseToken，30–1800 秒），worker 恢复按完整已完成步骤跳过（修复 >50 步重复副作用）。
 - 设备结果包服务端权威校验：manifest 可选 expectedState，回传时读库绝对计数并与段摘要核对，结果新增 authoritativeState/expectedStateMatches/expectedStateDiff/hashVerified，migration 0026 只增 verification_json。
 - Android：领取/待办按 nextCursor 全量翻页（100/页、上限 2000）；本机模式自助签发设备令牌；设置页只读最近任务卡。
-- AI 工具 1.1.0：43 个工具、toolContract 1.1.0、rulesVersion 2026-11-08.2。
+- AI 工具 1.4.1：48 个工具、toolContract 1.4.0、rulesVersion 2026-11-10.4；本地文件发现 `files.storages`/`files.search` 与 fileRef、读写根分离、原语统一权限/恢复校验、MCP 发现元工具常驻、规则一致性检查。
 
 验证、未完成项与下一步测试清单见 §10。
 
@@ -155,7 +155,7 @@ glib GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429 的现行处理见[SECURITY依赖�
 | 外部执行器 | `/api/v1/maintenance/executor/claim`（无任务 204）与 `jobs/{id}/{heartbeat,steps,artifacts,complete}`；fencing `leaseToken` 30–1800 秒（默认 120）；旧 token 409 `LEASE_LOST`；完整 completedSteps | maintenance/httpapi 定向 `go test` |
 | 设备权威回读 | manifest 可选 expectedState；服务端绝对计数 + deviceLocalHashes 核对；结果暴露 authoritativeState/expectedStateMatches/expectedStateDiff/hashVerified；migration 0026 只增 verification_json | deviceapply/httpapi 定向测试（临时 SQLite、合成包） |
 | Android | 领取/待办按 nextCursor 全量翻页（100/页、上限 2000）；本机模式设备令牌自助签发；只读最近任务卡（20 条）；本地/远端共用 runner | `:core:data` device/token 50 项通过；`:feature:manage`/`:app` compileDebugKotlin + hiltJavaCompileDebug 成功 |
-| AI 工具 1.1.0 | 43 工具（14 项新增，backup.export 与 device.apply.* 转 supported）；错误目录新增 4 码；rulesVersion 2026-11-08.2 | Python 164 项通过；未接真实客户端 |
+| AI 工具 1.4.1 | 48 工具（新增 `files.storages`/`files.search`、fileRef 与本地权限）；错误目录新增 7 码；rulesVersion 2026-11-10.4；读写根分离、原语统一策略与覆盖/恢复安全修复 | Python 288 项通过；未接真实客户端/未安装 |
 
 ### 10.2 明确未做/未验收
 

@@ -17,6 +17,12 @@
   及时处理取消/初始化等通知；有副作用工具被取消时不提前返回（避免“已取消”
   与实际继续写入的不确定状态），只读工具可立即返回 -32800；
 - 其他方法：-32601 Method not found；非法参数/未知工具：-32602。
+
+领域过滤（`QIMENG_AI_MCP_DOMAINS`）只减少暴露面：标准 `tools/list` 仍可能被客户端
+完整加载，按需查询（`platform.context`/`platform.catalog`/`platform.recipe`）不改变
+协议层清单大小，**不能当作上下文节省保证**。过滤时始终保留安全发现元工具
+（全部 `platform.*` 与 `files.storages`），`tools/list` 与 `tools/call` 使用同一可见
+集合，不扩大任何执行权限。
 """
 from __future__ import annotations
 
@@ -42,6 +48,10 @@ SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
 DEFAULT_CALL_TIMEOUT_SECONDS = 120.0
 CANCEL_REQUEST_METHOD = "notifications/cancelled"
 INITIALIZED_NOTIFICATION = "notifications/initialized"
+# 领域过滤下始终保留的安全发现元工具（只读、纯本地）：不因领域白名单隐藏，
+# 否则客户端无法发现/读取上下文与规则；它们不扩大执行权限。
+DISCOVERY_META_PREFIX = "platform."
+DISCOVERY_META_TOOLS = frozenset({"files.storages"})
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -68,8 +78,10 @@ def _result_response(request_id, result) -> dict:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
-def _tool_descriptor(spec: registry.ToolSpec, document) -> dict:
-    summary = registry.tool_summary(spec, document)
+def _tool_descriptor(spec: registry.ToolSpec, document, *,
+                     granted_permissions=None, env=None) -> dict:
+    summary = registry.tool_summary(spec, document,
+                                    granted_permissions=granted_permissions, env=env)
     description = summary["description"]
     if summary["status"] != "supported":
         description += f"（当前状态：{summary['status']}）"
@@ -88,6 +100,11 @@ def _tool_descriptor(spec: registry.ToolSpec, document) -> dict:
         "_meta": {"domain": spec.domain, "toolVersion": spec.version,
                   "requiresConfirmation": spec.requires_confirmation},
     }
+
+
+def _is_discovery_meta_tool(tool_id: str) -> bool:
+    """安全发现元工具：platform.* 元工具与 files.storages（只读、纯本地）。"""
+    return tool_id.startswith(DISCOVERY_META_PREFIX) or tool_id in DISCOVERY_META_TOOLS
 
 
 class McpServer:
@@ -178,6 +195,10 @@ class McpServer:
                 "工具较多时也可先调用 platform.catalog 取精简领域目录，再用 platform.tool.describe "
                 "按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节，需要工作流模板时用 "
                 "platform.playbook（可选模板，不是唯一路径）；默认不要读取全量规则包。"
+                "注意：按需查询不会阻止 MCP 客户端加载完整 tools/list；"
+                "QIMENG_AI_MCP_DOMAINS 服务端过滤只是减少暴露面，不能当作上下文节省保证。"
+                "本地文件用 files.storages/files.search 发现（只读、有界、不返回绝对路径）；"
+                "fileRef 失效需重新搜索，不要手工拼接。"
                 "写入工具必须先 prepare 计划、人工确认后带 confirm=true 与计划指纹调用 apply。"
                 "看见工具不代表有权执行（权限由可信执行端强制）；不得声称执行了 planned/已禁用工具；"
                 "不得在参数中放 token。"
@@ -185,16 +206,27 @@ class McpServer:
         }
 
     def _visible_tools(self) -> list:
-        """QIMENG_AI_MCP_DOMAINS 只暴露相关领域，减少 tools/list 与误调用面。"""
+        """QIMENG_AI_MCP_DOMAINS 只暴露相关领域，减少 tools/list 与误调用面。
+
+        安全发现元工具（全部 platform.* 与 files.storages）始终可见：它们只读、
+        纯本地，不扩大执行权限；tools/list 与 tools/call 共用本方法。
+        """
         raw = str(self.env.get("QIMENG_AI_MCP_DOMAINS", "")).strip()
         if not raw:
             return list(registry.TOOLS)
         allowed = {item.strip() for item in raw.split(",") if item.strip()}
-        return [spec for spec in registry.TOOLS if spec.domain in allowed]
+        return [spec for spec in registry.TOOLS
+                if spec.domain in allowed or _is_discovery_meta_tool(spec.id)]
 
     def _tools_list(self) -> dict:
-        document = self._load_config().document()
-        return {"tools": [_tool_descriptor(spec, document) for spec in self._visible_tools()]}
+        config = self._load_config()
+        document = config.document()
+        return {"tools": [
+            _tool_descriptor(spec, document,
+                             granted_permissions=config.granted_permissions,
+                             env=self.env)
+            for spec in self._visible_tools()
+        ]}
 
     def _tools_call(self, request_id, params: dict, cancelled: set) -> dict:
         name = params.get("name")

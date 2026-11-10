@@ -54,7 +54,8 @@ def backup_export(ctx: ToolContext, payload: dict) -> dict:
     out_path = payload.get("outPath")
     if not isinstance(out_path, str) or not out_path.strip():
         raise errors.invalid_input("缺少 outPath（必须是绝对路径）")
-    destination = pathguard.resolve_local_path(out_path, env=ctx.env, kind="outPath")
+    destination = pathguard.resolve_local_path(out_path, env=ctx.env, kind="outPath",
+                                               mode="write")
     max_bytes = _max_bytes(payload)
     overwrite = payload.get("overwrite") is True
     if destination.exists() and not overwrite:

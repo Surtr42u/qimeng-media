@@ -23,7 +23,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import plans
+from . import errors, pathguard, plans
 
 PRIMITIVES_VERSION = "1.0.0"
 DEFAULT_FRAME_PERCENTAGES = (15, 50, 85)
@@ -62,7 +62,22 @@ def cache_root(env=None) -> Path:
     return Path(__file__).resolve().parents[2] / "build" / "ai-maintenance" / "cache" / "media"
 
 
-def _cache_path(kind: str, path: Path, params: dict, env=None) -> Path:
+def _cache_root_for_write(env) -> Path | None:
+    """缓存目录同样默认拒绝未授权位置；不可写时静默禁用缓存，不影响主流程。"""
+    root = cache_root(env)
+    if env is None:
+        return root
+    try:
+        return pathguard.resolve_local_path(str(root), env=env, must_exist=False,
+                                            kind="媒体缓存目录", mode="write")
+    except errors.ToolError:
+        return None
+
+
+def _cache_path(kind: str, path: Path, params: dict, env=None) -> Path | None:
+    root = _cache_root_for_write(env)
+    if root is None:
+        return None
     stat = path.stat()
     payload = plans.canonical_json({
         "version": PRIMITIVES_VERSION,
@@ -73,10 +88,12 @@ def _cache_path(kind: str, path: Path, params: dict, env=None) -> Path:
         "params": params,
     })
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    return cache_root(env) / kind / (digest + ".json")
+    return root / kind / (digest + ".json")
 
 
-def _read_cache(file: Path):
+def _read_cache(file):
+    if file is None:
+        return None
     try:
         with file.open("r", encoding="utf-8") as handle:
             return json.load(handle)
@@ -84,7 +101,9 @@ def _read_cache(file: Path):
         return None
 
 
-def _write_cache(file: Path, value) -> None:
+def _write_cache(file, value) -> None:
+    if file is None:
+        return
     try:
         file.parent.mkdir(parents=True, exist_ok=True)
         temporary = file.with_name(file.name + ".tmp-" + str(os.getpid()))
@@ -254,6 +273,8 @@ def extract_frames(path: Path, out_dir: Path, *, percentages=None, kind: str = "
         record["status"] = "unavailable"
         record["reason"] = "ffmpeg_not_found"
         return record
+    out_dir = Path(out_dir) if env is None else pathguard.resolve_local_path(
+        str(out_dir), env=env, must_exist=False, kind="抽帧输出目录", mode="write")
     out_dir = out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     duration_ms = probe.get("durationMs")
@@ -333,7 +354,9 @@ def build_contact_sheet(entries, out_path, *, columns: int = DEFAULT_CONTACT_COL
     width = max(120, int(cell[0]))
     height = max(90, int(cell[1]))
     font = _font_path(env)
-    output = Path(out_path).resolve()
+    output = Path(out_path) if env is None else pathguard.resolve_local_path(
+        str(out_path), env=env, must_exist=False, kind="拼图输出路径", mode="write")
+    output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     sheets = []
     with tempfile.TemporaryDirectory(prefix="qimeng-contact-") as temporary:

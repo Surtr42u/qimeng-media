@@ -13,7 +13,9 @@
 from __future__ import annotations
 
 # 工具包发行版本（语义化版本）。
-PLATFORM_VERSION = "1.3.0"
+# 1.4.1（2026-11-10）：PR #53 合并前安全修复（原语 partial/failed、覆盖/同文件
+# 保护、ADB 拉取、probe 条件副作用、Gate 范围）；工具契约版本保持 1.4.0。
+PLATFORM_VERSION = "1.4.1"
 
 # 工具契约版本（工具 ID/Schema/错误语义）。
 # 1.1.0（2026-11-08）：新增外部执行器控制面、设备结果包、备份导出、研究工具族
@@ -24,8 +26,11 @@ PLATFORM_VERSION = "1.3.0"
 # 1.3.0（2026-11-10）：新增 author.create、platform.recipe 与可执行 recipe/原语
 # （media.probe/media.fingerprint/media.contact_sheet/device.push 等）；新增 recipe
 # 与 target 运行形态。旧计划必须用当前工具包重新 prepare。
+# 1.4.0（2026-11-10）：新增 files.storages/files.search 本地文件发现（不透明
+# fileRef）、research.media.probe 的 fileRefs 输入、local.files.write/local.device
+# 权限与 PATH_*/FILE_REF_*/RECIPE_* 错误码；可用性维度拆分为 availability。
 # 工具 ID 与权限面扩展属于契约变化，旧计划必须用当前工具包重新 prepare。
-TOOL_CONTRACT_VERSION = "1.3.0"
+TOOL_CONTRACT_VERSION = "1.4.0"
 
 # 规则包（rules.json 与生成物）的 Schema 版本。
 RULEPACK_SCHEMA_VERSION = 2

@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -235,9 +236,11 @@ def _probe_media(ffprobe: str, path: Path) -> dict:
     return media_primitives.probe_media(path, ffprobe)
 
 
-def _perceptual(ffmpeg: str, ffprobe: str, path: Path, kind: str, *, env=None) -> dict:
+def _perceptual(ffmpeg: str, ffprobe: str, path: Path, kind: str, *, env=None,
+                cache: bool = True) -> dict:
     # 唯一实现在 media_primitives；按 (path,size,mtime,参数) 缓存，跨任务复用。
-    record = media_primitives.perceptual_record(path, kind, env=env, cache=True)
+    # 只读模式下调用方传 cache=False，避免“声明只读、实际写缓存”。
+    record = media_primitives.perceptual_record(path, kind, env=env, cache=cache)
     if not ffmpeg and record.get("status") == "ok":
         record = dict(record)
         record["status"] = "unavailable"
@@ -250,6 +253,15 @@ def _iter_files(root: Path, *, recursive: bool, max_depth: int,
     files: list[Path] = []
     skipped_links = 0
     unreadable_dirs = 0
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+
+    def is_reparse(entry) -> bool:
+        try:
+            info = entry.stat(follow_symlinks=False)
+        except OSError:
+            return False
+        attributes = getattr(info, "st_file_attributes", 0)
+        return bool(reparse_attribute and attributes & reparse_attribute)
 
     def visit(directory: Path, depth: int) -> None:
         nonlocal skipped_links, unreadable_dirs
@@ -262,7 +274,7 @@ def _iter_files(root: Path, *, recursive: bool, max_depth: int,
             if not include_hidden and entry.name.startswith("."):
                 continue
             try:
-                if entry.is_symlink() or (
+                if entry.is_symlink() or is_reparse(entry) or (
                         hasattr(entry, "is_junction") and entry.is_junction()):
                     skipped_links += 1
                     continue
@@ -286,9 +298,10 @@ def scan_directory(root_value: str, *, env=None, recursive: bool = True,
                    include_hidden: bool = False,
                    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
                    max_total_hash_bytes: int = DEFAULT_MAX_TOTAL_HASH_BYTES,
-                   dedupe_mode: str = "perceptual") -> dict:
+                   dedupe_mode: str = "perceptual", mode: str = "read",
+                   cache: bool = True) -> dict:
     """只读扫描一个显式授权的本地根，返回文件清单与内容指纹。"""
-    root = pathguard.resolve_media_path(root_value, env=env)
+    root = pathguard.resolve_media_path(root_value, env=env, mode=mode)
     max_files = _bounded_int(max_files, "maxFiles", 1, HARD_MAX_FILES, DEFAULT_MAX_FILES)
     max_depth = _bounded_int(max_depth, "maxDepth", 0, HARD_MAX_DEPTH, DEFAULT_MAX_DEPTH)
     perceptual_limit = _bounded_int(perceptual_limit, "perceptualLimit", 0,
@@ -343,7 +356,8 @@ def scan_directory(root_value: str, *, env=None, recursive: bool = True,
             record["hashStatus"] = "skipped_budget"
         else:
             try:
-                digest, hashed_bytes = pathguard.md5_file(path, max_bytes=max_file_bytes)
+                digest, hashed_bytes = pathguard.md5_file(path, max_bytes=max_file_bytes,
+                                                          root=root)
             except errors.ToolError:
                 record["hashStatus"] = "error"
             else:
@@ -352,7 +366,8 @@ def scan_directory(root_value: str, *, env=None, recursive: bool = True,
                 record["hashStatus"] = "ok" if digest else "skipped_size"
         if kind in ("image", "video") and perceptual_limit > 0 and \
                 perceptual_used < perceptual_limit:
-            record["perceptual"] = _perceptual(ffmpeg, ffprobe, path, kind, env=env)
+            record["perceptual"] = _perceptual(ffmpeg, ffprobe, path, kind,
+                                               env=env, cache=cache)
             record["perceptualStatus"] = record["perceptual"].get("status", "error")
             record["dimensions"] = record["perceptual"].get("dimensions")
             record["durationMs"] = record["perceptual"].get("durationMs")
@@ -684,7 +699,7 @@ def _validate_scan(payload: dict) -> dict:
     }
 
 
-def build_scan_plan(payload: dict, *, env=None) -> dict:
+def build_scan_plan(payload: dict, *, env=None, cache: bool = True) -> dict:
     """从 scan 输入生成只读内容对齐计划（不含绝对路径）。"""
     options = _validate_scan(payload)
     source = scan_directory(
@@ -694,7 +709,7 @@ def build_scan_plan(payload: dict, *, env=None) -> dict:
         include_hidden=options["includeHidden"],
         max_file_bytes=options["maxFileBytes"],
         max_total_hash_bytes=options["maxTotalHashBytes"],
-        dedupe_mode=options["dedupeMode"],
+        dedupe_mode=options["dedupeMode"], cache=cache,
     )
     target = None
     if options["targetRoot"]:
@@ -705,7 +720,7 @@ def build_scan_plan(payload: dict, *, env=None) -> dict:
             include_hidden=options["includeHidden"],
             max_file_bytes=options["maxFileBytes"],
             max_total_hash_bytes=options["maxTotalHashBytes"],
-            dedupe_mode=options["dedupeMode"],
+            dedupe_mode=options["dedupeMode"], cache=cache,
         )
     duplicates = _duplicate_groups(source["files"], options["dedupeMode"])
     if target is not None:

@@ -85,7 +85,7 @@ class RulepackCapabilityTest(unittest.TestCase):
         profile = pack["capabilities"]["write"]["author.profile.update"]
         self.assertEqual("implemented", profile["implementationStatus"])
         self.assertEqual("available", profile["apiStatus"])
-        self.assertEqual("2026-11-10.2", pack["rulepackVersion"])
+        self.assertEqual("2026-11-10.4", pack["rulepackVersion"])
         self.assertIn("mediaOrganize", pack)
         self.assertEqual(["media.organize.prepare", "media.organize.apply"],
                          pack["mediaOrganize"]["tools"])
@@ -357,7 +357,8 @@ class MediaScanTest(unittest.TestCase):
                     "media.organize.prepare",
                     {"scan": {"root": outside, "perceptualLimit": 0}},
                     env=env, config=config)
-            self.assertEqual("INVALID_INPUT", caught.exception.code)
+            # 未授权路径按本地执行域统一策略返回更精确的 permission 类错误。
+            self.assertEqual("PATH_NOT_AUTHORIZED", caught.exception.code)
 
     def test_scan_can_read_library_root_path(self):
         with temp_dir_context() as root:

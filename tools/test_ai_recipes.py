@@ -209,8 +209,19 @@ class McpDomainFilterTests(unittest.TestCase):
     def test_domain_filter_limits_visible_tools(self):
         server = mcp_server.McpServer(env={"QIMENG_AI_MCP_DOMAINS": "author"})
         visible = server._visible_tools()
+        ids = {spec.id for spec in visible}
         self.assertTrue(visible)
-        self.assertTrue(all(spec.domain == "author" for spec in visible))
+        # 业务工具按领域收窄；安全发现元工具（platform.* 与 files.storages）始终可见，
+        # 否则 MCP 客户端在过滤后无法读取上下文/规则。它们不扩大执行权限。
+        self.assertTrue(all(spec.domain == "author" or spec.id.startswith("platform.")
+                            or spec.id == "files.storages" for spec in visible))
+        self.assertIn("author.query", ids)
+        self.assertIn("platform.catalog", ids)
+        self.assertIn("platform.context", ids)
+        self.assertIn("platform.rules", ids)
+        self.assertIn("files.storages", ids)
+        self.assertNotIn("files.search", ids)
+        self.assertNotIn("media.organize.prepare", ids)
         unfiltered = mcp_server.McpServer(env={})._visible_tools()
         self.assertGreater(len(unfiltered), len(visible))
 
@@ -295,7 +306,7 @@ class MediaPrimitiveTests(unittest.TestCase):
         self.assertEqual("hello", target.read_text(encoding="utf-8"))
         again = recipes._primitive_media_transfer(
             {"items": [{"source": str(source), "target": str(target)}]}, ctx)
-        self.assertEqual("partial", again["status"])
+        self.assertEqual("failed", again["status"])
         self.assertEqual("TARGET_EXISTS", again["failed"][0]["code"])
 
     def test_contact_sheet_renders_labeled_grid(self):

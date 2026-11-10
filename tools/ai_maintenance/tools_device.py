@@ -112,8 +112,9 @@ def _expected_state(payload: dict) -> dict:
 def _segment(ctx: ToolContext, kind: str, path_value, expected_readback) -> tuple:
     limit = KIND_LIMITS[kind]
     path = pathguard.resolve_local_path(path_value, env=ctx.env, must_exist=True,
-                                       kind=KIND_PATHS[kind])
-    sha256, size = pathguard.sha256_file(path)
+                                       kind=KIND_PATHS[kind], mode="read")
+    root = pathguard.root_for_path(path, mode="read", env=ctx.env)
+    sha256, size = pathguard.sha256_file(path, root=root)
     if size == 0:
         raise errors.invalid_input(f"{KIND_PATHS[kind]} 是空文件")
     if size > limit:
@@ -276,8 +277,9 @@ def _verified_manifest_and_files(ctx: ToolContext, plan: dict) -> tuple[dict, li
         if not isinstance(entry, dict):
             raise errors.plan_invalid("计划 files 条目必须是对象")
         path = pathguard.resolve_local_path(entry.get("path"), env=ctx.env,
-                                            must_exist=True, kind="源文件")
-        sha256, size = pathguard.sha256_file(path)
+                                            must_exist=True, kind="源文件", mode="read")
+        root = pathguard.root_for_path(path, mode="read", env=ctx.env)
+        sha256, size = pathguard.sha256_file(path, root=root)
         if sha256 != entry.get("sha256") or size != entry.get("bytes"):
             raise errors.precondition_failed(
                 "结果包源文件在 prepare 后发生变化，拒绝登记",
