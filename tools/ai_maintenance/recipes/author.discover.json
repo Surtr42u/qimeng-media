@@ -117,6 +117,16 @@
       "input": {"name": "$inputs.nameHint", "size": 1000}
     },
     {
+      "id": "confirmCreate",
+      "gate": true,
+      "message": "核对搜索结果、查重结果与作者身份；确认后才新建作者行（新建本身不写 TXT/不关联文件）",
+      "when": {"and": [
+        {"notEmpty": "$inputs.nameHint"},
+        {"empty": "$inputs.existingAuthorId"},
+        {"empty": "$steps.lookup.output"}
+      ]}
+    },
+    {
       "id": "create",
       "tool": "author.create",
       "note": "仅当查重为空且没有现有 ID 时按名新建作者行",
@@ -127,8 +137,7 @@
         {"empty": "$steps.lookup.output"}
       ]},
       "input": {
-        "displayName": "$inputs.nameHint",
-        "confirm": true
+        "displayName": "$inputs.nameHint"
       }
     },
     {
@@ -186,6 +195,12 @@
         "authorIds": ["$steps.resolveAuthor.output.value"],
         "evidence": "$inputs.evidence"
       }
+    },
+    {
+      "id": "confirmAsset",
+      "gate": true,
+      "message": "核对资产与作者关联计划（是否要挂靠、是否替换现有作者）；确认后才整体替换",
+      "when": {"notEmpty": "$steps.assetPrepare.output.plan"}
     },
     {
       "id": "assetApply",
