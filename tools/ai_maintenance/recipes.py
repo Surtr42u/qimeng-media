@@ -698,7 +698,17 @@ def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
             )
         return output
     primitive = PRIMITIVES[step["primitive"]]
-    return primitive(payload, ctx)
+    try:
+        return primitive(payload, ctx)
+    except (RecipeError, errors.ToolError):
+        raise
+    except Exception as exc:  # noqa: BLE001 - 原语错误必须转成 recipe 结构化失败
+        raise RecipeError(
+            "原语执行失败：" + type(exc).__name__,
+            code=str(getattr(exc, "code", "") or "RECIPE_STEP_FAILED"),
+            details={"step": step["id"], "error": type(exc).__name__,
+                     "message": str(exc)[:300]},
+        ) from None
 
 
 def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,

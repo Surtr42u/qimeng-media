@@ -176,6 +176,24 @@ class RecipeRunnerTests(unittest.TestCase):
         self.assertEqual([], self.calls)
         self.assertTrue(all(item["status"] == "planned" for item in result["steps"]))
 
+    def test_primitive_error_is_wrapped(self):
+        recipe = {
+            "schemaVersion": 1,
+            "id": "test.adb",
+            "version": "1.0.0",
+            "title": "adb 原语错误",
+            "whenToUse": "测试",
+            "requires": [],
+            "inputs": {"type": "object", "properties": {}},
+            "steps": [{"id": "info", "primitive": "device.info", "input": {}}],
+        }
+        (self.recipe_dir / "test.adb.json").write_text(
+            json.dumps(recipe, ensure_ascii=False), encoding="utf-8")
+        with self.assertRaises(recipes.RecipeError) as caught:
+            recipes.run_recipe("test.adb", {}, env=self.env,
+                               state_dir=str(Path(self.temp.name) / "adb"))
+        self.assertIn(caught.exception.code, ("ADB_SERIAL_REQUIRED", "ADB_NOT_FOUND"))
+
     def test_missing_capability_fails_before_steps(self):
         self.recipe["requires"] = ["adbDevice"]
         (self.recipe_dir / "test.flow.json").write_text(
