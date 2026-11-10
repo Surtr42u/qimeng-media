@@ -24,6 +24,22 @@ MAX_RULE_SECTIONS = 10
 PLAYBOOK_LIMIT = 8000
 PLAYBOOK_LIST_LIMIT = 20000
 AVAILABLE_DOMAINS = tuple(item["id"] for item in registry.DOMAINS)
+CONTEXT_DEFAULT_TOOLS = 12
+CONTEXT_MAX_TOOLS = 24
+CONTEXT_RULES_LIMIT = 12000
+CONTEXT_SCHEMA_DEPTH = 2
+CONTEXT_AVAILABLE_TASKS = 40
+
+# 任务别名：让外部 AI 用业务语言（backup.sync 等）找到同一组工具/模板。
+TASK_ALIASES: dict = {
+    "backup.sync": {"playbook": "device.apply", "extraTools": ("backup.export",)},
+    "device.sync": {"playbook": "device.apply"},
+    "maintenance.jobs": {"playbook": "maintenance.jobs"},
+    "media.batch": {"playbook": "media.organize"},
+    "media.organize": {"playbook": "media.organize"},
+    "author.cleanup": {"playbook": "author.cleanup"},
+    "author.profile": {"playbook": "author.profile"},
+}
 
 
 def _disabled_reason(ctx, tool_id: str) -> str:
@@ -237,4 +253,259 @@ def platform_playbook(ctx, payload: dict) -> dict:
         "playbooks": rows,
         "availablePlaybooks": sorted(playbooks.keys()),
         "note": "按领域列出可选工作流模板；基础工具可自由组合，不要求按模板执行。",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# platform.context：按任务/领域加载相关工具、Schema 摘要、规则节与 playbook
+# --------------------------------------------------------------------------- #
+
+
+def _schema_summary(schema, depth: int = CONTEXT_SCHEMA_DEPTH) -> dict:
+    """有界 Schema 摘要（属性名/类型/必填/枚举），不返回完整嵌套 Schema。"""
+    if not isinstance(schema, dict):
+        return {"type": type(schema).__name__}
+    summary: dict = {}
+    for key in ("type", "enum", "default", "minLength", "maxLength",
+                "minimum", "maximum", "minItems", "maxItems", "pattern"):
+        if key in schema:
+            summary[key] = schema[key]
+    if isinstance(schema.get("description"), str):
+        summary["description"] = schema["description"][:200]
+    required = schema.get("required")
+    if isinstance(required, list):
+        summary["required"] = required[:30]
+    properties = schema.get("properties")
+    if isinstance(properties, dict) and depth > 0:
+        summary["properties"] = {
+            name: _schema_summary(value, depth - 1)
+            for name, value in list(properties.items())[:30]
+        }
+    items = schema.get("items")
+    if isinstance(items, dict) and depth > 0:
+        summary["items"] = _schema_summary(items, depth - 1)
+    if "additionalProperties" in schema:
+        summary["additionalProperties"] = schema["additionalProperties"]
+    return summary
+
+
+def _resolve_context_task(task, domain, playbooks: dict):
+    """解析 task/domain，返回 (tool_ids, playbook_name, target_domain, matched_by)。"""
+    tool_ids: list[str] = []
+    playbook_name = ""
+    target_domain = ""
+    matched_by = ""
+    if isinstance(task, str) and task:
+        if task in playbooks:
+            playbook_name = task
+            matched_by = "playbook"
+        elif task in AVAILABLE_DOMAINS:
+            target_domain = task
+            matched_by = "domain"
+        elif registry.get(task) is not None:
+            tool_ids = [task]
+            matched_by = "tool"
+            for name, playbook in playbooks.items():
+                if isinstance(playbook, dict) and task in (playbook.get("baseTools") or []):
+                    playbook_name = name
+                    break
+        else:
+            alias = TASK_ALIASES.get(task)
+            if isinstance(alias, dict):
+                playbook_name = str(alias.get("playbook") or "")
+                tool_ids = [str(item) for item in alias.get("extraTools") or ()]
+                matched_by = "alias"
+            else:
+                matches = [spec.id for spec in registry.TOOLS
+                           if spec.id == task or spec.id.startswith(task + ".")]
+                if matches:
+                    tool_ids = matches
+                    matched_by = "tool-prefix"
+    if playbook_name:
+        playbook = playbooks.get(playbook_name)
+        if not isinstance(playbook, dict):
+            raise errors.invalid_input("未知 playbook：" + playbook_name,
+                                       details={"availablePlaybooks": sorted(playbooks.keys())})
+        target_domain = str(playbook.get("domain") or "")
+        for item in playbook.get("baseTools") or []:
+            if isinstance(item, str) and registry.get(item) is not None and item not in tool_ids:
+                tool_ids.append(item)
+    if isinstance(domain, str) and domain:
+        if domain not in AVAILABLE_DOMAINS:
+            raise errors.invalid_input("未知领域：" + domain,
+                                       details={"availableDomains": list(AVAILABLE_DOMAINS)})
+        if target_domain and target_domain != domain:
+            raise errors.invalid_input(
+                f"task 解析出的领域 {target_domain} 与 domain={domain} 不一致")
+        target_domain = domain
+        if not tool_ids:
+            tool_ids = [spec.id for spec in registry.TOOLS if spec.domain == domain]
+    if not tool_ids and not playbook_name and not target_domain:
+        raise errors.invalid_input(
+            "需要提供 task 或 domain（如 media.organize、author.cleanup、backup.sync）",
+            details={
+                "availableDomains": list(AVAILABLE_DOMAINS),
+                "availablePlaybooks": sorted(playbooks.keys()),
+                "aliases": sorted(TASK_ALIASES.keys()),
+            },
+        )
+    if not tool_ids and target_domain:
+        tool_ids = [spec.id for spec in registry.TOOLS if spec.domain == target_domain]
+    return tool_ids, playbook_name, target_domain, matched_by
+
+
+def _context_tool(ctx, spec, include_schemas: bool) -> dict:
+    status = registry.tool_status(spec, getattr(ctx, "document", None))
+    item = {
+        "id": spec.id,
+        "version": spec.version,
+        "domain": spec.domain,
+        "kind": spec.kind,
+        "summary": spec.description,
+        "status": status["status"],
+        "reason": status.get("reason", ""),
+        "permission": spec.permission,
+        "permissionDescription": registry.PERMISSIONS.get(spec.permission, ""),
+        "permitted": spec.permission in (getattr(ctx, "granted_permissions", frozenset()) or ()),
+        "readOnly": spec.read_only,
+        "sideEffects": spec.side_effects,
+        "requiresConfirmation": spec.requires_confirmation,
+        "confirmationMode": spec.confirmation_mode,
+        "timeoutSeconds": spec.timeout_seconds,
+        "network": spec.network,
+        "deprecated": bool(spec.deprecated),
+        "disabled": _disabled_reason(ctx, spec.id) != "",
+        "examples": [dict(example) for example in registry.TOOL_EXAMPLES.get(spec.id, ())],
+        "rulesRefs": list(registry.TOOL_RULES_REFS.get(spec.id, ())),
+    }
+    if include_schemas:
+        item["schemaSummary"] = {
+            "input": _schema_summary(spec.input_schema),
+            "output": _schema_summary(spec.output_schema),
+        }
+    item["goApiRequirements"] = [
+        {
+            "path": requirement.path,
+            "method": requirement.method.upper(),
+            "requestSchema": requirement.request_schema,
+            "requiredBodyFields": list(requirement.required_body_fields or ()),
+            "parameters": list(requirement.parameters or ()),
+        }
+        for requirement in spec.requirements
+    ]
+    return item
+
+
+def _context_rule_sections(tool_ids: list[str], playbook: dict | None,
+                           target_domain: str, rules: dict) -> list[str]:
+    sections: list[str] = []
+    if isinstance(playbook, dict) and isinstance(playbook.get("ruleSections"), list):
+        sections.extend(item for item in playbook["ruleSections"] if isinstance(item, str))
+    for tool_id in tool_ids:
+        sections.extend(registry.TOOL_RULES_REFS.get(tool_id, ()))
+    if target_domain:
+        sections.extend(registry.DOMAIN_RULE_SECTIONS.get(target_domain, ()))
+    ordered: list[str] = []
+    for name in sections:
+        if name in rules and name not in ordered:
+            ordered.append(name)
+    return ordered[:MAX_RULE_SECTIONS]
+
+
+def platform_context(ctx, payload: dict) -> dict:
+    """按任务/领域返回相关工具、Schema 摘要、规则节、playbook、示例与权限。
+
+    只返回相关子集；与 catalog/describe/rules/playbook 共用同一注册表与执行路径。
+    """
+    rules = getattr(ctx, "rules", None)
+    if not isinstance(rules, dict):
+        raise errors.configuration_error("当前上下文缺少规则源（rules.json 未加载）")
+    playbooks = rules.get("playbooks") if isinstance(rules.get("playbooks"), dict) else {}
+    task = payload.get("task")
+    domain = payload.get("domain")
+    if task is not None and (not isinstance(task, str) or not task.strip()):
+        raise errors.invalid_input("task 必须是非空字符串")
+    if task is None and not domain:
+        raise errors.invalid_input("需要提供 task 或 domain")
+    tool_ids, playbook_name, target_domain, matched_by = _resolve_context_task(
+        task.strip() if isinstance(task, str) else "", domain, playbooks)
+    include_schemas = payload.get("includeSchemas") is not False
+    max_tools = payload.get("maxTools")
+    if max_tools is None:
+        max_tools = CONTEXT_DEFAULT_TOOLS
+    if isinstance(max_tools, bool) or not isinstance(max_tools, int) or \
+            not 1 <= max_tools <= CONTEXT_MAX_TOOLS:
+        raise errors.invalid_input(f"maxTools 必须在 1..{CONTEXT_MAX_TOOLS}")
+    truncated_tools = tool_ids[max_tools:]
+    selected_ids = tool_ids[:max_tools]
+    tools = []
+    for tool_id in selected_ids:
+        spec = registry.get(tool_id)
+        if spec is None:
+            continue
+        tools.append(_context_tool(ctx, spec, include_schemas))
+    playbook = playbooks.get(playbook_name) if playbook_name else None
+    bounded_playbook = None
+    if isinstance(playbook, dict):
+        bounded = _bounded(playbook, PLAYBOOK_LIMIT)
+        bounded_playbook = {"name": playbook_name, **bounded} if isinstance(bounded, dict) else bounded
+    sections = _context_rule_sections(selected_ids, playbook if isinstance(playbook, dict) else None,
+                                      target_domain, rules)
+    selected_rules: dict = {}
+    used = 0
+    truncated_sections: list[str] = []
+    for name in sections:
+        excerpt = _bounded(rules[name])
+        size = len(json.dumps(excerpt, ensure_ascii=False))
+        if used + size > CONTEXT_RULES_LIMIT:
+            truncated_sections.append(name)
+            continue
+        selected_rules[name] = excerpt
+        used += size
+    permission_names = sorted({item["permission"] for item in tools})
+    guardrails = []
+    if isinstance(playbook, dict):
+        guardrails.extend(str(item) for item in playbook.get("guardrails") or ())
+    guardrails.extend([
+        "看见工具不等于有权执行：permitted=false 的工具必须由可信执行端先授权。",
+        "写入工具必须先 prepare、人工确认后带 confirm=true 与计划指纹执行，并回读。",
+        "不得把真实媒体、令牌或含个人信息的任务记录发送到外部模型上下文。",
+    ])
+    available_tasks = sorted(playbooks.keys())[:CONTEXT_AVAILABLE_TASKS]
+    return {
+        "platformVersion": versions.PLATFORM_VERSION,
+        "toolContractVersion": versions.TOOL_CONTRACT_VERSION,
+        "rulepackVersion": str(getattr(ctx, "rulepack_version", "") or ""),
+        "task": {
+            "input": task if isinstance(task, str) and task else None,
+            "domain": target_domain or None,
+            "matchedBy": matched_by,
+            "playbook": playbook_name or None,
+            "toolCount": len(tools),
+            "requestedToolCount": len(tool_ids),
+            "truncatedTools": truncated_tools[:CONTEXT_MAX_TOOLS],
+        },
+        "playbook": bounded_playbook,
+        "tools": tools,
+        "permissions": {
+            "declared": permission_names,
+            "granted": sorted(getattr(ctx, "granted_permissions", frozenset()) or ()),
+            "note": "permitted 只反映可信执行端授予；服务端仍按 AI 客户端 scope 强制校验。",
+        },
+        "rules": selected_rules,
+        "truncatedSections": truncated_sections,
+        "guardrails": guardrails,
+        "next": [item["id"] for item in tools if item.get("status") == "supported"][:max_tools],
+        "discovery": {
+            "catalog": "platform.catalog",
+            "describe": "platform.tool.describe",
+            "rules": "platform.rules",
+            "playbook": "platform.playbook",
+            "note": "platform.context 只返回相关子集；需要单个工具完整 Schema 时再调用 describe。",
+        },
+        "availableTasks": available_tasks,
+        "availableAliases": sorted(TASK_ALIASES.keys()),
+        "availableDomains": list(AVAILABLE_DOMAINS),
+        "disabledTools": sorted(getattr(ctx, "disabled_tools", frozenset()) or ()),
+        "readOnlyMode": bool(getattr(ctx, "read_only_mode", False)),
     }

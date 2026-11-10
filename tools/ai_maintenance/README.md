@@ -1,11 +1,12 @@
-# 绮梦影库 AI 工具平台（R3：查询、计划与受控写入）
+# 绮梦影库 AI 工具平台（R3+：查询、计划、受控写入与按需上下文）
 
 > 本目录是外部 AI 的**独立工具核心**：规则包 + 显式工具注册表 + 统一 CLI + 计划与
 > 受控写入 + stdio MCP 适配器。仅用 Python 3.13 标准库，不安装第三方依赖。
 >
-> 协议以 [api/openapi.yaml](../../api/openapi.yaml) 为准；现行执行清单见
+> 权威关系：协议以 [api/openapi.yaml](../../api/openapi.yaml) 为准；现行执行清单见
 > [统一任务书 V2](../../docs/AI_PLATFORM_TASKBOOK.md)，架构决策见
-> [ADR-0056](../../docs/adr/0056-独立AI接入平台架构.md)。旧
+> [ADR-0056](../../docs/adr/0056-独立AI接入平台架构.md)；本目录 `rules.json`
+> 是 AI 工具层唯一手写规则源。旧
 > [任务书](../../docs/AI_MAINTENANCE_TASKBOOK.md)只作历史需求与设计来源。
 
 ## 文件
@@ -30,7 +31,8 @@
 | `tools_trash.py` | trash.list / trash.restore（需确认 + 回读）。 |
 | `pathguard.py` | 写盘路径边界（绝对路径、仓库外或忽略工作根）与文件摘要。 |
 | `media_naming.py` | **组图命名纯规划/校验引擎**（作品索引、`(1)..(n)` 页码、计划指纹、`SerializedLocks`、回读报告）；ENGINE_VERSION=1.0.0。 |
-| `tools_media.py` | media.organize.prepare/apply 适配层：有界读目录现状、调用引擎、加锁逐步 move 并回读；缺失引擎时工具动态 planned。 |
+| `media_scan.py` | **媒体批次内容扫描（只读）**：md5/可选 dHash64/视频时长+分辨率+抽帧、最大文件去重候选、序号延顺建议、根目录对齐与 contact sheet 计划；SCAN_ENGINE_VERSION=1.0.0。 |
+| `tools_media.py` | media.organize.prepare 适配层：scan 模式调用内容扫描；libraryId+groups 模式调用命名引擎；apply 加锁逐步 move 并回读。 |
 | `profile_import.py` | 作者公开档案受控填充的**唯一写入实现**；旧脚本 `../import_creator_profiles.py` 只转发。 |
 | `rulepack.py` | 生成规则包（分离版本 + 工具状态 + 能力核对），稳定可比较。 |
 | `cli.py` | 统一入口：兼容旧只读子命令 + `version`/`tools`/`tool call`。 |
@@ -41,6 +43,7 @@
 | [test_ai_mcp.py](../test_ai_mcp.py) | 两个独立合成 MCP 客户端的协议、超时、取消与脱敏回归。 |
 | [test_media_naming.py](../test_media_naming.py) | 命名引擎纯函数回归（工作编号/页码/补图/缺页/锁/回读）。 |
 | [test_ai_platform_20261108.py](../test_ai_platform_20261108.py) | 外部 AI 工具平台回归（41 项）：备份 3MiB 流式落盘、设备 prepare/submit/status、执行器 200/204/409、研究 argv/边界/超时、回收站与标签。 |
+| [test_ai_platform_20261110.py](../test_ai_platform_20261110.py) | 规则漂移（endpoint+method+必需字段、apiStatus/实现状态分离）、`platform.context` 输出/权限/CLI+MCP 一致性、media.organize scan 的对齐/去重/序号/越界与 apply planned。 |
 
 生成物默认输出到 stdout；`--out` 写入文件。本目录 `.gitignore` 已忽略 `rulepack.json`；
 建议写到被忽略的 `build/ai-maintenance/`。
@@ -71,6 +74,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
 | `QIMENG_AI_LOCK_DIR` | 可选 | media.organize.apply 的命名锁目录（默认系统临时目录）；受限沙箱下可指向可写目录。 |
 | `QIMENG_AI_RESEARCH_DIR` | 可选 | research.* 与写盘工具的忽略工作根（默认 `tools/ai_maintenance/.work/research`，已加入 `.gitignore`）；必须是绝对路径。 |
+| `QIMENG_AI_MEDIA_ROOTS` | media.organize scan 必填 | 逗号/分号分隔的绝对路径：允许 `media.organize.prepare` scan 模式只读扫描的媒体/维护根。未配置时拒绝本地扫描；仓库内只允许忽略工作根。 |
 | `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/asset.write/asset.delete/trash.restore/media.organize/backup.export/device.apply/maintenance.execute/admin.maintenance 或 all）。未配置=授予全部已声明权限（兼容旧 CLI）；生产执行器应显式收窄。工具可见≠有权执行，execute_tool 在调用前强制检查。 |
 
 ```powershell
@@ -167,21 +171,30 @@ python -X utf8 tools/ai_maintenance/cli.py catalog
 python -X utf8 tools/ai_maintenance/cli.py catalog --domain author --json
 python -X utf8 tools/ai_maintenance/cli.py tools list --compact --json
 
-# 2) 按需取单个工具的完整 Schema/示例/规则摘录/Go API 依赖
+# 2) 按任务/领域一次取相关工具、Schema 摘要、规则节、playbook 与权限
+python -X utf8 tools/ai_maintenance/cli.py task-context --task media.organize
+python -X utf8 tools/ai_maintenance/cli.py task-context --task author.cleanup --no-schemas
+python -X utf8 tools/ai_maintenance/cli.py task-context --task backup.sync --max-tools 8
+
+# 3) 按需取单个工具的完整 Schema/示例/规则摘录/Go API 依赖
 python -X utf8 tools/ai_maintenance/cli.py tools show author.profile.prepare
 
-# 3) 按需读取规则节，不加载完整 rules.json
+# 4) 按需读取规则节，不加载完整 rules.json
 python -X utf8 tools/ai_maintenance/cli.py tool call platform.rules --input-json '{"sections":["mediaNaming","permissions"]}'
 
-# 4) 按需读取工作流模板（可选模板，不是唯一路径）
+# 5) 按需读取工作流模板（可选模板，不是唯一路径）
 python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 ```
 
 - 领域：author/media/research/backup/device/maintenance/system；目录按领域分组并给
   tools 扁平列表，toolCount/domains 由注册表实时计算。
-- 元工具 platform.catalog / platform.tool.describe / platform.rules / platform.playbook 与业务工具同一
-  dispatch、同一权限与禁用检查；MCP tools/list 仍返回完整工具清单（标准协议兼容），
-  客户端也可调用元工具做分类发现；descriptor 的 _meta.domain 便于客户端分组。
+- `platform.context` / `platform.catalog` / `platform.tool.describe` / `platform.rules` /
+  `platform.playbook` 与业务工具同一 dispatch、同一权限与禁用检查；MCP tools/list 仍返回
+  完整工具清单（标准协议兼容），客户端也可调用元工具做分类发现。
+- `platform.context` 只返回相关子集（默认最多 12 个工具），含工具版本、Schema 摘要、
+  规则节摘录、playbook、示例、`permitted`/副作用/确认要求；不返回全量 rules/tools。
+- 任务解析顺序：playbook 名 → 领域名 → 工具 ID/前缀 → 别名（`backup.sync` 等）；
+  无法解析返回 `INVALID_INPUT`，不猜测。
 - 惰性加载：注册表只保有 module:handler 引用，目录/状态计算不导入实现模块；首次
   执行/描述时才导入对应 tools_*.py / media_naming.py。实现模块缺失时工具状态为
   unavailable，执行返回 TOOL_NOT_IMPLEMENTED，不会假装成功。
@@ -219,7 +232,7 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 | `author.cleanup.apply` | supported（需确认） | 删除/改名/原子合并，逐项回读；失败保留已执行步骤。 |
 | `author.merge` | supported（需确认） | confirm=false 出计划；confirm=true 校验指纹后 POST /authors/merge。 |
 | `asset.authors.prepare` / `asset.authors.apply` | supported（apply 需确认） | 资产作者关联替换；校验库 `capabilities.authorAttach`。 |
-| `media.organize.prepare` / `media.organize.apply` | supported（apply 需确认） | 组图命名规划/校验/执行/回读；算法唯一实现 `media_naming.py`（随本发行物提供），prepare 只读计划、apply 校验计划指纹+前置文件名指纹+并发锁并逐步 move 后回读，服务端自动改名判失败。 |
+| `media.organize.prepare` / `media.organize.apply` | supported（apply 需确认） | 两种 prepare 模式：`scan` 只读内容扫描（md5/可选 dHash64/视频时长+分辨率+抽帧 → 对齐/最大文件去重/序号延顺/contact sheet 计划，扫描根需 `QIMENG_AI_MEDIA_ROOTS`）；`libraryId+groups` 生成组图命名计划。apply 只执行已绑定库的命名计划（计划指纹+前置文件名指纹+并发锁+逐步 move+回读），本地 scan 计划的受控合并仍为 planned。 |
 | `backup.export` | supported | `GET /export/qimeng-backup` 流式落盘：256KiB 分块写临时文件 + 原子改名，返回 `{path,bytes,sha256}`；默认拒绝覆盖，预算 128MiB/硬上限 256MiB。 |
 | `device.apply.prepare/submit/status` | supported | PC 侧结果包：prepare 只读出 manifest/指纹（masterTxt ≤1MiB、v2Backup ≤64MiB），submit 重新复核源文件后 multipart 登记并回读段清单，status 列表/详情。Android Worker/配对仍未实现。 |
 | `maintenance.claim` / `heartbeat` / `step.record` / `artifact.record` / `complete` | supported | 外部 AI 执行器控制面（ADR-0058）：领取租约/fencing token、续租、幂等步骤、工件元数据、终态回传；409 统一映射 `LEASE_LOST`。 |
@@ -227,7 +240,7 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 | `research.author.probe` / `research.media.probe` / `research.avatar.fetch` | supported | fxtwitter/kemono 公开字段、ffprobe 抽帧、头像下载；算法在 `../research_kit/`。 |
 | `trash.list` / `trash.restore` | supported | 回收站只读列表与恢复（需 confirm、前置检查与回读）。 |
 | `asset.trash` / `asset.tags.replace` | supported | 删除一律进回收站（回读 404）；标签整体替换（读详情出计划、确认指纹、回读）。 |
-| `platform.catalog` / `platform.tool.describe` / `platform.rules` / `platform.playbook` | supported | 精简领域目录、按需工具 Schema/示例/规则摘录、可选工作流模板（纯本地、只读；不写业务数据）。 |
+| `platform.context` / `platform.catalog` / `platform.tool.describe` / `platform.rules` / `platform.playbook` | supported | 按任务/领域取相关工具、Schema 摘要、规则节、示例与 playbook；精简领域目录；按需工具 Schema/示例/规则摘录；可选工作流模板（纯本地、只读；不写业务数据）。 |
 
 ## 计划与受控写入
 
@@ -285,11 +298,12 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - 不注册任意 shell/Python/文件执行工具；不新增写入通道；写工具仍走计划/确认/
   执行/回读。
 - token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
-- 工具分类发现：标准 `tools/list` 仍返回全部工具与 `inputSchema`；工具较多时客户端可先
-  调用 `platform.catalog`（精简领域目录），再 `platform.tool.describe` 取单个工具 Schema/
+- 工具分类发现：标准 `tools/list` 仍返回全部工具与 `inputSchema`；任务开始时客户端可先
+  调用 `platform.context`（task/domain）取相关工具、Schema 摘要、规则节与 playbook；工具较多时
+  再调用 `platform.catalog`（精简领域目录）与 `platform.tool.describe` 取单个工具 Schema/
   示例，用 `platform.rules` 按需读规则节、`platform.playbook` 读可选模板；descriptor 附带
   `_meta.domain` 便于分组展示。MCP 调用独立线程执行、有副作用工具串行，调用期间仍处理取消通知。
-- `initialize` 的 instructions 已提示“先 catalog 后 describe”的发现顺序与权限边界。
+- `initialize` 的 instructions 已提示“先 platform.context / catalog 后 describe”的发现顺序与权限边界。
 
 ### MCP 客户端配置示例（占位符，不含真实 token）
 
@@ -337,7 +351,7 @@ CLI/MCP 目录与完整 tools list 一致）。2026-11-08 批次另覆盖：备�
 capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 token 不落错误、
 研究 argv/路径边界/超时/缺失脚本、回收站与标签计划-确认-回读。全部使用合成数据与
 回环 stub；命名引擎自身另跑 `python -m unittest test_media_naming`。当前
-`test_ai_*.py` 全套 164 项通过（含新增 `test_ai_platform_20261108.py` 41 项）。
+`test_ai_*.py` 全套 180 项通过（含新增 `test_ai_platform_20261110.py` 16 项）。
 
 ## 备份导出、设备结果包与执行器控制面
 
@@ -402,6 +416,36 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
   stale 锁不自动删除；锁文件只写 pid/时间/引擎版本。
 - 本地受限沙箱若不能在新建目录写锁文件，请设 `QIMENG_AI_LOCK_DIR` 到可写目录；
   本地 apply 集成测试会把锁目录 patch 到工作区临时目录。
+
+## 媒体批次内容扫描（M71：根目录对齐/最大文件去重/序号延顺/拼图核验/受控合并）
+
+`media.organize.prepare` 的 `scan` 模式是**只读**内容扫描；命名执行仍走
+`libraryId+groups` 模式与 `media_naming.py`，不复制第二套命名算法。
+
+```powershell
+$env:QIMENG_AI_MEDIA_ROOTS = "<授权媒体根1>,<授权目标根2>"
+python -X utf8 tools/ai_maintenance/cli.py task-context --task media.organize
+python -X utf8 tools/ai_maintenance/cli.py tool call media.organize.prepare \
+  --input-json '{"scan":{"root":"<授权媒体根>","targetRoot":"<授权目标根>","perceptualLimit":100}}'
+```
+
+- 内容对齐：md5（精确）+ 图片 dHash64（ffmpeg 可选）+ 视频时长/分辨率/15·50·85%
+  抽帧；文件名只作来源/批次/序列线索，不作为同一内容的证据。
+- 去重：重复内容保留最大文件，其余只输出 `review_remove` 候选
+  （`requiresConfirmation=true`、`safety=no-auto-delete`）；SFW/NSFW、v1/v2、
+  P1/P2、4K/2K、voice/unblur 等变体不因感知相似互删；跨变体只有 md5 完全一致才
+  列为候选并标 `variantMismatch`。
+- 序号延顺：已有 `1 (1)..1 (3)` 时新变体建议 `1 (4)`；缺页保留、未确认不重排；
+  `suggestedPages` 只作建议，真正命名仍由命名引擎执行。
+- 根目录对齐：共同文件内容一致时 `suggestedCopies` 给出缺失项（本地 a b /
+  文件夹 a b c → 补 c）；内容不一致时 `mergeAllowed=false`、`conflicts` 以最大文件
+  为准并停止批量合并。
+- 拼图目检：`contactSheets` 按组给序号/文件名/页码标签，供生成带标签拼图后逐张
+  确认顺序/重复/变体。
+- 边界：scan 根必须在 `QIMENG_AI_MEDIA_ROOTS`（或仓库忽略工作根）内；路径规范化
+  后拒绝越界、`..`、盘符/UNC 与符号链接逃逸；扫描不写文件、不移动、不删除、不请求
+  业务写入 API。本地 scan 计划的受控合并仍为 planned（`apply.status=planned`）；
+  不得用脚本直接写 SQLite/TXT。
 
 ## 当前未实现（planned/未验证）
 

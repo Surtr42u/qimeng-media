@@ -13,14 +13,16 @@
 from __future__ import annotations
 
 # 工具包发行版本（语义化版本）。
-PLATFORM_VERSION = "1.1.0"
+PLATFORM_VERSION = "1.2.0"
 
 # 工具契约版本（工具 ID/Schema/错误语义）。
 # 1.1.0（2026-11-08）：新增外部执行器控制面、设备结果包、备份导出、研究工具族
 # 与回收站/标签工具，并新增 backup.export / device.apply / maintenance.execute /
-# trash.restore / asset.delete / asset.write 权限。工具 ID 与权限面扩展属于契约
-# 变化，旧计划必须用当前工具包重新 prepare（rulepackVersion 同步变化）。
-TOOL_CONTRACT_VERSION = "1.1.0"
+# trash.restore / asset.delete / asset.write 权限。
+# 1.2.0（2026-11-10）：新增 platform.context 元工具与 media.organize.prepare 的
+# scan 模式（只读内容对齐/去重/序号建议）；能力核对拆分 apiStatus 与实现状态。
+# 工具 ID 与权限面扩展属于契约变化，旧计划必须用当前工具包重新 prepare。
+TOOL_CONTRACT_VERSION = "1.2.0"
 
 # 规则包（rules.json 与生成物）的 Schema 版本。
 RULEPACK_SCHEMA_VERSION = 2
