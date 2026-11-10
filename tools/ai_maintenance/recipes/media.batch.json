@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "id": "media.batch",
+  "version": "1.0.0",
+  "title": "媒体批次：内容扫描 → 拼图目检 → 命名/关联 → 设备推送 → 回读",
+  "whenToUse": "收到一个本地媒体批次，需要按内容去重、补序号、拼图目检、命名入库或推送到手机时；先只读扫描，目检确认后才执行写入。",
+  "targets": ["pc", "nas", "android-embedded"],
+  "requires": [],
+  "permissions": ["read", "media.organize", "device.apply"],
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "scan": {
+        "type": "object",
+        "description": "media.organize.prepare scan 参数：root（或 libraryId）、targetRoot、dedupeMode、maxFiles 等"
+      },
+      "libraryId": {"type": "string", "description": "命名模式的目标库 ID（可选）"},
+      "directory": {"type": "string", "description": "命名模式库内目录（空=库根）"},
+      "groups": {
+        "type": "array",
+        "items": {"type": "object"},
+        "description": "命名模式候选分组（可选）"
+      },
+      "contactColumns": {"type": "integer", "minimum": 1, "maximum": 8, "default": 4},
+      "deviceRemoteDir": {
+        "type": "string",
+        "description": "可选：手机目标目录绝对 POSIX 路径（如 /storage/emulated/0/1/HHH/...）"
+      },
+      "deviceLocalPaths": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "可选：待推送文件的本地绝对路径"
+      },
+      "transferItems": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "source": {"type": "string"},
+            "target": {"type": "string"}
+          },
+          "required": ["source", "target"]
+        },
+        "description": "可选：按最终命名复制到库根的 items（source/target 绝对路径；只复制不删除，默认拒绝覆盖）"
+      }
+    },
+    "required": ["scan"]
+  },
+  "steps": [
+    {
+      "id": "scan",
+      "primitive": "media.scan",
+      "note": "只读内容扫描：md5+dHash64、最大文件去重、序号延顺、根目录对齐（不需 API）",
+      "when": {"notEmpty": "$inputs.scan"},
+      "input": {"scan": "$inputs.scan"}
+    },
+    {
+      "id": "contactSheets",
+      "primitive": "media.contact_sheet",
+      "note": "按组生成带序号/文件名标签的拼图，供人工目检",
+      "when": {"and": [
+        {"notEmpty": "$steps.scan.output.plan.contactSheets"},
+        {"notEmpty": "$inputs.scan.root"}
+      ]},
+      "input": {
+        "root": "$inputs.scan.root",
+        "sheets": "$steps.scan.output.plan.contactSheets",
+        "outDir": "$run.artifacts/contact-sheets",
+        "columns": "$inputs.contactColumns",
+        "title": "批次目检"
+      }
+    },
+    {
+      "id": "confirmReview",
+      "gate": true,
+      "message": "逐张检查拼图：顺序、重复、变体混入与缺页；确认扫描结论、transferItems 目标路径与覆盖风险后才继续"
+    },
+    {
+      "id": "namingPrepare",
+      "tool": "media.organize.prepare",
+      "note": "组图命名计划（可选）",
+      "when": {"and": [
+        {"notEmpty": "$inputs.libraryId"},
+        {"notEmpty": "$inputs.groups"}
+      ]},
+      "input": {
+        "libraryId": "$inputs.libraryId",
+        "directory": "$inputs.directory",
+        "groups": "$inputs.groups"
+      }
+    },
+    {
+      "id": "transfer",
+      "primitive": "media.transfer",
+      "note": "按最终命名复制到目标路径；sha256 回读，失败停止",
+      "when": {"notEmpty": "$inputs.transferItems"},
+      "input": {
+        "items": "$inputs.transferItems",
+        "overwrite": false
+      }
+    },
+    {
+      "id": "confirmNaming",
+      "gate": true,
+      "message": "核对命名计划的 work/page 编号、覆盖风险与目标目录；确认后才执行 move",
+      "when": {"notEmpty": "$steps.namingPrepare.output.plan"}
+    },
+    {
+      "id": "namingApply",
+      "tool": "media.organize.apply",
+      "note": "按已确认命名计划逐步 move 并回读",
+      "confirm": true,
+      "when": {"notEmpty": "$steps.namingPrepare.output.plan"},
+      "input": {"plan": "$steps.namingPrepare.output.plan", "confirm": true}
+    },
+    {
+      "id": "devicePush",
+      "primitive": "device.push",
+      "note": "显式指定真机后逐文件推送并回读字节数",
+      "when": {"and": [
+        {"notEmpty": "$inputs.deviceRemoteDir"},
+        {"notEmpty": "$inputs.deviceLocalPaths"}
+      ]},
+      "input": {
+        "localPaths": "$inputs.deviceLocalPaths",
+        "remoteDir": "$inputs.deviceRemoteDir"
+      }
+    },
+    {
+      "id": "verify",
+      "tool": "asset.query",
+      "note": "回读目标库资产（可选）",
+      "when": {"and": [
+        {"notEmpty": "$inputs.libraryId"},
+        {"truthy": "$run.capabilities.api"}
+      ]},
+      "input": {"libraryId": "$inputs.libraryId", "limit": 1}
+    }
+  ],
+  "artifacts": ["扫描计划", "拼图", "命名计划", "设备推送回执", "库回读"],
+  "readback": [
+    "扫描根与文件数/字节数符合预期",
+    "拼图未发现重复/错序/变体混入",
+    "命名计划 fingerprint 与执行前一致",
+    "设备推送字节数与本地一致"
+  ]
+}

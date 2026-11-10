@@ -118,9 +118,9 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(2, pack["schemaVersion"])
         self.assertNotIn("generatedAt", pack)
         self.assertEqual(hashlib.sha256(raw).hexdigest(), pack["openapiSha256"])
-        self.assertEqual("1.2.0", pack["platformVersion"])
-        self.assertEqual("1.2.0", pack["toolContractVersion"])
-        self.assertEqual("2026-11-10.1", pack["rulepackVersion"])
+        self.assertEqual("1.3.0", pack["platformVersion"])
+        self.assertEqual("1.3.0", pack["toolContractVersion"])
+        self.assertEqual("2026-11-10.2", pack["rulepackVersion"])
         self.assertEqual(pack["rulepackVersion"], pack["rulesVersion"])
         for known in (
             "/api/v1/healthz",

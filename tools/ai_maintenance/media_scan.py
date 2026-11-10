@@ -15,15 +15,13 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import errors, pathguard, plans
+from . import errors, media_primitives, pathguard, plans
 
 SCAN_ENGINE_VERSION = "1.0.0"
 SCAN_PLAN_VERSION = "content-scan/1"
@@ -233,99 +231,17 @@ def _tool_path(env, name: str) -> str:
     return shutil.which(name) or ""
 
 
-def _run_capture(argv: list[str], *, timeout: float = 15.0) -> tuple[int, bytes, str]:
-    try:
-        completed = subprocess.run(
-            argv, capture_output=True, timeout=timeout, check=False,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return -1, b"", type(exc).__name__
-    return completed.returncode, completed.stdout[:4096], ""
-
-
 def _probe_media(ffprobe: str, path: Path) -> dict:
-    if not ffprobe:
-        return {}
-    code, output, _error = _run_capture([
-        ffprobe, "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,duration:format=duration",
-        "-of", "json", str(path),
-    ])
-    if code != 0 or not output:
-        return {}
-    try:
-        data = json.loads(output.decode("utf-8", "replace"))
-    except ValueError:
-        return {}
-    stream = {}
-    streams = data.get("streams")
-    if isinstance(streams, list) and streams and isinstance(streams[0], dict):
-        stream = streams[0]
-    format_info = data.get("format") if isinstance(data.get("format"), dict) else {}
-    width = stream.get("width")
-    height = stream.get("height")
-    duration = stream.get("duration") or format_info.get("duration")
-    result: dict = {}
-    if isinstance(width, int) and width > 0 and isinstance(height, int) and height > 0:
-        result["dimensions"] = {"width": width, "height": height}
-    if duration not in (None, ""):
-        try:
-            result["durationMs"] = max(0, int(float(duration) * 1000))
-        except (TypeError, ValueError):
-            pass
-    return result
+    return media_primitives.probe_media(path, ffprobe)
 
 
-def _dhash_frame(ffmpeg: str, path: Path, *, seek_seconds: float | None = None) -> str | None:
-    if not ffmpeg:
-        return None
-    argv = [ffmpeg, "-v", "error", "-nostdin"]
-    if seek_seconds is not None:
-        argv.extend(["-ss", f"{max(0.0, seek_seconds):.3f}"])
-    argv.extend([
-        "-i", str(path), "-frames:v", "1",
-        "-vf", "scale=9:8:flags=area,format=gray",
-        "-f", "rawvideo", "-",
-    ])
-    code, output, _error = _run_capture(argv)
-    if code != 0 or len(output) < 72:
-        return None
-    pixels = output[:72]
-    value = 0
-    for row in range(8):
-        offset = row * 9
-        for column in range(8):
-            left = pixels[offset + column]
-            right = pixels[offset + column + 1]
-            value = (value << 1) | (1 if left > right else 0)
-    return f"{value:016x}"
-
-
-def _perceptual(ffmpeg: str, ffprobe: str, path: Path, kind: str) -> dict:
-    probe = _probe_media(ffprobe, path)
-    record: dict = {"status": "error", "hashKind": "dhash64", "frames": []}
-    if not ffmpeg:
+def _perceptual(ffmpeg: str, ffprobe: str, path: Path, kind: str, *, env=None) -> dict:
+    # 唯一实现在 media_primitives；按 (path,size,mtime,参数) 缓存，跨任务复用。
+    record = media_primitives.perceptual_record(path, kind, env=env, cache=True)
+    if not ffmpeg and record.get("status") == "ok":
+        record = dict(record)
         record["status"] = "unavailable"
         record["reason"] = "ffmpeg_not_found"
-        record.update(probe)
-        return record
-    duration_ms = probe.get("durationMs")
-    if kind == "video":
-        if isinstance(duration_ms, int) and duration_ms > 0:
-            seeks = [duration_ms * ratio / 1000.0 for ratio in (15, 50, 85)]
-        else:
-            seeks = [0.0]
-    else:
-        seeks = [None]
-    frames = []
-    for seek in seeks:
-        hashed = _dhash_frame(ffmpeg, path, seek_seconds=seek)
-        if hashed:
-            frames.append(hashed)
-    record.update(probe)
-    record["frames"] = frames
-    record["status"] = "ok" if frames else "error"
     return record
 
 
@@ -436,7 +352,7 @@ def scan_directory(root_value: str, *, env=None, recursive: bool = True,
                 record["hashStatus"] = "ok" if digest else "skipped_size"
         if kind in ("image", "video") and perceptual_limit > 0 and \
                 perceptual_used < perceptual_limit:
-            record["perceptual"] = _perceptual(ffmpeg, ffprobe, path, kind)
+            record["perceptual"] = _perceptual(ffmpeg, ffprobe, path, kind, env=env)
             record["perceptualStatus"] = record["perceptual"].get("status", "error")
             record["dimensions"] = record["perceptual"].get("dimensions")
             record["durationMs"] = record["perceptual"].get("durationMs")

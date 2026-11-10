@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "id": "author.discover",
+  "version": "1.0.0",
+  "title": "未知作者：识图/搜索 → 查重 → 新建 → 填档案 → 关联 → 回读",
+  "whenToUse": "发现一个未知作者或只有作品/昵称线索时；先识图与公开来源核验，查重后仍不存在才新建，按 candidate 写档案并人工确认。",
+  "targets": ["pc", "nas", "android-embedded"],
+  "requires": ["api"],
+  "permissions": ["read", "research", "author.profile.write", "asset.authors.write"],
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "nameHint": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "作者名/别名串（用于查重与新建；必填）"
+      },
+      "profileChanges": {
+        "type": "object",
+        "description": "按 AUTHOR_RESEARCH 证据整理的档案字段（nickname/biography/avatarUrl/homepageUrl/evidenceUrls/status/xProfile）"
+      },
+      "mediaPath": {
+        "type": "string",
+        "description": "可选：作品图片或视频绝对路径（用于抽帧 + Google Lens 识图）"
+      },
+      "frameDir": {
+        "type": "string",
+        "description": "可选：抽帧输出目录绝对路径"
+      },
+      "existingAuthorId": {
+        "type": "string",
+        "description": "可选：已确认的作者 ID；给出时优先复用，不再新建"
+      },
+      "assetId": {
+        "type": "string",
+        "description": "可选：需要关联的资产 ID"
+      },
+      "evidence": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {"type": "string", "maxLength": 2000},
+        "description": "研究与写入证据（URL 或来源描述）"
+      },
+      "avatarUrls": {
+        "type": "array",
+        "maxItems": 5,
+        "items": {"type": "string", "maxLength": 2000},
+        "description": "可选：候选头像 HTTPS URL（先下载校验 PNG/JPEG/GIF/WebP、≤2MiB，通过的 URL 再填入 profileChanges.avatarUrl）"
+      },
+      "allowProtectedOverwrite": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否允许覆盖人工已填档案字段（默认保护）"
+      }
+    },
+    "required": ["nameHint", "profileChanges"]
+  },
+  "steps": [
+    {
+      "id": "researchStatus",
+      "tool": "research.context",
+      "note": "读取 research.enabled 与 Lens sidecar 状态，决定是否执行识图/搜索",
+      "input": {}
+    },
+    {
+      "id": "probe",
+      "primitive": "media.probe",
+      "note": "媒体元数据 + dHash64 + 15/50/85% 抽帧（缓存）",
+      "when": {"notEmpty": "$inputs.mediaPath"},
+      "input": {
+        "path": "$inputs.mediaPath",
+        "frames": "15,50,85",
+        "frameDir": "$inputs.frameDir"
+      }
+    },
+    {
+      "id": "imageSearch",
+      "tool": "research.lens",
+      "note": "Google Lens 图片反查（仅当 Lens sidecar 可用）",
+      "when": {"and": [
+        {"notEmpty": "$steps.probe.output.frameFiles.frames.0.path"},
+        {"truthy": "$steps.researchStatus.output.enabled"},
+        {"truthy": "$steps.researchStatus.output.sidecar.available"}
+      ]},
+      "input": {"file": "$steps.probe.output.frameFiles.frames.0.path"}
+    },
+    {
+      "id": "webSearch",
+      "tool": "research.provider.query",
+      "note": "Bing 文字搜索线索（摘要只作发现，不单独当证据）",
+      "when": {"and": [
+        {"notEmpty": "$inputs.nameHint"},
+        {"truthy": "$steps.researchStatus.output.enabled"}
+      ]},
+      "input": {
+        "provider": "bing",
+        "operation": "search",
+        "target": "$inputs.nameHint",
+        "limit": 10
+      }
+    },
+    {
+      "id": "avatarFetch",
+      "tool": "research.avatar.fetch",
+      "note": "下载并校验候选头像；通过后把该 HTTPS URL 填入 profileChanges.avatarUrl",
+      "when": {"notEmpty": "$inputs.avatarUrls"},
+      "input": {
+        "urls": "$inputs.avatarUrls",
+        "outDir": "$run.artifacts/avatars"
+      }
+    },
+    {
+      "id": "lookup",
+      "tool": "author.query",
+      "note": "按显示名/ID 查重，命中则复用",
+      "when": {"notEmpty": "$inputs.nameHint"},
+      "input": {"name": "$inputs.nameHint", "size": 1000}
+    },
+    {
+      "id": "confirmCreate",
+      "gate": true,
+      "message": "核对搜索结果、查重结果与作者身份；确认后才新建作者行（新建本身不写 TXT/不关联文件）",
+      "when": {"and": [
+        {"notEmpty": "$inputs.nameHint"},
+        {"empty": "$inputs.existingAuthorId"},
+        {"empty": "$steps.lookup.output"}
+      ]}
+    },
+    {
+      "id": "create",
+      "tool": "author.create",
+      "note": "仅当查重为空且没有现有 ID 时按名新建作者行",
+      "confirm": true,
+      "when": {"and": [
+        {"notEmpty": "$inputs.nameHint"},
+        {"empty": "$inputs.existingAuthorId"},
+        {"empty": "$steps.lookup.output"}
+      ]},
+      "input": {
+        "displayName": "$inputs.nameHint"
+      }
+    },
+    {
+      "id": "resolveAuthor",
+      "primitive": "select.first",
+      "note": "已有 ID → 新建 ID → 查重第一条，取第一个非空",
+      "input": {
+        "values": [
+          "$inputs.existingAuthorId",
+          "$steps.create.output.authorId",
+          "$steps.lookup.output.0.id"
+        ]
+      }
+    },
+    {
+      "id": "profilePrepare",
+      "tool": "author.profile.prepare",
+      "note": "生成档案计划：默认 candidate，人工字段保护",
+      "when": {"notEmpty": "$steps.resolveAuthor.output.value"},
+      "input": {
+        "authorId": "$steps.resolveAuthor.output.value",
+        "changes": "$inputs.profileChanges",
+        "evidence": "$inputs.evidence",
+        "allowProtectedOverwrite": "$inputs.allowProtectedOverwrite",
+        "reason": "author.discover: 公开来源核验后建档"
+      }
+    },
+    {
+      "id": "confirmProfile",
+      "gate": true,
+      "message": "核对身份证据、主页、头像来源与 candidate/verified 判定；确认后才写入作者档案",
+      "when": {"notEmpty": "$steps.profilePrepare.output.plan"}
+    },
+    {
+      "id": "profileUpdate",
+      "tool": "author.profile.update",
+      "note": "按已确认计划写入并回读",
+      "confirm": true,
+      "when": {"notEmpty": "$steps.profilePrepare.output.plan"},
+      "input": {
+        "plan": "$steps.profilePrepare.output.plan",
+        "confirm": true
+      }
+    },
+    {
+      "id": "assetPrepare",
+      "tool": "asset.authors.prepare",
+      "note": "把作者关联到来源资产（可选）",
+      "when": {"and": [
+        {"notEmpty": "$inputs.assetId"},
+        {"notEmpty": "$steps.resolveAuthor.output.value"}
+      ]},
+      "input": {
+        "assetId": "$inputs.assetId",
+        "authorIds": ["$steps.resolveAuthor.output.value"],
+        "evidence": "$inputs.evidence"
+      }
+    },
+    {
+      "id": "confirmAsset",
+      "gate": true,
+      "message": "核对资产与作者关联计划（是否要挂靠、是否替换现有作者）；确认后才整体替换",
+      "when": {"notEmpty": "$steps.assetPrepare.output.plan"}
+    },
+    {
+      "id": "assetApply",
+      "tool": "asset.authors.apply",
+      "note": "按已确认计划整体替换资产作者关联",
+      "confirm": true,
+      "when": {"notEmpty": "$steps.assetPrepare.output.plan"},
+      "input": {
+        "plan": "$steps.assetPrepare.output.plan",
+        "confirm": true
+      }
+    },
+    {
+      "id": "readback",
+      "tool": "author.profile.read",
+      "note": "回读档案，确认 revision 与字段",
+      "when": {"notEmpty": "$steps.resolveAuthor.output.value"},
+      "input": {"authorId": "$steps.resolveAuthor.output.value"}
+    }
+  ],
+  "artifacts": ["识图/搜索证据", "作者档案计划", "档案回读", "资产关联计划"],
+  "readback": [
+    "作者 ID/显示名与身份证据一致",
+    "档案 revision 递增，candidate/verified 与证据匹配",
+    "资产关联包含目标作者且媒体文件未变"
+  ]
+}

@@ -106,7 +106,13 @@ def platform_catalog(ctx, payload: dict) -> dict:
         "domains": domain_rows,
         "tools": tools,
         "toolCount": len(tools),
+        "recipes": [
+            {"id": item["id"], "title": item["title"],
+             "requires": item.get("requires") or [], "targets": item.get("targets") or []}
+            for item in _recipe_map(ctx).values()
+        ],
         "discovery": {
+            "recipe": "platform.recipe（action=card 取 2–4KB 任务卡）",
             "describeTool": "platform.tool.describe",
             "rules": "platform.rules",
             "playbook": "platform.playbook",
@@ -289,14 +295,40 @@ def _schema_summary(schema, depth: int = CONTEXT_SCHEMA_DEPTH) -> dict:
     return summary
 
 
-def _resolve_context_task(task, domain, playbooks: dict):
+def _recipe_map(ctx) -> dict:
+    try:
+        from . import recipes
+        env = getattr(ctx, "env", None)
+        loaded = {}
+        for item in recipes.list_recipes(env):
+            if item.get("status") != "ok":
+                continue
+            try:
+                loaded[item["id"]] = recipes.get_recipe(item["id"], env)
+            except Exception:
+                continue
+        return loaded
+    except Exception:  # recipe 目录损坏不应让基础上下文不可用
+        return {}
+
+
+def _resolve_context_task(task, domain, playbooks: dict, recipe_map=None):
     """解析 task/domain，返回 (tool_ids, playbook_name, target_domain, matched_by)。"""
     tool_ids: list[str] = []
     playbook_name = ""
     target_domain = ""
     matched_by = ""
     if isinstance(task, str) and task:
-        if task in playbooks:
+        if recipe_map and task in recipe_map:
+            matched_by = "recipe"
+            recipe = recipe_map[task]
+            if isinstance(recipe, dict):
+                for step in recipe.get("steps") or []:
+                    tool_id = step.get("tool") if isinstance(step, dict) else None
+                    if isinstance(tool_id, str) and registry.get(tool_id) is not None \
+                            and tool_id not in tool_ids:
+                        tool_ids.append(tool_id)
+        elif task in playbooks:
             playbook_name = task
             matched_by = "playbook"
         elif task in AVAILABLE_DOMAINS:
@@ -354,8 +386,18 @@ def _resolve_context_task(task, domain, playbooks: dict):
     return tool_ids, playbook_name, target_domain, matched_by
 
 
-def _context_tool(ctx, spec, include_schemas: bool) -> dict:
+def _context_tool(ctx, spec, include_schemas: bool, compact: bool = False) -> dict:
     status = registry.tool_status(spec, getattr(ctx, "document", None))
+    if compact:
+        return {
+            "id": spec.id,
+            "version": spec.version,
+            "status": status["status"],
+            "summary": spec.description,
+            "permission": spec.permission,
+            "permitted": spec.permission in (getattr(ctx, "granted_permissions", frozenset()) or ()),
+            "requiresConfirmation": spec.requires_confirmation,
+        }
     item = {
         "id": spec.id,
         "version": spec.version,
@@ -427,9 +469,15 @@ def platform_context(ctx, payload: dict) -> dict:
         raise errors.invalid_input("task 必须是非空字符串")
     if task is None and not domain:
         raise errors.invalid_input("需要提供 task 或 domain")
+    recipe_map = _recipe_map(ctx)
     tool_ids, playbook_name, target_domain, matched_by = _resolve_context_task(
-        task.strip() if isinstance(task, str) else "", domain, playbooks)
-    include_schemas = payload.get("includeSchemas") is not False
+        task.strip() if isinstance(task, str) else "", domain, playbooks, recipe_map)
+    recipe_matched = matched_by == "recipe"
+    # recipe 任务卡已含步骤与输入；默认不再叠加工具 Schema/规则节，避免 40KB+ 上下文。
+    include_schemas = (payload.get("includeSchemas") is True) if recipe_matched \
+        else (payload.get("includeSchemas") is not False)
+    include_rules = (payload.get("includeRules") is True) if recipe_matched \
+        else (payload.get("includeRules") is not False)
     max_tools = payload.get("maxTools")
     if max_tools is None:
         max_tools = CONTEXT_DEFAULT_TOOLS
@@ -443,7 +491,14 @@ def platform_context(ctx, payload: dict) -> dict:
         spec = registry.get(tool_id)
         if spec is None:
             continue
-        tools.append(_context_tool(ctx, spec, include_schemas))
+        tools.append(_context_tool(ctx, spec, include_schemas, compact=recipe_matched))
+    recipe_card = None
+    if matched_by == "recipe" and isinstance(task, str):
+        try:
+            from . import recipes
+            recipe_card = recipes.task_card(task, getattr(ctx, "env", None))
+        except Exception:
+            recipe_card = None
     playbook = playbooks.get(playbook_name) if playbook_name else None
     bounded_playbook = None
     if isinstance(playbook, dict):
@@ -451,6 +506,8 @@ def platform_context(ctx, payload: dict) -> dict:
         bounded_playbook = {"name": playbook_name, **bounded} if isinstance(bounded, dict) else bounded
     sections = _context_rule_sections(selected_ids, playbook if isinstance(playbook, dict) else None,
                                       target_domain, rules)
+    if not include_rules:
+        sections = []
     selected_rules: dict = {}
     used = 0
     truncated_sections: list[str] = []
@@ -485,6 +542,7 @@ def platform_context(ctx, payload: dict) -> dict:
             "requestedToolCount": len(tool_ids),
             "truncatedTools": truncated_tools[:CONTEXT_MAX_TOOLS],
         },
+        "recipe": recipe_card,
         "playbook": bounded_playbook,
         "tools": tools,
         "permissions": {
@@ -501,9 +559,11 @@ def platform_context(ctx, payload: dict) -> dict:
             "describe": "platform.tool.describe",
             "rules": "platform.rules",
             "playbook": "platform.playbook",
+            "recipe": "platform.recipe",
             "note": "platform.context 只返回相关子集；需要单个工具完整 Schema 时再调用 describe。",
         },
         "availableTasks": available_tasks,
+        "availableRecipes": sorted(recipe_map.keys()),
         "availableAliases": sorted(TASK_ALIASES.keys()),
         "availableDomains": list(AVAILABLE_DOMAINS),
         "disabledTools": sorted(getattr(ctx, "disabled_tools", frozenset()) or ()),

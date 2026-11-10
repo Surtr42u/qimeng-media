@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "device.sync",
+  "version": "1.0.0",
+  "title": "手机结果包：导出备份 → 登记 → 人工确认 → 提交 → 查询",
+  "whenToUse": "需要把 PC 的作者主表/v2 备份同步到手机时；先导出与登记，确认后提交，手机侧领取/应用由 App 执行。",
+  "targets": ["pc", "nas", "android-embedded"],
+  "requires": ["api"],
+  "permissions": ["read", "backup.export", "device.apply"],
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "targetDeviceId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9._:-]{1,100}$",
+        "description": "目标设备标签（如 phone-main）"
+      },
+      "exportBackup": {"type": "boolean", "default": true},
+      "outPath": {"type": "string", "description": "v2 备份落盘绝对路径（exportBackup=true 时必填）"},
+      "masterTxtPath": {"type": "string", "description": "作者主表 TXT 绝对路径（可选）"},
+      "ttlSeconds": {"type": "integer", "minimum": 300, "maximum": 604800},
+      "expectedState": {
+        "type": "object",
+        "additionalProperties": {"type": "integer"},
+        "description": "应用后的权威业务计数（可选）"
+      }
+    },
+    "required": ["targetDeviceId"]
+  },
+  "steps": [
+    {
+      "id": "export",
+      "tool": "backup.export",
+      "note": "流式导出 v2 备份并返回 bytes/sha256",
+      "when": {"and": [
+        {"truthy": "$inputs.exportBackup"},
+        {"notEmpty": "$inputs.outPath"}
+      ]},
+      "input": {"outPath": "$inputs.outPath"}
+    },
+    {
+      "id": "prepare",
+      "tool": "device.apply.prepare",
+      "note": "计算段 bytes/sha256，生成 manifest 与计划指纹（不写服务端）",
+      "input": {
+        "targetDeviceId": "$inputs.targetDeviceId",
+        "masterTxtPath": "$inputs.masterTxtPath",
+        "v2BackupPath": "$steps.export.output.path",
+        "ttlSeconds": "$inputs.ttlSeconds",
+        "expectedState": "$inputs.expectedState"
+      }
+    },
+    {
+      "id": "confirmSubmit",
+      "gate": true,
+      "message": "核对段清单、目标设备与回读指标；确认后才登记结果包"
+    },
+    {
+      "id": "submit",
+      "tool": "device.apply.submit",
+      "note": "按计划 multipart 登记并回读",
+      "confirm": true,
+      "input": {"plan": "$steps.prepare.output.plan", "confirm": true}
+    },
+    {
+      "id": "status",
+      "tool": "device.apply.status",
+      "note": "查询目标设备最近的设备任务",
+      "input": {"targetDevice": "$inputs.targetDeviceId", "limit": 10}
+    }
+  ],
+  "artifacts": ["v2 备份", "结果包计划", "提交回执", "任务查询"],
+  "readback": [
+    "段 bytes/sha256 与 manifest 一致",
+    "任务 targetDevice/过期时间符合预期",
+    "手机侧领取/应用结果以服务端账本为准"
+  ]
+}

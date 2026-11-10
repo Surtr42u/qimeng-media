@@ -2,6 +2,12 @@
 
 测试/门禁只处理源码、文档或隔离合成数据，不访问8420真库。以下命令是工具用法；执行位置以 [AI_README_FIRST「验证与交付」](../AI_README_FIRST.md#验证与交付) 为准：自动构建/单测/基准走云端，本地允许文档静态检查和只读隐私扫描/hook。电脑隔离后端产物运行验证与历史只读运维的授权/证据见[HANDOVER](../docs/HANDOVER.md)，不通过API向真库写测试数据。
 
+## AI 工具平台任务卡与可执行 recipe
+
+外部 AI 的默认入口不是完整规则包，而是 2–4KB 任务卡：`qai task author.discover` / `qai task media.batch`。任务卡给出输入、步骤、工具/原语、人工门禁、产物与执行命令；执行 `qai run <recipe>` 时只读步骤先跑，遇到 gate 停下，人工核对产物后同一 `--state-dir` 带 `--yes` 通过下一个门禁（多门禁需逐级确认）。每步产物写入运行目录（JSON + sha256），模型只拿有界摘要。
+
+内置配方：未知作者 `author.discover`（抽帧/Google Lens → 搜索/查重 → author.create → candidate 档案 → 关联 → 回读）、已有作者 `author.profile`、媒体批次 `media.batch`、设备结果包 `device.sync`。原语唯一实现：抽帧/dHash/拼图/缓存在 `ai_maintenance/media_primitives.py`，ADB 显式真机在 `device_adb.py`，HTTP 在 `client.py`；禁止为单次任务另写临时脚本。详见 [AI 工具平台 README](ai_maintenance/README.md) 与 [统一任务书](../docs/AI_PLATFORM_TASKBOOK.md)。
+
 ## 虚拟UI预览
 
 UI虚拟数据与独立预览服务器固定维护在[ui-preview](ui-preview/README.md)，与真实库完全隔离；夹具可供人工预览和Web浏览器回归共同复用。云端产物、当前候选清单和截图固定放忽略的`build/ui-preview.local/`，不再为每次视觉调整复制一套测试数据。

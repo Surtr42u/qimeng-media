@@ -24,7 +24,7 @@ if __package__ in (None, ""):  # 支持 python tools/ai_maintenance/cli.py 直�
     __package__ = "ai_maintenance"
 
 from . import client as http_client
-from . import errors, execution, registry, rulepack, schema
+from . import errors, execution, recipes, registry, rulepack, schema
 from .client import (ApiClient, ConfigError, HTTPStatusError, LENS_CONTENT_TYPES,  # noqa: F401
                      LENS_TIMEOUT_SECONDS, MAX_RESPONSE_BYTES, NetworkError, NoRedirect,
                      REQUEST_TIMEOUT_SECONDS, ResponseError, TOKEN_MAX_LENGTH,
@@ -118,6 +118,36 @@ def build_parser() -> argparse.ArgumentParser:
     playbook.add_argument("--domain", metavar="DOMAIN", help="按领域筛选")
     playbook.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
     playbook.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
+
+    recipes_parser = sub.add_parser(
+        "recipes", help="可执行编排配方：list / show（默认只读，不加载完整规则包）",
+        parents=[json_parent])
+    recipes_sub = recipes_parser.add_subparsers(dest="recipes_command", required=True)
+    recipes_sub.add_parser("list", help="列出可用 recipe 与状态", parents=[json_parent])
+    recipes_show = recipes_sub.add_parser("show", help="查看单个 recipe 完整定义", parents=[json_parent])
+    recipes_show.add_argument("recipe_id", metavar="RECIPE_ID")
+
+    task = sub.add_parser(
+        "task", help="取 2–4KB 任务卡：步骤、工具、门禁、输入与执行命令（按需上下文入口）",
+        parents=[json_parent])
+    task.add_argument("recipe_id", metavar="RECIPE_ID")
+    task.add_argument("--target", metavar="TARGET",
+                      help="运行目标：pc / android-embedded / nas（默认 QIMENG_AI_TARGET 或 pc）")
+
+    run = sub.add_parser(
+        "run", help="执行 recipe：逐步执行、门禁、断点续跑与产物落盘",
+        parents=[json_parent])
+    run.add_argument("recipe_id", metavar="RECIPE_ID")
+    run.add_argument("--input-json", metavar="JSON", help="输入 JSON 对象；传 - 从 stdin 读取")
+    run.add_argument("--input-file", metavar="PATH", help="从文件读取输入 JSON（- 表示 stdin）")
+    run.add_argument("--state-dir", metavar="PATH", help="运行目录（续跑时传同一目录）")
+    run.add_argument("--yes", action="store_true", help="通过 recipe 的人工确认门（写入步骤）")
+    run.add_argument("--dry-run", action="store_true", help="只校验与计划，不调用工具/原语")
+    run.add_argument("--resume", action="store_true", help="从 state-dir 续跑已完成步骤")
+    run.add_argument("--target", metavar="TARGET",
+                     help="运行目标：pc / android-embedded / nas（默认 QIMENG_AI_TARGET 或 pc）")
+    run.add_argument("--openapi", metavar="PATH", help="覆盖 OpenAPI 路径（排障/验证）")
+    run.add_argument("--rules", metavar="PATH", help="覆盖 rules.json 路径（排障/验证）")
 
     tool = sub.add_parser("tool", help="通用工具调用（机器可读入口）")
     tool_sub = tool.add_subparsers(dest="tool_command", required=True)
@@ -373,6 +403,11 @@ def _print_json(value, stream) -> None:
     stream.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
 
+def _print_json_compact(value, stream) -> None:
+    # 任务卡/结果摘要面向模型上下文：紧凑 JSON，减少空白 token。
+    stream.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
 def _tool_envelope(spec, result) -> dict:
     return {
         "tool": spec.id,
@@ -558,6 +593,61 @@ def _run_tools(args, env) -> int:
     return 0
 
 
+def _run_recipes(args, env) -> int:
+    if args.recipes_command == "list":
+        _print_json({"recipes": recipes.list_recipes(env)}, sys.stdout)
+        return 0
+    _print_json({"recipe": recipes.get_recipe(args.recipe_id, env)}, sys.stdout)
+    return 0
+
+
+def _run_task(args, env) -> int:
+    merged = dict(env)
+    if getattr(args, "target", None):
+        merged["QIMENG_AI_TARGET"] = args.target
+    _print_json_compact({"card": recipes.task_card(args.recipe_id, merged)}, sys.stdout)
+    return 0
+
+
+def _run_recipe(args, env) -> int:
+    merged = dict(env)
+    if getattr(args, "target", None):
+        merged["QIMENG_AI_TARGET"] = args.target
+    if getattr(args, "input_json", None) is not None and getattr(args, "input_file", None) is not None:
+        raise UsageError("--input-json 与 --input-file 只能提供一个")
+    payload = {}
+    if getattr(args, "input_json", None) is not None:
+        raw = _read_stdin_text() if args.input_json == "-" else args.input_json
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            raise UsageError("输入不是合法 JSON") from None
+    elif getattr(args, "input_file", None) is not None:
+        try:
+            raw = (_read_stdin_text() if args.input_file == "-"
+                   else open(args.input_file, "r", encoding="utf-8").read())
+        except OSError:
+            raise UsageError("无法读取 --input-file") from None
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            raise UsageError("输入不是合法 JSON") from None
+    if not isinstance(payload, dict):
+        raise UsageError("recipe 输入必须是 JSON 对象")
+    config = _runtime_config(args, merged)
+    state_dir = args.state_dir
+    if state_dir:
+        from pathlib import Path
+        state_dir = str(Path(state_dir).resolve())
+    result = recipes.run_recipe(
+        args.recipe_id, payload, env=merged, state_dir=state_dir,
+        config=config, confirm=bool(args.yes), dry_run=bool(args.dry_run),
+        resume=bool(args.resume),
+    )
+    _print_json(result, sys.stdout)
+    return 0 if result.get("status") in ("completed", "awaiting_confirmation") else 1
+
+
 def _run_tool_call(args, env) -> int:
     payload = _tool_payload(args)
     config = _runtime_config(args, env)
@@ -614,6 +704,12 @@ def main(argv=None) -> int:
             return _run_task_context(args, env)
         if args.command == "playbook":
             return _run_playbook(args, env)
+        if args.command == "recipes":
+            return _run_recipes(args, env)
+        if args.command == "task":
+            return _run_task(args, env)
+        if args.command == "run":
+            return _run_recipe(args, env)
         if args.command == "tools":
             return _run_tools(args, env)
         if args.command == "tool":
@@ -628,6 +724,11 @@ def main(argv=None) -> int:
     except rulepack.RulepackError as exc:
         _print_json({"error": "rulepack_error", "message": str(exc)}, sys.stderr)
         return 2
+    except recipes.RecipeError as exc:
+        _print_json({"error": exc.code, "message": str(exc), "details": exc.details}, sys.stderr)
+        return 2 if exc.code in ("RECIPE_INPUT_INVALID", "RECIPE_INVALID", "RECIPE_UNKNOWN",
+                                 "RECIPE_CAPABILITY_MISSING", "RECIPE_CONFIRMATION_REQUIRED",
+                                 "RECIPE_TEMPLATE") else 1
     except errors.ToolError as exc:
         payload = _legacy_error_payload(exc) if args.command in (
             "health", "libraries", "assets", "authors", "author-profile",
