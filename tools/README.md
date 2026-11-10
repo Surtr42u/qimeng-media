@@ -79,6 +79,8 @@ Web CI 在 build/Vitest 后运行锁定 Playwright 的 Chromium 交互回归；�
 
 `test_windows_launcher.ps1` 只允许在 GitHub Actions 的 Windows runner 执行：把真实无头启动脚本复制到临时目录，编译无数据库的合成 HTTP 程序，检查冷启动就绪且控制台保持、重复调用显示 RUNNING 并只保留一个后端。运行前拒绝已占用端口，结束时仅清理本轮合成程序与启动器进程树；CI 的 Windows 文件操作 job 同批执行。不在开发机运行，不访问现用数据，也不把合成回归当本机 `.lnk` 双击验收。
 
+`ensure-listen-port.ps1` 是 Windows 启动前的监听端口预检（**PowerShell 7.1+ `pwsh` 必需**，无 5.1 回退），由根目录 `_server-common.cmd` 在拉起新服务前调用。默认检查 8420；设置 `QIMENG_LISTEN` 时检查其中端口且不修改变量。它识别 `Get-NetTCPConnection` 的已有 IPv4/IPv6 监听、`0.0.0.0` 绑定失败和 `netsh` 保留段；只有确认没有 WSL/Docker/Hyper-V 负载时才临时停止 `winnat`，否则只打印手动命令，绝不结束用户进程。退出码与排查见 [Windows 启动端口预检](../server/README.md#windows-启动端口预检)。`test_ensure_listen_port.ps1` 只用合成 `netsh` 文本验证保留段解析和 `QIMENG_LISTEN` 端口提取，不读取或修改本机保留段、服务或进程，随 Windows CI 用 `pwsh` 运行。
+
 `release_manifest.py` 校验本机服务端 `-version` 与当前 Git/发布版本身份，生成 schema/协议/SDK 锁及产物哈希清单，默认拒绝 dirty 正式交付；`--development` 仅记录工作区验证。`cold_backup.py create/verify/restore` 复用标准库复制/哈希，停写确认后创建副本并只恢复到不存在的目录。执行顺序、安全边界与命令见 [恢复与升级](../docs/RESTORE.md#ai-升级与回退执行清单)，均不自动部署或操作运行库。自测只使用合成临时目录。
 
 `migrate_backup_layout.py --root <维护根>` 只读核对旧三代维护目录，并仅在显式 `--apply` 时复制生成「当前/上次」两代布局（当前=旧最新，上次=旧「（上次）」；「（上上次）」只列入可清理清单）。默认 `--check` 输出 JSON 核对可读性与 `.sha256`；**绝不删除或移动**旧文件，目标已存在且内容不同时拒绝覆盖，退出码 0=通过（可含警告）/1=阻塞问题或复制失败/2=输入参数错误。迁移步骤、回退路径与旧 flat3 兼容见[作者镜像两代分代目录](../docs/api/authors.md#作者总表镜像的两代分代目录2026-11-07)，测试只用临时合成目录。

@@ -117,6 +117,9 @@ jobs:
       - name: 无头快捷启动回归（隔离合成程序，不访问真实库）
         working-directory: .
         run: ./tools/test_windows_launcher.ps1
+      - name: 监听端口预检回归（合成 netsh 文本，PowerShell 7.1+）
+        working-directory: .
+        run: pwsh -NoProfile -File ./tools/test_ensure_listen_port.ps1
 
   web:
     name: Web（tsc + build）
