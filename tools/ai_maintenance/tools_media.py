@@ -176,6 +176,51 @@ def _engine_call(module, label: str, call):
 
 
 def media_organize_prepare(ctx: ToolContext, payload: dict) -> dict:
+    if payload.get("scan") is not None:
+        # 本地内容扫描（M71）：只读对齐/去重/序号建议，不需要命名引擎，也不写业务数据。
+        from . import media_scan  # 局部导入：仅 scan 模式需要内容指纹模块
+        scan_payload = dict(payload)
+        scan = dict(payload.get("scan") or {})
+        root = scan.get("root")
+        library_id = scan.get("libraryId")
+        if root and library_id:
+            raise errors.invalid_input("scan.root 与 scan.libraryId 只能提供一个")
+        if library_id:
+            library_id = _library_id({"libraryId": library_id})
+            libraries = ctx.client.get("/api/v1/libraries") if ctx.client is not None else None
+            if not isinstance(libraries, list):
+                raise errors.internal_error("库列表响应不是数组")
+            library = next((item for item in libraries
+                            if isinstance(item, dict) and item.get("id") == library_id), None)
+            if not isinstance(library, dict):
+                raise errors.invalid_input("未找到指定库", details={"libraryId": library_id})
+            root_path = library.get("rootPath")
+            if not isinstance(root_path, str) or not root_path.strip():
+                raise errors.invalid_input("库没有可扫描的 rootPath",
+                                           details={"libraryId": library_id})
+            scan["root"] = root_path
+            scan_payload["scan"] = scan
+        try:
+            scan_plan = media_scan.build_scan_plan(scan_payload, env=ctx.env or {})
+        except errors.ToolError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise errors.internal_error("内容扫描失败") from exc
+        return {
+            "plan": scan_plan,
+            "diagnostics": {
+                "mode": "content-scan",
+                "engineVersion": media_scan.SCAN_ENGINE_VERSION,
+                "planStatus": scan_plan.get("status"),
+                "impact": scan_plan.get("impact"),
+                "suggestions": scan_plan.get("suggestions") or [],
+                "notices": [
+                    "内容扫描只读：不写文件、不移动、不删除、不请求业务写入 API。",
+                    "review_remove 只是候选，必须人工逐条确认；变体标记不同的文件不得互删。",
+                    "本地内容扫描的受控合并尚未实现（apply planned）；命名执行请用 libraryId+groups 模式。",
+                ],
+            },
+        }
     module = _require_engine()
     library_id = _library_id(payload)
     directory = _directory(payload)
@@ -228,6 +273,10 @@ def media_organize_apply(ctx: ToolContext, payload: dict) -> dict:
     plan = payload.get("plan")
     if not isinstance(plan, dict):
         raise errors.plan_invalid("plan 必须是对象")
+    if plan.get("mode") == "content-scan" or plan.get("schemaVersion") == "content-scan/1":
+        raise errors.tool_not_implemented(
+            "media.organize.apply",
+            "本地内容扫描计划为只读建议；受控合并尚未实现（apply planned）")
     if payload.get("confirm") is not True:
         raise errors.not_confirmed("media.organize.apply")
     target = plan.get("target") if isinstance(plan.get("target"), dict) else {}
