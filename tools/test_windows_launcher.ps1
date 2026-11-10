@@ -3,6 +3,11 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) { throw 'Only run in GitHub Actions' }
 if (Get-NetTCPConnection -LocalPort 8420 -State Listen -ErrorAction SilentlyContinue) { throw 'Runner test port is occupied' }
 $repoRoot = Split-Path -Parent $PSScriptRoot
+# 启动器不得自动唤起浏览器：用户明确禁止；此断言防止后续改动把 watcher 加回来。
+$launcherText = Get-Content -LiteralPath (Join-Path $repoRoot '_server-common.cmd') -Raw
+if ($launcherText -match "Start-Process 'http" -or $launcherText -match 'OPEN AUTOMATICALLY') {
+    throw 'Launcher must not auto-open a browser'
+}
 $fixtureRoot = Join-Path $env:RUNNER_TEMP ('qimeng-launcher-' + [guid]::NewGuid().ToString('N'))
 $fixtureServer = Join-Path $fixtureRoot 'server'
 $fixtureTools = Join-Path $fixtureRoot 'tools'

@@ -137,7 +137,7 @@ netsh interface ipv4 show excludedportrange protocol=tcp
 Get-Service winnat
 ```
 
-确认没有 WSL/Docker/Hyper-V 负载时，可在管理员 PowerShell 临时执行 `Stop-Service winnat -Force`，启动后端后再执行 `Start-Service winnat`。停止 `winnat` 会短暂中断 WSL2/Docker 的 NAT 网络；有活跃容器或发行版时脚本不会自动停止它。也可以设置 `QIMENG_LISTEN=:18420`（或 `127.0.0.1:18430` 仅本机）改用其他端口，预检会自动检查该端口；根启动 bat 的自动打开浏览器/就绪探测仍按 8420，使用其他端口时请自行访问对应地址或直接运行 `qimeng-server.exe`。
+确认没有 WSL/Docker/Hyper-V 负载时，可在管理员 PowerShell 临时执行 `Stop-Service winnat -Force`，启动后端后再执行 `Start-Service winnat`。停止 `winnat` 会短暂中断 WSL2/Docker 的 NAT 网络；有活跃容器或发行版时脚本不会自动停止它。也可以设置 `QIMENG_LISTEN=:18420`（或 `127.0.0.1:18430` 仅本机）改用其他端口，预检会自动检查该端口；**所有启动入口均不自动打开浏览器**，就绪探测仍按 8420，使用其他端口时请自行访问对应地址或直接运行 `qimeng-server.exe`。
 
 ## 规模与所有权审查
 

@@ -6,8 +6,8 @@ rem this file - env vars and the security-sensitive dev-mode line
 rem live HERE only (converged 2026-09-22; see REVIEW-20260922 4.1).
 rem
 rem Usage:   _server-common.cmd [console^|nobrowser^|desktop]
-rem   console   = visible window, banner + ready-to-copy LAN URLs,
-rem               auto-open browser once port 8420 answers.
+rem   console   = visible window, banner + ready-to-copy LAN URLs;
+rem               browser is opened manually (no auto-open).
 rem   nobrowser = visible backend console, no browser; a start
 rem               banner (timestamp + LAN URLs) is appended to
 rem               server\console.log, then server output appends
@@ -40,7 +40,7 @@ set DESKTOP_EXE=%~dp0desktop\src-tauri\target\release\qimeng-media-desktop.exe
 if /i "%~1"=="nobrowser" goto nobrowser
 if /i "%~1"=="desktop" goto desktop
 
-rem ---------------- console mode (browser launcher) ----------------
+rem ---------------- console mode (manual browser) ----------------
 title Qimeng Media Server
 
 echo ================================================================
@@ -50,8 +50,8 @@ echo.
 echo  Starting the installed cloud-built backend (please wait
 echo  until you see the JSON log line with "HTTP" below)
 echo.
-echo  The web UI will OPEN AUTOMATICALLY in your browser when
-echo  the server is ready - no need to start it separately.
+echo  The web UI will NOT open automatically. Open the address
+echo  below manually when the server is ready.
 echo.
 echo  -------- Ready-to-copy addresses --------
 echo    This PC : http://127.0.0.1:8420
@@ -71,15 +71,12 @@ echo  To stop the server: close this window (or press Ctrl+C)
 echo ================================================================
 echo.
 
-rem Watcher: silently wait until port 8420 is reachable (server started and
-rem listening), then open the web UI in your default browser automatically.
-rem Gives up after ~60s without opening anything (e.g. startup error).
+rem No browser auto-open in any mode: the operator opens the URL manually.
 call :ensure_binary
 if errorlevel 1 pause
 if errorlevel 1 exit /b 1
 call :ensure_listen_port
 if errorlevel 1 exit /b !errorlevel!
-start "" /min powershell -NoProfile -WindowStyle Hidden -Command "$ok=$false; for($i=0;$i -lt 120;$i++){try{$c=New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',8420); $c.Close(); $ok=$true; break}catch{Start-Sleep -m 500}}; if($ok){Start-Process 'http://127.0.0.1:8420'}"
 qimeng-server.exe
 pause
 exit /b 0
