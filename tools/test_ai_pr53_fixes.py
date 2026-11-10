@@ -251,9 +251,11 @@ class TransferSafetyTest(RecipeSafetyBase):
             ctx=recipes.RunContext(self.env, self.root / "run"))
         self.assertEqual("ok", result["status"])
         encoded = json.dumps(result, ensure_ascii=False)
-        self.assertNotIn(str(self.root), encoded)
+        # fileRef 源不回显绝对路径；target 是调用方显式提供的写目标，保留兼容字段。
+        self.assertNotIn(str(self.source_a), encoded)
         self.assertNotIn("source", result["copied"][0])
         self.assertEqual(metadata["fileRef"], result["copied"][0]["sourceFileRef"])
+        self.assertEqual("out-a.bin", result["copied"][0]["targetName"])
 
 
 class ProbeSideEffectTest(RecipeSafetyBase):
