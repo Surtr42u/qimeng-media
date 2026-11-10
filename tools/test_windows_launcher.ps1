@@ -4,8 +4,9 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) { throw 'Only run 
 if (Get-NetTCPConnection -LocalPort 8420 -State Listen -ErrorAction SilentlyContinue) { throw 'Runner test port is occupied' }
 $repoRoot = Split-Path -Parent $PSScriptRoot
 # 启动器不得自动唤起浏览器：用户明确禁止；此断言防止后续改动把 watcher 加回来。
+# 只查实际自动打开命令，不能匹配“不会自动打开”的说明文字（-match 不区分大小写）。
 $launcherText = Get-Content -LiteralPath (Join-Path $repoRoot '_server-common.cmd') -Raw
-if ($launcherText -match "Start-Process 'http" -or $launcherText -match 'OPEN AUTOMATICALLY') {
+if ($launcherText -match "Start-Process 'http") {
     throw 'Launcher must not auto-open a browser'
 }
 $fixtureRoot = Join-Path $env:RUNNER_TEMP ('qimeng-launcher-' + [guid]::NewGuid().ToString('N'))
