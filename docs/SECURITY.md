@@ -219,7 +219,7 @@ Android 持久上传任务在入队固化服务器 base URL；分片会话把手
 
 ## 依赖与供应链
 
-本次作者公开资料增加 HTTPS 出站后，云端安全门禁确认现有 Go 1.27.2 命中 [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) 的证书验证问题；工具链最低版本提高到官方修复版本 1.27.3，各云端构建继续读取 go.mod，不关闭或忽略扫描。仅补丁版本修复，不扩展为依赖批量升级。
+云端安全门禁先后确认 Go 1.27.2 命中 [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)（证书验证）与 1.27.3 命中 [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859)（net/http）；工具链最低版本按官方修复版本依次提升，当前为 1.27.4。各云端构建继续读取 go.mod，不关闭或忽略扫描；仅补丁版本修复，不扩展为依赖批量升级。
 
 - 日常 PC 更新由 build-pc.yml 云端生成 Windows 服务端、Web 与逐文件发布清单；AI 核对来源提交的完整门禁、artifact 摘要和清单哈希后部署，不包含或上传用户配置与数据。日常启动链只运行已安装程序，不再本地编译；该出包通道不自动部署、不替代完整门禁，操作与兼容边界见 deploy/README 和 RESTORE。
 - PHP 风险适用性（2026-10-22）：[php2shell-checker](https://github.com/openai/php2shell-checker) 只依据 PHP 版本判断补丁状态，隐藏版本返回 UNKNOWN，不能用没有 PHP 响应头证明安全。本项目服务端为 Go，Web 为静态 React，Android 内嵌 Go 与 ffmpeg/ffprobe；源码、依赖及部署定义没有 PHP/PHP-FPM/FastCGI 运行链，媒体上传白名单不接受 PHP，故当前交付形态不适用该 PHP 风险。此结论不覆盖宿主上其他 PHP 应用、未来另加的 PHP 代理或其他类型漏洞；引入这些组件须重新核对。

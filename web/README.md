@@ -61,6 +61,8 @@ PWA 图标生成器 2.x 与 vite-plugin-pwa 2.x 配套升级；后者的 peer �
 
 shadcn/ui 组件及 components.json 保留；将唯一被构建消费的 dist/tailwind.css 按 shadcn@4.22.1 原样保存在 src/styles/shadcn-base.css（带原 SHA-256 与上游 MIT 许可），移除其 CLI 开发依赖，消除其 fast-glob/ts-morph/braces 漏洞链，避免无补丁传递依赖长期阻断安全门禁。现有组件和样式保持原实现，不自研替代；上游提供独立且可审计的样式包时复查并退役此快照。需要重新生成组件时先评估并固定已通过审计的 CLI，不执行未锁版本的在线命令。生成器链固定的旧 js-yaml 用 overrides 提升到 4.3.2，依据 [上游安全补丁](https://github.com/nodeca/js-yaml/releases/tag/4.3.2)；父包解除固定后复查并移除覆盖。协议仍用既定 openapi-ts 版本，不按 npm force 建议回退主版本。扫描结果及边界见 HANDOVER。
 
+本轮处理默认分支 Dependabot 告警：[minimatch GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) 与 [deepmerge GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)（CVE-2026-93753）。workbox-build 固定的 glob 11 依赖受影响 minimatch 10；按上游配套关系用 overrides 将 glob 升至 14.0.4（依赖 minimatch ^11.0.5，锁到 11.0.7）。实测只把 minimatch 覆盖到 11 而保留 glob 11 会让 PWA 预缓存匹配为空（96→0 项），不可采用。deepmerge 无上游补丁版本且维护者拒绝修复，采用 `vendor/deepmerge` 回移植 [PR #274](https://github.com/TehShrike/deepmerge/pull/274) 的 `__proto__` 守卫（本地版本 4.3.2），经 workspaces 链接进依赖树，来源/许可/退役条件见该目录 README，knip 忽略该工作区。两者均属开发/构建链，不改应用运行时依赖与接口；验证 npm ci、SDK 生成、knip、tsc/build、vitest 391 项，修复后 `dist/sw.js` 与修复前干净构建逐字节一致，npm audit 0；Playwright 浏览器用例未在本地运行，Dependabot 告警状态需默认分支收到提交后更新。
+
 ## 维护仪表盘
 
 维护页使用紧凑概览：服务端运行时长、接收/发送小趋势、CPU小圆环、内存与存储条、文件管理/回收站、上传/异常快捷入口。流量卡显示近两分钟趋势、峰值、累计与采样点提示；重复的完整网络图已移除。客户端异常表继续常驻，服务器目录自动导入移入上传页高级入口。颜色/玻璃材质仍消费既有 token，不新增主题或运行时依赖，不改 TopBar/桌面窗口契约。

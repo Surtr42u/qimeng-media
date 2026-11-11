@@ -1,0 +1,13 @@
+{
+  "name": "deepmerge",
+  "version": "4.3.2",
+  "description": "deepmerge 4.3.1 with the __proto__ guard backported from upstream PR #274",
+  "main": "dist/cjs.js",
+  "types": "index.d.ts",
+  "files": [
+    "dist/cjs.js",
+    "index.d.ts",
+    "LICENSE"
+  ],
+  "license": "MIT"
+}

@@ -1,4 +1,14 @@
 
+## fix(deps): 修复 npm 告警并升级 Go 工具链到 1.27.4（2026-11-11 第七百二十五笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理：依赖链定位/回移植/验证/文档）
+
+- minimatch（GHSA-g3hv-75wg-m249）：workbox-build→glob 11 固定 minimatch 10（受影响 <11.0.1）。实测只覆盖 minimatch 11 而保留 glob 11 会使 PWA 预缓存匹配为空（96→0 项）；改为 overrides 将 glob 11.1.0→14.0.4（上游配套 minimatch ^11.0.5，锁到 11.0.7），filelist 的 minimatch 5 不在受影响范围且保持不变。
+- deepmerge（GHSA-gcqx-w48m-w2h4 / CVE-2026-93753）：上游 4.3.1 后无新版本、维护者关闭修复 PR。新增 `web/vendor/deepmerge`，按发布产物 dist/cjs.js 回移植 [PR #274](https://github.com/TehShrike/deepmerge/pull/274) 的 `__proto__` 守卫，版本标为本地补丁 4.3.2，经 package.json workspaces 链接替换依赖树中的 4.3.1；来源/许可/退役条件见 vendor README，knip 忽略该工作区。
+- Go 工具链（GO-2026-6859）：PR 门禁在 Go 1.27.3 上命中 net/http 标准库漏洞，官方修复版本为 1.27.4；`server/go.mod` 最低工具链升至 1.27.4，SECURITY 与 ARCHITECTURE 同步，不关闭或忽略扫描。
+- npm 两项均属开发/构建链，不增加应用运行时依赖，不改接口、UI、业务规则；Go 仅补丁版本提升，不扩展为依赖批量升级。
+- 验证：npm ci 干净安装、SDK 生成、knip 0 孤儿、tsc/build、vitest 41 文件 391 项通过；修复后 dist/sw.js 与修复前干净 HEAD 构建逐字节一致；npm audit 0 漏洞；go1.27.4 下 go build/vet 通过，govulncheck v1.9.0 0 可达漏洞（另有 2 个未调用包、6 个未调用模块告警）。Playwright 浏览器用例未在本地运行；Dependabot 告警需推送后由 GitHub 重新扫描，未在本笔声称已关闭。
+
 ## fix(tools): PR #53 本地执行安全与 Recipe 失败一致性（2026-11-10 第七百二十四笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理：审查修复/集成/文档；子代理 A/B 修复范围见 PR #53）
@@ -258,17 +268,10 @@
 - httpapi 只做协议校验/错误映射/响应装配；测试覆盖创建/幂等重复/并发同键、列表过滤与游标、状态机合法/非法迁移、暂停/恢复/取消、终态不可变与 404/409 映射，全部使用临时 SQLite 与合成数据。文档同批：`docs/api/maintenance.md`、ADR-0054 与索引、能力地图、HANDOVER、AI_MAINTENANCE_P0 §4.2/§5、llms 导航。
 - 验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet` 与迁移只增检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；worker 执行器、Web 任务中心、PC→手机桥接、作者清理工具与两代布局仍未实现。第六百六十六笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
 
-## feat(app): 安装 796d813f 双端并完成研究流水线真实实例试验（2026-11-07 第六百九十五笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 云端同源门禁：ci/安全/文档与 PC/APK 出包均在 796d813f 通过（CI 首轮 Windows 文件操作作业因环境清理失败，同作业重跑通过）。PC 安装 119 项清单本地 SHA-256 核对通过，version JSON revision=796d813f、schema22、health/ready 200；手机同签名保留数据覆盖安装，版本 0.2.1/code35（lastUpdateTime 2026-11-07 01:59）。
-- 研究流水线真实实例试验：临时开启 `research.enabled` 并运行本机 sidecar，`/research/context` 返回 enabled=true、sidecar available、7 provider；`/research/lens` 真实返回 200/约 13s（frame SHA 与真实库图片一致、links 空、top 域噪声，符合 best-effort 预期）。`/providers/fxtwitter/query` 因本机 DNS fake-IP（198.18.1.x 保留段）被 SSRF 防护拦截返回 ADDRESS_BLOCKED；未放宽安全策略，需本机切真实 DNS 或另立显式逃生配置后再验。
-- 顺带按用户 2026-11-07 授权补挂作者：POST /assets/{assetId}/authors 将「守望先锋 天使 18.jpg」关联到 vgerotica 并回读一致；写前已做服务端热备。
-- 边界：未做手机 v2 同步；研究默认关闭、日常启动不带试验环境；真实 429/503/504 未触发；所有证据与安装副本只留忽略目录，未写测试脏数据。
 # CHANGELOG - 变更历史
 
 本文件只保留最近 30 笔；更早条目按 [历史索引](history/INDEX.md) 查询。历史条目正文及署名不改写，当前状态看 HANDOVER/能力地图与现行规范。
+
 ## AI 署名约定（沿用旧项目 QimengMedia 惯例）
 
 - 每个变更条目标注实际执行该改动的 AI 模型完整名称与变体（如 GPT-6.1 Sol），以会话元数据或用户明确确认为据；Codex 仅作工具/客户端说明，不能代替模型名，具体版本也不能简写成模型系列。无法确认时注明未知，禁止猜测。
