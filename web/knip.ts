@@ -9,7 +9,14 @@ const config: KnipConfig = {
   // openapi-ts.config.ts 是 CLI（CI `npx openapi-ts -f`）消费的配置文件，不在
   // import 图可达范围——列为入口后 knip 的 openapi-ts 插件随之识别生成链依赖，
   // 故无需 ignoreDependencies 豁免（豁免越少越好，理由记不下的不豁免）。
-  entry: ['src/api/openapi-ts.config.ts'],
+  workspaces: {
+    '.': {
+      entry: ['src/api/openapi-ts.config.ts'],
+    },
+  },
+  // vendor/deepmerge 是 package.json workspaces 引入的本地补丁包（见该目录
+  // README），不参与应用源码分析；忽略后根工作区配置不受影响。
+  ignoreWorkspaces: ['vendor/deepmerge'],
   // 协议生成物不入库（.gitignore，ADR-0009），`npx openapi-ts` 重建后才有实体：
   // CI 先生成后检（与 tsc 同序），本地无实体时 @/api/generated 会报 Unresolved——
   // 这是环境前置而非孤儿，不设 ignore 豁免（生成内容不受人工维护，死代码分析
