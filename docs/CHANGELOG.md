@@ -1,12 +1,13 @@
 
-## fix(web): 修复 minimatch 与 deepmerge Dependabot 告警（2026-11-11 第七百二十五笔）
+## fix(deps): 修复 npm 告警并升级 Go 工具链到 1.27.4（2026-11-11 第七百二十五笔）
 
 执行 AI：DeepSeek V4.1 Flash（主代理：依赖链定位/回移植/验证/文档）
 
 - minimatch（GHSA-g3hv-75wg-m249）：workbox-build→glob 11 固定 minimatch 10（受影响 <11.0.1）。实测只覆盖 minimatch 11 而保留 glob 11 会使 PWA 预缓存匹配为空（96→0 项）；改为 overrides 将 glob 11.1.0→14.0.4（上游配套 minimatch ^11.0.5，锁到 11.0.7），filelist 的 minimatch 5 不在受影响范围且保持不变。
 - deepmerge（GHSA-gcqx-w48m-w2h4 / CVE-2026-93753）：上游 4.3.1 后无新版本、维护者关闭修复 PR。新增 `web/vendor/deepmerge`，按发布产物 dist/cjs.js 回移植 [PR #274](https://github.com/TehShrike/deepmerge/pull/274) 的 `__proto__` 守卫，版本标为本地补丁 4.3.2，经 package.json workspaces 链接替换依赖树中的 4.3.1；来源/许可/退役条件见 vendor README，knip 忽略该工作区。
-- 两者均属开发/构建链，不增加应用运行时依赖，不改接口、UI、业务规则或锁文件之外的产物。
-- 验证：npm ci 干净安装、SDK 生成、knip 0 孤儿、tsc/build、vitest 41 文件 391 项通过；修复后 dist/sw.js 与修复前干净 HEAD 构建逐字节一致；npm audit 0 漏洞。Playwright 浏览器用例未在本地运行；Dependabot 告警需推送后由 GitHub 重新扫描，未在本笔声称已关闭。
+- Go 工具链（GO-2026-6859）：PR 门禁在 Go 1.27.3 上命中 net/http 标准库漏洞，官方修复版本为 1.27.4；`server/go.mod` 最低工具链升至 1.27.4，SECURITY 与 ARCHITECTURE 同步，不关闭或忽略扫描。
+- npm 两项均属开发/构建链，不增加应用运行时依赖，不改接口、UI、业务规则；Go 仅补丁版本提升，不扩展为依赖批量升级。
+- 验证：npm ci 干净安装、SDK 生成、knip 0 孤儿、tsc/build、vitest 41 文件 391 项通过；修复后 dist/sw.js 与修复前干净 HEAD 构建逐字节一致；npm audit 0 漏洞；go1.27.4 下 go build/vet 通过，govulncheck v1.9.0 0 可达漏洞（另有 2 个未调用包、6 个未调用模块告警）。Playwright 浏览器用例未在本地运行；Dependabot 告警需推送后由 GitHub 重新扫描，未在本笔声称已关闭。
 
 ## fix(tools): PR #53 本地执行安全与 Recipe 失败一致性（2026-11-10 第七百二十四笔）
 
