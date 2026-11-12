@@ -1184,7 +1184,8 @@ def validate_plan(
             fail(ERR_INVALID_REQUEST, "编号类别与源文件不符", family=family)
             continue
         numbering_key = (family_key, category)
-        family_index = current_indexes[category].families.get(family_key)
+        category_index = current_indexes.get(category)
+        family_index = category_index.families.get(family_key) if category_index is not None else None
         if group.get("existingWorkNumber"):
             if family_index is None or work_number not in family_index.work_numbers:
                 fail(ERR_WORK_NUMBER_CONFLICT, "补图作品编号不存在", family=family, workNumber=work_number)

@@ -437,6 +437,8 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
   协议错误以 JSON-RPC error 返回。
 - 不注册任意 shell/Python/文件执行工具；不新增写入通道；写工具仍走计划/确认/
   执行/回读。
+- 远程 HTTP/网络/响应错误沿用 CLI 的结构化字段（HTTP 为 status/error/body/target），
+  在 MCP 中标记 isError=true；保留服务端错误码与脱敏正文，不统一吞为 INTERNAL_ERROR。
 - token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
 - 工具分类发现：标准 `tools/list` 仍返回全部工具与 `inputSchema`；任务开始时客户端可先
   调用 `platform.context`（task/domain）取相关工具、Schema 摘要、规则节与 playbook；工具较多时

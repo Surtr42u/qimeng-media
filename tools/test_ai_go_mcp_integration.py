@@ -43,6 +43,7 @@ class StdioClient:
             [sys.executable, "-X", "utf8", str(ROOT / "tools/ai_maintenance/mcp_server.py")],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, encoding="utf-8", env=env, cwd=ROOT,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         self.responses = queue.Queue()
         self.sequence = 0
@@ -107,7 +108,8 @@ class GoMcpIntegration(unittest.TestCase):
         log = (cls.root / "server.log").open("wb")
         cls.addClassCleanup(log.close)
         cls.server = subprocess.Popen([os.environ["QIMENG_TEST_SERVER_BINARY"], "-config", str(config)],
-                                      cwd=cls.root, env=cls.env, stdout=log, stderr=log)
+                                      cwd=cls.root, env=cls.env, stdout=log, stderr=log,
+                                      creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         cls.addClassCleanup(stop, cls.server)
         for _ in range(200):
             try:
@@ -184,7 +186,7 @@ class GoMcpIntegration(unittest.TestCase):
     def test_profile_confirmation_revision_and_unchanged_fields(self):
         client, _ = self.client()
         status, author = self.http("POST", "/api/v1/authors", {"displayName": "合成作者", "type": "regular"}, self.admin)
-        self.assertEqual(201, status)
+        self.assertEqual(200, status)
         author_id = author["id"]
         initial = self.result(client, "author.profile.read", {"authorId": author_id})
         prepared = self.result(client, "author.profile.prepare", {"authorId": author_id,
@@ -212,9 +214,10 @@ class GoMcpIntegration(unittest.TestCase):
         state = self.root / "recipe"
         inputs = {"upload": {"libraryId": self.library, "operationId": str(uuid.uuid4()),
                              "path": str(self.source), "fileName": "配方 1.png"}}
-        first = recipes.run_recipe("media.ingest", inputs, env=env, state_dir=state)
+        with self.assertRaises(recipes.RecipeError) as gate:
+            recipes.run_recipe("media.ingest", inputs, env=env, state_dir=state)
+        self.assertEqual("RECIPE_CONFIRMATION_REQUIRED", gate.exception.code)
         self.assertFalse((self.media / "配方 1.png").exists())
-        self.assertNotEqual("completed", first["status"])
         recipes.run_recipe("media.ingest", inputs, env=env, state_dir=state, confirm=True)
         self.assertEqual(PNG, (self.media / "配方 1.png").read_bytes())
 

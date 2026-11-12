@@ -77,9 +77,11 @@ def asset_upload(ctx, payload):
         raise errors.precondition_failed("源内容/时间已变化，请重新 prepare")
     change = plan["changes"][0]
     upload_id = plan["operationId"]
+    if _source(ctx, plan["source"]) != path:
+        raise errors.precondition_failed("源路径在上传前发生变化")
     with path.open("rb") as stream:
         opened = os.fstat(stream.fileno())
-        if (opened.st_ino, opened.st_size, opened.st_mtime_ns) != (info.st_ino, size, info.st_mtime_ns):
+        if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != (info.st_dev, info.st_ino, size, info.st_mtime_ns):
             raise errors.precondition_failed("源文件在打开前被替换")
         saved = ctx.client.upload("/api/v1/assets/upload", stream, length=size,
                                   query={"libraryId": library_id, "dir": change["directory"],

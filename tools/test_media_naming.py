@@ -54,6 +54,7 @@ class ParseAndIndexTest(unittest.TestCase):
         self.assertEqual(["海景 21.mp4", "海景 22.jpg", "海景 22.mp4"],
                          [change["targetName"] for change in plan["changes"]])
         self.assertTrue(naming.validate_plan(plan, current)["ok"])
+        self.assertFalse(naming.validate_plan(plan, ["海景 21.png", "b.jpg"])["ok"])
         plan["groups"][0]["numberingCategory"] = "image"
         self.assertFalse(naming.validate_plan(plan, current)["ok"])
 

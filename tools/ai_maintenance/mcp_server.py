@@ -39,6 +39,7 @@ if __package__ in (None, ""):  # 支持 python tools/ai_maintenance/mcp_server.p
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "ai_maintenance"
 
+from . import client as http_client
 from . import errors, execution, registry
 
 SERVER_NAME = "qimeng-ai-toolkit"
@@ -256,6 +257,8 @@ class McpServer:
                     outcome.put(("ok", self._execute(name, arguments)))
             except errors.ToolError as exc:
                 outcome.put(("tool_error", exc))
+            except (http_client.HTTPStatusError, http_client.NetworkError, http_client.ResponseError) as exc:
+                outcome.put(("remote_error", exc))
             except Exception as exc:  # noqa: BLE001
                 outcome.put(("error", exc))
 
@@ -287,6 +290,15 @@ class McpServer:
         cancelled.discard(request_id)
         if kind == "tool_error":
             return _result_response(request_id, _tool_error_result(payload))
+        if kind == "remote_error":
+            base = self.env.get("QIMENG_API_BASE", "")
+            target = http_client.target_label(base) if base else "unknown"
+            if isinstance(payload, http_client.HTTPStatusError):
+                failure = {"error": "http_error", "status": payload.status,
+                           "body": payload.body, "target": target}
+            else:
+                failure = {"error": payload.kind, "target": target}
+            return _result_response(request_id, _error_result(failure))
         if kind == "error":
             _log("tool failure: " + name + " " + type(payload).__name__)
             return _result_response(request_id, _tool_error_result(
@@ -365,10 +377,14 @@ class McpServer:
 
 
 def _tool_error_result(exc: errors.ToolError) -> dict:
-    text = json.dumps(exc.to_dict(), ensure_ascii=False)
+    return _error_result(exc.to_dict())
+
+
+def _error_result(payload: dict) -> dict:
+    text = json.dumps(payload, ensure_ascii=False)
     return {
         "content": [{"type": "text", "text": text}],
-        "structuredContent": exc.to_dict(),
+        "structuredContent": payload,
         "isError": True,
     }
 

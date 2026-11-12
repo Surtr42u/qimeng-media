@@ -41,7 +41,7 @@ libraryId 空 400/库不存在 404）**
 
 ## 上传任务重放、源时间与容量（ADR-0049）
 
-AI 工具可用 `asset.upload.prepare` → 核对计划 → `asset.upload`：流式调用现有直传端点，绑定授权源摘要/大小/时间、实例/库/目录和最终名；同计划派生稳定 uploadId，回读资产路径/大小/modifiedAt，自动改名不能静默算命名成功。直接上传已完成入库，不自动重复扫描；只有文件已投放在库内的流程才用 `library.scan`，202/accepted 仅受理，须查询扫描状态并按预期清单核验。工具源 SHA-256 不能冒充服务端内容哈希校验。入口及权限见 [工具 README](../../tools/ai_maintenance/README.md)。
+AI 工具可用 `asset.upload.prepare` → 核对计划 → `asset.upload`：流式调用现有直传端点，绑定授权源摘要/大小/时间、实例/库/目录和最终名；持久化 operationId（UUID）作为稳定 uploadId，同一操作重试不换 ID，新操作用新 ID。回读资产路径/大小/modifiedAt，自动改名不能静默算命名成功。直接上传已完成入库，不自动重复扫描；只有文件已投放在库内的流程才用 `library.scan`，202/accepted 仅受理，须查询扫描状态并按预期清单核验。工具源 SHA-256 不能冒充服务端内容哈希校验。入口及权限见 [工具 README](../../tools/ai_maintenance/README.md)。
 
 显式 `POST /assets/{id}/move` 的 newName 含 U+FFFD 或无效 UTF-8 时，写入前返回 400 `INVALID_FILENAME`，文件、路径/TXT 与富化均不改变。上传现有清洗规则不因此改为全面拒绝控制字符。
 
