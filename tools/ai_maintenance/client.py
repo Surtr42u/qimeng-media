@@ -290,6 +290,13 @@ class ApiClient:
         return send(self.opener, req, token=self.token,
                     timeout=self.timeout if timeout is None else timeout)
 
+    def upload(self, path: str, stream, *, length: int, query: dict):
+        """有声明长度的流式上传；沿用统一 origin/代理/重定向/错误脱敏边界。"""
+        headers = dict(self._headers(), **{"Content-Type": "application/octet-stream",
+                                         "Content-Length": str(length)})
+        req = request.Request(self._url(path, query), data=stream, method="POST", headers=headers)
+        return send(self.opener, req, token=self.token, timeout=self.timeout)
+
     def delete(self, path: str, timeout: float | None = None):
         req = request.Request(self._url(path), method="DELETE", headers=self._headers())
         return send(self.opener, req, token=self.token,

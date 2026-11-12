@@ -1,3 +1,12 @@
+## fix(api): AI 工作流分序、改名防错与真实 MCP 闭环（2026-11-12 第七百二十六笔）
+
+执行 AI：Codex（完整模型名称及变体：本会话未提供可核实元数据；负责实现、定向核对与验证）
+
+- 显式资产改名在任何副作用前拒绝 U+FFFD/坏 UTF-8，沿用 INVALID_FILENAME；OpenAPI 同步 400，SDK 由云端 make sdk 生成并回收摘要锁。
+- 命名引擎 1.1.0 / plan schema 2 按图片/视频分别续号与补页，类别参与指纹/验证，旧计划重新 prepare；完整目录占用检查保留。
+- 平台/工具契约 1.5.0、规则 2026-11-12.1：新增 asset.upload.prepare/asset.upload/library.scan、media.ingest，复用统一 HTTP、计划、权限、读根与业务端点；流式上传稳定 uploadId，回读路径/大小/时间，扫描受理不冒充完成。
+- 新增云端同 revision 临时 Go + 真正 stdio MCP 受限凭据集成，覆盖上传重放、作者确认/revision、只读/scope、租约及 recipe gate/恢复。实际运行结果待记录；本地未运行应用构建或自动测试，未触碰真实库/手机，未部署。
+- 专题同步：领域 files、API files、SECURITY、工具 README、平台任务书、ADR-0056、HANDOVER/CAPABILITY_MAP；未来 Next 业务流程规划在独立仓外文件同步，不将现项目内嵌服务带入目标架构。最旧第六百九十六笔原样移入历史档，近期保持 30 笔。
 
 ## fix(deps): 修复 npm 告警并升级 Go 工具链到 1.27.4（2026-11-11 第七百二十五笔）
 
@@ -257,16 +266,6 @@
 - 协议新增 7 个 `/api/v1/device/apply-tasks` 端点（登记/列表/详情/领取/段下载/回传/取消）：登记为 multipart manifest + masterTxt≤1MiB + v2Backup≤64MiB，单个段或整体请求体超限 413；段下载 octet-stream + Content-Length + X-Content-SHA256；`make sdk` 三端生成、go build ./... 通过，`api/sdk.lock` 同批重算（355 项）。
 - httpapi 只做 multipart/query 校验、错误映射与响应装配；测试覆盖创建/段落盘 SHA-256/超限/指纹不符、列表过滤与游标、领取幂等与过期、段下载头/终态/路径安全、回传终态与重复回传、取消、404/409/413，全部使用临时 SQLite、临时包目录与合成字节（含 1KB 段）。
 - 文档同批：`docs/api/device.md`、ADR-0055 与索引、能力地图、HANDOVER §8、AI_MAINTENANCE_P0 §4.5/§5/§6、llms 导航。验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet`、文档/隐私/迁移检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；Android Worker、配对/设备身份、真机后台同步与包清理仍未实现。第六百六十七笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
-
-## feat(maintenance): 持久维护任务队列服务端垂直切片（2026-11-07 第六百九十六笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 新增 migration `0023_maintenance_jobs`：只增 `maintenance_jobs`/`maintenance_steps`/`maintenance_artifacts` 三表与状态、幂等、租约、步骤/工件索引；状态机覆盖 queued→inventory→research→planned→applying→verifying→completed、waiting_evidence/waiting_authorization/waiting_device 与 paused/partial/failed/cancelled，终态不可变更。
-- 新增 `server/internal/maintenance`：Create/List/Get/Pause/Resume/Cancel、同事务状态校验、幂等键冲突返回既有任务、输入指纹、租约字段与 Claim/Heartbeat/Complete、RecordStep/AddArtifact 内部原语；只依赖 store/db，不依赖 httpapi（depguard）。
-- 协议新增 `POST/GET /api/v1/maintenance/jobs`、`GET /api/v1/maintenance/jobs/{id}` 与 `POST …/{id}/pause|resume|cancel` 六端点；创建幂等 201/200，非法迁移/终态 409 STATE_CONFLICT，不存在 404，列表 status/limit/cursor 与详情步骤/工件/error。`make sdk` 三端生成通过，`api/sdk.lock` 同批更新为 331 项。
-- httpapi 只做协议校验/错误映射/响应装配；测试覆盖创建/幂等重复/并发同键、列表过滤与游标、状态机合法/非法迁移、暂停/恢复/取消、终态不可变与 404/409 映射，全部使用临时 SQLite 与合成数据。文档同批：`docs/api/maintenance.md`、ADR-0054 与索引、能力地图、HANDOVER、AI_MAINTENANCE_P0 §4.2/§5、llms 导航。
-- 验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet` 与迁移只增检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；worker 执行器、Web 任务中心、PC→手机桥接、作者清理工具与两代布局仍未实现。第六百六十六笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
 
 # CHANGELOG - 变更历史
 

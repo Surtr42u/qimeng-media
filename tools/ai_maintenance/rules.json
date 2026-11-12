@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-10.4",
+  "rulesVersion": "2026-11-12.1",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1374,6 +1374,8 @@
       "维护任务 leaseToken 是能力凭据：只在 claim 工具结果出现，不写日志/证据包/任务记录。"
     ],
     "toolPermissions": {
+      "asset.upload": "正式上传入库：源摘要/时间/目标计划、确认、稳定 uploadId、最终路径回读。",
+      "library.write": "指定库扫描：仅受理不等于业务完成；scope 为 library.write。",
       "read": "只读查询，不写业务数据。",
       "research": "研究辅助；默认关闭，不伪造证据。",
       "author.profile.write": "作者资料写入；必须 prepare + confirm + 回读。",
@@ -1481,10 +1483,10 @@
       "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
     ]
   },
-  "rulepackVersion": "2026-11-10.4",
+  "rulepackVersion": "2026-11-12.1",
   "platform": {
-    "platformVersion": "1.4.1",
-    "toolContractVersion": "1.4.0",
+    "platformVersion": "1.5.0",
+    "toolContractVersion": "1.5.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
   },
@@ -1498,9 +1500,11 @@
     ]
   },
   "mediaNaming": {
-    "version": "2026-11-07.1",
+    "version": "2026-11-12.1",
     "principles": [
       "作品编号按作品递增，组内页码独立；同一组多图只占一个作品编号。",
+      "同一实例/库/目录/family 下，图片与视频独立连续编号；图片各扩展名及动图共用图片序列，视频各扩展名共用视频序列；混合类别不得作为一个编号组。",
+      "编号类别参与计划指纹、补图与执行前校验；旧命名计划须重新准备。含 U+FFFD 的显式改名在业务写入前拒绝。",
       "顺序固定：识别分组 → 分配作品编号 → 生成组内页码；不得按文件逐个编号。",
       "无法确认分组时输出候选分组等待确认，不得擅自拆分或错误合并。"
     ],
@@ -1663,6 +1667,47 @@
     "examples": "示例随 platform.tool.describe 按需返回（registry.TOOL_EXAMPLES），不进入默认 tools list。"
   },
   "playbooks": {
+    "media.ingest": {
+      "domain": "media",
+      "title": "正式上传入库",
+      "whenToUse": "本地文件已明确最终名，需经 API 上传至 PC/NAS 的指定库。",
+      "baseTools": [
+        "files.storages",
+        "files.search",
+        "asset.upload.prepare",
+        "asset.upload",
+        "library.query",
+        "library.scan",
+        "asset.query"
+      ],
+      "ruleSections": [
+        "mediaNaming",
+        "permissions",
+        "errors"
+      ],
+      "steps": [
+        {
+          "action": "定位与计划",
+          "tool": "asset.upload.prepare",
+          "note": "读取授权源，绑定 SHA-256/大小/源时间/实例/库/目录；不复制入库根。"
+        },
+        {
+          "action": "核对后上传",
+          "tool": "asset.upload",
+          "note": "同计划使用稳定 uploadId；七天内可重放完成凭据。最终名偏离计划需报告，不自动换键重传。"
+        },
+        {
+          "action": "回读",
+          "note": "上传自身回读资产 ID/路径/大小/时间；无需再扫描。已经投放在库内的文件才使用 library.scan，并等待后按意图清单核验。"
+        }
+      ],
+      "guardrails": [
+        "不直写 SQLite/TXT 或已入库文件路径。",
+        "library.scan 的 accepted/202 不等于整批完成。",
+        "源 SHA-256 不等同于服务端内容哈希验证。",
+        "备份导入是独立高风险能力，现有 scope 是 backup.restore，不能由 device.apply 推导。"
+      ]
+    },
     "author.profile": {
       "domain": "author",
       "title": "补全作者资料（简介/头像/主页/双语）",

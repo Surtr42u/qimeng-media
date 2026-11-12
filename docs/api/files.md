@@ -41,6 +41,10 @@ libraryId 空 400/库不存在 404）**
 
 ## 上传任务重放、源时间与容量（ADR-0049）
 
+AI 工具可用 `asset.upload.prepare` → 核对计划 → `asset.upload`：流式调用现有直传端点，绑定授权源摘要/大小/时间、实例/库/目录和最终名；同计划派生稳定 uploadId，回读资产路径/大小/modifiedAt，自动改名不能静默算命名成功。直接上传已完成入库，不自动重复扫描；只有文件已投放在库内的流程才用 `library.scan`，202/accepted 仅受理，须查询扫描状态并按预期清单核验。工具源 SHA-256 不能冒充服务端内容哈希校验。入口及权限见 [工具 README](../../tools/ai_maintenance/README.md)。
+
+显式 `POST /assets/{id}/move` 的 newName 含 U+FFFD 或无效 UTF-8 时，写入前返回 400 `INVALID_FILENAME`，文件、路径/TXT 与富化均不改变。上传现有清洗规则不因此改为全面拒绝控制字符。
+
 直传 query 与分片创建 body 可选 uploadId（UUID）和 sourceMtime（Unix 毫秒）。双端新任务持久保留 uploadId，重试不得换 ID；参数变更须新建任务。调用方未提供时间时使用接收时间；Android首次上传固定本次入队时间，归档副本写入同刻，归档再传PC/NAS沿用该时间，未知归档时间省略。addedAt 仍为当前接收实例的入库时间，日期展示/分组使用modifiedAt；详细语义见[文件规则](../domain/files.md#上传目标时间与重试边界adr-00420049)。完成凭据与资产行同事务提交，七天内重复请求返回原资产，不重复计数、富化或发通知；任务参数冲突 409 UPLOAD_ID_CONFLICT，原资产已删除 410 UPLOAD_ASSET_GONE。旧无 ID 直传仍兼容但不保证去重；未提交资产的文件发布中断不属于完成凭据保障。
 
 Web 队列存储故障可见并能重试本地 IO，不因此重发上传或改 uploadId。终态删除失败尽力写本地 terminal 标记，恢复跳过它；删除和标记都失败时旧条目仍可能出现，应核对已入库事实。该标记只属客户端 IndexedDB 元数据，不改变服务端协议或七天凭据保障；本地存储提交以事务 complete 确认为准，不能据 request 成功承诺可恢复。

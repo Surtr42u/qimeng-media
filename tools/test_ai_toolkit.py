@@ -287,8 +287,8 @@ class RulepackTest(unittest.TestCase):
         with temp_dir() as directory:
             first = rulepack.build_rulepack()
             second = rulepack.build_rulepack()
-        self.assertEqual(first["platformVersion"], "1.4.1")
-        self.assertEqual(first["toolContractVersion"], "1.4.0")
+        self.assertEqual(first["platformVersion"], "1.5.0")
+        self.assertEqual(first["toolContractVersion"], "1.5.0")
         self.assertEqual(first["rulepackVersion"], "2026-11-10.4")
         self.assertNotEqual(first["platformVersion"], first["rulepackVersion"])
         self.assertEqual(rulepack.dumps_pack(first), rulepack.dumps_pack(second))
@@ -344,7 +344,7 @@ class RulepackTest(unittest.TestCase):
 class RegistryTest(StubServerTest):
     def test_listing_exposes_contract_and_schema(self):
         listing = execution.tool_listing(self.config())
-        self.assertEqual("1.4.1", listing["platformVersion"])
+        self.assertEqual("1.5.0", listing["platformVersion"])
         by_id = {tool["id"]: tool for tool in listing["tools"]}
         self.assertEqual(set(by_id), set(registry.tool_ids()))
         sample = by_id["author.profile.update"]
@@ -496,7 +496,7 @@ class AuthorProfileFlowTest(StubServerTest):
         self.routes_for([current])
         plan = self.prepare({"nickname": "Synthetic New"})
         self.assertEqual("author.profile.update", plan["tool"])
-        self.assertEqual("1.4.0", plan["versions"]["toolContractVersion"])
+        self.assertEqual("1.5.0", plan["versions"]["toolContractVersion"])
         self.assertEqual(plan["planFingerprint"], plans.compute_fingerprint(plan))
         self.assertEqual(["nickname"], [change["field"] for change in plan["changes"]])
         self.assertEqual(0, plan["preconditions"]["revision"])
@@ -763,7 +763,7 @@ class CliToolTest(StubServerTest):
         status, stdout, stderr = self.run_cli(["version"])
         self.assertEqual(0, status)
         payload = json.loads(stdout)
-        self.assertEqual("1.4.1", payload["platformVersion"])
+        self.assertEqual("1.5.0", payload["platformVersion"])
         self.assertEqual("2026-11-10.4", payload["rulepackVersion"])
         self.assertIn("sha256", payload["openapi"])
         status, stdout, stderr = self.run_cli(["tools", "list", "--json"])

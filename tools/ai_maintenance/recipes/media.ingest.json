@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "media.ingest",
+  "version": "1.0.0",
+  "title": "正式上传：源文件计划 → 确认 → 流式入库与回读",
+  "whenToUse": "将已明确命名的本地文件上传至指定库；分组、图片/视频分序和关联可按需组合已有工具。上传已入库，不自动再扫描。",
+  "targets": [
+    "pc",
+    "nas"
+  ],
+  "requires": [
+    "api"
+  ],
+  "permissions": [
+    "read",
+    "asset.upload"
+  ],
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "upload": {
+        "type": "object",
+        "description": "asset.upload.prepare 的输入：libraryId，path/fileRef 二选一，可选 fileName/directory/sourceMtime。"
+      }
+    },
+    "required": [
+      "upload"
+    ]
+  },
+  "steps": [
+    {
+      "id": "prepare",
+      "tool": "asset.upload.prepare",
+      "input": "$inputs.upload"
+    },
+    {
+      "id": "confirmUpload",
+      "gate": true,
+      "message": "核对源摘要、目标库/目录、最终名和时间后确认上传"
+    },
+    {
+      "id": "upload",
+      "tool": "asset.upload",
+      "confirm": true,
+      "input": {
+        "plan": "$steps.prepare.output.plan",
+        "confirm": true
+      }
+    }
+  ],
+  "artifacts": [
+    "上传计划",
+    "资产权威回读"
+  ],
+  "readback": [
+    "资产 ID、最终路径和大小符合计划；自动改名不得静默算成功",
+    "重复调用同一计划不新增第二份（完成凭据七天有效）"
+  ]
+}
