@@ -98,6 +98,8 @@ PERMISSIONS = {
     "author.cleanup": "作者清理：删除/改名/原子合并，高风险，不可撤销动作需确认。",
     "asset.authors.write": "资产作者关联写入：整体替换关联，需计划与确认。",
     "asset.write": "资产写入（标签整体替换）：先读现状、计划指纹、确认与回读。",
+    "asset.upload": "正式上传入库：prepare 绑定源摘要/时间/目标，确认后稳定 uploadId 重放与回读。",
+    "library.write": "触发指定库扫描；202 仅受理，须另行按清单核验资产。",
     "asset.delete": "资产删除：一律移入回收站（非物理删除），需确认与回读。",
     "trash.restore": "回收站恢复：需确认、前置检查与回读。",
     "media.organize": "混合媒体整理：按命名计划移动/改名，需计划、确认与回读。",
@@ -349,6 +351,43 @@ def _cleanup_actions_schema() -> dict:
 
 
 TOOLS: tuple[ToolSpec, ...] = (
+    ToolSpec(
+        id="asset.upload.prepare", version="1.0.0", kind="plan",
+        description="本地源文件上传计划：绑定摘要/大小/时间和明确目标库；不写入库根。",
+        handler_ref="ai_maintenance.tools_ingest:asset_upload_prepare", permission="asset.upload",
+        input_schema=_schema({"libraryId": _string("目标库 ID", 1, 512),
+                              "operationId": _string("新操作生成并持久化 UUID；本操作重试保持不变", 1, 36),
+                              "path": _string("授权读根内的源文件；与 fileRef 二选一"),
+                              "fileRef": _string("files.search 返回的文件引用"),
+                              "fileName": _string("最终文件名；缺省源文件名", 1, 255),
+                              "directory": _string("库内相对目录，空=根"),
+                              "sourceMtime": _integer("源修改时间 Unix 毫秒；缺省源文件时间", 0, 253402300799999)},
+                             required=("libraryId", "operationId")),
+        output_schema=_PLAN_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/libraries", "GET"),),
+    ),
+    ToolSpec(
+        id="asset.upload", version="1.0.0", kind="write",
+        description="按已确认上传计划流式入库并回读；七天内同计划稳定 uploadId，不盲重试。",
+        handler_ref="ai_maintenance.tools_ingest:asset_upload", permission="asset.upload",
+        read_only=False, side_effects=True, requires_confirmation=True, confirmation_mode="always",
+        timeout_seconds=120.0,
+        input_schema=_schema({"plan": _PLAN_REF, "confirm": _boolean("核对计划后 true")},
+                             required=("plan", "confirm")),
+        output_schema=_WRITE_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/assets/upload", "POST", parameters=("libraryId", "dir", "filename", "uploadId", "sourceMtime")),
+                      _req("/api/v1/assets/{assetId}", "GET"), _req("/api/v1/libraries", "GET")),
+    ),
+    ToolSpec(
+        id="library.scan", version="1.0.0", kind="write",
+        description="触发指定库异步扫描；仅返回受理状态，不宣称整批入库完成；直接上传无需重扫。",
+        handler_ref="ai_maintenance.tools_ingest:library_scan", permission="library.write",
+        read_only=False, side_effects=True, requires_confirmation=True, confirmation_mode="always",
+        input_schema=_schema({"libraryId": _string("明确目标库 ID", 1, 512),
+                              "confirm": _boolean("确认触发该库扫描")}, required=("libraryId", "confirm")),
+        output_schema=_QUERY_OUTPUT,
+        requirements=(_req("/api/v1/libraries", "GET"), _req("/api/v1/libraries/{libraryId}/scan", "POST")),
+    ),
     ToolSpec(
         id="project.context", version="1.0.0", kind="context",
         description="返回规则包/版本/能力/工具清单（纯本地，不联网）；可选 markdown 中文指南。",
@@ -631,7 +670,7 @@ TOOLS: tuple[ToolSpec, ...] = (
                            body_required=True)),
     ),
     ToolSpec(
-        id="media.organize.prepare", version="1.0.0", kind="plan",
+        id="media.organize.prepare", version="1.1.0", kind="plan",
         description="媒体整理规划（只读）：scan 模式按内容对齐/去重/序号延顺/拼图目检；libraryId+groups 模式生成组图命名计划。",
         handler_ref="ai_maintenance.tools_media:media_organize_prepare", permission="media.organize",
         input_schema=_schema({
@@ -673,7 +712,7 @@ TOOLS: tuple[ToolSpec, ...] = (
                                                 "media_naming.py 命名引擎未安装（待发布物安装）"),
     ),
     ToolSpec(
-        id="media.organize.apply", version="1.0.0", kind="write",
+        id="media.organize.apply", version="1.1.0", kind="write",
         description="按已确认命名计划逐步 POST /assets/{assetId}/move 并回读文件名；自动改名视为失败。",
         handler_ref="ai_maintenance.tools_media:media_organize_apply", permission="media.organize",
         read_only=False, side_effects=True, requires_confirmation=True, confirmation_mode="always",
@@ -1257,6 +1296,9 @@ DOMAINS: tuple = (
 
 # 工具示例：按需在 platform.tool.describe 返回；不进入 tools list / MCP tools/list 默认载荷。
 TOOL_EXAMPLES: dict = {
+    "asset.upload.prepare": ({"libraryId": "lib-synthetic", "operationId": "00000000-0000-4000-8000-000000000001", "fileRef": "<files.search 返回的 fileRef>"},),
+    "asset.upload": ({"plan": {"…": "asset.upload.prepare 返回的 plan"}, "confirm": True},),
+    "library.scan": ({"libraryId": "lib-synthetic", "confirm": True},),
     "project.context": ({"markdown": True},),
     "asset.query": ({"limit": 20, "q": "朱诺 11", "cursor": "…"},),
     "author.query": ({},),
@@ -1321,6 +1363,9 @@ TOOL_EXAMPLES: dict = {
 
 # 工具与规则节引用：按需描述时只摘录相关规则，避免整包加载进上下文。
 TOOL_RULES_REFS: dict = {
+    "asset.upload.prepare": ("mediaNaming", "permissions"),
+    "asset.upload": ("mediaNaming", "permissions", "errors"),
+    "library.scan": ("permissions", "errors"),
     "platform.context": ("permissions", "toolCatalog"),
     "platform.catalog": ("toolCatalog", "permissions"),
     "platform.tool.describe": ("toolCatalog", "permissions"),

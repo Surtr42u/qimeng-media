@@ -220,6 +220,13 @@ func TestMoveInvalidInputsKeepOriginal(t *testing.T) {
 	invalid := "NUL.png"
 	assertMoveFailure(t, s.MoveAsset(context.Background(), asset.AssetID, MoveRequest{TargetDirectory: "../../escape"}), InvalidDirectory)
 	assertMoveFailure(t, s.MoveAsset(context.Background(), asset.AssetID, MoveRequest{NewName: &invalid}), InvalidFilename)
+	for _, invalidName := range []string{"损坏\uFFFD.png", string([]byte{0xff}) + ".png"} {
+		assertMoveFailure(t, s.MoveAsset(context.Background(), asset.AssetID, MoveRequest{NewName: &invalidName}), InvalidFilename)
+		row, err := s.q.GetAssetWithLibrary(context.Background(), asset.AssetID)
+		if err != nil || row.RelPath != "original.png" {
+			t.Fatalf("拒绝坏名称后路径变化: %q, %v", row.RelPath, err)
+		}
+	}
 	assertMoveFailure(t, s.MoveAsset(context.Background(), uuid.NewString(), MoveRequest{}), AssetMissing)
 	requireMoveBytes(t, filepath.Join(media, "original.png"), body)
 	assertNoMoveEvent(t, sub)

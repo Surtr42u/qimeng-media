@@ -1,3 +1,15 @@
+## fix(api): AI 工作流分序、改名防错与真实 MCP 闭环（2026-11-12 第七百二十六笔）
+
+执行 AI：Codex（完整模型名称及变体：本会话未提供可核实元数据；负责实现、定向核对与验证）
+
+- 显式资产改名在任何副作用前拒绝 U+FFFD/坏 UTF-8，沿用 INVALID_FILENAME；OpenAPI 同步 400，SDK 由云端 make sdk 生成并回收摘要锁。
+- 命名引擎 1.1.0 / plan schema 2 按图片/视频分别续号与补页，类别参与指纹/验证，旧计划重新 prepare；完整目录占用检查保留。
+- 平台/工具契约 1.5.0、规则 2026-11-12.1：新增 asset.upload.prepare/asset.upload/library.scan、media.ingest，复用统一 HTTP、计划、权限、读根与业务端点；流式上传稳定 uploadId，回读路径/大小/时间，扫描受理不冒充完成。
+- 新增云端同 revision 临时 Go + 真正 stdio MCP 受限凭据集成，六项通过；命名 42 项、AI 回归 291 项及 Python 全集 395 项通过（后两者各 11 跳过，范围不同不叠加计数）。真实服务回归发现 MCP 吞掉远程 HTTP 错误，已保留状态/服务端 code/脱敏正文并补回归。SDK 来自云端 make sdk 43196658612；完整 CI 及文档门禁见 HANDOVER/PR，不沿用旧 head。
+- 本次模型后台手动 stdio 调用 15 次（12 成功、3 预期拒绝），完成合成上传/fileRef/重放与作者 revision 回读；云端 Windows 产物身份与功能提交一致，临时资源已清理。该隔离验证阶段未触碰真实库/手机；本地未运行应用构建或自动单测，未宣称新 AI 盲测或其他客户端接入通过。
+- 后续按用户“手机和电脑一起更新”授权，已安装同源 `9137ce0a` 云端产物：手机 0.2.2/code37 同签名保留数据覆盖，已安装 APK 回拉摘要一致；PC exe/Web 整体更新并隐藏启动，实际端口响应进程、healthz/readyz、Web 字节及 schema26/六表计数核对通过。同 SHA 完整 CI/安全/文档/MCP/双端出包全绿，签名/内嵌三件套与 artifact 摘要均匹配。未拉前台、未向真实库写测试数据；仅安装核验手机，未验收后台/SAF/Doze；详情和旧包留存见 HANDOVER。未来 Next 仍无手机端后端。
+- 用户随后授权实际双端数据合并：手机新导出与 PC 快照全部匹配 7758 项，35 项标签组新增差异经正式 v2 导入使 PC 标签关联 1200→1258、增加 385 条原身份事件；回读标签/关联/22432 条便携事件及资料内容一致，手机已含电脑本次便携范围原有状态，无需反向重复导入。未查看私人内容、未改真实媒体，快照与回执留忽略目录；实例内 revision 和已知/未知标签时间各自保留，不把本次新增合并当严格最新覆盖/清空场景验收。Next 仓外规划补 R23/设计 §6.6/S31–S32（PLN-20261112-05），明确单后端版本校验、删除/清空保护与旧数据时间边界；未实施 Next 代码。
+- 专题同步：领域 files、API files、SECURITY、工具 README、平台任务书、ADR-0056、HANDOVER/CAPABILITY_MAP；未来 Next 业务流程规划在独立仓外文件同步，不将现项目内嵌服务带入目标架构。最旧第六百九十六笔原样移入历史档，近期保持 30 笔。
 
 ## fix(deps): 修复 npm 告警并升级 Go 工具链到 1.27.4（2026-11-11 第七百二十五笔）
 
@@ -257,16 +269,6 @@
 - 协议新增 7 个 `/api/v1/device/apply-tasks` 端点（登记/列表/详情/领取/段下载/回传/取消）：登记为 multipart manifest + masterTxt≤1MiB + v2Backup≤64MiB，单个段或整体请求体超限 413；段下载 octet-stream + Content-Length + X-Content-SHA256；`make sdk` 三端生成、go build ./... 通过，`api/sdk.lock` 同批重算（355 项）。
 - httpapi 只做 multipart/query 校验、错误映射与响应装配；测试覆盖创建/段落盘 SHA-256/超限/指纹不符、列表过滤与游标、领取幂等与过期、段下载头/终态/路径安全、回传终态与重复回传、取消、404/409/413，全部使用临时 SQLite、临时包目录与合成字节（含 1KB 段）。
 - 文档同批：`docs/api/device.md`、ADR-0055 与索引、能力地图、HANDOVER §8、AI_MAINTENANCE_P0 §4.5/§5/§6、llms 导航。验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet`、文档/隐私/迁移检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；Android Worker、配对/设备身份、真机后台同步与包清理仍未实现。第六百六十七笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
-
-## feat(maintenance): 持久维护任务队列服务端垂直切片（2026-11-07 第六百九十六笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 新增 migration `0023_maintenance_jobs`：只增 `maintenance_jobs`/`maintenance_steps`/`maintenance_artifacts` 三表与状态、幂等、租约、步骤/工件索引；状态机覆盖 queued→inventory→research→planned→applying→verifying→completed、waiting_evidence/waiting_authorization/waiting_device 与 paused/partial/failed/cancelled，终态不可变更。
-- 新增 `server/internal/maintenance`：Create/List/Get/Pause/Resume/Cancel、同事务状态校验、幂等键冲突返回既有任务、输入指纹、租约字段与 Claim/Heartbeat/Complete、RecordStep/AddArtifact 内部原语；只依赖 store/db，不依赖 httpapi（depguard）。
-- 协议新增 `POST/GET /api/v1/maintenance/jobs`、`GET /api/v1/maintenance/jobs/{id}` 与 `POST …/{id}/pause|resume|cancel` 六端点；创建幂等 201/200，非法迁移/终态 409 STATE_CONFLICT，不存在 404，列表 status/limit/cursor 与详情步骤/工件/error。`make sdk` 三端生成通过，`api/sdk.lock` 同批更新为 331 项。
-- httpapi 只做协议校验/错误映射/响应装配；测试覆盖创建/幂等重复/并发同键、列表过滤与游标、状态机合法/非法迁移、暂停/恢复/取消、终态不可变与 404/409 映射，全部使用临时 SQLite 与合成数据。文档同批：`docs/api/maintenance.md`、ADR-0054 与索引、能力地图、HANDOVER、AI_MAINTENANCE_P0 §4.2/§5、llms 导航。
-- 验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet` 与迁移只增检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；worker 执行器、Web 任务中心、PC→手机桥接、作者清理工具与两代布局仍未实现。第六百六十六笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
 
 # CHANGELOG - 变更历史
 

@@ -341,6 +341,14 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 
 ## 工具目录
 
+2026-11-12 增量：platform/toolContract 1.5.0、rules 2026-11-12.1；新增 `asset.upload.prepare` / `asset.upload` / `library.scan` 和 `media.ingest` recipe。工具 permission `asset.upload` 对应服务端 `read`（库/资产回读）+ `asset.upload`；`library.write` 对应 `read` + `library.write`。服务端凭据必须另行签发，工具许可不代替 scope。
+
+`qai task media.ingest` 返回上传任务卡，`qai run media.ingest --input-file <input.json>` 接受 `{"upload":{"libraryId":"<id>","operationId":"<持久化 UUID>","fileRef":"<files.search 返回值>","directory":"","fileName":"合成 1.png"}}`；也可用授权读根内的 `path` 代替 fileRef。prepare 绑定源摘要/时间和目标；人工 gate 后上传，回读 ID/路径/大小/时间。新操作须生成并持久化 operationId（UUID），本操作重试保持不变，另一次独立操作使用新 ID。同计划的稳定 uploadId 在七天完成凭据窗口内重放，不自动重试或换键；自动改名/源变化如实报错。直接上传已入库；扫描是已投放文件的另一条入口，不能把 accepted 当 completed。备份导入仍未封装，scope 为独立的高风险 `backup.restore`。
+
+命名规划/校验引擎 1.1.0、plan schema 2：图片与视频独立续号，类别进入指纹；补图不跨类别读取页数，混合类别的单组拒绝，旧计划需重建。全目录占用检查不变。图片各扩展名及动图共用图片序列。
+
+云端新增 `AI API 隔离真实服务闭环`：同 revision 的临时 Go 服务、受限 AI token 与真正 stdio MCP 子进程，验证上传重放/回读、作者确认/revision、权限/只读拒绝、租约围栏与 recipe gate/恢复。没有显式 `QIMENG_TEST_SERVER_BINARY` 时该集成测试跳过，不回退 8420；执行结果以实际 CI 为准，不能用测试存在宣称已通过。
+
 工具数较多时先用 catalog 取精简领域目录，再 tools show <id> 按需取完整 Schema/示例/
 规则摘录；tools list --json 保留完整清单（MCP tools/list 同源）。这里是用途摘要。
 
@@ -429,6 +437,8 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
   协议错误以 JSON-RPC error 返回。
 - 不注册任意 shell/Python/文件执行工具；不新增写入通道；写工具仍走计划/确认/
   执行/回读。
+- 远程 HTTP/网络/响应错误沿用 CLI 的结构化字段（HTTP 为 status/error/body/target），
+  在 MCP 中标记 isError=true；保留服务端错误码与脱敏正文，不统一吞为 INTERNAL_ERROR。
 - token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
 - 工具分类发现：标准 `tools/list` 仍返回全部工具与 `inputSchema`；任务开始时客户端可先
   调用 `platform.context`（task/domain）取相关工具、Schema 摘要、规则节与 playbook；工具较多时

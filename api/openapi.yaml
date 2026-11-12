@@ -612,6 +612,7 @@ paths:
             schema: { $ref: "#/components/schemas/MoveRequest" }
       responses:
         "200": { description: OK }
+        "400": { description: "名称含编码替换符或路径不合法", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/dirs:
     get:

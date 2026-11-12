@@ -276,7 +276,7 @@ class ContextRelevanceTest(unittest.TestCase):
         index = {tool.id: tool for tool in tools}
         with mock.patch.object(registry, "TOOLS", tuple(tools)), \
                 mock.patch.object(registry, "_TOOL_INDEX", index):
-            result = self._context({"domain": "media"})
+            result = self._context({"domain": "media", "maxTools": 24})
         ids = [item["id"] for item in result["tools"]]
         self.assertIn("media.planned", ids)
         self.assertIn("media.legacy", ids)

@@ -32,12 +32,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
+from .media_types import numbering_category
+
 # ---------------------------------------------------------------------------
 # 版本与工具契约（registry.py 注册 media.organize.* 时引用）
 # ---------------------------------------------------------------------------
 
-ENGINE_VERSION = "1.0.0"
-PLAN_SCHEMA_VERSION = "1"
+ENGINE_VERSION = "1.1.0"
+PLAN_SCHEMA_VERSION = "2"
 TOOL_PREPARE_ID = "media.organize.prepare"
 TOOL_APPLY_ID = "media.organize.apply"
 
@@ -746,14 +748,22 @@ def prepare_plan(
                     details={"group": index},
                 )
 
-    index = build_work_index(current)
+    # 保留整个目录的前置指纹/重名检查；只有编号索引按图片/视频分开。
+    indexes = {category: build_work_index([name for name in current
+                                          if numbering_category(name) == category])
+               for category in {numbering_category(name) for name in current}}
     assignments: list[dict[str, Any]] = []
     used_targets: set[str] = set()
-    assigned_last: dict[str, int] = {}
+    assigned_last: dict[tuple[str, str], int] = {}
 
     for group in candidate_groups:
         family_key = normalize_family(group.family)
-        family_index = index.families.get(family_key)
+        categories = {numbering_category(item.name) for item in group.files}
+        if len(categories) != 1 or "other" in categories:
+            raise NamingError(ERR_INVALID_REQUEST, "一个编号组必须属于图片或视频同一类别")
+        category = next(iter(categories))
+        numbering_key = (family_key, category)
+        family_index = indexes[category].families.get(family_key)
         ordered_names = list(group.order) if group.order else [item.name for item in group.files]
         file_by_name = {item.name: item for item in group.files}
 
@@ -782,14 +792,14 @@ def prepare_plan(
                 next_number = 1
                 work_width = 1
                 separator = DEFAULT_SEPARATOR
-            work_number = max(next_number, assigned_last.get(family_key, 0) + 1)
+            work_number = max(next_number, assigned_last.get(numbering_key, 0) + 1)
             if work_number > rule_set.max_work_number:
                 raise NamingError(
                     ERR_WORK_NUMBER_CONFLICT,
                     "作品编号超过规则上限",
                     details={"family": group.family, "workNumber": work_number},
                 )
-            assigned_last[family_key] = work_number
+            assigned_last[numbering_key] = work_number
 
         number_str = _format_work_number(work_number, work_width)
         pages: list[dict[str, Any]] = []
@@ -834,6 +844,7 @@ def prepare_plan(
             {
                 "family": group.family,
                 "familyKey": family_key,
+                "numberingCategory": category,
                 "kind": kind,
                 "workNumber": work_number,
                 "workNumberStyle": {"separator": separator, "width": work_width},
@@ -972,6 +983,7 @@ def plan_fingerprint(plan: Mapping[str, Any]) -> str:
         groups.append(
             {
                 "familyKey": assignment["familyKey"],
+                "numberingCategory": assignment.get("numberingCategory"),
                 "kind": assignment["kind"],
                 "workNumber": assignment["workNumber"],
                 "existingWorkNumber": assignment["existingWorkNumber"],
@@ -1092,6 +1104,10 @@ def validate_plan(
         fail(ERR_INVALID_REQUEST, "plan 必须是对象")
         return {"ok": False, "errors": errors, "warnings": warnings}
 
+    if plan.get("schemaVersion") != PLAN_SCHEMA_VERSION or plan.get("engineVersion") != ENGINE_VERSION:
+        fail(ERR_INVALID_REQUEST, "命名规则版本已变化，请重新 prepare")
+        return {"ok": False, "errors": errors, "warnings": warnings}
+
     try:
         rule_set = NamingRules.coerce(plan.get("rules"))
         precondition = plan["precondition"]
@@ -1150,8 +1166,10 @@ def validate_plan(
 
     # 编号连续性/占用复核：作品编号必须从当前最大已占 +1 起连续分配；
     # 补图必须指向该 family 既有作品编号且页号从既有最大页 +1 起连续。
-    current_index = build_work_index(current)
-    last_assigned: dict[str, int] = {}
+    current_indexes = {category: build_work_index([name for name in current
+                                                 if numbering_category(name) == category])
+                       for category in {numbering_category(name) for name in current}}
+    last_assigned: dict[tuple[str, str], int] = {}
     for group in groups:
         family = group.get("family")
         family_key = group.get("familyKey")
@@ -1159,7 +1177,15 @@ def validate_plan(
         if not isinstance(family, str) or not isinstance(family_key, str) or not isinstance(work_number, int):
             fail(ERR_INVALID_REQUEST, "groups 缺 family/familyKey/workNumber")
             continue
-        family_index = current_index.families.get(family_key)
+        category = group.get("numberingCategory")
+        sources_categories = {numbering_category(str(page.get("sourceName", "")))
+                              for page in group.get("pages", ())}
+        if category not in ("image", "video") or sources_categories != {category}:
+            fail(ERR_INVALID_REQUEST, "编号类别与源文件不符", family=family)
+            continue
+        numbering_key = (family_key, category)
+        category_index = current_indexes.get(category)
+        family_index = category_index.families.get(family_key) if category_index is not None else None
         if group.get("existingWorkNumber"):
             if family_index is None or work_number not in family_index.work_numbers:
                 fail(ERR_WORK_NUMBER_CONFLICT, "补图作品编号不存在", family=family, workNumber=work_number)
@@ -1171,13 +1197,13 @@ def validate_plan(
                 fail(ERR_WORK_NUMBER_CONFLICT, "补图页码必须从既有最大页 +1 起连续", family=family)
         else:
             current_max = max(family_index.work_numbers) if family_index and family_index.work_numbers else 0
-            expected = max(current_max, last_assigned.get(family_key, 0)) + 1
+            expected = max(current_max, last_assigned.get(numbering_key, 0)) + 1
             if work_number < expected:
                 fail(ERR_WORK_NUMBER_CONFLICT, "作品编号与已占编号冲突", family=family, workNumber=work_number)
             elif work_number > expected:
                 fail(ERR_WORK_NUMBER_GAP, "作品编号不得人为跳号", family=family, workNumber=work_number)
             else:
-                last_assigned[family_key] = work_number
+                last_assigned[numbering_key] = work_number
         if work_number > rule_set.max_work_number:
             fail(ERR_WORK_NUMBER_CONFLICT, "作品编号超过规则上限", family=family)
         group_pages = list(group.get("pages") or ())

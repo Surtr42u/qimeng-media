@@ -13,9 +13,10 @@
 from __future__ import annotations
 
 # 工具包发行版本（语义化版本）。
+# 1.5.0（2026-11-12）：上传/扫描接线，命名按图片/视频分序与计划版本校验。
 # 1.4.1（2026-11-10）：PR #53 合并前安全修复（原语 partial/failed、覆盖/同文件
 # 保护、ADB 拉取、probe 条件副作用、Gate 范围）；工具契约版本保持 1.4.0。
-PLATFORM_VERSION = "1.4.1"
+PLATFORM_VERSION = "1.5.0"
 
 # 工具契约版本（工具 ID/Schema/错误语义）。
 # 1.1.0（2026-11-08）：新增外部执行器控制面、设备结果包、备份导出、研究工具族
@@ -30,7 +31,7 @@ PLATFORM_VERSION = "1.4.1"
 # fileRef）、research.media.probe 的 fileRefs 输入、local.files.write/local.device
 # 权限与 PATH_*/FILE_REF_*/RECIPE_* 错误码；可用性维度拆分为 availability。
 # 工具 ID 与权限面扩展属于契约变化，旧计划必须用当前工具包重新 prepare。
-TOOL_CONTRACT_VERSION = "1.4.0"
+TOOL_CONTRACT_VERSION = "1.5.0"
 
 # 规则包（rules.json 与生成物）的 Schema 版本。
 RULEPACK_SCHEMA_VERSION = 2

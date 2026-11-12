@@ -47,6 +47,27 @@ def codes(result):
 
 
 class ParseAndIndexTest(unittest.TestCase):
+    def test_mixed_media_allocate_and_validate_independent_sequences(self):
+        current = ["海景 20.mp4", "海景 21.png", "a.mp4", "b.jpg", "c.mp4"]
+        plan = plan_for([group("海景", ["a.mp4"]), group("海景", ["b.jpg"]),
+                         group("海景", ["c.mp4"])], current)
+        self.assertEqual(["海景 21.mp4", "海景 22.jpg", "海景 22.mp4"],
+                         [change["targetName"] for change in plan["changes"]])
+        self.assertTrue(naming.validate_plan(plan, current)["ok"])
+        self.assertFalse(naming.validate_plan(plan, ["海景 21.png", "b.jpg"])["ok"])
+        plan["groups"][0]["numberingCategory"] = "image"
+        self.assertFalse(naming.validate_plan(plan, current)["ok"])
+
+    def test_mixed_media_cannot_be_one_numbered_group(self):
+        with self.assertRaises(naming.NamingError):
+            plan_for([group("海景", ["a.mp4", "b.png"])], ["a.mp4", "b.png"])
+
+    def test_append_image_does_not_use_video_page_number(self):
+        current = ["海景 1 (1).png", "海景 1 (9).mp4", "b.jpg"]
+        plan = plan_for([group("海景", ["b.jpg"], existing=1)], current)
+        self.assertEqual("海景 1 (2).jpg", plan["changes"][0]["targetName"])
+        self.assertTrue(naming.validate_plan(plan, current)["ok"])
+
     def test_group_page_parse_carries_work_number_and_page(self):
         info = naming.parse_file_name("守望先锋 朱诺 11 (2).png")
         self.assertEqual("守望先锋 朱诺", info.family)

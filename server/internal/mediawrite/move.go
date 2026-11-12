@@ -8,6 +8,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/events"
@@ -40,6 +42,11 @@ func (s *Service) MoveAsset(ctx context.Context, assetID string, req MoveRequest
 	}
 	name := path.Base(row.RelPath)
 	if req.NewName != nil && *req.NewName != "" {
+		// JSON 解码可能把客户端坏 UTF-8 替换为 U+FFFD；显式改名不能把
+		// 已损坏的名称发布到文件、TXT 和富化。上传的既有清洗语义不变。
+		if !utf8.ValidString(*req.NewName) || strings.ContainsRune(*req.NewName, utf8.RuneError) {
+			return fail(InvalidFilename, "新文件名包含编码替换符", nil)
+		}
 		name, err = filing.SanitizeFilename(*req.NewName)
 		if err != nil {
 			return fail(InvalidFilename, "新文件名不合法", err)

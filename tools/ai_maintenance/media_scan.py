@@ -37,12 +37,7 @@ HARD_PERCEPTUAL_LIMIT = 500
 DEFAULT_MAX_FILE_BYTES = 8 << 30
 DEFAULT_MAX_TOTAL_HASH_BYTES = 32 << 30
 
-IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".avif", ".heic",
-}
-VIDEO_EXTENSIONS = {
-    ".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".wmv", ".flv", ".mpg", ".mpeg", ".ts",
-}
+from .media_types import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 VARIANT_TOKENS = {
     "sfw", "nsfw", "v1", "v2", "v3", "p1", "p2", "p3", "4k", "2k", "1080p", "720p",
     "voice", "unblur", "uncensored", "censored", "raw", "clean", "alt", "variant",

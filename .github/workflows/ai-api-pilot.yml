@@ -1,0 +1,48 @@
+name: AI API 隔离真实服务闭环
+on:
+  pull_request:
+    paths:
+      - 'tools/ai_maintenance/**'
+      - 'tools/test_ai*'
+      - 'tools/test_media_naming.py'
+      - 'server/**'
+      - 'api/openapi.yaml'
+      - '.github/workflows/ai-api-pilot.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ai-api-pilot-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with: { python-version: '3.13' }
+      - name: 同 revision 的 Go 接口与隔离服务
+        working-directory: server
+        run: |
+          go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config internal/httpapi/gen/oapi-codegen.yaml ../api/openapi.yaml
+          go build -o ../build/ai-pilot/qimeng-server ./cmd/qimeng
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o ../build/ai-pilot/qimeng-server.exe ./cmd/qimeng
+      - name: 命名/工具回归（合成数据）
+        run: |
+          python -m unittest discover -s tools -p 'test_media_naming.py'
+          python -m unittest discover -s tools -p 'test_ai*.py'
+      - name: 真实 HTTP 与 stdio MCP 写入/回读/权限/租约/配方
+        env:
+          QIMENG_TEST_SERVER_BINARY: ${{ github.workspace }}/build/ai-pilot/qimeng-server
+        run: python -m unittest discover -s tools -p 'test_ai_go_mcp_integration.py' -v
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ai-pilot-windows-server
+          path: build/ai-pilot/qimeng-server.exe
+          retention-days: 7

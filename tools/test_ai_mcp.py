@@ -60,6 +60,20 @@ class DirectMcpClient:
 
 
 class McpProtocolTest(unittest.TestCase):
+    def test_http_failure_keeps_status_server_code_and_redacts_token(self):
+        path = "/api/v1/authors/synthetic-http-error/profile"
+        StubHandler.routes[path] = (403, {"code": "FORBIDDEN_SCOPE", "message": TOKEN})
+        client = DirectMcpClient(self.env())
+        client.request({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {"protocolVersion": "2025-06-18"}})
+        response = client.request({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                   "params": {"name": "author.profile.read",
+                                              "arguments": {"authorId": "synthetic-http-error"}}})["result"]
+        self.assertTrue(response["isError"])
+        self.assertEqual(403, response["structuredContent"]["status"])
+        self.assertEqual("FORBIDDEN_SCOPE", response["structuredContent"]["body"]["code"])
+        self.assertNotIn(TOKEN, json.dumps(response))
+
     @classmethod
     def setUpClass(cls):
         cls.http = ThreadingHTTPServer(("127.0.0.1", 0), StubHandler)
