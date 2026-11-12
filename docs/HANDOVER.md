@@ -4,6 +4,8 @@
 
 ## 1. 当前使用形态
 
+2026-11-12 后续安装授权：用户已连接真机并要求云端编译安装；现识别到单台已授权 arm64 真机，安装版 0.2.2/code36。准备 code37（versionName 0.2.2）云端 Release，同源门禁/签名/字节/内嵌构建身份核对后保留数据覆盖安装，不拉前台。此为现项目手机内嵌过渡形态维护；Next 仍为手机纯客户端。当前尚未安装该候选，结果见后续部署记录。
+
 2026-11-12 AI API 定向修复：显式改名拒绝编码替换符；命名计划按图片/视频独立编号，类别绑定校验/指纹；工具包/契约 1.5.0、规则 2026-11-12.1，新增正式上传 prepare/apply、异步扫描工具和 media.ingest。真实服务验证还发现并修复 MCP 吞掉 HTTP/网络错误的问题，现保留状态/服务端 code/脱敏正文，与 CLI 语义一致。未向 8420 写测试数据，未操作手机、未安装或部署。本次现项目修复与仓外 Next 规划分开，未来为 PC/NAS 单核心、手机纯客户端。
 
 - 功能提交 `ab37e0c722b575589e49408f7669ea632d3c705e`：[真实 Go+stdio MCP 云端集成](https://github.com/Surtr42u/qimeng-media/actions/runs/43197531163) 六项全部通过；命名 42 项、AI 回归 291 项（11 跳过）通过；[文档工作流](https://github.com/Surtr42u/qimeng-media/actions/runs/43197531028) Python 全集 395 项（11 跳过）通过，文档影响检查因缺 tools/README 同步失败，已在后续文档提交补齐，不能把该次工作流写成全绿。SDK 由[云端 make sdk](https://github.com/Surtr42u/qimeng-media/actions/runs/43196658612)生成，摘要锁已回收；总 CI 状态按 PR 当前 head 核对。
