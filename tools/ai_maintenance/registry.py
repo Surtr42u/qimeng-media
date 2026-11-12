@@ -356,12 +356,13 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="本地源文件上传计划：绑定摘要/大小/时间和明确目标库；不写入库根。",
         handler_ref="ai_maintenance.tools_ingest:asset_upload_prepare", permission="asset.upload",
         input_schema=_schema({"libraryId": _string("目标库 ID", 1, 512),
+                              "operationId": _string("新操作生成并持久化 UUID；本操作重试保持不变", 1, 36),
                               "path": _string("授权读根内的源文件；与 fileRef 二选一"),
                               "fileRef": _string("files.search 返回的文件引用"),
                               "fileName": _string("最终文件名；缺省源文件名", 1, 255),
                               "directory": _string("库内相对目录，空=根"),
                               "sourceMtime": _integer("源修改时间 Unix 毫秒；缺省源文件时间", 0, 253402300799999)},
-                             required=("libraryId",)),
+                             required=("libraryId", "operationId")),
         output_schema=_PLAN_RESULT_OUTPUT,
         requirements=(_req("/api/v1/libraries", "GET"),),
     ),
@@ -1295,7 +1296,7 @@ DOMAINS: tuple = (
 
 # 工具示例：按需在 platform.tool.describe 返回；不进入 tools list / MCP tools/list 默认载荷。
 TOOL_EXAMPLES: dict = {
-    "asset.upload.prepare": ({"libraryId": "lib-synthetic", "fileRef": "<files.search 返回的 fileRef>"},),
+    "asset.upload.prepare": ({"libraryId": "lib-synthetic", "operationId": "00000000-0000-4000-8000-000000000001", "fileRef": "<files.search 返回的 fileRef>"},),
     "asset.upload": ({"plan": {"…": "asset.upload.prepare 返回的 plan"}, "confirm": True},),
     "library.scan": ({"libraryId": "lib-synthetic", "confirm": True},),
     "project.context": ({"markdown": True},),

@@ -289,7 +289,7 @@ class RulepackTest(unittest.TestCase):
             second = rulepack.build_rulepack()
         self.assertEqual(first["platformVersion"], "1.5.0")
         self.assertEqual(first["toolContractVersion"], "1.5.0")
-        self.assertEqual(first["rulepackVersion"], "2026-11-10.4")
+        self.assertEqual(first["rulepackVersion"], "2026-11-12.1")
         self.assertNotEqual(first["platformVersion"], first["rulepackVersion"])
         self.assertEqual(rulepack.dumps_pack(first), rulepack.dumps_pack(second))
         self.assertEqual(len(first["tools"]), len(registry.TOOLS))
@@ -764,7 +764,7 @@ class CliToolTest(StubServerTest):
         self.assertEqual(0, status)
         payload = json.loads(stdout)
         self.assertEqual("1.5.0", payload["platformVersion"])
-        self.assertEqual("2026-11-10.4", payload["rulepackVersion"])
+        self.assertEqual("2026-11-12.1", payload["rulepackVersion"])
         self.assertIn("sha256", payload["openapi"])
         status, stdout, stderr = self.run_cli(["tools", "list", "--json"])
         self.assertEqual(0, status)
@@ -956,4 +956,4 @@ class MediaOrganizeTest(StubServerTest):
         for tool_id in ("media.organize.prepare", "media.organize.apply"):
             summary = registry.tool_summary(registry.get(tool_id), document)
             self.assertEqual("supported", summary["status"])
-            self.assertEqual("1.0.0", summary["implementationVersion"])
+            self.assertEqual("1.1.0", summary["implementationVersion"])

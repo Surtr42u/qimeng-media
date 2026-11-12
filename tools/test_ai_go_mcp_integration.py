@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
 from urllib import error, request
 
 from ai_maintenance import recipes
@@ -171,6 +172,7 @@ class GoMcpIntegration(unittest.TestCase):
         card = self.result(client, "platform.recipe", {"action": "card", "recipeId": "media.ingest"})
         self.assertEqual("media.ingest", card["card"]["recipe"])
         plan = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
+                           "operationId": str(uuid.uuid4()),
                            "path": str(self.source), "fileName": "合成 1.png"})["plan"]
         self.assertTrue(client.call("asset.upload", {"plan": plan, "confirm": False})["isError"])
         applied = self.result(client, "asset.upload", {"plan": plan, "confirm": True})
@@ -197,7 +199,9 @@ class GoMcpIntegration(unittest.TestCase):
 
     def test_server_scope_and_local_readonly_reject_writes(self):
         client, _ = self.client(scopes=["read"])
-        self.assertTrue(client.call("library.scan", {"libraryId": self.library, "confirm": True})["isError"])
+        denied = client.call("library.scan", {"libraryId": self.library, "confirm": True})
+        self.assertTrue(denied["isError"])
+        self.assertEqual(403, denied["structuredContent"]["status"])
         client, _ = self.client(readonly=True)
         self.assertTrue(client.call("library.scan", {"libraryId": self.library, "confirm": True})["isError"])
         client, _ = self.client(permissions="read")
@@ -206,12 +210,31 @@ class GoMcpIntegration(unittest.TestCase):
     def test_recipe_gate_and_resume_on_real_go(self):
         _, env = self.client()
         state = self.root / "recipe"
-        inputs = {"upload": {"libraryId": self.library, "path": str(self.source), "fileName": "配方 1.png"}}
+        inputs = {"upload": {"libraryId": self.library, "operationId": str(uuid.uuid4()),
+                             "path": str(self.source), "fileName": "配方 1.png"}}
         first = recipes.run_recipe("media.ingest", inputs, env=env, state_dir=state)
         self.assertFalse((self.media / "配方 1.png").exists())
         self.assertNotEqual("completed", first["status"])
         recipes.run_recipe("media.ingest", inputs, env=env, state_dir=state, confirm=True)
         self.assertEqual(PNG, (self.media / "配方 1.png").read_bytes())
+
+    def test_changed_source_and_bad_rename_do_not_publish(self):
+        client, _ = self.client()
+        source = self.sources / "变化.png"
+        source.write_bytes(PNG)
+        plan = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
+                           "operationId": str(uuid.uuid4()), "path": str(source)})["plan"]
+        source.write_bytes(PNG + b"changed")
+        self.assertTrue(client.call("asset.upload", {"plan": plan, "confirm": True})["isError"])
+        self.assertFalse((self.media / "变化.png").exists())
+        plan = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
+                           "operationId": str(uuid.uuid4()), "path": str(self.source), "fileName": "改名保护.png"})["plan"]
+        asset = self.result(client, "asset.upload", {"plan": plan, "confirm": True})
+        status, rejected = self.http("POST", "/api/v1/assets/" + asset["assetId"] + "/move",
+                                     {"targetDir": "", "newName": "坏\ufffd.png"}, self.admin)
+        self.assertEqual(400, status)
+        self.assertEqual("INVALID_FILENAME", rejected["code"])
+        self.assertEqual(PNG, (self.media / "改名保护.png").read_bytes())
 
     def test_lease_fencing_and_terminal_readback(self):
         client, _ = self.client()

@@ -22,6 +22,10 @@ def _source(ctx, source):
 
 
 def asset_upload_prepare(ctx, payload):
+    try:
+        operation_id = str(uuid.UUID(payload["operationId"]))
+    except ValueError:
+        raise errors.invalid_input("operationId 必须是持久化 UUID；同一操作重试保持不变") from None
     library_id = payload["libraryId"]
     library = _library(ctx, library_id)
     source = {key: payload[key] for key in ("path", "fileRef") if payload.get(key)}
@@ -50,7 +54,7 @@ def asset_upload_prepare(ctx, payload):
         confirmation={"required": True, "reason": "上传至显式目标库；同名自动改名需回读"},
         recoverable_steps=["同一计划使用稳定 uploadId，七天内重放完成凭据；不自动重试。"],
         expected_readback=["资产 ID、库、最终 relPath、文件大小和源时间一致"],
-        extra={"source": source, "sha256": sha256, "sourceMtime": mtime,
+        extra={"operationId": operation_id, "source": source, "sha256": sha256, "sourceMtime": mtime,
                "libraryRootDigest": plans.digest(library.get("rootPath")),
                "sourceMtimeNs": before.st_mtime_ns},
     )
@@ -72,7 +76,7 @@ def asset_upload(ctx, payload):
     if sha256 != plan["sha256"] or info.st_mtime_ns != plan["sourceMtimeNs"]:
         raise errors.precondition_failed("源内容/时间已变化，请重新 prepare")
     change = plan["changes"][0]
-    upload_id = str(uuid.UUID(plan["idempotencyKey"]))
+    upload_id = plan["operationId"]
     with path.open("rb") as stream:
         opened = os.fstat(stream.fileno())
         if (opened.st_ino, opened.st_size, opened.st_mtime_ns) != (info.st_ino, size, info.st_mtime_ns):

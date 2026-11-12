@@ -20,7 +20,7 @@
     "properties": {
       "upload": {
         "type": "object",
-        "description": "asset.upload.prepare 的输入：libraryId，path/fileRef 二选一，可选 fileName/directory/sourceMtime。"
+        "description": "asset.upload.prepare 的输入：libraryId、持久化 operationId(UUID)，path/fileRef 二选一，可选 fileName/directory/sourceMtime。"
       }
     },
     "required": [

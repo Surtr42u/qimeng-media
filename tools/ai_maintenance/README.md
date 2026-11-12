@@ -343,7 +343,7 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 
 2026-11-12 增量：platform/toolContract 1.5.0、rules 2026-11-12.1；新增 `asset.upload.prepare` / `asset.upload` / `library.scan` 和 `media.ingest` recipe。工具 permission `asset.upload` 对应服务端 `read`（库/资产回读）+ `asset.upload`；`library.write` 对应 `read` + `library.write`。服务端凭据必须另行签发，工具许可不代替 scope。
 
-`qai task media.ingest` 返回上传任务卡，`qai run media.ingest --input-file <input.json>` 接受 `{"upload":{"libraryId":"<id>","fileRef":"<files.search 返回值>","directory":"","fileName":"合成 1.png"}}`；也可用授权读根内的 `path` 代替 fileRef。prepare 绑定源摘要/时间和目标；人工 gate 后上传，回读 ID/路径/大小/时间。同计划的稳定 uploadId 在七天完成凭据窗口内重放，不自动重试或换键；自动改名/源变化如实报错。直接上传已入库；扫描是已投放文件的另一条入口，不能把 accepted 当 completed。备份导入仍未封装，scope 为独立的高风险 `backup.restore`。
+`qai task media.ingest` 返回上传任务卡，`qai run media.ingest --input-file <input.json>` 接受 `{"upload":{"libraryId":"<id>","operationId":"<持久化 UUID>","fileRef":"<files.search 返回值>","directory":"","fileName":"合成 1.png"}}`；也可用授权读根内的 `path` 代替 fileRef。prepare 绑定源摘要/时间和目标；人工 gate 后上传，回读 ID/路径/大小/时间。新操作须生成并持久化 operationId（UUID），本操作重试保持不变，另一次独立操作使用新 ID。同计划的稳定 uploadId 在七天完成凭据窗口内重放，不自动重试或换键；自动改名/源变化如实报错。直接上传已入库；扫描是已投放文件的另一条入口，不能把 accepted 当 completed。备份导入仍未封装，scope 为独立的高风险 `backup.restore`。
 
 命名规划/校验引擎 1.1.0、plan schema 2：图片与视频独立续号，类别进入指纹；补图不跨类别读取页数，混合类别的单组拒绝，旧计划需重建。全目录占用检查不变。图片各扩展名及动图共用图片序列。
 
