@@ -5,7 +5,8 @@
 - 显式资产改名在任何副作用前拒绝 U+FFFD/坏 UTF-8，沿用 INVALID_FILENAME；OpenAPI 同步 400，SDK 由云端 make sdk 生成并回收摘要锁。
 - 命名引擎 1.1.0 / plan schema 2 按图片/视频分别续号与补页，类别参与指纹/验证，旧计划重新 prepare；完整目录占用检查保留。
 - 平台/工具契约 1.5.0、规则 2026-11-12.1：新增 asset.upload.prepare/asset.upload/library.scan、media.ingest，复用统一 HTTP、计划、权限、读根与业务端点；流式上传稳定 uploadId，回读路径/大小/时间，扫描受理不冒充完成。
-- 新增云端同 revision 临时 Go + 真正 stdio MCP 受限凭据集成，覆盖上传重放、作者确认/revision、只读/scope、租约及 recipe gate/恢复。实际运行结果待记录；本地未运行应用构建或自动测试，未触碰真实库/手机，未部署。
+- 新增云端同 revision 临时 Go + 真正 stdio MCP 受限凭据集成，六项通过；命名 42 项、AI 回归 291 项及 Python 全集 395 项通过（后两者各 11 跳过，范围不同不叠加计数）。真实服务回归发现 MCP 吞掉远程 HTTP 错误，已保留状态/服务端 code/脱敏正文并补回归。SDK 来自云端 make sdk 43196658612；完整 CI 及文档门禁见 HANDOVER/PR，不沿用旧 head。
+- 本次模型后台手动 stdio 调用 15 次（12 成功、3 预期拒绝），完成合成上传/fileRef/重放与作者 revision 回读；云端 Windows 产物身份与功能提交一致，临时资源已清理。本地未运行应用构建或自动单测，未触碰真实库/手机，未部署；未宣称新 AI 盲测或其他客户端接入通过。
 - 专题同步：领域 files、API files、SECURITY、工具 README、平台任务书、ADR-0056、HANDOVER/CAPABILITY_MAP；未来 Next 业务流程规划在独立仓外文件同步，不将现项目内嵌服务带入目标架构。最旧第六百九十六笔原样移入历史档，近期保持 30 笔。
 
 ## fix(deps): 修复 npm 告警并升级 Go 工具链到 1.27.4（2026-11-11 第七百二十五笔）

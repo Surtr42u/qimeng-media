@@ -16,7 +16,7 @@
 
 ## 能力域
 
-2026-11-12 AI 工具增量：新增 `asset.upload.prepare`/`asset.upload`/`library.scan` 与 `media.ingest`，命名计划图片/视频分序及旧计划失效，显式改名编码防错；平台/契约 1.5.0。工具链与真实服务验证状态只见 [HANDOVER](HANDOVER.md)，不能沿用以下历史计数/测试记录当作当前 head 的通过或安装证据。
+2026-11-12 AI 工具增量：新增 `asset.upload.prepare`/`asset.upload`/`library.scan` 与 `media.ingest`，命名计划图片/视频分序及旧计划失效，显式改名编码防错，并保留 MCP 远程错误语义；平台/契约 1.5.0。真实 Go+stdio MCP 六项与本次模型手动调用已验证，完整范围/构建/CI/未部署状态见 [HANDOVER](HANDOVER.md)，不能沿用以下历史计数/测试记录当作当前 head 的通过或安装证据。
 
 | 能力域 | 已有能力与依据 | 真缺口/触发条件 | 状态 |
 |---|---|---|---|

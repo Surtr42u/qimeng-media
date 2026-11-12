@@ -4,7 +4,10 @@
 
 ## 1. 当前使用形态
 
-2026-11-12 AI API 定向修复进行中：显式改名拒绝编码替换符；命名计划按图片/视频独立编号，类别绑定校验/指纹；工具包/契约 1.5.0、规则 2026-11-12.1，新增正式上传 prepare/apply、异步扫描工具和 media.ingest。新增云端真实 Go + stdio MCP 隔离集成，结果尚待运行；未向 8420 写测试数据，未操作手机、未安装或部署。本次现项目修复与仓外 Next 规划分开，未来为 PC/NAS 单核心、手机纯客户端。
+2026-11-12 AI API 定向修复：显式改名拒绝编码替换符；命名计划按图片/视频独立编号，类别绑定校验/指纹；工具包/契约 1.5.0、规则 2026-11-12.1，新增正式上传 prepare/apply、异步扫描工具和 media.ingest。真实服务验证还发现并修复 MCP 吞掉 HTTP/网络错误的问题，现保留状态/服务端 code/脱敏正文，与 CLI 语义一致。未向 8420 写测试数据，未操作手机、未安装或部署。本次现项目修复与仓外 Next 规划分开，未来为 PC/NAS 单核心、手机纯客户端。
+
+- 功能提交 `ab37e0c722b575589e49408f7669ea632d3c705e`：[真实 Go+stdio MCP 云端集成](https://github.com/Surtr42u/qimeng-media/actions/runs/43197531163) 六项全部通过；命名 42 项、AI 回归 291 项（11 跳过）通过；[文档工作流](https://github.com/Surtr42u/qimeng-media/actions/runs/43197531028) Python 全集 395 项（11 跳过）通过，文档影响检查因缺 tools/README 同步失败，已在后续文档提交补齐，不能把该次工作流写成全绿。SDK 由[云端 make sdk](https://github.com/Surtr42u/qimeng-media/actions/runs/43196658612)生成，摘要锁已回收；总 CI 状态按 PR 当前 head 核对。
+- 同 revision 的 Windows 云端产物 `-version` 确认 revision/clean 状态；本次模型经后台隔离服务和 stdio MCP 控制台逐次选择 15 次工具调用：发现/任务卡、fileRef 定位、上传确认拦截/执行/同 ID 重放、资产回读、作者单字段计划/确认/写入/回读及未授予权限拒绝。12 次正常返回、3 次预期拒绝；作者 revision 0→1，上传重放返回同一资产且查询仅一项。临时进程和数据已清理，未改全局 MCP 配置。此为实现者手动实调，不能冒充全新 AI 无源码盲测或其他客户端接入验收。
 
 面向未来 NAS 的自托管多端媒体库，当前用户尚无 NAS，以手机单机与 PC 过渡使用。Android 可运行内嵌 Go 服务端；Web/PWA 和 Tauri 连接 PC/服务器。M0–M6 的历史收官记录保留在 PROJECT_PLAN，不能当作当前版本在未来具体 NAS 硬件上已验收的证据。
 
