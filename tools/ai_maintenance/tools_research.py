@@ -412,15 +412,20 @@ def research_media_probe(ctx: ToolContext, payload: dict) -> dict:
         raise errors.invalid_input(f"files+fileRefs 最多 {MAX_MEDIA_FILES} 项")
     resolved = []
     placeholders: dict[str, str] = {}
-    for index, item in enumerate(files, 1):
-        path = _input_path(ctx, item, "files[]")
-        resolved.append(path)
-        placeholders.setdefault(path, f"<media:{index}>")
-    for index, item in enumerate(file_refs, 1):
-        path = str(fileref.resolve_input(None, item, env=ctx.env, mode="read",
-                                         kind="fileRefs[]"))
-        resolved.append(path)
-        placeholders.setdefault(path, f"<fileRef:{index}>")
+    try:
+        for index, item in enumerate(files, 1):
+            path = _input_path(ctx, item, "files[]")
+            resolved.append(path)
+            placeholders.setdefault(path, f"<media:{index}>")
+        for index, item in enumerate(file_refs, 1):
+            path = str(fileref.resolve_input(None, item, env=ctx.env, mode="read",
+                                             kind="fileRefs[]"))
+            resolved.append(path)
+            placeholders.setdefault(path, f"<fileRef:{index}>")
+    except errors.ToolError as exc:
+        # Input resolution is read-only and precedes output creation/subprocesses.
+        exc.mutation_rejected = True
+        raise
     directory = _output_dir(ctx, None, "media-probe")
     out = directory / "media-probe.jsonl"
     if payload.get("frameDir") is None:

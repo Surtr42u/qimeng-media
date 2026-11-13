@@ -168,6 +168,17 @@ class BudgetTests(unittest.TestCase):
                 env={}, config=config, side_effects=True)
         self.assertEqual(1, config.budget.report()["pendingWrites"])
 
+    def test_media_probe_denied_input_can_be_corrected_in_same_task(self):
+        from ai_maintenance import tools_research
+        config = execution.load_config({"QIMENG_AI_GRANTED_PERMISSIONS": "read,research"})
+        for _ in range(2):
+            with patch.object(tools_research, "_input_path", side_effect=errors.path_not_authorized("files[]")):
+                with self.assertRaises(errors.ToolError) as caught:
+                    execution.execute_tool("research.media.probe", {"files": ["synthetic-denied"]},
+                        env={}, config=config)
+            self.assertEqual("PATH_NOT_AUTHORIZED", caught.exception.code)
+            self.assertEqual(0, config.budget.report()["pendingWrites"])
+
     def test_total_calls_are_reserved_before_side_effects(self):
         budget = task_controls.SessionBudget({"QIMENG_AI_MAX_CALLS": "2"})
         budget.reserve("query", {"cursor": "a"})
