@@ -144,6 +144,7 @@ class BudgetTests(unittest.TestCase):
             self.assertEqual(1, second.report()["calls"])
             with self.assertRaises(errors.ToolError) as caught:
                 second.reserve("query", {"cursor": "new"})
+            self.assertEqual("TASK_BUDGET_EXHAUSTED", caught.exception.code)
 
     def test_explicit_prewrite_rejection_does_not_lock_later_writes(self):
         for rejected in (errors.precondition_failed("source changed", mutation_rejected=True),
@@ -166,7 +167,6 @@ class BudgetTests(unittest.TestCase):
             execution.controlled_action("synthetic.write", {}, operation,
                 env={}, config=config, side_effects=True)
         self.assertEqual(1, config.budget.report()["pendingWrites"])
-            self.assertEqual("TASK_BUDGET_EXHAUSTED", caught.exception.code)
 
     def test_total_calls_are_reserved_before_side_effects(self):
         budget = task_controls.SessionBudget({"QIMENG_AI_MAX_CALLS": "2"})
