@@ -459,15 +459,25 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
   "mcpServers": {
     "qimeng-ai": {
       "command": "python",
-      "args": ["-X", "utf8", "tools/ai_maintenance/mcp_server.py"],
+      "args": ["-X", "utf8", "D:/path/to/qimeng-media/tools/ai_maintenance/mcp_server.py"],
       "env": {
         "QIMENG_API_BASE": "http://127.0.0.1:8420",
-        "QIMENG_API_TOKEN": "<admin-token>"
+        "QIMENG_API_TOKEN": "<scope-read-ai-client-token>",
+        "QIMENG_AI_READONLY": "1",
+        "QIMENG_AI_GRANTED_PERMISSIONS": "read"
       }
     }
   }
 }
 ```
+
+### 在 ZCode 添加（先只读）
+
+按 [ZCode 官方 MCP 文档](https://zcode.z.ai/cn/docs/mcp-services)，进入「设置 → MCP 服务器 → 新建 MCP 服务器」：选择需要使用的用户/工作区作用域，名称 `qimeng-ai`，类型 `stdio（本地命令）`；命令 `python`，参数采用上面的绝对脚本路径（替换项目目录）。也可在「完整配置」模式粘贴上述 JSON，展开环境变量填入当前绮梦地址和专用只读凭据，然后启用。若 Python 不在该应用的 PATH 中，命令改为已安装 Python 3.13 的完整路径。
+
+绮梦凭据与 Telegram BotFather token 不同，不能互填。由管理员用现有服务端二进制的 `ai-client create -config <当前配置文件> -label zcode-readonly -scopes read` 签发凭据，再在本机界面填写一次返回的 token；配置须指向当前服务实例的数据目录，不能误建另一实例。这里不自动签发真实凭据、不修改 ZCode 配置；示例只用于只读接入，不表示已允许自动整理或删除。
+
+启用后新开/重连会话，先让 Agent 读取 `platform.catalog`，再列出媒体库以验证实际连接。通过 Telegram 操作时，选用配置了该 MCP 的同一工作区；是否正确透传工具以实际 ZCode 会话验证为准。尚未完成 ZCode 真实接入验收，不把配置示例当作兼容认证。
 
 **验证状态**：已在协议层用两个独立合成客户端（完整 stdio 帧序列 / 直接逐条
 JSON-RPC）验证 initialize、tools/list、tools/call、ping、错误、超时、取消与脱敏；

@@ -1,6 +1,6 @@
 # CHANGELOG 历史归档：2026-11-07
 
-> 第六百九十四～六百九十七笔，完整原文迁入；现行状态见 HANDOVER。
+> 第六百九十四～六百九十八笔，完整原文迁入；现行状态见 HANDOVER。
 
 ## feat(tools): 研究核验 CLI 命令（context/provider/lens）（2026-11-07 第六百九十四笔）
 
@@ -38,3 +38,13 @@
 - 协议新增 7 个 `/api/v1/device/apply-tasks` 端点（登记/列表/详情/领取/段下载/回传/取消）：登记为 multipart manifest + masterTxt≤1MiB + v2Backup≤64MiB，单个段或整体请求体超限 413；段下载 octet-stream + Content-Length + X-Content-SHA256；`make sdk` 三端生成、go build ./... 通过，`api/sdk.lock` 同批重算（355 项）。
 - httpapi 只做 multipart/query 校验、错误映射与响应装配；测试覆盖创建/段落盘 SHA-256/超限/指纹不符、列表过滤与游标、领取幂等与过期、段下载头/终态/路径安全、回传终态与重复回传、取消、404/409/413，全部使用临时 SQLite、临时包目录与合成字节（含 1KB 段）。
 - 文档同批：`docs/api/device.md`、ADR-0055 与索引、能力地图、HANDOVER §8、AI_MAINTENANCE_P0 §4.5/§5/§6、llms 导航。验证边界：本地已跑 `make sdk`（含 `go build ./...`）、`gofmt`、`go vet`、文档/隐私/迁移检查；业务 `go test` 按仓库规定走云端 CI。**未安装**到现装 PC/手机；Android Worker、配对/设备身份、真机后台同步与包清理仍未实现。第六百六十七笔完整原样移入 `docs/history/CHANGELOG-20261028.md`，近期日志保持 30 笔。
+
+## docs(ai): 独立 AI 接入平台 V2 任务书、ADR-0056 与 R0 定向审计（2026-11-07 第六百九十八笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
+
+- 纳入 [外部 AI 接入平台统一任务书 V2](AI_PLATFORM_TASKBOOK.md) 作为现行执行清单（R0–R8、§6.6 组图命名与作品编号、§6.7 搜索语义与双端文件名显示、§11 安全权限与 §14 验收矩阵）；原[外部 AI 维护任务书](AI_MAINTENANCE_TASKBOOK.md)与 [P0 底稿](AI_MAINTENANCE_P0.md)标记为历史需求与设计来源，保留全文供追溯，不再作为并行执行清单。
+- 新增 [ADR-0056 独立 AI 接入平台架构](adr/0056-独立AI接入平台架构.md) 与 ADR 索引：两层接口独立、Python 标准库工具核心与显式注册表、版本分离与能力核对、计划/确认/执行/回读、唯一维护账本与内部 Worker、两代备份路径约定、研究默认关闭的边界与被否方案。
+- 新增 [R0 定向审计](AI_PLATFORM_AUDIT.md)：脚本/工具逐项清点（AI 工具链、作者写入、研究链、管理员工具、服务端能力）、三分类收敛、重复实现 D1–D8、规则包与 OpenAPI 逐条漂移（A1–A9，无 P0，24 个有端点声明路径+方法匹配）、复用/退役映射与最小变更计划。
+- 文档治理同批：AGENTS/AI_README_FIRST/llms 任务入口、ARCHITECTURE 外部 AI 平台章节、CAPABILITY_MAP 能力域（AI 工具层/维护队列/两代备份/组图命名/检索筛选）、HANDOVER §5 指针与 §9 本轮交付边界；旧三代陈述在 docs/domain/migration.md、docs/SECURITY.md、tools/MEDIA_RESEARCH_IMPORT.md 改为「当前/上次」两代并保留旧 flat3 兼容读取；tools/README 增迁移工具条目。
+- 验证边界：纯文档与入口调整，未改代码/协议/迁移/SDK；`python -X utf8 tools/check_docs.py` 0 错误、`check_privacy.py --mode worktree` passed。本轮源码交付的安装、真实数据与设备验收状态见 HANDOVER §9。

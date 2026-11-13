@@ -2,6 +2,7 @@ package media.qimeng.app.feature.detail
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,9 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.TagChip
@@ -72,9 +72,6 @@ private val TAG_SECTION_TITLE_TEXT_SIZE = 13.sp
 /** ＋ 新建钮宽 52dp（U10-2 D8 拍板：旧版视觉「＋」实底主色圆钮） */
 private val TAG_ADD_BUTTON_WIDTH = 52.dp
 
-/** ＋ 字形字号 22sp（U10-2b 校正：旧版 22f MediaDetailFragment.kt:928——U10-2 曾记 20sp 系误抄） */
-private val TAG_ADD_GLYPH_TEXT_SIZE = 22.sp
-
 /** ＋ 钮与输入框间距 10dp（U10-2 D8 拍板；现成间距档 8/12dp 均不符，不硬凑） */
 private val TAG_ADD_ROW_SPACING = 10.dp
 
@@ -85,8 +82,9 @@ private val TAG_ADD_ROW_TOP_SPACING = 8.dp
  *  sheetContainer setPadding 顶 18dp——与横向 20dp 同源同处） */
 private val TAG_SHEET_CONTENT_TOP_PADDING = 18.dp
 
-/** 标签池 chip 内边距 10dp（2026-09-15 用户反馈收紧，原全局 14dp 档对齐本节视觉密度） */
-private val TAG_POOL_CHIP_PADDING = 10.dp
+/** 标签池采用较易点选的 36dp 最小高度，文字放大但不随选中改变尺寸。 */
+private val TAG_POOL_CHIP_HEIGHT = 36.dp
+private val TAG_POOL_CHIP_TEXT_SIZE = 14.sp
 
 /** 仅对颜色作短过渡，选中时不改变标签尺寸或位置。 */
 private const val TAG_SELECTION_TRANSITION_MS = 120
@@ -139,18 +137,27 @@ internal fun DetailTagManageSheet(
                 // 底部呼吸空间与页面级留白同档（DETAIL_BOTTOM_SPACER 单源在 DetailScreen.kt）
                 .padding(bottom = DETAIL_BOTTOM_SPACER),
         ) {
-            Text(
-                text = stringResource(R.string.detail_tag_sheet_title),
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = TAG_SHEET_TITLE_TEXT_SIZE,
-                    fontWeight = FontWeight.Bold,
-                ),
-                textAlign = TextAlign.Center,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 标题下 12dp（SpaceL）保留：与旧版弹窗标题-内容间距同值，U10-2b 不动
                     .padding(bottom = QimengDimens.SpaceL),
-            )
+            ) {
+                Text(
+                    text = stringResource(R.string.detail_tag_sheet_title),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = TAG_SHEET_TITLE_TEXT_SIZE,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(R.string.detail_tag_selected_count, selectedTagIds.size),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -227,7 +234,7 @@ private fun SheetCurrentTags(
     }
 }
 
-/** 全量池始终保留服务端顺序；勾选只改变颜色与固定占位内的图标，不移走标签。 */
+/** 全量池保持名称展示顺序；勾选只改变颜色与固定占位内的图标，不移走标签。 */
 @Composable
 private fun SheetTagPool(
     pool: List<TagChip>,
@@ -240,37 +247,45 @@ private fun SheetTagPool(
     SheetTagSection(title = stringResource(R.string.detail_tag_section_pool)) {
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
-            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
+            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
         ) {
             pool.forEach { chip ->
                 key(chip.id) {
                     val selected = chip.id in selectedTagIds
                     val background by animateColorAsState(
-                        targetValue = if (selected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.secondaryContainer,
+                        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerLow,
                         animationSpec = tween(TAG_SELECTION_TRANSITION_MS),
                         label = "tagBackground",
                     )
                     val foreground by animateColorAsState(
-                        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurface,
                         animationSpec = tween(TAG_SELECTION_TRANSITION_MS),
                         label = "tagForeground",
                     )
                     Surface(
-                        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                        shape = RoundedCornerShape(QimengDimens.RankCardCornerRadius),
                         color = background,
+                        border = BorderStroke(
+                            QimengDimens.DividerThickness,
+                            if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant,
+                        ),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .height(QimengDimens.ChipHeight)
+                                .heightIn(min = TAG_POOL_CHIP_HEIGHT)
                                 .toggleable(
                                     value = selected,
                                     role = Role.Checkbox,
                                     onValueChange = { onToggleTag(chip.id) },
                                 )
-                                .padding(horizontal = TAG_POOL_CHIP_PADDING),
+                                .padding(
+                                    horizontal = QimengDimens.SpaceL,
+                                    vertical = QimengDimens.SpaceS,
+                                ),
                         ) {
                             Box(modifier = Modifier.size(TAG_CLEAR_ICON_SIZE)) {
                                 if (selected) {
@@ -285,7 +300,10 @@ private fun SheetTagPool(
                             Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
                             Text(
                                 text = chip.name,
-                                style = MaterialTheme.typography.labelLarge.merge(TagChipTextStyleOverride),
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontSize = TAG_POOL_CHIP_TEXT_SIZE,
+                                    fontWeight = FontWeight.Medium,
+                                ),
                                 color = foreground,
                             )
                         }
@@ -296,13 +314,7 @@ private fun SheetTagPool(
     }
 }
 
-/**
- * 添加行：34dp 胶囊输入框（F 批全局拍板勿动）+「＋」实底主色圆钮（D8 旧版视觉——52dp 宽、
- * 与输入行同高、100dp 圆角、22sp onPrimary 字形；enabled=空输入不可点，承自原「新建」
- * TextButton 语义）。contentDescription 承接被删除的「新建」文字的 TalkBack 语义。
- * 顶距 8dp（U10-2b：TAG_ADD_ROW_TOP_SPACING 对齐旧 inputRow setPadding 顶值，原 SpaceL 12dp 偏松）。
- * 创建成功回调才清空输入框（Web TagDialog 同款；失败保留输入供重试，错误经横幅反馈）。
- */
+/** 新建输入框与「添加」按钮；成功回调才清空输入，失败保留重试。 */
 @Composable
 private fun SheetAddTagRow(
     draft: String,
@@ -336,8 +348,8 @@ private fun SheetAddTagRow(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
-                    text = "＋",
-                    style = TextStyle(fontSize = TAG_ADD_GLYPH_TEXT_SIZE),
+                    text = stringResource(R.string.detail_tag_create),
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
             }

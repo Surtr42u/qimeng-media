@@ -1,3 +1,13 @@
+## fix(app): 标签视觉层级与名称自然排序（2026-11-13 第七百二十八笔）
+
+执行 AI：Codex（完整模型名称及变体：本会话未提供可核实元数据；负责实现、文档与验证）
+
+- 手机详情标签池改为 14sp 中等字重、36dp 最小高度、12dp 圆角与细描边，选中采用主色容器底和固定勾选；增大行距，标题左对齐并展示已选数量，新建按钮使用「添加」文字。固定弹层/底部按钮及选中不移位沿用上一笔。
+- 在标签编辑逻辑中统一按中文拼音/数字自然顺序排列；打开和新建时排序，勾选不重排，不改服务端/备份中的标签顺序。新增排序回归，现有 VM 场景覆盖乱序打开、新建插入与勾选顺序保持。
+- 同步 Android README、GUIDE_UI；工具 README 按 ZCode 官方文档补充 MCP 添加入口、绝对路径、只读凭据示例和验证边界；Telegram token 与绮梦凭据分开。未修改 ZCode 设置/机器人、未签发真实凭据或创建自动任务。
+- 文档检查 156 文件 0 错误、差异检查通过；本笔云端构建/单测/Lint 尚待执行，未安装或完成界面实测。上一笔源码检查不替代本笔验证。
+- 最旧第六百九十八笔原样归档至 CHANGELOG-20261107，近期保持 30 笔。
+
 ## fix(app): 标签选择保留位置与短过渡（2026-11-13 第七百二十七笔）
 
 执行 AI：Codex（完整模型名称及变体：本会话未提供可核实元数据；负责定位、实现与验证）
@@ -258,16 +268,6 @@
 - 新增 stdio MCP 适配器 `mcp_server.py`（JSON-RPC 2.0 最小子集：initialize/notifications/ping/tools.list/tools.call/取消与超时；与 CLI 共用同一注册表与 Schema；无 shell/任意 Python 执行；不暴露 token）；协议层以两个独立合成客户端验证，**真实 AI 客户端（Codex/Claude 等）接入未实测**，README 如实说明。
 - 规则源同批：rules.json schemaVersion=2、source 指向 V2 任务书与 ADR-0056、新增 mediaNaming 规则节、补齐 maintenance/jobs* 与 device/apply-tasks* 能力声明、区分 status/apiStatus/toolStatus、过时三代陈述改两代；rulesVersion/rulepackVersion 增为 2026-11-07.3。
 - 验证边界：`python -m unittest discover -s tools -p 'test_*.py'` 181 项通过（含旧 22 项 CLI 合同与旧脚本 15 项收敛回归、MCP 双合成客户端、命名 39 项）；CLI/MCP 冒烟通过；check_docs 0 错误、check_privacy passed。未改 server/api/web/android，未接真实服务端/真实 AI 客户端/8420 真库。
-
-## docs(ai): 独立 AI 接入平台 V2 任务书、ADR-0056 与 R0 定向审计（2026-11-07 第六百九十八笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- 纳入 [外部 AI 接入平台统一任务书 V2](AI_PLATFORM_TASKBOOK.md) 作为现行执行清单（R0–R8、§6.6 组图命名与作品编号、§6.7 搜索语义与双端文件名显示、§11 安全权限与 §14 验收矩阵）；原[外部 AI 维护任务书](AI_MAINTENANCE_TASKBOOK.md)与 [P0 底稿](AI_MAINTENANCE_P0.md)标记为历史需求与设计来源，保留全文供追溯，不再作为并行执行清单。
-- 新增 [ADR-0056 独立 AI 接入平台架构](adr/0056-独立AI接入平台架构.md) 与 ADR 索引：两层接口独立、Python 标准库工具核心与显式注册表、版本分离与能力核对、计划/确认/执行/回读、唯一维护账本与内部 Worker、两代备份路径约定、研究默认关闭的边界与被否方案。
-- 新增 [R0 定向审计](AI_PLATFORM_AUDIT.md)：脚本/工具逐项清点（AI 工具链、作者写入、研究链、管理员工具、服务端能力）、三分类收敛、重复实现 D1–D8、规则包与 OpenAPI 逐条漂移（A1–A9，无 P0，24 个有端点声明路径+方法匹配）、复用/退役映射与最小变更计划。
-- 文档治理同批：AGENTS/AI_README_FIRST/llms 任务入口、ARCHITECTURE 外部 AI 平台章节、CAPABILITY_MAP 能力域（AI 工具层/维护队列/两代备份/组图命名/检索筛选）、HANDOVER §5 指针与 §9 本轮交付边界；旧三代陈述在 docs/domain/migration.md、docs/SECURITY.md、tools/MEDIA_RESEARCH_IMPORT.md 改为「当前/上次」两代并保留旧 flat3 兼容读取；tools/README 增迁移工具条目。
-- 验证边界：纯文档与入口调整，未改代码/协议/迁移/SDK；`python -X utf8 tools/check_docs.py` 0 错误、`check_privacy.py --mode worktree` passed。本轮源码交付的安装、真实数据与设备验收状态见 HANDOVER §9。
 
 # CHANGELOG - 变更历史
 
