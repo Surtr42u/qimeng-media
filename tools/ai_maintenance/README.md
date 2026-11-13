@@ -481,7 +481,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 
 **验证状态**：已在协议层用两个独立合成客户端（完整 stdio 帧序列 / 直接逐条
 JSON-RPC）验证 initialize、tools/list、tools/call、ping、错误、超时、取消与脱敏；
-Codex/Claude 等真实 AI 客户端接入尚未实测。远程接入遵守既有隧道策略，不新增监听面。
+2026-11-13 已用实际 Codex App Server 0.167.0-alpha.4.1 原生 MCP 客户端完成隔离接入核验：发现 51 个工具，31 次调用（23 正常、8 预期拒绝），覆盖只读查询、参数/未知工具、404、只读及 scope 拦截、合成作者计划确认/指纹拒绝/写后回读、同计划重放、重连及撤销后 401；8 个测试凭据均撤销，进程已清理。调用由当前实现者逐次选择、未启动额外模型 turn，不计为新 AI 无源码自然语言盲测；桌面 GUI 热挂载、ZCode/Claude、全部业务工具与 NAS 仍未验收。首次继承桌面定制 node_repl 配置的独立客户端启动失败，改用仅包含本次 MCP 的进程级配置后通过，未修改用户长期配置。证据与边界见 [HANDOVER](../../docs/HANDOVER.md) 当前记录；远程接入仍遵守隧道策略。
 
 ## 独立部署与升级
 

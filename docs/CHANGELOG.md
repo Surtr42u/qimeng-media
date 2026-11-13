@@ -1,3 +1,12 @@
+## docs(ai): 实际 Codex MCP 接入闭环与权限边界核验（2026-11-13 第七百三十笔）
+
+执行 AI：Codex（完整模型名称及变体：本会话未提供可核实元数据；负责配置、逐次调用与结果核对）
+
+- 用实际 Codex App Server 0.167.0-alpha.4.1 原生 MCP 客户端接入现有工具包 1.5.0，隔离 Go 云端产物 ab37e0c7 与合成数据；51 个工具可发现、31 次调用（23 正常、8 预期拒绝），完整结果与边界见 HANDOVER。未改应用实现、未用业务 HTTP 绕过 MCP 证明任务完成。
+- 覆盖只读查询、参数/未知工具、404 传播、工具只读与服务端 scope、prepare 无写入、确认与指纹门禁、revision 0→1 回读、同计划无重复写入、全新连接读回、撤销后 401。8 个临时 AI 凭据全部撤销，进程/端口已清理，未修改长期 Codex 配置或真实媒体。
+- 首次独立客户端继承桌面定制 node_repl transport 启动失败，进程级只加载本次 MCP 后通过；保留失败记录。当前实现者逐次选工具、额外模型 turn 为 0，不计为新 AI 自然语言盲测；桌面 GUI 热挂载、其他客户端、全工具及 NAS 长期运行未验收。
+- 同步工具 README、HANDOVER、平台任务书验证入口；只运行文档/隐私/差异检查，不重跑应用构建与自动单测。最旧第七百笔移入 CHANGELOG-20261107，正文保持、仅修正相对链接。
+
 ## fix(app): 标签取消勾选图标并将当前标签置顶（2026-11-13 第七百二十九笔）
 
 执行 AI：Codex（完整模型名称及变体：本会话未提供可核实元数据；负责实现与验证）
@@ -255,17 +264,6 @@
 - 组图命名：新增 `server/internal/filing/workname.go` 纯函数解析作品基名/主作品编号（位宽/分隔/标记风格）/可选组内页码，仅括号序号（含上传自动改名产物）回退旧 seriesSuffix；`SuggestSeriesNames` 对组图页建议下一作品编号而非下一页码，组图与单图混合/乱序/缺页/补图/全角括号/零填充均覆盖测试；`docs/domain/files.md` 与 `docs/api/files.md` 记录命名语法、三步优先级与「自动改名不算命名成功」。
 - 搜索编号语义：新增 `server/internal/store/searchtoken`（纯函数 Match + modernc 确定性标量函数 `qimeng_search_token`，init 注册失败直接 panic 防静默退化）；browse/facets 的 10 处 q 谓词统一改为该函数：数字 token 按独立数字段匹配（前后非 ASCII 数字，裸数字不命中括号页码），`(2)` 等页码 token 定位组图页，非数字 token 保持旧 ASCII 子串多字段语义；列表/计数/分面/dateCounts 同口径。修复前隔离测试复现「朱诺 1 命中 13/13、朱诺 11 命中 110/2011、朱诺 2 命中页码」，修复后 store/search/httpapi 定向测试通过；sqlc 重新生成比对无额外漂移。
 - 验证边界：上述 Go 侧本机 `go build/vet/gofmt` 与 authorttach/store/search/httpapi 定向测试通过；Python 侧 12 项迁移工具测试通过；未改 OpenAPI/sdk.lock/SDK/migration；未迁移真实维护目录、未对真实库执行搜索专项或命名整理。
-
-## feat(server): 维护任务 Worker、幂等载荷指纹冲突与组合根装配（2026-11-07 第七百笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- `server/internal/maintenance` 新增 `worker.go`：内部常驻执行器（不开放任何 HTTP 领取/续租/完成端点），仅领取本进程已注册 handler 的 kind（sqlc 查询按 kind 过滤），有界并发（默认 1）、租约 TTL+心跳、逐步骤 RecordStep（running/completed/failed/skipped + attempt/时间/detail）、状态机安全推进（queued→inventory→applying→verifying→completed/partial/failed）、暂停/取消/租约丢失后停止后续步骤并保留已提交步骤、进程退出不写终态由租约过期续跑、panic 兜底只影响单任务、已完成步骤不重复执行副作用。
-- 内置 `backup_export` handler（`handler_backup.go`）：复用既有 `backup.Manager` 生成库快照并 AddArtifact 记录工件元数据（正文不入库）；无 handler 的 `asset_research`/`author_cleanup`/`custom` 保持 queued 供未来外部 AI 执行器。
-- 幂等冲突保护：`Service.Create` 命中同 idempotencyKey 时比较新载荷 inputFingerprint，相同保持重放（200/created=false），不同返回 ErrStateConflict（409），httpapi 映射 STATE_CONFLICT；补并发 replay 竞争路径。
-- 装配与配置：`cmd/qimeng` 以 `safego.Go` 启动 worker 并在关库前收齐；config 新增具名默认值（轮询 5s/租约 2min/并发 1，`QIMENG_MAINTENANCE_WORKER_*` 可覆盖，默认启用但只处理已注册 kind）；SQL 改动经锁定 sqlc v1.31.1 重新生成。
-- 测试与文档：maintenance/config 包覆盖领取/心跳、租约过期接管、重启续跑不重复、暂停取消、无 handler kind 不被领取、同 key 同/不同载荷、backup_export 工件与失败终态；docs/api/maintenance.md 更新 worker/冲突/未开放外部领取端点的边界，ADR-0054 追加实现补充。
-- 验证边界：本机 `go build ./...`、`go vet ./...`、定向 `go test ./internal/maintenance/ ./internal/config/` 通过，`gofmt -l` 干净；完整回归与 race 检测以云端 CI 为准（见 HANDOVER）。未安装到现装运行包，未对真实库创建任务。
 
 # CHANGELOG - 变更历史
 
