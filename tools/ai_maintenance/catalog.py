@@ -34,6 +34,7 @@ MAX_RULE_PATH_SEGMENTS = 4
 
 # 任务别名：让外部 AI 用业务语言（backup.sync 等）找到同一组工具/模板。
 TASK_ALIASES: dict = {
+    "asset.rename": {"extraTools": ("asset.query", "asset.rename.prepare", "asset.rename.apply")},
     "backup.sync": {"playbook": "device.apply", "extraTools": ("backup.export",)},
     "device.sync": {"playbook": "device.apply"},
     "maintenance.jobs": {"playbook": "maintenance.jobs"},

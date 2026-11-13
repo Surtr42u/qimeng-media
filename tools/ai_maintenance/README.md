@@ -589,6 +589,13 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
   token。服务端 409 `LEASE_LOST` 统一映射为稳定错误码 `LEASE_LOST`（退出码 1），
   不自动重领或重试旧 token；恢复时按 `completedSteps` 跳过已完成步骤。
 
+## 单文件精确改名
+
+单文件按指定名称改名使用 `asset.rename.prepare` → `asset.rename.apply`（支持 `planRef`），
+保留内部空格与扩展名，不追加作品编号；权限沿用 `media.organize`，调用已有 Go move API，
+资产 ID 与常规作者关联回读一致，同计划重放不再写入。COS 文件名决定派生归属，此入口
+明确拒绝 COS，沿用媒体整理流程。批量组图编号仍使用 `media.organize.*`，不改变领域公式。
+
 ## 研究工具包接入（research.*）
 
 `research.image.pipeline/search`、`research.author.probe`、`research.media.probe`、

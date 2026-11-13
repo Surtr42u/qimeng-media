@@ -687,6 +687,30 @@ TOOLS: tuple[ToolSpec, ...] = (
                            body_required=True)),
     ),
     ToolSpec(
+        id="asset.rename.prepare", version="1.0.0", kind="plan",
+        description="精确修改单个常规资产文件名的只读计划：保留空格、不追加编号、留在原目录；批量编号请用 media.organize。",
+        handler_ref="ai_maintenance.tools_rename:asset_rename_prepare", permission="media.organize",
+        input_schema=_schema({"assetId": _string("资产ID", 1, 512),
+                              "newName": _string("完整目标文件名（含扩展名），精确保留内部空格", 1, 255)},
+                             required=("assetId", "newName")),
+        output_schema=_PLAN_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/assets/{assetId}", "GET"),
+                      _req("/api/v1/assets/{assetId}/move", "POST", schema="MoveRequest",
+                           fields=("targetDir", "newName"), body_required=True)),
+    ),
+    ToolSpec(
+        id="asset.rename.apply", version="1.0.0", kind="write",
+        description="执行单文件精确改名计划并回读；保留资产ID和关联，不覆盖目标，已达目标时不重复写。",
+        handler_ref="ai_maintenance.tools_rename:asset_rename_apply", permission="media.organize",
+        read_only=False, side_effects=True, requires_confirmation=True, confirmation_mode="always",
+        input_schema=_schema({"plan": _PLAN_REF, "confirm": _boolean("必须显式true", False)},
+                             required=("plan", "confirm")),
+        output_schema=_WRITE_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/assets/{assetId}", "GET"),
+                      _req("/api/v1/assets/{assetId}/move", "POST", schema="MoveRequest",
+                           fields=("targetDir", "newName"), body_required=True)),
+    ),
+    ToolSpec(
         id="media.organize.prepare", version="1.1.0", kind="plan",
         description="媒体整理规划（只读）：scan 模式按内容对齐/去重/序号延顺/拼图目检；libraryId+groups 模式生成组图命名计划。",
         handler_ref="ai_maintenance.tools_media:media_organize_prepare", permission="media.organize",
@@ -1341,6 +1365,8 @@ DOMAINS: tuple = (
 
 # 工具示例：按需在 platform.tool.describe 返回；不进入 tools list / MCP tools/list 默认载荷。
 TOOL_EXAMPLES: dict = {
+    "asset.rename.prepare": ({"assetId": "synthetic-asset", "newName": "示例  精确名称.jpg"},),
+    "asset.rename.apply": ({"planRef": "<prepare 返回的 planRef>", "confirm": True},),
     "asset.upload.prepare": ({"libraryId": "lib-synthetic", "operationId": "00000000-0000-4000-8000-000000000001", "fileRef": "<files.search 返回的 fileRef>"},),
     "asset.upload": ({"plan": {"…": "asset.upload.prepare 返回的 plan"}, "confirm": True},),
     "library.scan": ({"libraryId": "lib-synthetic", "confirm": True},),

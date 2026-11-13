@@ -287,3 +287,21 @@ class GoMcpIntegration(unittest.TestCase):
         self.assertTrue(client.call("maintenance.heartbeat", args)["isError"])
         self.assertFalse(self.result(client, "maintenance.claim", {"kind": "custom"})["claimed"])
 
+    def test_exact_rename_preserves_identity_and_replays_without_renumbering(self):
+        client, _ = self.client(scopes=["read", "asset.upload", "media.organize"])
+        prepared = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
+            "operationId": str(uuid.uuid4()), "path": str(self.source), "fileName": "原名.png"})
+        uploaded = self.result(client, "asset.upload", {"planRef": prepared["planRef"], "confirm": True})
+        asset_id = uploaded["assetId"]
+        prepared = self.result(client, "asset.rename.prepare", {"assetId": asset_id,
+            "newName": "精确  名称 接入验收.png"})
+        args = {"planRef": prepared["planRef"], "confirm": True}
+        renamed = self.result(client, "asset.rename.apply", args)
+        self.assertEqual("applied", renamed["status"])
+        self.assertEqual(asset_id, renamed["assetId"])
+        self.assertEqual(PNG, (self.media / "精确  名称 接入验收.png").read_bytes())
+        self.assertFalse((self.media / "原名.png").exists())
+        self.assertEqual("already_applied", self.result(client, "asset.rename.apply", args)["status"])
+        invalid = client.call("asset.rename.prepare", {"assetId": asset_id, "newName": "../逃逸.png"})
+        self.assertTrue(invalid["isError"])
+
