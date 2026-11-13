@@ -71,7 +71,7 @@
     <!-- detail_tag_sheet_desc（副标题说明行）已随 U10-2b 删除：用户反馈「标签间隔太多」，
         旧版弹窗本无此行；草稿整体替换语义由「保存」钮自身表达 -->
     <string name="detail_tag_section_current">当前标签</string>
-    <string name="detail_tag_section_other">其他标签</string>
+    <string name="detail_tag_section_pool">选择标签 · 保存后生效</string>
     <string name="detail_tag_empty">暂无标签</string>
     <string name="detail_tag_new_placeholder">新建标签，回车确认</string>
     <!-- U10-2 D8：原「新建」文字钮退役换「＋」图标钮，TalkBack 语义由本条承接（contentDescription）；
