@@ -121,6 +121,18 @@ class BudgetTests(unittest.TestCase):
         self.assertTrue(caught.exception.operation_may_have_completed)
         self.assertEqual(1, config.budget.report()["pendingWrites"])
 
+    def test_handler_input_rejection_can_be_corrected_without_pending_write(self):
+        config = execution.load_config({})
+
+        def rejected(mark_started):
+            mark_started()
+            raise errors.invalid_input("synthetic invalid source")
+
+        with self.assertRaises(errors.ToolError):
+            execution.controlled_action("synthetic.write", {"bad": True}, rejected,
+                env={}, config=config, side_effects=True)
+        self.assertEqual(0, config.budget.report()["pendingWrites"])
+
     def test_task_budget_survives_new_client_instances(self):
         with tempfile.TemporaryDirectory() as directory:
             env = {"QIMENG_AI_TASK_ID": "synthetic-task", "QIMENG_AI_STATE_DIR": directory,
