@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 
 from . import client as http_client
-from . import errors, openapi, plans, registry, rulepack, schema, versions
+from . import errors, openapi, plans, registry, rulepack, schema, versions, task_controls
 from .runtime import ToolContext
 
 TRUE_VALUES = ("1", "true", "yes", "on")
@@ -49,12 +49,10 @@ class RuntimeConfig:
         self.rules = rules
         self.disabled = disabled
         self.read_only_mode = read_only_mode
-        # 权限与能力发现分离（2026-11-07 扩展性补充）：默认未显式限制时授予全部
-        # 已声明权限（保持既有 CLI 行为）；QIMENG_AI_GRANTED_PERMISSIONS 或
-        # rules.json toolConfig.grantedPermissions 可收窄。可信执行端必须据此
-        # 在调用前强制拒绝，而不是依赖模型自觉不调用 Go。
-        self.granted_permissions = (known_permissions()
+        # 首次绑定只读；额外权限必须来自可信配置，不能来自模型参数。
+        self.granted_permissions = (frozenset({"read"})
                                     if granted_permissions is None else granted_permissions)
+        self.budget = task_controls.SessionBudget({})
         self._document = None
         self._openapi_sha256 = ""
         self._openapi_paths: list[str] = []
@@ -113,13 +111,15 @@ def load_config(env=None) -> RuntimeConfig:
     read_only_mode = bool(tool_config.get("readOnlyMode")) or \
         env.get(READONLY_ENV, "").strip().lower() in TRUE_VALUES
     granted = _parse_granted_permissions(env, tool_config)
-    return RuntimeConfig(openapi_path=Path(openapi_path), rules_path=Path(rules_path),
-                         rules=rules, disabled=frozenset(disabled),
-                         read_only_mode=read_only_mode, granted_permissions=granted)
+    config = RuntimeConfig(openapi_path=Path(openapi_path), rules_path=Path(rules_path),
+                           rules=rules, disabled=frozenset(disabled),
+                           read_only_mode=read_only_mode, granted_permissions=granted)
+    config.budget = task_controls.SessionBudget(env)
+    return config
 
 
 def _parse_granted_permissions(env, tool_config: dict) -> frozenset[str]:
-    """解析可信执行端授予的权限；未配置=全部已声明权限（兼容旧行为）。"""
+    """解析可信执行端授予的权限；首次未配置只授予 read。"""
     known = known_permissions()
     raw = env.get(GRANTED_PERMISSIONS_ENV, "").strip()
     configured = tool_config.get("grantedPermissions")
@@ -128,7 +128,7 @@ def _parse_granted_permissions(env, tool_config: dict) -> frozenset[str]:
     elif isinstance(configured, list):
         values = [str(item).strip() for item in configured if str(item).strip()]
     else:
-        return known
+        return frozenset({"read"})
     if values == ["all"]:
         return known
     unknown = sorted(item for item in values if item not in known)
@@ -210,6 +210,26 @@ def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | Non
     """校验并执行一个工具；返回 (工具声明, 结果)。远程异常原样抛出。"""
     env = os.environ if env is None else env
     config = config or load_config(env)
+    request_key = config.budget.reserve(tool_id, payload)
+    try:
+        spec, result = _execute_tool(tool_id, payload, env=env, config=config,
+                                     skip_capability=skip_capability)
+    except Exception as exc:
+        config.budget.complete(request_key, {"error": getattr(exc, "code", type(exc).__name__),
+                                             "status": getattr(exc, "status", None)})
+        raise
+    try:
+        config.budget.complete(request_key, result)
+    except errors.ToolError as exc:
+        if not spec.side_effects or not isinstance(result, dict):
+            raise
+        # The business write already returned a verified result. Preserve it and make
+        # the executor-accounting failure explicit; never turn it into a blind retry.
+        result = {**result, "executorWarnings": [exc.to_dict()], "executorStopped": True}
+    return spec, result
+
+
+def _execute_tool(tool_id, payload, *, env, config, skip_capability):
     spec = registry.get(tool_id)
     if spec is None:
         raise errors.unknown_tool(tool_id)
@@ -222,6 +242,15 @@ def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | Non
     if missing_permission:
         raise errors.permission_denied(tool_id, missing_permission,
                                        sorted(config.granted_permissions))
+    if isinstance(payload, dict) and "plan" in spec.input_schema.get("properties", {}):
+        if ("plan" in payload) == ("planRef" in payload):
+            raise errors.invalid_input("必须且只能提供 plan 或 planRef 之一")
+        if "planRef" in payload:
+            from . import model_output
+            payload = dict(payload)
+            reference = payload.pop("planRef")
+            payload["plan"] = model_output.resolve_plan_ref(
+                reference, env=env, rulepack_version=config.rulepack_version, tool_id=tool_id)
     problems = schema.validate(payload, spec.input_schema)
     if problems:
         raise errors.invalid_input("工具输入不符合 Schema", details=problems)
@@ -230,6 +259,7 @@ def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | Non
         raise errors.tool_not_implemented(tool_id, reason)
     if spec.requires_confirmation and spec.confirmation_mode == "always" and payload.get("confirm") is not True:
         raise errors.not_confirmed(tool_id)
+    task_controls.authorize(spec, payload, env)
     document = None
     if not skip_capability and spec.requirements:
         document = config.document()
@@ -263,6 +293,7 @@ def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | Non
         disabled_tools=config.disabled,
         read_only_mode=config.read_only_mode,
         granted_permissions=config.granted_permissions,
+        extras={"executorBudget": config.budget.report()},
     )
     result = handler(context, payload)
     output_problems = schema.validate(result, spec.output_schema)

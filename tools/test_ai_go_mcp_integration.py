@@ -61,10 +61,13 @@ class StdioClient:
         self.process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": self.sequence,
                                             "method": method, "params": params}) + "\n")
         self.process.stdin.flush()
-        result = self.responses.get(timeout=30)
-        if result.get("id") != self.sequence or "error" in result:
-            raise AssertionError("MCP protocol response mismatch")
-        return result["result"]
+        while True:
+            result = self.responses.get(timeout=30)
+            if "id" not in result:  # Ignore server notifications such as tools/list_changed.
+                continue
+            if result.get("id") != self.sequence or "error" in result:
+                raise AssertionError("MCP protocol response mismatch")
+            return result["result"]
 
     def call(self, tool, arguments):
         return self.send("tools/call", {"name": tool, "arguments": arguments})
@@ -155,7 +158,8 @@ class GoMcpIntegration(unittest.TestCase):
         self.assertEqual(201, status)
         env = dict(self.env, QIMENG_API_BASE=self.base, QIMENG_API_TOKEN=secret["token"],
                    QIMENG_AI_READ_ROOTS=str(self.sources),
-                   QIMENG_AI_GRANTED_PERMISSIONS=permissions or "read,author.profile.write,asset.upload,library.write,maintenance.execute")
+                   QIMENG_AI_GRANTED_PERMISSIONS=permissions or "all",
+                   QIMENG_AI_MCP_DISCOVERY="full")
         if readonly:
             env["QIMENG_AI_READONLY"] = "1"
         client = StdioClient(env)

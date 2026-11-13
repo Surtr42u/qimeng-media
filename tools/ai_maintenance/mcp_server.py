@@ -18,9 +18,9 @@
   与实际继续写入的不确定状态），只读工具可立即返回 -32800；
 - 其他方法：-32601 Method not found；非法参数/未知工具：-32602。
 
-领域过滤（`QIMENG_AI_MCP_DOMAINS`）只减少暴露面：标准 `tools/list` 仍可能被客户端
-完整加载，按需查询（`platform.context`/`platform.catalog`/`platform.recipe`）不改变
-协议层清单大小，**不能当作上下文节省保证**。过滤时始终保留安全发现元工具
+默认 lazy 从发现工具开始，context/describe/recipe 成功后发布相关工具；full 保留
+完整清单兼容。不支持 list_changed 的客户端需显式选择 full；实际 token/费用仍须
+宿主遥测，不能由 JSON 字节推算。领域过滤时始终保留安全发现元工具
 （全部 `platform.*` 与 `files.storages`），`tools/list` 与 `tools/call` 使用同一可见
 集合，不扩大任何执行权限。
 """
@@ -40,10 +40,10 @@ if __package__ in (None, ""):  # 支持 python tools/ai_maintenance/mcp_server.p
     __package__ = "ai_maintenance"
 
 from . import client as http_client
-from . import errors, execution, registry
+from . import errors, execution, registry, model_output, versions
 
 SERVER_NAME = "qimeng-ai-toolkit"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = versions.PLATFORM_VERSION
 PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
 DEFAULT_CALL_TIMEOUT_SECONDS = 120.0
@@ -120,6 +120,12 @@ class McpServer:
             timeout_seconds if timeout_seconds is not None
             else self.env.get("QIMENG_AI_MCP_TIMEOUT", DEFAULT_CALL_TIMEOUT_SECONDS))
         self.config = None
+        self.discovery = self.env.get("QIMENG_AI_MCP_DISCOVERY", "lazy")
+        if self.discovery not in ("lazy", "full"):
+            raise errors.configuration_error("QIMENG_AI_MCP_DISCOVERY 必须为 lazy 或 full")
+        self._published = {spec.id for spec in registry.TOOLS
+                           if _is_discovery_meta_tool(spec.id) or spec.id == "health.check"}
+        self._publication_lock = threading.Lock()
         self._initialized = False
         # 写 stdout 与工具执行线程分离：调用期间主循环仍可处理取消通知。
         self._write_lock = threading.Lock()
@@ -187,26 +193,29 @@ class McpServer:
         self._initialized = True
         return {
             "protocolVersion": version,
-            "capabilities": {"tools": {"listChanged": False}},
+            "capabilities": {"tools": {"listChanged": self.discovery == "lazy"}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": (
-                "绮梦影库 AI 工具平台。任务级编排先调用 platform.recipe（action=card, recipeId="
-                "author.discover/media.batch/author.profile/device.sync）取 2–4KB 任务卡；"
-                "再按需用 platform.context（task/domain）取相关工具、Schema 摘要、规则节与 playbook；"
+                "绮梦影库 AI 工具平台。已有任务先用 platform.context(task)，如 author.profile/"
+                "author.discover/media.ingest/media.batch/device.sync；简单查询可按领域取 context。"
+                "该操作自动公布相关工具；取单工具 platform.tool.describe(toolId) 也会公布它，"
+                "随后接收 tools/list_changed；不支持变更通知的宿主由可信端配置 MCP_DISCOVERY=full。"
                 "工具较多时也可先调用 platform.catalog 取精简领域目录，再用 platform.tool.describe "
                 "按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节，需要工作流模板时用 "
                 "platform.playbook（可选模板，不是唯一路径）；默认不要读取全量规则包。"
-                "注意：按需查询不会阻止 MCP 客户端加载完整 tools/list；"
+                "默认 lazy 清单仅含发现工具，full 模式会加载完整 tools/list；"
                 "QIMENG_AI_MCP_DOMAINS 服务端过滤只是减少暴露面，不能当作上下文节省保证。"
                 "本地文件用 files.storages/files.search 发现（只读、有界、不返回绝对路径）；"
                 "fileRef 失效需重新搜索，不要手工拼接。"
-                "写入工具必须先 prepare 计划、人工确认后带 confirm=true 与计划指纹调用 apply。"
+                "大结果有 resultRef/truncated，用 platform.result.read 取必要部分；"
+                "prepare 返回 planRef 时直接传给 apply，不抄写或重造计划。"
+                "写入须在可信配置授权范围内，confirm=true 不授予新权限；"
                 "看见工具不代表有权执行（权限由可信执行端强制）；不得声称执行了 planned/已禁用工具；"
                 "不得在参数中放 token。"
             ),
         }
 
-    def _visible_tools(self) -> list:
+    def _allowed_tools(self) -> list:
         """QIMENG_AI_MCP_DOMAINS 只暴露相关领域，减少 tools/list 与误调用面。
 
         安全发现元工具（全部 platform.* 与 files.storages）始终可见：它们只读、
@@ -218,6 +227,31 @@ class McpServer:
         allowed = {item.strip() for item in raw.split(",") if item.strip()}
         return [spec for spec in registry.TOOLS
                 if spec.domain in allowed or _is_discovery_meta_tool(spec.id)]
+
+    def _visible_tools(self) -> list:
+        tools = self._allowed_tools()
+        if self.discovery == "full":
+            return tools
+        with self._publication_lock:
+            return [spec for spec in tools if spec.id in self._published]
+
+    def _publish_discovered(self, tool_id, result):
+        if self.discovery != "lazy" or not isinstance(result, dict):
+            return
+        ids = []
+        if tool_id == "platform.tool.describe":
+            ids = [(result.get("tool") or {}).get("id")]
+        elif tool_id == "platform.context":
+            ids = [item.get("id") for item in result.get("tools", [])]
+        elif tool_id == "platform.recipe":
+            card = result.get("card") or {}
+            ids = [item.get("action") for item in card.get("steps", [])]
+        allowed = {spec.id for spec in self._allowed_tools()}
+        with self._publication_lock:
+            added = set(ids) & allowed - self._published
+            self._published.update(added)
+        if added:
+            self._write({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
 
     def _tools_list(self) -> dict:
         config = self._load_config()
@@ -304,6 +338,10 @@ class McpServer:
             return _result_response(request_id, _tool_error_result(
                 errors.internal_error("工具调用内部错误")))
         spec, result = payload
+        self._publish_discovered(spec.id, result)
+        is_error = isinstance(result, dict) and result.get("status") in ("partial", "failed")
+        result = model_output.present_result(spec.id, result, env=self.env,
+                                             rulepack_version=self._load_config().rulepack_version)
         try:
             text = json.dumps({"tool": spec.id, "toolVersion": spec.version,
                                "status": "ok", "result": result},
@@ -311,7 +349,6 @@ class McpServer:
         except (TypeError, ValueError):
             return _result_response(request_id, _tool_error_result(
                 errors.internal_error("工具结果无法序列化")))
-        is_error = isinstance(result, dict) and result.get("status") in ("partial", "failed")
         return _result_response(request_id, {
             "content": [{"type": "text", "text": text}],
             "structuredContent": {"tool": spec.id, "status": "error" if is_error else "ok",

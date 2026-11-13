@@ -922,14 +922,21 @@ def _write_json_atomic(path: Path, value) -> None:
 
 def _clip(value, limit: int = 300):
     if isinstance(value, str):
-        return value if len(value) <= limit else value[:limit] + "…"
+        return value if len(value) <= limit else value[:limit] + f"…（省略 {len(value) - limit} 字符）"
     if isinstance(value, (int, float, bool)) or value is None:
         return value
     if isinstance(value, list):
-        return [_clip(item, limit) for item in value[:3]] + (["…"] if len(value) > 3 else [])
+        return [_clip(item, limit) for item in value[:3]] + (
+            [f"…（省略 {len(value) - 3} 项）"] if len(value) > 3 else [])
     if isinstance(value, dict):
-        return {key: _clip(item, limit) for key, item in list(value.items())[:12]}
-    return str(value)[:limit]
+        items = list(value.items())
+        result = {key: _clip(item, limit) for key, item in items[:12]}
+        if len(items) > 12:
+            result["_truncated"] = True
+            result["_omittedKeys"] = len(items) - 12
+        return result
+    text = str(value)
+    return text if len(text) <= limit else text[:limit] + f"…（省略 {len(text) - limit} 字符）"
 
 
 def summarize_output(value) -> dict:
@@ -942,7 +949,10 @@ def summarize_output(value) -> dict:
 
 
 def _pick_summary(value: dict) -> dict:
-    keys = ("status", "summary", "message", "count", "matchCount", "items",
+    keys = ("status", "error", "errorCode", "code", "message", "summary", "count",
+            "totalCount", "totalMatched", "returned", "nextCursor", "platformVersion",
+            "toolContractVersion", "rulepackVersion", "planVersion", "planRef", "resultRef",
+            "truncated", "matchCount", "items",
             "authorId", "id", "displayName", "revision", "plan", "diagnostics",
             "applied", "artifacts", "sheets", "pushed", "failed", "bytes",
             "frames", "dimensions", "durationMs", "dhashStatus", "missing",
@@ -952,11 +962,33 @@ def _pick_summary(value: dict) -> dict:
         if key in value:
             result[key] = _clip(value[key])
     if not result:
-        result = {key: _clip(item) for key, item in list(value.items())[:8]}
+        items = list(value.items())
+        result = {key: _clip(item) for key, item in items[:8]}
+        if len(items) > 8:
+            result["_truncated"] = True
+            result["_omittedKeys"] = len(items) - 8
     encoded = json.dumps(result, ensure_ascii=False)
     if len(encoded) > MAX_SUMMARY_CHARS:
-        return {"truncated": True, "chars": len(encoded),
-                "preview": encoded[:MAX_SUMMARY_CHARS]}
+        # Keep this a structured JSON summary; never cut encoded JSON in the middle of a token.
+        compact = {}
+        omitted = []
+        for key in ("status", "error", "errorCode", "code", "message", "summary", "count",
+                    "totalCount", "totalMatched", "returned", "nextCursor", "platformVersion",
+                    "toolContractVersion", "rulepackVersion", "planVersion", "planRef",
+                    "resultRef", "truncated", "items", "diagnostics", "plan"):
+            if key not in result:
+                continue
+            candidate = {**compact, key: _clip(value[key], 48)}
+            if len(json.dumps(candidate, ensure_ascii=False)) <= MAX_SUMMARY_CHARS - 120:
+                compact = candidate
+            else:
+                omitted.append(key)
+        if len(encoded) > MAX_SUMMARY_CHARS:
+            compact["truncated"] = True
+            compact["summaryChars"] = len(encoded)
+            if omitted:
+                compact["omittedFields"] = omitted
+        return compact
     return result
 
 
@@ -1640,7 +1672,8 @@ def task_card(recipe_id: str, env=None) -> dict:
     for step in recipe["steps"]:
         action = (step.get("tool") or step.get("primitive") or "gate")
         if step.get("gate"):
-            gates.append({"id": step["id"], "message": step.get("message", "")})
+            # The message is already carried by the corresponding step note.
+            gates.append({"id": step["id"]})
         steps.append({
             "id": step["id"],
             "action": action,

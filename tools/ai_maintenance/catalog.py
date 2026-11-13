@@ -120,7 +120,7 @@ def platform_catalog(ctx, payload: dict) -> dict:
             for item in _recipe_map(ctx).values()
         ],
         "discovery": {
-            "recipe": "platform.recipe（action=card 取 2–4KB 任务卡）",
+            "recipe": "platform.recipe（action=card 取 精简任务卡）",
             "describeTool": "platform.tool.describe",
             "rules": "platform.rules",
             "playbook": "platform.playbook",
@@ -128,6 +128,7 @@ def platform_catalog(ctx, payload: dict) -> dict:
         },
         "disabledTools": sorted(getattr(ctx, "disabled_tools", frozenset()) or ()),
         "readOnlyMode": bool(getattr(ctx, "read_only_mode", False)),
+        "executorBudget": (getattr(ctx, "extras", None) or {}).get("executorBudget"),
     }
 
 
@@ -607,8 +608,8 @@ def platform_context(ctx, payload: dict) -> dict:
         try:
             from . import recipes
             recipe_card = recipes.task_card(task, getattr(ctx, "env", None))
-        except Exception:
-            recipe_card = None
+        except errors.ToolError:
+            raise
     playbook = playbooks.get(playbook_name) if playbook_name else None
     bounded_playbook = None
     if isinstance(playbook, dict):
@@ -637,7 +638,7 @@ def platform_context(ctx, payload: dict) -> dict:
         guardrails.extend(str(item) for item in playbook.get("guardrails") or ())
     guardrails.extend([
         "看见工具不等于有权执行：permitted=false 的工具必须由可信执行端先授权。",
-        "写入工具必须先 prepare、人工确认后带 confirm=true 与计划指纹执行，并回读。",
+        "写入须在可信配置授权内；prepare 后传 planRef（或完整原计划）与 confirm=true，并回读；confirm 不授予权限。",
         "不得把真实媒体、令牌或含个人信息的任务记录发送到外部模型上下文。",
     ])
     available_tasks = sorted(playbooks.keys())[:CONTEXT_AVAILABLE_TASKS]
@@ -685,6 +686,7 @@ def platform_context(ctx, payload: dict) -> dict:
         "truncated": truncated,
         "truncatedSections": truncated_sections,
         "guardrails": guardrails,
+        "executorBudget": (getattr(ctx, "extras", None) or {}).get("executorBudget"),
         "next": next_tools,
         "discovery": {
             "catalog": "platform.catalog",

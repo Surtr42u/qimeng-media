@@ -104,7 +104,8 @@ class RecipeRunnerTests(unittest.TestCase):
     def _fake_execute(self, tool_id, payload, env=None, config=None):
         self.calls.append((tool_id, payload))
         if tool_id == "author.query":
-            return (None, [{"id": "a1", "displayName": payload.get("name")}])
+            return (None, {"items": [{"id": "a1", "displayName": payload.get("name")}],
+                           "nextCursor": None})
         if tool_id == "author.create":
             return (None, {"status": "ok", "authorId": "a1"})
         raise AssertionError("unexpected tool " + tool_id)
@@ -207,7 +208,7 @@ class RecipeRunnerTests(unittest.TestCase):
 
 class McpDomainFilterTests(unittest.TestCase):
     def test_domain_filter_limits_visible_tools(self):
-        server = mcp_server.McpServer(env={"QIMENG_AI_MCP_DOMAINS": "author"})
+        server = mcp_server.McpServer(env={"QIMENG_AI_MCP_DOMAINS": "author", "QIMENG_AI_MCP_DISCOVERY": "full"})
         visible = server._visible_tools()
         ids = {spec.id for spec in visible}
         self.assertTrue(visible)
@@ -222,24 +223,61 @@ class McpDomainFilterTests(unittest.TestCase):
         self.assertIn("files.storages", ids)
         self.assertNotIn("files.search", ids)
         self.assertNotIn("media.organize.prepare", ids)
-        unfiltered = mcp_server.McpServer(env={})._visible_tools()
+        unfiltered = mcp_server.McpServer(env={"QIMENG_AI_MCP_DISCOVERY": "full"})._visible_tools()
         self.assertGreater(len(unfiltered), len(visible))
 
 
 class AuthorToolTests(unittest.TestCase):
     def test_author_query_name_filter(self):
         class Client:
-            def get(self, path):
-                return [
-                    {"id": "a1", "displayName": "Alice"},
-                    {"id": "b2", "displayName": "Bob"},
+            def __init__(self):
+                self.calls = []
+
+            def get(self, path, query=None):
+                self.calls.append((path, query))
+                return {"items": [{"id": "a1", "displayName": "Alice", "type": "regular"}],
+                        "nextCursor": None}
+
+        client = Client()
+        ctx = type("Ctx", (), {"client": client})()
+
+        result = tools_query.author_query(ctx, {"name": "ali"})
+        self.assertEqual({"items": [{"id": "a1", "displayName": "Alice", "type": "regular"}],
+                          "nextCursor": None}, result)
+        self.assertEqual([("/api/v1/authors/query", {"limit": 20, "q": "ali"})], client.calls)
+
+    def test_author_query_page_convenience_follows_server_cursor(self):
+        class Client:
+            def __init__(self):
+                self.calls = []
+                self.pages = [
+                    {"items": [{"id": "a1"}], "nextCursor": "cursor-1"},
+                    {"items": [{"id": "a2"}], "nextCursor": None},
                 ]
 
-        class Ctx:
-            client = Client()
+            def get(self, path, query=None):
+                self.calls.append((path, query))
+                return self.pages.pop(0)
 
-        result = tools_query.author_query(Ctx(), {"name": "ali"})
-        self.assertEqual(["a1"], [item["id"] for item in result])
+        client = Client()
+        ctx = type("Ctx", (), {"client": client})()
+        result = tools_query.author_query(ctx, {"q": "name", "page": 2, "size": 1})
+        self.assertEqual({"items": [{"id": "a2"}], "nextCursor": None}, result)
+        self.assertEqual([
+            ("/api/v1/authors/query", {"limit": 1, "q": "name"}),
+            ("/api/v1/authors/query", {"limit": 1, "q": "name", "cursor": "cursor-1"}),
+        ], client.calls)
+
+    def test_author_query_rejects_unbounded_or_ambiguous_paging(self):
+        class Client:
+            def get(self, path, query=None):
+                raise AssertionError("invalid input must not call the API")
+
+        ctx = type("Ctx", (), {"client": Client()})()
+        for payload in ({"limit": 1000}, {"page": 2, "cursor": "cursor"},
+                        {"q": "a", "name": "b"}):
+            with self.subTest(payload=payload), self.assertRaises(errors.ToolError):
+                tools_query.author_query(ctx, payload)
 
     def test_author_create_requires_confirm_and_reads_back(self):
         client = _FakeClient(authors=[{"id": "a1", "displayName": "Alice", "type": "regular",

@@ -78,9 +78,45 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 
 `context`/`version`/`tools list`/`tools show` 纯本地：不联网、不需要 token。
 注意：`context` 输出完整规则包（约 490KB，面向排障/CI）；模型上下文请优先用
-`task`（2–4KB 任务卡）或 `task-context --task ...`，不要默认整包读取。
+`task`（精简任务卡，当前体积见下文）或 `task-context --task ...`，不要默认整包读取。
 
 ## 配置
+
+2026-11-14 源码契约更新：工具包 `1.6.0`、工具契约 `2.0.0`、规则 `2026-11-14.1`。
+默认权限改为仅 `read`；自动化写入须在可信配置中明确授予权限，并由服务端 AI scope
+再次约束。旧计划须重新 prepare；`author.query` 返回分页对象（默认20条），旧
+`authors` 子命令保留数组形状但默认只取一页。当前构建、安装与验收状态见 HANDOVER。
+
+| 配置 | 默认与用途 |
+|---|---|
+| `QIMENG_AI_MCP_DISCOVERY` | `lazy`：只公布发现工具；context/describe/recipe 后发布相关业务工具并通知 list_changed。不支持通知的宿主显式用 `full` |
+| `QIMENG_AI_OUTPUT_BUDGET_BYTES` | 12288：MCP/通用 tool call 与任务上下文的展示 result 上限；不包括协议外壳和宿主可能重复呈现的 text/structuredContent |
+| `QIMENG_AI_STATE_DIR` | 私有执行端状态根；未设时结果续读用系统临时目录。完整计划保存在本机，不入源码或公开报告 |
+| `QIMENG_AI_TASK_ID` | 与显式 STATE_DIR 一起配置后，同任务跨 CLI/MCP 客户端共享预算；不是模型参数，不建立第二套业务任务账本 |
+| `QIMENG_AI_MAX_CALLS` / `QIMENG_AI_MAX_SECONDS` / `QIMENG_AI_MAX_UNCHANGED` | 100 / 900 / 3；含工具错误的调用计数、时间与相同请求无新结果停止。未绑定持久任务时只约束当前执行会话 |
+| `QIMENG_AI_AUTHORIZATION_FILE` | 可选的可信任务授权文件，进一步收窄实例、工具、参数和有效期；模型不能靠 confirm=true 或自算指纹扩权 |
+
+任务授权文件（占位示例；`expiresAt` 用实际 Unix 秒，不从模型参数接受）：
+
+```json
+{"version":1,"apiBase":"http://127.0.0.1:18568","expiresAt":1800000000,
+ "allow":[{"tool":"author.create","arguments":{"displayName":"已授权的测试作者"}}]}
+```
+
+`arguments` 是输入字段点路径的精确匹配，例如 `plan.planFingerprint`；省略该对象
+表示可信端授予该工具的范围内委托，不是动作级用户确认凭据。权限、Go scope、对象
+版本及本地读写根继续生效。普通授权内可连续完成，不因内部计划步骤重新询问。
+
+超过展示预算时返回 `truncated`、省略信息及 `resultRef`；用 `platform.result.read`
+按 RFC6901 JSON Pointer（如 `/tools/0`）、游标与条数续读，每页最多12KiB。
+有 `planRef` 时 apply/update 直接传 `{ "planRef":"<原引用>", "confirm":true }`，
+执行端读取完整原计划再验证版本/指纹/前置条件。不要从预览或脱敏路径重造计划。
+结果引用绑定实例、凭据摘要、工具/规则版本，24小时过期；单对象32MiB、总额256MiB、
+最多128项，超限明确给出无法续读/不可执行原因。引用也不扩大原始权限。
+
+业务 API token 与本机路径不会展示给模型；现有维护执行器的短期 fencing leaseToken
+仍是原受控通道的能力参数，须由可信执行器保管，不能转发到其他模型或日志；本轮未
+引入该通道的 opaque leaseRef。模型 token/费用仍以宿主实际遥测为准，缺失就标未测。
 
 只从环境变量读取，不提供命令行 token 参数：
 
@@ -104,7 +140,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_WRITE_ROOTS` | 本地写入必填 | 逗号/分号分隔的绝对路径：允许复制/整理/抽帧/拼图/备份落盘等写操作。与读根分开授权；未配置的目录默认拒绝。 |
 | `QIMENG_AI_MEDIA_ROOTS` | media.organize scan 必填 | 逗号/分号分隔的绝对路径：允许 `media.organize.prepare` scan 模式只读扫描的媒体/维护根，并计入读根。未配置时拒绝本地扫描；仓库内只允许忽略工作根。 |
 | `QIMENG_AI_STORAGES` | 本地文件发现必填 | `storageId=绝对路径` 形式（分号/逗号分隔），声明逻辑存储；storageId 需匹配 `^[a-z][a-z0-9_-]{1,31}$`。storage 根**本身即读授权**；写入该存储还需把根加入 `QIMENG_AI_WRITE_ROOTS`。 |
-| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/asset.write/asset.delete/trash.restore/media.organize/backup.export/device.apply/maintenance.execute/admin.maintenance/local.files.write/local.device 或 all）。未配置=授予全部已声明权限（兼容旧 CLI）；生产执行器应显式收窄。工具可见≠有权执行，execute_tool 与原语策略在调用前强制检查。 |
+| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/asset.write/asset.delete/trash.restore/media.organize/backup.export/device.apply/maintenance.execute/admin.maintenance/local.files.write/local.device 或 all）。未配置=仅授予 read；写入须显式配置最小权限。工具可见≠有权执行，execute_tool 与原语策略在调用前强制检查。 |
 
 ```powershell
 $env:QIMENG_API_BASE = "http://127.0.0.1:8420"
@@ -242,7 +278,7 @@ python -X utf8 tools/ai_maintenance/cli.py research context|provider|lens ...
 ```
 
 `assets` 的 `--page` 只是按 `nextCursor` 顺序取页，不向服务端发送 `page` 参数；
-`authors` 的 `--page/--size` 是客户端切片。research 默认人读摘要，全局 `--json`
+`authors` 的 `--page/--size` 沿服务端游标取页，默认只返回一页20条。research 默认人读摘要，全局 `--json`
 （子命令前后都可）输出原始 JSON。
 
 ### 通用机器可读入口
@@ -257,8 +293,13 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.prepare --in
 
 ### 任务卡与可执行 recipe（优先入口）
 
-不需要先读项目文档：先取 2–4KB 任务卡，按卡上的步骤/输入/门禁执行；执行到某步
+不需要先读项目文档：先取精简任务卡，按卡上的步骤/输入/门禁执行；执行到某步
 再按需查看该工具 Schema。
+
+体积与效果边界：原 2–4KB 是目标而非硬限额；2026-11-13 五张内置卡的紧凑 JSON
+为 1,975–5,909 UTF-8 字节，完整 MCP 清单为 45,295 字节。按需入口已有实现，但
+这是优化前快照；2026-11-14 已实现展示预算、服务端分页与续读，实际验收状态见 HANDOVER。历史证据集中在
+[平台任务书 §1.5](../../docs/AI_PLATFORM_TASKBOOK.md#15-当前-ai-api-的效果上下文与待补验收2026-11-13)。
 
 ```powershell
 # 1) 列配方 / 看任务卡（默认紧凑 JSON，不加载完整规则包）
@@ -418,7 +459,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - **权限与发现分离**：catalog/describe 只声明权限；`execute_tool` 与原语策略在
   Schema/计划/远程请求/文件操作之前按 `QIMENG_AI_GRANTED_PERMISSIONS`（或
   `rules.json` `toolConfig.grantedPermissions`）强制拒绝未授权工具/原语
-  （`PERMISSION_DENIED`）。未配置时默认授予全部已声明权限只是兼容旧 CLI；生产执行器
+  （`PERMISSION_DENIED`）。未配置时默认仅授予 read；生产执行器
   应显式收窄并审计。看见工具≠有权执行，CLI 与 MCP 走同一检查。
 - **受限凭据（ADR-0057 P1 已实现）**：服务端新增独立 AI 客户端凭据与 scope 强制（`qimeng ai-client` 本地管理、`ai_audit` 写审计）。生产执行端应使用 `-scopes` 收窄的 AI token，而不是管理员 Bearer；未映射写请求默认 403，删除/合并/恢复需各自高风险 scope。工具层隐藏 token 仍不能阻止“执行环境直接调 Go API”：管理员 Bearer 仍是全权凭据，只注入可信执行端进程环境、不下发给模型，AI 写入只用于受信本机维护；模型侧可见的只是工具声明。剩余边界与路线见 [Go API 缺口与 AI 客户端权限模型](../../docs/AI_PLATFORM_API_GAPS.md)、[ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)、[SECURITY](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p1p22026-11-08)。
 - 本机沙箱若限制系统临时目录/目录权限，测试临时目录放在被忽略的
@@ -440,7 +481,8 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - 远程 HTTP/网络/响应错误沿用 CLI 的结构化字段（HTTP 为 status/error/body/target），
   在 MCP 中标记 isError=true；保留服务端错误码与脱敏正文，不统一吞为 INTERNAL_ERROR。
 - token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
-- 工具分类发现：标准 `tools/list` 仍返回全部工具与 `inputSchema`；任务开始时客户端可先
+- 工具分类发现：默认 lazy 先返回发现工具，按任务/工具发布后通过标准 list_changed 通知；
+  `full` 兼容模式返回全部工具与 `inputSchema`。任务开始时客户端可先
   调用 `platform.context`（task/domain）取相关工具、Schema 摘要、规则节与 playbook；工具较多时
   再调用 `platform.catalog`（精简领域目录）与 `platform.tool.describe` 取单个工具 Schema/
   示例，用 `platform.rules` 按需读规则节、`platform.playbook` 读可选模板；descriptor 附带

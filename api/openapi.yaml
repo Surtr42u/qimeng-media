@@ -793,11 +793,12 @@ paths:
         displayName 或 ID 做子串匹配；SQLite lower() 使 ASCII 字母大小写不敏感，
         非 ASCII 字符按原值匹配。顺序为 displayName、ID 的 SQLite BINARY 升序，
         两字段共同构成稳定 keyset 游标。每页默认 20、最多 100 条；nextCursor 为
-        不透明 base64url 值，null 表示已到底。响应只包含 ID、显示名和作者类型。
+        与 q 过滤条件绑定的不透明 base64url 值，换 q 继续使用会返回 400，null
+        表示已到底。响应只包含 ID、显示名和作者类型。
       parameters:
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 200 }, description: 显示名或 ID 子串 }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
-        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 4096 }, description: 上一页 nextCursor }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 4096 }, description: 上一页 nextCursor；绑定原 q }
       responses:
         "200": { description: 分页结果, content: { application/json: { schema: { $ref: "#/components/schemas/AuthorQueryPage" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }

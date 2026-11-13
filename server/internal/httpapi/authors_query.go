@@ -19,13 +19,13 @@ const (
 )
 
 type authorQueryCursor struct {
-	K string `json:"k"`
-	I string `json:"i"`
-	Q string `json:"q"`
+	K string  `json:"k"`
+	I string  `json:"i"`
+	Q *string `json:"q"`
 }
 
 func encodeAuthorQueryCursor(displayName, id, query string) string {
-	data, _ := json.Marshal(authorQueryCursor{K: displayName, I: id, Q: query})
+	data, _ := json.Marshal(authorQueryCursor{K: displayName, I: id, Q: &query})
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
@@ -35,7 +35,7 @@ func decodeAuthorQueryCursor(value string) (authorQueryCursor, bool) {
 		return cursor, false
 	}
 	data, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil || json.Unmarshal(data, &cursor) != nil || cursor.I == "" {
+	if err != nil || json.Unmarshal(data, &cursor) != nil || cursor.I == "" || cursor.Q == nil {
 		return authorQueryCursor{}, false
 	}
 	return cursor, true
@@ -63,7 +63,7 @@ func (s *Server) GetApiV1AuthorsQuery(w http.ResponseWriter, r *http.Request, pa
 	var cursor *authorQueryCursor
 	if params.Cursor != nil && *params.Cursor != "" {
 		parsed, ok := decodeAuthorQueryCursor(*params.Cursor)
-		if !ok || parsed.Q != query {
+		if !ok || *parsed.Q != query {
 			writeErr(w, http.StatusBadRequest, codeInvalidCursor, "分页游标不合法")
 			return
 		}

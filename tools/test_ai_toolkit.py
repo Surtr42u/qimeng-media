@@ -120,7 +120,7 @@ class StubServerTest(unittest.TestCase):
         StubHandler.seen = []
 
     def env(self):
-        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN}
+        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN, "QIMENG_AI_GRANTED_PERMISSIONS": "all", "QIMENG_AI_MCP_DISCOVERY": "full"}
 
     def config(self, **extra_env):
         env = dict(self.env(), **extra_env)

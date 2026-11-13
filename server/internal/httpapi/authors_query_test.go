@@ -75,6 +75,12 @@ func TestAuthorsQuerySearchStableCursorAndCompactItems(t *testing.T) {
 			t.Fatalf("作者查询应只返回 id/displayName/type，得到字段 %v", item)
 		}
 	}
+	changedQuery := env.do(t, http.MethodGet, "/api/v1/authors/query?q=alice&limit=2&cursor="+
+		url.QueryEscape(*first.NextCursor), "")
+	closeBody(changedQuery)
+	if changedQuery.StatusCode != http.StatusBadRequest {
+		t.Fatalf("换 q 后复用游标应返回 400，得到 %d", changedQuery.StatusCode)
+	}
 
 	second, _ := fetchAuthorQueryPage(t, env, "?q="+url.QueryEscape("ALICE")+"&limit=2&cursor="+url.QueryEscape(*first.NextCursor))
 	if len(second.Items) != 1 || second.Items[0].ID != "author-alice-id" || second.Items[0].Type != "cos" {

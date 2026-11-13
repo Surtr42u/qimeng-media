@@ -186,6 +186,16 @@ COMMON_ERROR_CODES = (
      "recovery": "停止后续写入，重新读取核对差异并把已执行步骤交人工处理。"},
     {"code": "INTERNAL_ERROR", "category": "internal", "exitCode": 1,
      "recovery": "工具缺陷；保留输入与错误详情，不要重复写入。"},
+    {"code": "AUTHORIZATION_EXPIRED", "category": "permission", "exitCode": 2,
+     "recovery": "由可信执行端核对任务授权有效期，模型不能自授。"},
+    {"code": "AUTHORIZATION_MISMATCH", "category": "permission", "exitCode": 2,
+     "recovery": "核对实例、工具与参数范围；confirm 或指纹不能扩大权限。"},
+    {"code": "TASK_BUDGET_EXHAUSTED", "category": "budget", "exitCode": 2,
+     "recovery": "保留已完成结果；可信执行端决定是否为同任务增加预算。"},
+    {"code": "TASK_NO_PROGRESS", "category": "budget", "exitCode": 2,
+     "recovery": "相同请求无新结果，停止循环并报告缺失条件。"},
+    {"code": "TASK_BUDGET_UNAVAILABLE", "category": "budget", "exitCode": 2,
+     "recovery": "核对预算记录及已有结果；不换操作ID盲目重试写入。"},
 )
 
 
@@ -437,16 +447,20 @@ TOOLS: tuple[ToolSpec, ...] = (
         requirements=(_req("/api/v1/assets", "GET", parameters=("limit", "cursor")),),
     ),
     ToolSpec(
-        id="author.query", version="1.1.0", kind="query",
-        description="GET /api/v1/authors；page/size 为客户端切片，name 按显示名/ID 子串过滤（不区分大小写）。",
+        id="author.query", version="1.2.0", kind="query",
+        description="GET /api/v1/authors/query；默认20条，使用 cursor 续页。q 按显示名/ID 子串过滤（ASCII 大小写不敏感，非 ASCII 区分大小写）；旧 name/page/size 仍接受，page 通过有界游标请求定位。",
         handler_ref="ai_maintenance.tools_query:author_query", permission="read",
         input_schema=_schema({
-            "page": _integer("页码，从 1 开始", 1),
-            "size": _integer("每页数量", 1, 1000),
-            "name": _string("按显示名/ID 子串过滤（用于未知作者查重）", 1, 200),
+            "q": _string("按显示名/ID 子串过滤（未知作者查重）；ASCII 大小写不敏感", 0, 200),
+            "cursor": _string("上一页返回的 nextCursor", maximum=4096),
+            "limit": _integer("每页数量，默认20", 1, 100, 20),
+            "page": _integer("兼容页码便利参数，从 1 开始，最多请求50页", 1, 50),
+            "size": _integer("兼容每页数量别名；与 limit 不能同时提供", 1, 100),
+            "name": _string("兼容旧参数，等同 q；与 q 不能同时提供", 0, 200),
         }),
-        output_schema=_LIST_OUTPUT,
-        requirements=(_req("/api/v1/authors", "GET"),),
+        output_schema=_QUERY_OUTPUT,
+        requirements=(_req("/api/v1/authors/query", "GET",
+                            parameters=("q", "limit", "cursor")),),
     ),
     ToolSpec(
         id="author.create", version="1.0.0", kind="write",
@@ -1230,7 +1244,7 @@ TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         id="platform.recipe", version="1.0.0", kind="context",
-        description="可执行编排配方（recipe）：list 列目录、show 取完整定义、card 取 2–4KB 任务卡；默认不加载工具 Schema/完整规则。",
+        description="可执行编排配方（recipe）：list 列目录、show 取完整定义、card 取 精简任务卡；默认不加载工具 Schema/完整规则。",
         handler_ref="ai_maintenance.recipes:platform_recipe", network=False, permission="read",
         input_schema=_schema({
             "action": {"type": "string", "enum": ["list", "show", "card"]},
@@ -1283,6 +1297,32 @@ def tool_domain(tool_id: str) -> str:
 
 TOOLS = tuple(replace(tool, domain=tool_domain(tool.id)) for tool in TOOLS)
 
+# Long plans remain on the trusted executor; model clients may pass the opaque reference.
+# Exactly-one validation is performed by execution before resolving and validating the plan.
+def _with_plan_reference(tool):
+    if "plan" not in tool.input_schema.get("properties", {}):
+        return tool
+    input_schema = dict(tool.input_schema)
+    input_schema["properties"] = {**input_schema["properties"],
+        "planRef": _string("prepare 返回的原计划引用；与 plan 只能提供一个", 1, 512)}
+    input_schema["required"] = [key for key in input_schema.get("required", []) if key != "plan"]
+    return replace(tool, input_schema=input_schema)
+
+
+TOOLS = tuple(_with_plan_reference(tool) for tool in TOOLS) + (
+    ToolSpec(
+        id="platform.result.read", version="1.0.0", kind="context", domain="system",
+        description="按 resultRef 分页/点路径续读被省略结果；计划执行直接传 planRef，不重造计划。",
+        handler_ref="ai_maintenance.model_output:read_result", network=False, permission="read",
+        input_schema=_schema({"resultRef": _string("结果引用", 1, 512),
+                              "cursor": _string("上一页 nextCursor", 1, 2048),
+                              "limit": _integer("条数或字符串字符数上限", 1, 500),
+                              "path": _string("RFC6901 JSON Pointer，如 /tools/0；省略即根对象", 0, 1000)},
+                             required=("resultRef",)),
+        output_schema=_QUERY_OUTPUT,
+    ),
+)
+
 # 领域目录元数据：稳定顺序 + 中文标签 + 一句话说明（供 platform.catalog / CLI 展示）。
 DOMAINS: tuple = (
     {"id": "author", "label": "作者", "description": "作者身份/档案/来源/清理/合并与作者关联"},
@@ -1301,7 +1341,7 @@ TOOL_EXAMPLES: dict = {
     "library.scan": ({"libraryId": "lib-synthetic", "confirm": True},),
     "project.context": ({"markdown": True},),
     "asset.query": ({"limit": 20, "q": "朱诺 11", "cursor": "…"},),
-    "author.query": ({},),
+    "author.query": (({"q": "Alice", "limit": 20}),),
     "author.profile.read": ({"authorId": "author-xxx"},),
     "author.profile.prepare": ({"authorId": "author-xxx",
                                 "changes": {"biography": "合成示例", "status": "candidate"},

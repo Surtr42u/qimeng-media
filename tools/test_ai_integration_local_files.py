@@ -64,6 +64,8 @@ class LocalFileRefIntegrationTest(unittest.TestCase):
         self.target = target
         self.env = {
             "QIMENG_AI_OPENAPI": str(OPENAPI),
+            "QIMENG_AI_GRANTED_PERMISSIONS": "all",
+            "QIMENG_AI_MCP_DISCOVERY": "full",
             "QIMENG_AI_RULES": str(RULES),
             "QIMENG_AI_STORAGES": f"downloads={self.storage}",
             "QIMENG_AI_WRITE_ROOTS": str(self.storage),

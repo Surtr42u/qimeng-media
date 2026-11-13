@@ -285,11 +285,11 @@ class PermissionDiscoverySeparationTest(unittest.TestCase):
         # 只读工具仍允许（不会因权限层被误伤）
         self.assertEqual("", execution.permission_reason(registry.get("author.query"), config))
 
-    def test_default_grants_all_declared_permissions_for_compatibility(self):
+    def test_default_only_grants_read_permission(self):
         config = local_config()
         for spec in registry.TOOLS:
-            self.assertEqual("", execution.permission_reason(spec, config))
-        self.assertEqual(set(registry.PERMISSIONS), set(config.granted_permissions))
+            self.assertEqual(spec.permission != "read", bool(execution.permission_reason(spec, config)))
+        self.assertEqual({"read"}, set(config.granted_permissions))
 
     def test_unknown_granted_permission_is_configuration_error(self):
         with self.assertRaises(errors.ToolError) as raised:
@@ -337,7 +337,8 @@ class CliMcpParityTest(unittest.TestCase):
     def test_mcp_keeps_full_tools_list_and_exposes_catalog(self):
         server = mcp_server.McpServer(
             stdin=io.StringIO(), stdout=io.StringIO(),
-            env={"QIMENG_AI_OPENAPI": str(OPENAPI), "QIMENG_AI_RULES": str(RULES)},
+            env={"QIMENG_AI_OPENAPI": str(OPENAPI), "QIMENG_AI_RULES": str(RULES),
+                 "QIMENG_AI_MCP_DISCOVERY": "full"},
         )
         identity = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
                     "params": {"protocolVersion": "2025-06-18"}}

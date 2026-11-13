@@ -89,7 +89,7 @@ class McpProtocolTest(unittest.TestCase):
         cls.thread.join(timeout=5)
 
     def env(self):
-        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN}
+        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN, "QIMENG_AI_GRANTED_PERMISSIONS": "all", "QIMENG_AI_MCP_DISCOVERY": "full"}
 
     def test_stdio_client_initializes_lists_and_calls_tools(self):
         responses = SyntheticMcpClient(self.env()).run([
