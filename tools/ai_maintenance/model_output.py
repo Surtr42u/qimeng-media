@@ -554,15 +554,60 @@ def _compact_recipe(value):
     return _clip_summary(result, max_string=180)
 
 
+def _plan_summary(plan: dict) -> dict:
+    """Create a non-executable preview; only planRef resolves to a submit-ready plan."""
+    summary = {key: plan[key] for key in (
+        "tool", "kind", "status", "planVersion", "planFingerprint",
+    ) if key in plan}
+    target = plan.get("target")
+    if isinstance(target, dict):
+        target_summary = {}
+        library = target.get("library")
+        if isinstance(library, dict):
+            target_summary["library"] = {key: library[key] for key in ("id", "name") if key in library}
+        objects = target.get("objects")
+        if isinstance(objects, list):
+            target_summary["objects"] = [
+                {key: item[key] for key in ("type", "id", "displayName", "fileName") if key in item}
+                for item in objects[:3] if isinstance(item, dict)
+            ]
+            target_summary["objectCount"] = len(objects)
+            if len(objects) > 3:
+                target_summary["objectsPreviewTruncated"] = len(objects) - 3
+        if target_summary:
+            summary["target"] = target_summary
+    impact = plan.get("impact")
+    if isinstance(impact, dict):
+        summary["impact"] = _clip_summary(impact, max_string=100)
+    for key in ("changes", "operations"):
+        entries = plan.get(key)
+        if isinstance(entries, list):
+            summary[key + "Count"] = len(entries)
+            summary[key + "Preview"] = [
+                {field: item[field] for field in (
+                    "field", "action", "fileName", "directory", "bytes", "assetId", "authorId",
+                ) if field in item}
+                for item in entries[:3] if isinstance(item, dict)
+            ]
+            if len(entries) > 3:
+                summary[key + "PreviewTruncated"] = len(entries) - 3
+    summary["executable"] = False
+    return summary
+
+
 def _summary(result, *, tool_id: str, result_ref: str | None,
              plan_ref: str | None, raw_bytes: int, budget: int, token: str = "",
-             store_error: ModelOutputError | None = None) -> dict:
+             store_error: ModelOutputError | None = None,
+             plan_summary: dict | None = None) -> dict:
     safe, flags = _model_safe(result, token=token)
     summary: dict = {"truncated": True, "toolId": tool_id, "resultBytes": raw_bytes}
     if result_ref:
         summary["resultRef"] = result_ref
     if plan_ref:
         summary["planRef"] = plan_ref
+    if plan_summary is not None:
+        summary["planSummary"] = plan_summary
+        summary["planPreviewOnly"] = True
     if isinstance(safe, list):
         summary.update({"kind": "list", "count": len(safe),
                         "sample": [_clip_summary(item) for item in safe[:3]]})
@@ -657,6 +702,20 @@ def _summary(result, *, tool_id: str, result_ref: str | None,
                 schema_summary["required"] = required[:8]
                 schema_summary["requiredTruncated"] = len(required) - 8
             schema_summary["truncated"] = True
+    if _json_size(summary) > budget and isinstance(summary.get("planSummary"), dict):
+        preview = summary["planSummary"]
+        omitted_preview_fields = []
+        for key in ("target", "impact", "changesPreview", "operationsPreview"):
+            if key in preview:
+                preview.pop(key)
+                omitted_preview_fields.append(key)
+        for key in ("changesPreviewTruncated", "operationsPreviewTruncated"):
+            if key in preview:
+                preview.pop(key)
+                omitted_preview_fields.append(key)
+        if omitted_preview_fields:
+            preview["truncated"] = True
+            preview["omittedFields"] = omitted_preview_fields
     # The irreducible metadata is small; if user configured an unusually small budget, fail
     # explicitly instead of slicing a JSON string or dropping status/version/ref fields.
     if _json_size(summary) > budget:
@@ -693,6 +752,7 @@ def present_result(tool_id: str, result, *, env=None, rulepack_version: str):
     reference = None
     plan_ref = None
     store_error = None
+    plan_summary = _plan_summary(safe.get("plan")) if is_plan and isinstance(safe, dict) else None
     if safe_size > budget or is_plan:
         try:
             binding = _binding(env, rulepack_version, tool_id)
@@ -718,10 +778,20 @@ def present_result(tool_id: str, result, *, env=None, rulepack_version: str):
         return output
 
     if is_plan and plan_ref:
-        output = display
-        if isinstance(output, dict):
-            output = dict(output)
-            output["planRef"] = plan_ref
+        output = dict(display) if isinstance(display, dict) else {"value": display}
+        if flags.get("paths") or flags.get("credentials"):
+            # A redacted plan is a preview only; never leave it under the executable `plan` key.
+            output.pop("plan", None)
+            output["planSummary"] = plan_summary
+            output["planPreviewOnly"] = True
+            output["truncated"] = True
+            omitted_fields = output.get("omittedFields")
+            if not isinstance(omitted_fields, list):
+                omitted_fields = []
+                output["omittedFields"] = omitted_fields
+            if "plan" not in omitted_fields:
+                omitted_fields.append("plan")
+        output["planRef"] = plan_ref
         if _json_size(output) <= budget:
             return output
     if is_plan and store_error and safe_size <= budget \
@@ -744,7 +814,7 @@ def present_result(tool_id: str, result, *, env=None, rulepack_version: str):
             raise ModelOutputError("RESULT_STORE_INVALID", "本地结果保存后无法通过完整性校验") from None
     output = _summary(result, tool_id=tool_id, result_ref=reference,
                       plan_ref=plan_ref, raw_bytes=artifact_size, budget=budget,
-                      token=token, store_error=store_error)
+                      token=token, store_error=store_error, plan_summary=plan_summary)
     return output
 
 

@@ -168,7 +168,15 @@ class GoMcpIntegration(unittest.TestCase):
 
     def result(self, client, tool, arguments):
         response = client.call(tool, arguments)
-        self.assertFalse(response["isError"], tool)
+        failure = response.get("structuredContent") or {}
+        error_code = failure.get("error") or failure.get("code")
+        if not error_code and isinstance(failure.get("body"), dict):
+            error_code = failure["body"].get("code")
+        if not isinstance(error_code, str) or not error_code \
+                or len(error_code) > 80 \
+                or not all(ch.isascii() and (ch.isalnum() or ch in "_.-") for ch in error_code):
+            error_code = "unknown"
+        self.assertFalse(response["isError"], f"{tool}: {error_code}")
         return response["structuredContent"]["result"]
 
     def test_discover_upload_replay_readback_and_scan(self):
@@ -177,12 +185,19 @@ class GoMcpIntegration(unittest.TestCase):
         self.assertIn("asset.upload", [t["name"] for t in listing["tools"]])
         card = self.result(client, "platform.recipe", {"action": "card", "recipeId": "media.ingest"})
         self.assertEqual("media.ingest", card["card"]["recipe"])
-        plan = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
+        prepared = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
                            "operationId": str(uuid.uuid4()),
-                           "path": str(self.source), "fileName": "合成 1.png"})["plan"]
-        self.assertTrue(client.call("asset.upload", {"plan": plan, "confirm": False})["isError"])
-        applied = self.result(client, "asset.upload", {"plan": plan, "confirm": True})
-        replay = self.result(client, "asset.upload", {"plan": plan, "confirm": True})
+                           "path": str(self.source), "fileName": "合成 1.png"})
+        # The displayed plan contains a local source path and is a preview only; planRef
+        # resolves the unredacted plan inside the trusted executor for apply/replay.
+        self.assertIn("planRef", prepared)
+        self.assertNotIn("plan", prepared)
+        self.assertTrue(prepared["planPreviewOnly"])
+        self.assertIn("plan", prepared["omittedFields"])
+        plan_ref = prepared["planRef"]
+        self.assertTrue(client.call("asset.upload", {"planRef": plan_ref, "confirm": False})["isError"])
+        applied = self.result(client, "asset.upload", {"planRef": plan_ref, "confirm": True})
+        replay = self.result(client, "asset.upload", {"planRef": plan_ref, "confirm": True})
         self.assertEqual(applied["assetId"], replay["assetId"])
         self.assertEqual(PNG, (self.media / "合成 1.png").read_bytes())
         self.assertEqual("accepted", self.result(client, "library.scan", {"libraryId": self.library, "confirm": True})["status"])
@@ -194,14 +209,21 @@ class GoMcpIntegration(unittest.TestCase):
         author_id = author["id"]
         initial = self.result(client, "author.profile.read", {"authorId": author_id})
         prepared = self.result(client, "author.profile.prepare", {"authorId": author_id,
-                                "changes": {"biography": "合成简介"}})["plan"]
-        self.assertTrue(client.call("author.profile.update", {"plan": prepared, "confirm": False})["isError"])
-        self.result(client, "author.profile.update", {"plan": prepared, "confirm": True})
+                                "changes": {"biography": "合成简介"}})
+        self.assertIn("planRef", prepared)
+        self.assertTrue(client.call("author.profile.update", {
+            "planRef": prepared["planRef"], "confirm": False,
+        })["isError"])
+        self.result(client, "author.profile.update", {
+            "planRef": prepared["planRef"], "confirm": True,
+        })
         final = self.result(client, "author.profile.read", {"authorId": author_id})
         self.assertEqual(initial["revision"] + 1, final["revision"])
         self.assertEqual("合成简介", final["biography"])
         self.assertEqual(initial["nickname"], final["nickname"])
-        self.assertEqual("already_applied", self.result(client, "author.profile.update", {"plan": prepared, "confirm": True})["status"])
+        self.assertEqual("already_applied", self.result(client, "author.profile.update", {
+            "planRef": prepared["planRef"], "confirm": True,
+        })["status"])
 
     def test_server_scope_and_local_readonly_reject_writes(self):
         client, _ = self.client(scopes=["read"])
@@ -229,14 +251,21 @@ class GoMcpIntegration(unittest.TestCase):
         client, _ = self.client()
         source = self.sources / "变化.png"
         source.write_bytes(PNG)
-        plan = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
-                           "operationId": str(uuid.uuid4()), "path": str(source)})["plan"]
+        prepared = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
+                           "operationId": str(uuid.uuid4()), "path": str(source)})
+        self.assertIn("planRef", prepared)
+        self.assertNotIn("plan", prepared)
+        plan_ref = prepared["planRef"]
         source.write_bytes(PNG + b"changed")
-        self.assertTrue(client.call("asset.upload", {"plan": plan, "confirm": True})["isError"])
+        self.assertTrue(client.call("asset.upload", {"planRef": plan_ref, "confirm": True})["isError"])
         self.assertFalse((self.media / "变化.png").exists())
-        plan = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
-                           "operationId": str(uuid.uuid4()), "path": str(self.source), "fileName": "改名保护.png"})["plan"]
-        asset = self.result(client, "asset.upload", {"plan": plan, "confirm": True})
+        prepared = self.result(client, "asset.upload.prepare", {"libraryId": self.library,
+                           "operationId": str(uuid.uuid4()), "path": str(self.source), "fileName": "改名保护.png"})
+        self.assertIn("planRef", prepared)
+        self.assertNotIn("plan", prepared)
+        asset = self.result(client, "asset.upload", {
+            "planRef": prepared["planRef"], "confirm": True,
+        })
         status, rejected = self.http("POST", "/api/v1/assets/" + asset["assetId"] + "/move",
                                      {"targetDir": "", "newName": "坏\ufffd.png"}, self.admin)
         self.assertEqual(400, status)

@@ -133,6 +133,9 @@ class ModelOutputTests(unittest.TestCase):
             "asset.upload.prepare", source, env=self.env, rulepack_version="rules-test")
         self.assertIn("planRef", response)
         self.assertNotIn(r"C:\\private\\synthetic\\file.bin", json.dumps(response))
+        self.assertNotIn("plan", response)
+        self.assertTrue(response["planPreviewOnly"])
+        self.assertFalse(response["planSummary"]["executable"])
         resolved = model_output.resolve_plan_ref(
             response["planRef"], env=self.env, rulepack_version="rules-test", tool_id="asset.upload")
         self.assertEqual(plan, resolved)

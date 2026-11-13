@@ -306,7 +306,7 @@ _PROFILE_OBJECT_SCHEMA = {
     },
 }
 
-_PLAN_REF = {"type": "object", "description": "prepare 工具返回的 plan 原样传入（禁止手工修改）"}
+_PLAN_REF = {"type": "object", "description": "只接受完整未脱敏的原 plan；优先传 planRef，不提交 planSummary/预览或手工重造计划"}
 
 _EVIDENCE_SCHEMA = {"type": "array", "maxItems": 20,
                     "items": _string("证据/来源引用（URL 或占位描述）", maximum=2000)}
@@ -436,6 +436,7 @@ TOOLS: tuple[ToolSpec, ...] = (
             "cursor": _string("分页游标 nextCursor"),
             "q": _string("全文搜索"),
             "libraryId": {"type": "string"},
+            "authorId": _string("按已查询到的作者ID过滤其关联文件，避免全库取回后筛选", 1, 512),
             "mediaType": {"type": "string", "enum": ["image", "animated_image", "video"]},
             "sort": {"type": "string", "enum": ["default", "fileDate", "addedDate",
                                                 "viewCount", "playCount", "sizeBytes",
@@ -444,7 +445,7 @@ TOOLS: tuple[ToolSpec, ...] = (
             "page": _integer("客户端便利取页（1..50，不发送 page 参数）", 1, 50),
         }),
         output_schema=_QUERY_OUTPUT,
-        requirements=(_req("/api/v1/assets", "GET", parameters=("limit", "cursor")),),
+        requirements=(_req("/api/v1/assets", "GET", parameters=("limit", "cursor", "authorId")),),
     ),
     ToolSpec(
         id="author.query", version="1.2.0", kind="query",
@@ -1665,6 +1666,9 @@ def describe_spec(spec: ToolSpec, document, disabled_reason: str = "", rules: di
             "requiredParameters": list(requirement.required_parameters or ()),
         })
     summary.update({
+        "modelResultContract": {"completeOutputSchema": "outputSchema 校验执行端完整结果；模型展示可能是有界摘要",
+                                "continuation": "truncated/resultRef → platform.result.read",
+                                "plan": "优先用 planRef；planSummary/planPreviewOnly 不是可提交计划"},
         "examples": [dict(example) for example in TOOL_EXAMPLES.get(spec.id, ())],
         "rulesRefs": list(refs),
         "rulesExcerpt": excerpts,

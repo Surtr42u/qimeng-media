@@ -63,6 +63,7 @@ def _asset_query_args(payload: dict) -> dict:
     return {
         "q": payload.get("q"),
         "libraryId": payload.get("libraryId"),
+        "authorId": payload.get("authorId"),
         "mediaType": media_type,
         "sort": sort,
         "order": order,
