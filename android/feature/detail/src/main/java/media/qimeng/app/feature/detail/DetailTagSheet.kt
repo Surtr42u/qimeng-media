@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
-import media.qimeng.app.core.ui.icon.CheckMarkIcon
 import media.qimeng.app.core.ui.icon.ClearIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
@@ -86,6 +85,9 @@ private val TAG_SHEET_CONTENT_TOP_PADDING = 18.dp
 private val TAG_POOL_CHIP_HEIGHT = 36.dp
 private val TAG_POOL_CHIP_TEXT_SIZE = 14.sp
 
+/** 当前标签固定预留约两行，更多内容内部滚动，不挤动下方候选池。 */
+private val TAG_CURRENT_TAGS_HEIGHT = 76.dp
+
 /** 仅对颜色作短过渡，选中时不改变标签尺寸或位置。 */
 private const val TAG_SELECTION_TRANSITION_MS = 120
 
@@ -96,8 +98,8 @@ private const val TAG_SHEET_HEIGHT_FRACTION = 0.8f
 private val TAG_FOOTER_TOP_SPACING = 18.dp
 
 /**
- * 标签管理：全量标签池置顶并保持顺序，选中只作颜色过渡与定宽勾选标记。
- * 当前勾选摘要位于池下方，增减/换行不会推动候选标签；摘要 × 仍立即解绑已有
+ * 标签管理：当前标签置顶并固定内容区高度，全量候选池在其下独立滚动。
+ * 选中只改变边框与底色，无勾选图标和占位；摘要 × 仍立即解绑已有
  * 关联，普通点选仍为保存前草稿。新建成功后清空输入，底部取消/保存沿用原流程。
  */
 @OptIn(
@@ -158,22 +160,22 @@ internal fun DetailTagManageSheet(
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
+            SheetCurrentTags(
+                pool = pool,
+                selectedTagIds = selectedTagIds,
+                onUnbindTag = onUnbindTag,
+            )
+            Spacer(modifier = Modifier.height(QimengDimens.SpaceL))
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
             ) {
-                // 全量池放在动态勾选摘要之前，避免摘要换行推动正在操作的标签。
                 SheetTagPool(
                     pool = pool,
                     selectedTagIds = selectedTagIds,
                     onToggleTag = onToggleTag,
-                )
-                SheetCurrentTags(
-                    pool = pool,
-                    selectedTagIds = selectedTagIds,
-                    onUnbindTag = onUnbindTag,
                 )
                 SheetAddTagRow(
                     draft = draft,
@@ -202,39 +204,46 @@ private fun SheetCurrentTags(
     onUnbindTag: (String) -> Unit,
 ) {
     SheetTagSection(title = stringResource(R.string.detail_tag_section_current)) {
-        val selectedChips = pool.filter { it.id in selectedTagIds }
-        if (selectedChips.isEmpty()) {
-            SheetEmptyHint()
-        } else {
-            // 2026-09-15 用户反馈「标签间距依旧没修复」收紧：横向 8→6dp（SpaceS）、
-            // 纵向 4→2dp（SpaceXXS）——U10-2b 只删了说明行未动 chip 间隙，本批落地
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
-                verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
-            ) {
-                selectedChips.forEach { chip ->
-                    DisplayPill(
-                        text = chip.name,
-                        selected = true,
-                        trailing = {
-                            Icon(
-                                imageVector = ClearIcon,
-                                contentDescription = stringResource(R.string.detail_tag_remove_selection),
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier
-                                    .padding(start = QimengDimens.SpaceS)
-                                    .size(TAG_CLEAR_ICON_SIZE)
-                                    .clickable { onUnbindTag(chip.id) },
-                            )
-                        },
-                    )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TAG_CURRENT_TAGS_HEIGHT)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            val selectedChips = pool.filter { it.id in selectedTagIds }
+            if (selectedChips.isEmpty()) {
+                SheetEmptyHint()
+            } else {
+                // 2026-09-15 用户反馈「标签间距依旧没修复」收紧：横向 8→6dp（SpaceS）、
+                // 纵向 4→2dp（SpaceXXS）——U10-2b 只删了说明行未动 chip 间隙，本批落地
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
+                    verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
+                ) {
+                    selectedChips.forEach { chip ->
+                        DisplayPill(
+                            text = chip.name,
+                            selected = true,
+                            trailing = {
+                                Icon(
+                                    imageVector = ClearIcon,
+                                    contentDescription = stringResource(R.string.detail_tag_remove_selection),
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier
+                                        .padding(start = QimengDimens.SpaceS)
+                                        .size(TAG_CLEAR_ICON_SIZE)
+                                        .clickable { onUnbindTag(chip.id) },
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-/** 全量池保持名称展示顺序；勾选只改变颜色与固定占位内的图标，不移走标签。 */
+/** 全量池保持名称展示顺序；点选只改变颜色和描边，不移走标签或改变尺寸。 */
 @Composable
 private fun SheetTagPool(
     pool: List<TagChip>,
@@ -287,17 +296,6 @@ private fun SheetTagPool(
                                     vertical = QimengDimens.SpaceS,
                                 ),
                         ) {
-                            Box(modifier = Modifier.size(TAG_CLEAR_ICON_SIZE)) {
-                                if (selected) {
-                                    Icon(
-                                        imageVector = CheckMarkIcon,
-                                        contentDescription = null,
-                                        tint = foreground,
-                                        modifier = Modifier.size(TAG_CLEAR_ICON_SIZE),
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
                             Text(
                                 text = chip.name,
                                 style = MaterialTheme.typography.labelLarge.copy(

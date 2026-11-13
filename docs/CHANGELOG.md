@@ -1,3 +1,11 @@
+## fix(app): 标签取消勾选图标并将当前标签置顶（2026-11-13 第七百二十九笔）
+
+执行 AI：Codex（完整模型名称及变体：本会话未提供可核实元数据；负责实现与验证）
+
+- 按用户要求移除候选标签的勾选图标及空位，仅用边框与底色表示选中；保留复选状态读屏语义与短颜色过渡。
+- 当前标签移至候选池上方，固定内容区高度、超出内部滚动；下方候选池独立滚动，避免选中/取消或摘要换行推动候选位置。名称自然排序、保存/解绑语义保持。
+- 同步 GUIDE_UI 与 Android README；本笔云端构建/单测/Lint 与新包界面核验待执行，不沿用上一笔证据，未更新现用手机。最旧第六百九十九笔移入 CHANGELOG-20261107，正文保持、相对链接随路径修正。
+
 ## fix(app): 标签视觉层级与名称自然排序（2026-11-13 第七百二十八笔）
 
 执行 AI：Codex（完整模型名称及变体：本会话未提供可核实元数据；负责实现、文档与验证）
@@ -257,18 +265,6 @@
 - 装配与配置：`cmd/qimeng` 以 `safego.Go` 启动 worker 并在关库前收齐；config 新增具名默认值（轮询 5s/租约 2min/并发 1，`QIMENG_MAINTENANCE_WORKER_*` 可覆盖，默认启用但只处理已注册 kind）；SQL 改动经锁定 sqlc v1.31.1 重新生成。
 - 测试与文档：maintenance/config 包覆盖领取/心跳、租约过期接管、重启续跑不重复、暂停取消、无 handler kind 不被领取、同 key 同/不同载荷、backup_export 工件与失败终态；docs/api/maintenance.md 更新 worker/冲突/未开放外部领取端点的边界，ADR-0054 追加实现补充。
 - 验证边界：本机 `go build ./...`、`go vet ./...`、定向 `go test ./internal/maintenance/ ./internal/config/` 通过，`gofmt -l` 干净；完整回归与 race 检测以云端 CI 为准（见 HANDOVER）。未安装到现装运行包，未对真实库创建任务。
-
-## feat(tools): 独立 AI 工具核心、作者链受控写入与 stdio MCP 适配器（2026-11-07 第六百九十九笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理复核；执行子代理）
-
-- `tools/ai_maintenance/` 升级为可独立维护的统一工具包（仅 Python 3.13 标准库）：新增 versions/errors/openapi/schema/registry/runtime/execution/plans/client/validation 模块与 tools_query/tools_author/tools_asset/tools_media/profile_import 实现；分离 platformVersion/toolContractVersion/rulepackVersion 与 openapiSha256（仅来源追踪），OpenAPI 改为分块解析（path→method→requestBody/schema/parameters，支持 $ref），按工具独立核对端点+方法+必需字段并输出 supported/unavailable/incompatible；25 个显式注册工具（19 supported/6 planned 如实），可列举、可禁用（QIMENG_AI_DISABLED_TOOLS/QIMENG_AI_READONLY），新增工具不改入口分支。
-- 统一 CLI 保留既有只读子命令与 `--json`/退出码 0/1/2 合同，新增 `version`、`tools list/show`、`tool call <id> --input-json/--input-file`；token 仍只来自环境变量，输出/日志/报告不回显；请求客户端统一（QIMENG_BASE_URL→QIMENG_API_BASE 兼容映射并提示弃用）。
-- 受控写入：prepare 计划（目标实例/库/对象、changes、impact、evidence、前置 revision/摘要、planFingerprint、idempotencyKey、confirmation、recoverableSteps、expectedReadback）→apply 校验确认+指纹+toolContract/rulepack 版本+live 前置摘要→正式 API→回读→结构化报告；作者档案 prepare/update（人工已填字段默认保护，409 不覆盖）、cleanup prepare/apply（删除/改名/合并预览与逐项回读，零关联不单条件删除）、author.merge（只用原子端点）、asset.authors prepare/apply；旧 `tools/import_creator_profiles.py` 改为转发统一实现，保留参数/退出码/输出类别与人工资料保护语义。
-- 新增 `media_naming.py` 组图命名规划引擎（作品编号 vs 组内页码、先分组→编号→页码、补图/缺页/并发/回读；prepare_plan/validate_plan/plan_steps/readback_report/SerializedLocks）与 `tools_media.py` 适配：apply 前按 instance+library 串行化、锁内重取现状+双检、逐步 POST move、回读发现自动改名/缺失/多余即失败；`media.organize.prepare/apply` 由 planned 动态变为 supported。
-- 新增 stdio MCP 适配器 `mcp_server.py`（JSON-RPC 2.0 最小子集：initialize/notifications/ping/tools.list/tools.call/取消与超时；与 CLI 共用同一注册表与 Schema；无 shell/任意 Python 执行；不暴露 token）；协议层以两个独立合成客户端验证，**真实 AI 客户端（Codex/Claude 等）接入未实测**，README 如实说明。
-- 规则源同批：rules.json schemaVersion=2、source 指向 V2 任务书与 ADR-0056、新增 mediaNaming 规则节、补齐 maintenance/jobs* 与 device/apply-tasks* 能力声明、区分 status/apiStatus/toolStatus、过时三代陈述改两代；rulesVersion/rulepackVersion 增为 2026-11-07.3。
-- 验证边界：`python -m unittest discover -s tools -p 'test_*.py'` 181 项通过（含旧 22 项 CLI 合同与旧脚本 15 项收敛回归、MCP 双合成客户端、命名 39 项）；CLI/MCP 冒烟通过；check_docs 0 错误、check_privacy passed。未改 server/api/web/android，未接真实服务端/真实 AI 客户端/8420 真库。
 
 # CHANGELOG - 变更历史
 
