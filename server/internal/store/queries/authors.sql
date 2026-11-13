@@ -34,6 +34,32 @@ LEFT JOIN asset_views av ON av.asset_id = aa.asset_id
 GROUP BY au.id
 ORDER BY au.display_name;
 
+-- SearchAuthorsFirstPage / SearchAuthorsAfterCursor: bounded AI author lookup.
+-- Search is a literal substring on display_name or id. SQLite lower() folds
+-- ASCII letters only; the API documents that non-ASCII matching is exact.
+-- The binary (display_name, id) order is deterministic even for duplicate names.
+-- The Go handler asks for page_limit+1 rows to detect a next cursor.
+-- name: SearchAuthorsFirstPage :many
+SELECT au.id, au.display_name, au.type
+FROM authors au
+WHERE (sqlc.arg(query) = ''
+       OR instr(lower(au.display_name), lower(sqlc.arg(query))) > 0
+       OR instr(lower(au.id), lower(sqlc.arg(query))) > 0)
+ORDER BY au.display_name COLLATE BINARY ASC, au.id COLLATE BINARY ASC
+LIMIT sqlc.arg(page_limit);
+
+-- name: SearchAuthorsAfterCursor :many
+SELECT au.id, au.display_name, au.type
+FROM authors au
+WHERE (sqlc.arg(query) = ''
+       OR instr(lower(au.display_name), lower(sqlc.arg(query))) > 0
+       OR instr(lower(au.id), lower(sqlc.arg(query))) > 0)
+  AND (au.display_name COLLATE BINARY > sqlc.arg(cursor_name) COLLATE BINARY
+       OR (au.display_name COLLATE BINARY = sqlc.arg(cursor_name) COLLATE BINARY
+           AND au.id COLLATE BINARY > sqlc.arg(cursor_id) COLLATE BINARY))
+ORDER BY au.display_name COLLATE BINARY ASC, au.id COLLATE BINARY ASC
+LIMIT sqlc.arg(page_limit);
+
 -- name: UpsertAuthor :exec
 -- TXT import / COS scan author upsert keyed by the authoring-generated
 -- id (GenerateAuthorID / GenerateCosAuthorID). Re-import never

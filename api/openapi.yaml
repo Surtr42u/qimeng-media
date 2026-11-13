@@ -785,6 +785,22 @@ paths:
         "200": { description: 已新建或复用（复用返回既有行）, content: { application/json: { schema: { $ref: "#/components/schemas/Author" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { description: 与 COS 作者行撞名, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/query:
+    get:
+      summary: 作者查询（服务端搜索与游标分页；AI/轻量查重）
+      description: |
+        有界作者查询接口，不改变 GET /authors 的既有全量响应。q trim 后对
+        displayName 或 ID 做子串匹配；SQLite lower() 使 ASCII 字母大小写不敏感，
+        非 ASCII 字符按原值匹配。顺序为 displayName、ID 的 SQLite BINARY 升序，
+        两字段共同构成稳定 keyset 游标。每页默认 20、最多 100 条；nextCursor 为
+        不透明 base64url 值，null 表示已到底。响应只包含 ID、显示名和作者类型。
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 200 }, description: 显示名或 ID 子串 }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 4096 }, description: 上一页 nextCursor }
+      responses:
+        "200": { description: 分页结果, content: { application/json: { schema: { $ref: "#/components/schemas/AuthorQueryPage" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/authors/merge:
     post:
       summary: 原子合并重复作者（源身份删除并并入目标身份；不可撤销）
@@ -3092,6 +3108,23 @@ components:
         viewCount: { type: integer, description: 该作者全部作品累计浏览次数（kind='open' 事件计数） }
         addedAtMillis: { type: integer, format: int64, description: 作者记录首次入库时刻；历史批量导入仅代表入库记录时间，无法推定原始加入日期 }
         txtOrder: { type: integer, minimum: 1, description: 全部已存TXT片段按存储顺序解析后的首次出现序号；重复作者只计一次，COS及未出现者缺省 }
+
+    AuthorQueryItem:
+      type: object
+      description: 作者查询紧凑条目（ID、显示名和 regular/cos 类型）
+      required: [id, displayName, type]
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        type: { type: string, description: regular 或 cos }
+
+    AuthorQueryPage:
+      type: object
+      description: GET /authors/query 的稳定游标分页结果
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AuthorQueryItem" } }
+        nextCursor: { type: [string, "null"], description: 下一页游标；null 表示已到底 }
 
     AuthorMergeRequest:
       type: object
