@@ -7,7 +7,8 @@ from .tools_asset import _asset_id, _asset_path, _read_asset
 
 def _filename(value):
     if not isinstance(value, str) or not value or value != value.strip(" .") \
-            or any(ord(c) < 32 or ord(c) == 127 or c in '/\\:*?"<>|\ufffd' for c in value) \
+            or any(ord(c) < 32 or ord(c) == 127 or 0xD800 <= ord(c) <= 0xDFFF
+                   or c in '/\\:*?"<>|\ufffd' for c in value) \
             or len(value.encode("utf-8")) > 255:
         raise errors.invalid_input("newName 必须是完整文件名，不含路径或非法字符；保留首尾空格/点无法精确改名")
     return value
@@ -56,7 +57,8 @@ def asset_rename_apply(ctx, payload):
     name = _filename(plan["changes"][0]["newValue"])
     expected = {**before, "fileName": name, "relPath": plan["targetRelPath"]}
     if _snapshot(current) == expected and _author_ids(current) == plan["authorIds"]:
-        return {"status": "already_applied", "assetId": asset_id, "readback": expected}
+        return {"status": "already_applied", "tool": "asset.rename.apply",
+                "assetId": asset_id, "readback": expected}
     if _snapshot(current) != before or _author_ids(current) != plan["authorIds"]:
         raise errors.precondition_failed("资产路径/身份/作者在计划生成后变化，请重新 prepare",
                                          mutation_rejected=True)
@@ -66,5 +68,5 @@ def asset_rename_apply(ctx, payload):
     if _snapshot(after) != expected or _author_ids(after) != plan["authorIds"]:
         raise errors.readback_mismatch("改名后身份/精确文件名/作者未匹配；按原资产ID核对，勿盲目重试",
                                        {"assetId": asset_id})
-    return {"status": "applied", "assetId": asset_id,
+    return {"status": "applied", "tool": "asset.rename.apply", "assetId": asset_id,
             "planFingerprint": plan["planFingerprint"], "readback": expected}
