@@ -98,7 +98,8 @@ class RecipeRunnerTests(unittest.TestCase):
         }
         (self.recipe_dir / "test.flow.json").write_text(
             json.dumps(self.recipe, ensure_ascii=False), encoding="utf-8")
-        self.env = {"QIMENG_AI_RECIPE_DIR": str(self.recipe_dir)}
+        self.env = {"QIMENG_AI_RECIPE_DIR": str(self.recipe_dir),
+                    "QIMENG_AI_GRANTED_PERMISSIONS": "read,author.profile.write"}
         self.calls = []
 
     def _fake_execute(self, tool_id, payload, env=None, config=None):

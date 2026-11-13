@@ -12,7 +12,7 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from ai_maintenance import mcp_server, registry
+from ai_maintenance import mcp_server, model_output, registry
 
 TOKEN = "-".join(("synthetic", "mcp", "credential"))
 
@@ -120,8 +120,43 @@ class McpProtocolTest(unittest.TestCase):
         self.assertFalse(context_tool["annotations"]["readOnlyHint"])
         content = call["result"]["content"][0]
         self.assertEqual("text", content["type"])
-        self.assertIn("工具状态", content["text"])
         self.assertFalse(call["result"]["isError"])
+        context_result = call["result"]["structuredContent"]["result"]
+        self.assertTrue(context_result["truncated"])
+        self.assertIn("resultRef", context_result)
+        self.assertNotIn("markdown", context_result)
+        encoded_result = json.dumps(context_result, ensure_ascii=True, separators=(",", ":"))
+        self.assertLessEqual(len(encoded_result.encode("ascii")), model_output.DEFAULT_OUTPUT_BUDGET)
+
+        # The full legacy Markdown remains available through bounded local continuation.
+        reader = DirectMcpClient(self.env())
+        reader.request({"jsonrpc": "2.0", "id": 9, "method": "initialize",
+                        "params": {"protocolVersion": "2025-06-18"}})
+        markdown_parts = []
+        cursor = None
+        for index in range(100):
+            arguments = {
+                "resultRef": context_result["resultRef"], "path": "/markdown", "limit": 500,
+            }
+            if cursor is not None:
+                arguments["cursor"] = cursor
+            read_call = reader.request({
+                "jsonrpc": "2.0", "id": 10 + index, "method": "tools/call",
+                "params": {"name": "platform.result.read", "arguments": arguments},
+            })["result"]
+            self.assertFalse(read_call["isError"], read_call)
+            page = read_call["structuredContent"]["result"]
+            self.assertLessEqual(
+                len(json.dumps(page, ensure_ascii=True, separators=(",", ":")).encode("ascii")),
+                model_output.MAX_PAGE_BYTES,
+            )
+            markdown_parts.append(page["value"])
+            cursor = page["nextCursor"]
+            if cursor is None:
+                break
+        else:
+            self.fail("result.read 未在 100 页内完成")
+        self.assertIn("工具状态", "".join(markdown_parts))
         self.assertEqual({}, ping["result"])
         self.assertNotIn(TOKEN, json.dumps(responses, ensure_ascii=False))
 

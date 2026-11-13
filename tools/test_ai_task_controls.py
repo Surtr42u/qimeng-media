@@ -106,6 +106,25 @@ class BudgetTests(unittest.TestCase):
 
 
 class LazyDiscoveryTests(unittest.TestCase):
+    def test_long_original_rule_is_readable_beyond_excerpt(self):
+        config = execution.load_config({})
+        original = {"text": "规则后半段也必须可读取" * 500}
+        config.rules["syntheticLongRule"] = original
+        _, excerpt = execution.execute_tool("platform.rules", {"sections": ["syntheticLongRule"]},
+                                             env={}, config=config)
+        self.assertTrue(excerpt["truncated"])
+        self.assertIn("continuation", excerpt["sections"]["syntheticLongRule"])
+        fragments = []
+        offset = 0
+        while offset is not None:
+            _, page = execution.execute_tool("platform.rules",
+                {"sections": ["syntheticLongRule"], "offset": offset, "limit": 1000},
+                env={}, config=config)
+            self.assertLess(len(json.dumps(page, ensure_ascii=False).encode()), 12288)
+            fragments.append(page["fragment"])
+            offset = page["nextOffset"]
+        self.assertEqual(original, json.loads("".join(fragments)))
+
     def test_cold_discovery_is_small_and_requested_tool_is_published(self):
         output = io.StringIO()
         server = mcp_server.McpServer(env={}, stdout=output)

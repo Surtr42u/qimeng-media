@@ -258,7 +258,8 @@ class LazyLoadingAndRegistryTest(unittest.TestCase):
                 self.assertNotIn("inputSchema", item)
 
     def test_concurrent_catalog_and_rules_calls(self):
-        config = local_config()
+        # This concurrency test explicitly grants a repeat budget for identical discovery.
+        config = local_config({"QIMENG_AI_MAX_UNCHANGED": "100"})
 
         def work(_index):
             _, catalog = execution.execute_tool("platform.catalog", {}, config=config)

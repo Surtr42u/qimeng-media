@@ -120,6 +120,7 @@ class McpServer:
             timeout_seconds if timeout_seconds is not None
             else self.env.get("QIMENG_AI_MCP_TIMEOUT", DEFAULT_CALL_TIMEOUT_SECONDS))
         self.config = None
+        self._config_lock = threading.Lock()
         self.discovery = self.env.get("QIMENG_AI_MCP_DISCOVERY", "lazy")
         if self.discovery not in ("lazy", "full"):
             raise errors.configuration_error("QIMENG_AI_MCP_DISCOVERY 必须为 lazy 或 full")
@@ -143,9 +144,10 @@ class McpServer:
     # ---- 协议无关的辅助 ---------------------------------------------------- #
 
     def _load_config(self):
-        if self.config is None:
-            self.config = execution.load_config(self.env)
-        return self.config
+        with self._config_lock:
+            if self.config is None:
+                self.config = execution.load_config(self.env)
+            return self.config
 
     def _default_execute(self, tool_id: str, payload: dict):
         return execution.execute_tool(tool_id, payload, env=self.env, config=self._load_config())

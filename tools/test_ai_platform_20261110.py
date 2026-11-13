@@ -218,6 +218,7 @@ class MediaScanTest(unittest.TestCase):
             "QIMENG_AI_OPENAPI": str(OPENAPI),
             "QIMENG_AI_RULES": str(RULES),
             "QIMENG_AI_MEDIA_ROOTS": ",".join(str(item) for item in roots),
+            "QIMENG_AI_GRANTED_PERMISSIONS": "read,media.organize",
         }
 
     def _prepare(self, env, payload):

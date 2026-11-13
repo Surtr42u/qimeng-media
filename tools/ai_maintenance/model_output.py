@@ -51,7 +51,8 @@ _CONTEXT_LIST_KEYS = ("tools", "items", "domains", "steps", "recipes", "playbook
 _SUMMARY_REQUIRED_KEYS = (
     "status", "error", "errorCode", "code", "message", "platformVersion",
     "toolContractVersion", "rulepackVersion", "planVersion", "count", "totalCount",
-    "totalMatched", "returned", "nextCursor", "cursor", "truncated", "task", "recipe",
+    "totalMatched", "toolCount", "requestedToolCount", "returned", "nextCursor", "cursor",
+    "truncated", "task", "recipe",
     "playbook", "tool", "permissions", "tools", "next", "discovery", "items", "domains", "steps",
     "availableTasks", "availableRecipes", "availableDomains", "availablePlaybooks",
 )
@@ -634,8 +635,8 @@ def _summary(result, *, tool_id: str, result_ref: str | None,
                 and len(summary[list_key]) > 1:
             summary[list_key].pop()
             summary["truncatedSummary"] = True
-            summary.setdefault("summaryOmittedCounts", {})[list_key] = \
-                summary["summaryOmittedCounts"].get(list_key, 0) + 1
+            omitted_counts = summary.setdefault("summaryOmittedCounts", {})
+            omitted_counts[list_key] = omitted_counts.get(list_key, 0) + 1
     if _json_size(summary) > budget and isinstance(summary.get("tools"), list):
         summary["tools"] = [_compact_tool(item) for item in summary["tools"][:1]]
     if _json_size(summary) > budget and isinstance(summary.get("tool"), dict):

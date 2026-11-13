@@ -254,41 +254,15 @@
         "cli": "tool call maintenance.status（列表/详情）；创建/暂停/恢复/取消暂不注册 AI 工具",
         "endpoint": "POST/GET /api/v1/maintenance/jobs",
         "endpoints": [
-          {
-            "method": "POST",
-            "path": "/api/v1/maintenance/jobs",
-            "requestSchema": "CreateMaintenanceJobRequest",
-            "requiredFields": [
-              "kind",
-              "idempotencyKey"
-            ],
-            "bodyRequired": true
-          },
-          {
-            "method": "GET",
-            "path": "/api/v1/maintenance/jobs",
-            "parameters": [
-              "status",
-              "limit",
-              "cursor"
-            ]
-          },
-          {
-            "method": "GET",
-            "path": "/api/v1/maintenance/jobs/{id}"
-          },
-          {
-            "method": "POST",
-            "path": "/api/v1/maintenance/jobs/{id}/pause"
-          },
-          {
-            "method": "POST",
-            "path": "/api/v1/maintenance/jobs/{id}/resume"
-          },
-          {
-            "method": "POST",
-            "path": "/api/v1/maintenance/jobs/{id}/cancel"
-          }
+          {"method": "POST", "path": "/api/v1/maintenance/jobs",
+           "requestSchema": "CreateMaintenanceJobRequest",
+           "requiredFields": ["kind", "idempotencyKey"], "bodyRequired": true},
+          {"method": "GET", "path": "/api/v1/maintenance/jobs",
+           "parameters": ["status", "limit", "cursor"]},
+          {"method": "GET", "path": "/api/v1/maintenance/jobs/{id}"},
+          {"method": "POST", "path": "/api/v1/maintenance/jobs/{id}/pause"},
+          {"method": "POST", "path": "/api/v1/maintenance/jobs/{id}/resume"},
+          {"method": "POST", "path": "/api/v1/maintenance/jobs/{id}/cancel"}
         ],
         "description": "维护任务账本的创建/列表/详情/暂停/恢复/取消（ADR-0054）。API 已存在；AI 工具层只注册只读 maintenance.status 与执行器控制面 maintenance.*，不重复建第二套任务系统。"
       },
@@ -320,9 +294,7 @@
         "status": "supported",
         "cli": "tool call author.create",
         "endpoint": "POST /api/v1/authors",
-        "requestFields": [
-          "displayName"
-        ],
+        "requestFields": ["displayName"],
         "description": "按名新建或复用常规作者（只建作者行，不写 TXT、不关联文件）；未知作者建档第一步，之后用 author.profile.prepare/update 写 candidate 档案，再用 asset.authors.apply 关联作品。"
       },
       "author.profile.update": {
@@ -354,23 +326,15 @@
         "endpoint": "PUT /api/v1/authors/{authorId}",
         "description": "改名并迁移身份；409 不自动合并。",
         "endpoints": [
-          {
-            "method": "PUT",
-            "path": "/api/v1/authors/{authorId}",
-            "requiredFields": [
-              "displayName"
-            ],
-            "bodyRequired": true
-          }
+          {"method": "PUT", "path": "/api/v1/authors/{authorId}",
+           "requiredFields": ["displayName"], "bodyRequired": true}
         ]
       },
       "asset.authors.replace": {
         "status": "planned",
         "endpoint": "PUT /api/v1/assets/{assetId}/authors",
         "requestSchema": "AssetAuthorsReplaceRequest",
-        "requiredFields": [
-          "authorIds"
-        ],
+        "requiredFields": ["authorIds"],
         "description": "整体替换资产作者关联；可带 newAuthorNames 按名新建。"
       },
       "author.merge": {
@@ -389,28 +353,12 @@
         "cli": "tool call author.cleanup.apply",
         "endpoint": "DELETE /api/v1/authors/{authorId}；PUT /api/v1/authors/{authorId}；POST /api/v1/authors/merge",
         "endpoints": [
-          {
-            "method": "DELETE",
-            "path": "/api/v1/authors/{authorId}"
-          },
-          {
-            "method": "PUT",
-            "path": "/api/v1/authors/{authorId}",
-            "requiredFields": [
-              "displayName"
-            ],
-            "bodyRequired": true
-          },
-          {
-            "method": "POST",
-            "path": "/api/v1/authors/merge",
-            "requestSchema": "AuthorMergeRequest",
-            "requiredFields": [
-              "sourceAuthorId",
-              "targetAuthorId"
-            ],
-            "bodyRequired": true
-          }
+          {"method": "DELETE", "path": "/api/v1/authors/{authorId}"},
+          {"method": "PUT", "path": "/api/v1/authors/{authorId}",
+           "requiredFields": ["displayName"], "bodyRequired": true},
+          {"method": "POST", "path": "/api/v1/authors/merge",
+           "requestSchema": "AuthorMergeRequest",
+           "requiredFields": ["sourceAuthorId", "targetAuthorId"], "bodyRequired": true}
         ],
         "description": "按已确认计划执行删除/改名/原子合并，逐项回读；失败停止并保留已执行步骤。"
       },
@@ -418,30 +366,21 @@
         "status": "planned",
         "endpoint": "POST /api/v1/import/qimeng-backup",
         "requestSchema": "LegacyBackupImport",
-        "requiredFields": [
-          "format",
-          "schemaVersion",
-          "appIdentifier",
-          "data"
-        ],
+        "requiredFields": ["format", "schemaVersion", "appIdentifier", "data"],
         "description": "v2 分段导入；导入前先导出，失败保留已提交段。"
       },
       "device.apply.prepare": {
         "status": "supported",
         "cli": "tool call device.apply.prepare",
         "endpoint": "POST /api/v1/device/apply-tasks",
-        "requiredFields": [
-          "manifest"
-        ],
+        "requiredFields": ["manifest"],
         "description": "只读生成设备结果包计划：读本地 TXT/v2 备份、计算 bytes+sha256、按 Go 上限校验并出 manifest 与指纹；不写数据。"
       },
       "device.apply.submit": {
         "status": "supported",
         "cli": "tool call device.apply.submit",
         "endpoint": "POST /api/v1/device/apply-tasks",
-        "requiredFields": [
-          "manifest"
-        ],
+        "requiredFields": ["manifest"],
         "description": "confirm=true 且指纹/版本/实例一致后复核源文件，multipart 登记结果包并回读段清单。"
       },
       "device.apply.status": {
@@ -449,23 +388,10 @@
         "cli": "tool call device.apply.status",
         "endpoint": "GET /api/v1/device/apply-tasks/{id}",
         "endpoints": [
-          {
-            "method": "GET",
-            "path": "/api/v1/device/apply-tasks",
-            "parameters": [
-              "targetDevice",
-              "status",
-              "limit",
-              "cursor"
-            ],
-            "requiredParameters": [
-              "targetDevice"
-            ]
-          },
-          {
-            "method": "GET",
-            "path": "/api/v1/device/apply-tasks/{id}"
-          }
+          {"method": "GET", "path": "/api/v1/device/apply-tasks",
+           "parameters": ["targetDevice", "status", "limit", "cursor"],
+           "requiredParameters": ["targetDevice"]},
+          {"method": "GET", "path": "/api/v1/device/apply-tasks/{id}"}
         ],
         "description": "只读列表（targetDevice 过滤 + keyset 分页）或详情；不含段正文。"
       },
@@ -483,9 +409,7 @@
         "status": "api-only",
         "endpoint": "POST /api/v1/device/apply-tasks/{id}/result",
         "requestSchema": "DeviceApplyResultRequest",
-        "requiredFields": [
-          "status"
-        ],
+        "requiredFields": ["status"],
         "description": "回传手机应用结果（applied/partial/failed 终态；相同结果重放幂等，服务端权威回读 expectedState）。"
       },
       "device.apply.cancel": {
@@ -1475,29 +1399,16 @@
     ]
   },
   "research": {
-    "priority": [
-      "Lens",
-      "Yandex",
-      "SauceNAO",
-      "fxtwitter/kemono 作者探针"
-    ],
+    "priority": ["Lens", "Yandex", "SauceNAO", "fxtwitter/kemono 作者探针"],
     "methodDoc": "tools/IMAGE_RESEARCH.md",
     "authorDoc": "tools/AUTHOR_RESEARCH.md",
     "kitDoc": "tools/research_kit/README.md",
     "budgets": {
-      "pipelineDefault": {
-        "lens": 15,
-        "yandex": 10,
-        "saucenao": 20,
-        "author": 20
-      },
+      "pipelineDefault": {"lens": 15, "yandex": 10, "saucenao": 20, "author": 20},
       "lensMinIntervalMs": 8000,
       "saucenao": "4 次/30s，日上限 90（脚本内置）"
     },
-    "toolTimeoutSeconds": {
-      "default": 300,
-      "max": 900
-    },
+    "toolTimeoutSeconds": {"default": 300, "max": 900},
     "rules": [
       "识图先 Lens：Lens 没有稳定外链，links/topTitles 为空不代表失败，也不能单独支撑归属；Lens 未命中再按 Yandex→SauceNAO 阶梯补证。",
       "作者核验以平台公开接口（fxtwitter/kemono 等）字段为主证据；bing/wayback 等检索摘要只是线索，不能单独支撑 verified。",
@@ -1509,15 +1420,7 @@
   "deviceApply": {
     "endpoint": "POST/GET /api/v1/device/apply-tasks",
     "protocolVersion": 1,
-    "limits": {
-      "masterTxtBytes": 1048576,
-      "v2BackupBytes": 67108864,
-      "manifestBytes": 262144,
-      "ttlSeconds": [
-        300,
-        604800
-      ]
-    },
+    "limits": {"masterTxtBytes": 1048576, "v2BackupBytes": 67108864, "manifestBytes": 262144, "ttlSeconds": [300, 604800]},
     "rules": [
       "prepare 只读：读本地文件计算 bytes+sha256，生成 manifest 与计划指纹；submit 必须 confirm=true 并重新复核源文件，变化即拒绝。",
       "targetDeviceId 只是不透明标签，本轮没有设备身份校验与配对；不得宣称已完成手机应用。",
@@ -1537,11 +1440,7 @@
     ]
   },
   "trash": {
-    "endpoints": [
-      "GET /api/v1/trash",
-      "POST /api/v1/trash/{trashId}/restore",
-      "DELETE /api/v1/assets/{assetId}"
-    ],
+    "endpoints": ["GET /api/v1/trash", "POST /api/v1/trash/{trashId}/restore", "DELETE /api/v1/assets/{assetId}"],
     "rules": [
       "删除媒体一律移入回收站；永久删除只走独立管理操作，AI 工具不提供。",
       "恢复前确认条目仍在回收站；恢复后回读条目消失；同名冲突由服务端自动改名，工具不猜测实际文件名。",
@@ -1584,7 +1483,7 @@
       "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
     ]
   },
-  "rulepackVersion": "2026-11-12.1",
+  "rulepackVersion": "2026-11-14.1",
   "platform": {
     "platformVersion": "1.6.0",
     "toolContractVersion": "2.0.0",
@@ -1688,26 +1587,7 @@
     },
     "dedupe": {
       "keep": "重复内容保留 sizeBytes 最大的文件；同大小优先规范命名与更短相对路径。",
-      "variantTokens": [
-        "sfw",
-        "nsfw",
-        "v1",
-        "v2",
-        "p1",
-        "p2",
-        "4k",
-        "2k",
-        "1080p",
-        "720p",
-        "voice",
-        "unblur",
-        "uncensored",
-        "censored",
-        "raw",
-        "clean",
-        "alt",
-        "variant"
-      ],
+      "variantTokens": ["sfw", "nsfw", "v1", "v2", "p1", "p2", "4k", "2k", "1080p", "720p", "voice", "unblur", "uncensored", "censored", "raw", "clean", "alt", "variant"],
       "variantRule": "变体标记（SFW/NSFW、v1/v2、P1/P2、4K/2K、voice/unblur 等）不同的文件不得因相似而互删；跨变体只有 md5 完全一致才可列为候选，并标记 variantMismatch 待人工确认。",
       "delete": "永不自动删除；只输出 review_remove 候选与 requiresConfirmation=true。删除只走回收站或独立管理操作。",
       "scope": "只对 image/video 媒体文件生成去重与命名候选；TXT/DB/配置等非媒体文件只读清点，不进入删除或命名计划。"
@@ -1749,75 +1629,23 @@
       "status": "planned",
       "reason": "本地内容扫描计划为只读建议；受控合并尚未实现。media.organize.apply 仍支持已绑定库的命名计划（media_naming.py）。"
     },
-    "tools": [
-      "media.organize.prepare",
-      "media.organize.apply"
-    ],
-    "ruleSections": [
-      "mediaOrganize",
-      "mediaNaming",
-      "permissions",
-      "errors"
-    ]
+    "tools": ["media.organize.prepare", "media.organize.apply"],
+    "ruleSections": ["mediaOrganize", "mediaNaming", "permissions", "errors"]
   },
   "toolCatalog": {
     "version": "1.0.0",
     "domains": [
-      {
-        "id": "author",
-        "label": "作者",
-        "description": "作者身份/档案/来源/清理/合并与作者关联"
-      },
-      {
-        "id": "media",
-        "label": "媒体",
-        "description": "媒体库/资产查询、混合媒体命名整理"
-      },
-      {
-        "id": "research",
-        "label": "研究",
-        "description": "本机研究工具包（Lens 优先）与可选研究网关"
-      },
-      {
-        "id": "backup",
-        "label": "备份",
-        "description": "便携备份流式导出与摘要"
-      },
-      {
-        "id": "device",
-        "label": "设备",
-        "description": "设备结果包登记/查询（配对与 Android Worker 未实现）"
-      },
-      {
-        "id": "maintenance",
-        "label": "后台维护",
-        "description": "维护任务账本查询、清点与外部执行器受控领取"
-      },
-      {
-        "id": "system",
-        "label": "平台",
-        "description": "上下文/版本/能力目录与平台元工具"
-      }
+      {"id": "author", "label": "作者", "description": "作者身份/档案/来源/清理/合并与作者关联"},
+      {"id": "media", "label": "媒体", "description": "媒体库/资产查询、混合媒体命名整理"},
+      {"id": "research", "label": "研究", "description": "本机研究工具包（Lens 优先）与可选研究网关"},
+      {"id": "backup", "label": "备份", "description": "便携备份流式导出与摘要"},
+      {"id": "device", "label": "设备", "description": "设备结果包登记/查询（配对与 Android Worker 未实现）"},
+      {"id": "maintenance", "label": "后台维护", "description": "维护任务账本查询、清点与外部执行器受控领取"},
+      {"id": "system", "label": "平台", "description": "上下文/版本/能力目录与平台元工具"}
     ],
     "tools": [
-      {
-        "id": "files.storages",
-        "domain": "media",
-        "summary": "列出已配置的本地文件存储（storageId/writable），不返回物理绝对路径。",
-        "permission": "read",
-        "readOnly": true,
-        "sideEffects": false,
-        "requiresConfirmation": false
-      },
-      {
-        "id": "files.search",
-        "domain": "media",
-        "summary": "在授权存储内有界搜索本地文件，返回不透明 fileRef、相对路径与分页游标。",
-        "permission": "read",
-        "readOnly": true,
-        "sideEffects": false,
-        "requiresConfirmation": false
-      }
+      {"id": "files.storages", "domain": "media", "summary": "列出已配置的本地文件存储（storageId/writable），不返回物理绝对路径。", "permission": "read", "readOnly": true, "sideEffects": false, "requiresConfirmation": false},
+      {"id": "files.search", "domain": "media", "summary": "在授权存储内有界搜索本地文件，返回不透明 fileRef、相对路径与分页游标。", "permission": "read", "readOnly": true, "sideEffects": false, "requiresConfirmation": false}
     ],
     "discovery": {
       "recipe": "platform.recipe（action=card 取 2–4KB 任务卡；默认不加载工具 Schema/完整规则）",
@@ -1885,107 +1713,33 @@
       "title": "补全作者资料（简介/头像/主页/双语）",
       "whenToUse": "需要为已有作者补全或校正公开资料、研究证据与双语简介时；先读取现状再计划。",
       "risk": "normal",
-      "baseTools": [
-        "project.context",
-        "author.query",
-        "author.profile.read",
-        "research.context",
-        "author.profile.prepare",
-        "author.profile.update"
-      ],
+      "baseTools": ["project.context", "author.query", "author.profile.read", "research.context", "author.profile.prepare", "author.profile.update"],
       "steps": [
-        {
-          "action": "读取规则与现状",
-          "tool": "project.context",
-          "note": "按需 author.profile.read；不要一次加载完整规则包"
-        },
-        {
-          "action": "研究公开来源",
-          "tool": "research.context",
-          "note": "服务端默认关闭；无来源时不得编造证据"
-        },
-        {
-          "action": "生成计划",
-          "tool": "author.profile.prepare",
-          "note": "人工已填字段默认受保护；计划包含 revision 与 expectedReadback"
-        },
-        {
-          "action": "人工核对后执行",
-          "tool": "author.profile.update",
-          "note": "confirm=true + 计划原样传入；409 不覆盖，重新读取再计划"
-        },
-        {
-          "action": "回读核对",
-          "tool": "author.profile.read",
-          "note": "确认写入字段与证据一致；失败停止并保留步骤记录"
-        }
+        {"action": "读取规则与现状", "tool": "project.context", "note": "按需 author.profile.read；不要一次加载完整规则包"},
+        {"action": "研究公开来源", "tool": "research.context", "note": "服务端默认关闭；无来源时不得编造证据"},
+        {"action": "生成计划", "tool": "author.profile.prepare", "note": "人工已填字段默认受保护；计划包含 revision 与 expectedReadback"},
+        {"action": "人工核对后执行", "tool": "author.profile.update", "note": "confirm=true + 计划原样传入；409 不覆盖，重新读取再计划"},
+        {"action": "回读核对", "tool": "author.profile.read", "note": "确认写入字段与证据一致；失败停止并保留步骤记录"}
       ],
-      "guardrails": [
-        "不得伪造 avatarUrl/homepageUrl/evidenceUrls",
-        "不覆盖用户人工填写字段",
-        "author.profile.update 需确认"
-      ]
+      "guardrails": ["不得伪造 avatarUrl/homepageUrl/evidenceUrls", "不覆盖用户人工填写字段", "author.profile.update 需确认"]
     },
     "media.organize": {
       "domain": "media",
       "title": "混合媒体批次整理（根目录对齐/最大文件去重/序号延顺/拼图核验/受控合并）",
       "whenToUse": "需要把本地批次与目标文件夹/库根对齐、清理重复内容、延续组图序号或整理乱码下载名时；先按内容指纹生成只读计划并目检，再决定受控合并。",
       "risk": "high",
-      "ruleSections": [
-        "mediaOrganize",
-        "mediaNaming",
-        "permissions",
-        "errors"
-      ],
-      "baseTools": [
-        "media.organize.prepare",
-        "media.organize.apply",
-        "asset.query",
-        "maintenance.inventory",
-        "backup.export"
-      ],
+      "ruleSections": ["mediaOrganize", "mediaNaming", "permissions", "errors"],
+      "baseTools": ["media.organize.prepare", "media.organize.apply", "asset.query", "maintenance.inventory", "backup.export"],
       "steps": [
-        {
-          "action": "读取任务上下文与规则",
-          "tool": "platform.context",
-          "note": "task=media.organize；只加载相关工具/规则，不加载全量规则包"
-        },
-        {
-          "action": "确认授权根与目标批次",
-          "note": "scan.root / targetRoot 必须在 QIMENG_AI_MEDIA_ROOTS 或仓库忽略工作根内；路径规范化并拒绝越界/符号链接逃逸"
-        },
-        {
-          "action": "内容对齐（只读）",
-          "tool": "media.organize.prepare",
-          "note": "scan 模式：md5 + 图片 pHash / 视频时长+分辨率+抽帧；文件名只作线索；输出 fingerprint/impact/suggestions"
-        },
-        {
-          "action": "去重决策",
-          "note": "重复内容保留最大文件；SFW/NSFW、v1/v2、P1/P2、4K/2K、voice/unblur 等变体不得互删；跨变体只有 md5 一致才列为候选"
-        },
-        {
-          "action": "序号延顺",
-          "tool": "media.organize.prepare",
-          "note": "已有 1 (1)..1 (3) 时新变体进 1 (4)；不覆盖、不重排、不跳号；组图命名仍由 media_naming 引擎执行"
-        },
-        {
-          "action": "拼图目检",
-          "note": "按组生成带序号/文件名/尺寸或时长标签的 contact sheet，逐张确认顺序/重复/变体；异常停止合并"
-        },
-        {
-          "action": "对齐与合并计划",
-          "note": "本地 a b / 文件夹 a b c：共同文件一致才补 c；不一致以最大文件为准并逐项核对；生成影响预览与备份摘要"
-        },
-        {
-          "action": "受控合并/命名执行",
-          "tool": "media.organize.apply",
-          "note": "本地内容扫描计划只读（apply planned）；已绑定库的命名计划需 confirm=true、锁内双检、逐步 move 并回读"
-        },
-        {
-          "action": "回读核对",
-          "tool": "asset.query",
-          "note": "回读文件数/大小/作者 TXT/DB 关联；任一不一致停止并保留现场"
-        }
+        {"action": "读取任务上下文与规则", "tool": "platform.context", "note": "task=media.organize；只加载相关工具/规则，不加载全量规则包"},
+        {"action": "确认授权根与目标批次", "note": "scan.root / targetRoot 必须在 QIMENG_AI_MEDIA_ROOTS 或仓库忽略工作根内；路径规范化并拒绝越界/符号链接逃逸"},
+        {"action": "内容对齐（只读）", "tool": "media.organize.prepare", "note": "scan 模式：md5 + 图片 pHash / 视频时长+分辨率+抽帧；文件名只作线索；输出 fingerprint/impact/suggestions"},
+        {"action": "去重决策", "note": "重复内容保留最大文件；SFW/NSFW、v1/v2、P1/P2、4K/2K、voice/unblur 等变体不得互删；跨变体只有 md5 一致才列为候选"},
+        {"action": "序号延顺", "tool": "media.organize.prepare", "note": "已有 1 (1)..1 (3) 时新变体进 1 (4)；不覆盖、不重排、不跳号；组图命名仍由 media_naming 引擎执行"},
+        {"action": "拼图目检", "note": "按组生成带序号/文件名/尺寸或时长标签的 contact sheet，逐张确认顺序/重复/变体；异常停止合并"},
+        {"action": "对齐与合并计划", "note": "本地 a b / 文件夹 a b c：共同文件一致才补 c；不一致以最大文件为准并逐项核对；生成影响预览与备份摘要"},
+        {"action": "受控合并/命名执行", "tool": "media.organize.apply", "note": "本地内容扫描计划只读（apply planned）；已绑定库的命名计划需 confirm=true、锁内双检、逐步 move 并回读"},
+        {"action": "回读核对", "tool": "asset.query", "note": "回读文件数/大小/作者 TXT/DB 关联；任一不一致停止并保留现场"}
       ],
       "guardrails": [
         "不得按文件名判定同一内容；乱码名不得作为分组或编号依据",
@@ -2000,139 +1754,55 @@
       "title": "作者清理（删除/改名/原子合并）",
       "whenToUse": "确认零关联或用户明确要求删除/改名/合并时；高风险、不可撤销，需要显式 actions 与单独授权。",
       "risk": "high",
-      "baseTools": [
-        "author.query",
-        "author.cleanup.prepare",
-        "author.cleanup.apply",
-        "author.merge",
-        "backup.export"
-      ],
+      "baseTools": ["author.query", "author.cleanup.prepare", "author.cleanup.apply", "author.merge", "backup.export"],
       "steps": [
-        {
-          "action": "导出备份",
-          "note": "执行不可逆动作前先导出 v2 备份（backup.export 在未实现前用既有管理员备份流程）"
-        },
-        {
-          "action": "清点候选与前置快照",
-          "tool": "author.cleanup.prepare",
-          "note": "actions 必须显式；零关联/无来源只是信号，不能单条件删除"
-        },
-        {
-          "action": "人工核对影响",
-          "note": "核对涉及作者、关联数量、媒体保留与合并方向；高风险操作需单独授权"
-        },
-        {
-          "action": "执行并逐项回读",
-          "tool": "author.cleanup.apply",
-          "note": "失败立即停止并保留已执行步骤；合并优先用原子端点 author.merge"
-        }
+        {"action": "导出备份", "note": "执行不可逆动作前先导出 v2 备份（backup.export 在未实现前用既有管理员备份流程）"},
+        {"action": "清点候选与前置快照", "tool": "author.cleanup.prepare", "note": "actions 必须显式；零关联/无来源只是信号，不能单条件删除"},
+        {"action": "人工核对影响", "note": "核对涉及作者、关联数量、媒体保留与合并方向；高风险操作需单独授权"},
+        {"action": "执行并逐项回读", "tool": "author.cleanup.apply", "note": "失败立即停止并保留已执行步骤；合并优先用原子端点 author.merge"}
       ],
-      "guardrails": [
-        "删除只解除业务关联，媒体文件保留",
-        "禁止零关联单条件批量删除",
-        "不可逆动作需备份与明确确认"
-      ]
+      "guardrails": ["删除只解除业务关联，媒体文件保留", "禁止零关联单条件批量删除", "不可逆动作需备份与明确确认"]
     },
     "maintenance.jobs": {
       "domain": "maintenance",
       "title": "长任务复用维护账本",
       "whenToUse": "需要后台执行研究/清理/备份等长任务时；复用 Go 维护任务账本与 Worker，不建第二套任务系统。",
       "risk": "normal",
-      "baseTools": [
-        "maintenance.inventory",
-        "maintenance.status",
-        "maintenance.claim",
-        "maintenance.heartbeat",
-        "maintenance.step.record",
-        "maintenance.artifact.record",
-        "maintenance.complete",
-        "project.context"
-      ],
+      "baseTools": ["maintenance.inventory", "maintenance.status", "maintenance.claim",
+                    "maintenance.heartbeat", "maintenance.step.record",
+                    "maintenance.artifact.record", "maintenance.complete", "project.context"],
       "steps": [
-        {
-          "action": "查询账本与清点",
-          "tool": "maintenance.status",
-          "note": "只读查询任务状态/步骤/工件；不领取/不执行"
-        },
-        {
-          "action": "创建任务（如已开放）",
-          "note": "使用 Go 账本的创建端点；AI 工具层当前不直接创建"
-        },
-        {
-          "action": "跟踪与核对",
-          "tool": "maintenance.status",
-          "note": "按任务 id 查询；失败/暂停由账本状态判断，不凭空假设完成"
-        }
+        {"action": "查询账本与清点", "tool": "maintenance.status", "note": "只读查询任务状态/步骤/工件；不领取/不执行"},
+        {"action": "创建任务（如已开放）", "note": "使用 Go 账本的创建端点；AI 工具层当前不直接创建"},
+        {"action": "跟踪与核对", "tool": "maintenance.status", "note": "按任务 id 查询；失败/暂停由账本状态判断，不凭空假设完成"}
       ],
-      "guardrails": [
-        "不建立第二套任务状态；执行器只用 maintenance.* 控制面，leaseToken 不落日志/证据包",
-        "不假装执行 planned 工具",
-        "写操作仍走对应业务 API 与回读"
-      ]
+      "guardrails": ["不建立第二套任务状态；执行器只用 maintenance.* 控制面，leaseToken 不落日志/证据包", "不假装执行 planned 工具", "写操作仍走对应业务 API 与回读"]
     },
     "backup.rotate": {
       "domain": "backup",
       "title": "两代备份轮换与恢复",
       "whenToUse": "需要导出/核对当前代与上次代备份、或从两代目录恢复时；旧 flat3 只读兼容，不删除。",
       "risk": "high",
-      "baseTools": [
-        "maintenance.inventory",
-        "backup.export"
-      ],
+      "baseTools": ["maintenance.inventory", "backup.export"],
       "steps": [
-        {
-          "action": "确认当前/上次两代目录",
-          "note": "当前代写入前核对摘要；上次代保留上一代完整副本"
-        },
-        {
-          "action": "导出新备份",
-          "tool": "backup.export",
-          "note": "流式导出并核对 sha256/bytes；默认不覆盖，写入前确认当前/上次代目录"
-        },
-        {
-          "action": "轮换与校验",
-          "note": "内容变化才轮换；摘要与正文分开校验；中断后下次写入自愈"
-        },
-        {
-          "action": "恢复入口",
-          "note": "当前/上次可恢复；旧 flat3 只读兼容，不自动删除"
-        }
+        {"action": "确认当前/上次两代目录", "note": "当前代写入前核对摘要；上次代保留上一代完整副本"},
+        {"action": "导出新备份", "tool": "backup.export", "note": "流式导出并核对 sha256/bytes；默认不覆盖，写入前确认当前/上次代目录"},
+        {"action": "轮换与校验", "note": "内容变化才轮换；摘要与正文分开校验；中断后下次写入自愈"},
+        {"action": "恢复入口", "note": "当前/上次可恢复；旧 flat3 只读兼容，不自动删除"}
       ],
-      "guardrails": [
-        "不覆盖不可读/摘要不符的上次代",
-        "不删除旧 flat3 现场",
-        "恢复前人工确认目标代"
-      ]
+      "guardrails": ["不覆盖不可读/摘要不符的上次代", "不删除旧 flat3 现场", "恢复前人工确认目标代"]
     },
     "backup.export": {
       "domain": "backup",
       "title": "导出 v2 便携备份并核对摘要",
       "whenToUse": "需要把当前实例完整 v2 备份落到本机维护目录（导入前、不可逆动作前、两代轮换前）时。",
       "risk": "normal",
-      "baseTools": [
-        "backup.export",
-        "maintenance.status"
-      ],
+      "baseTools": ["backup.export", "maintenance.status"],
       "steps": [
-        {
-          "action": "确认目标路径与预算",
-          "tool": "backup.export",
-          "note": "outPath 必须是仓库外绝对路径或被忽略工作根；预算默认 128MiB、上限 256MiB；默认拒绝覆盖"
-        },
-        {
-          "action": "流式导出",
-          "tool": "backup.export",
-          "note": "临时文件 + 原子改名；失败删除半成品，不产生半个备份"
-        },
-        {
-          "action": "核对摘要与字节数",
-          "note": "用返回的 bytes/sha256 与维护目录独立摘要比对；不把备份正文放进模型上下文"
-        },
-        {
-          "action": "登记工件（可选）",
-          "tool": "maintenance.artifact.record",
-          "note": "长任务可用执行器登记 kind=backup 的 uri/sha256/bytes"
-        }
+        {"action": "确认目标路径与预算", "tool": "backup.export", "note": "outPath 必须是仓库外绝对路径或被忽略工作根；预算默认 128MiB、上限 256MiB；默认拒绝覆盖"},
+        {"action": "流式导出", "tool": "backup.export", "note": "临时文件 + 原子改名；失败删除半成品，不产生半个备份"},
+        {"action": "核对摘要与字节数", "note": "用返回的 bytes/sha256 与维护目录独立摘要比对；不把备份正文放进模型上下文"},
+        {"action": "登记工件（可选）", "tool": "maintenance.artifact.record", "note": "长任务可用执行器登记 kind=backup 的 uri/sha256/bytes"}
       ],
       "guardrails": [
         "outPath 不得指向源码树；仓库内只允许 .work/.test-temp/build",
@@ -2145,39 +1815,14 @@
       "title": "PC 生成设备结果包 → 手机领取/应用 → 查询状态",
       "whenToUse": "需要把作者主表 TXT 与/或 v2 备份投递到已配对手机（配对/Worker 未实现，本轮只到登记与查询）。",
       "risk": "high",
-      "baseTools": [
-        "device.apply.prepare",
-        "device.apply.submit",
-        "device.apply.status"
-      ],
+      "baseTools": ["device.apply.prepare", "device.apply.submit", "device.apply.status"],
       "steps": [
-        {
-          "action": "准备本地段文件",
-          "note": "masterTxt ≤1MiB、v2Backup ≤64MiB；至少一段"
-        },
-        {
-          "action": "生成计划",
-          "tool": "device.apply.prepare",
-          "note": "只读：计算 bytes+sha256、manifest、指纹与 expectedReadback/expectedState；不写服务端"
-        },
-        {
-          "action": "人工核对计划",
-          "note": "核对 targetDeviceId、段摘要、ttlSeconds 与预算；manifest 不得手工修改"
-        },
-        {
-          "action": "确认并登记",
-          "tool": "device.apply.submit",
-          "note": "confirm=true + 计划原样；重新复核源文件，变化即拒绝；回读 segments 与 manifest 一致"
-        },
-        {
-          "action": "手机领取/应用",
-          "note": "手机侧 Worker 未实现：本轮只能由手机按 pending/claimed 下载段并回传结果；不得宣称已应用"
-        },
-        {
-          "action": "查询状态与结果",
-          "tool": "device.apply.status",
-          "note": "targetDevice 过滤 + keyset 分页；核对 readback/deviceLocalHashes/expectedStateDiff"
-        }
+        {"action": "准备本地段文件", "note": "masterTxt ≤1MiB、v2Backup ≤64MiB；至少一段"},
+        {"action": "生成计划", "tool": "device.apply.prepare", "note": "只读：计算 bytes+sha256、manifest、指纹与 expectedReadback/expectedState；不写服务端"},
+        {"action": "人工核对计划", "note": "核对 targetDeviceId、段摘要、ttlSeconds 与预算；manifest 不得手工修改"},
+        {"action": "确认并登记", "tool": "device.apply.submit", "note": "confirm=true + 计划原样；重新复核源文件，变化即拒绝；回读 segments 与 manifest 一致"},
+        {"action": "手机领取/应用", "note": "手机侧 Worker 未实现：本轮只能由手机按 pending/claimed 下载段并回传结果；不得宣称已应用"},
+        {"action": "查询状态与结果", "tool": "device.apply.status", "note": "targetDevice 过滤 + keyset 分页；核对 readback/deviceLocalHashes/expectedStateDiff"}
       ],
       "guardrails": [
         "targetDeviceId 只是不透明标签，不校验设备身份",
@@ -2190,50 +1835,16 @@
       "title": "作者核验：Lens 优先 → 平台探针 → 证据分级 → 只出候选",
       "whenToUse": "需要从图片/账号线索确认真实作者身份、主页与作品归属时。",
       "risk": "normal",
-      "baseTools": [
-        "research.image.pipeline",
-        "research.image.search",
-        "research.author.probe",
-        "research.media.probe",
-        "research.avatar.fetch",
-        "research.provider.query"
-      ],
+      "baseTools": ["research.image.pipeline", "research.image.search", "research.author.probe",
+                    "research.media.probe", "research.avatar.fetch", "research.provider.query"],
       "steps": [
-        {
-          "action": "读研究规则与预算",
-          "tool": "platform.rules",
-          "note": "sections=[research]；先确认 Lens 预算与超时上限"
-        },
-        {
-          "action": "视频抽帧（可选）",
-          "tool": "research.media.probe",
-          "note": "15/50/85% 帧 ≤1600px；只作识图输入"
-        },
-        {
-          "action": "Lens 批处理",
-          "tool": "research.image.search",
-          "note": "script=lens；links/topTitles 为空不代表失败"
-        },
-        {
-          "action": "阶梯补证",
-          "tool": "research.image.search",
-          "note": "Lens 未命中再 yandex→saucenao；深挖需显式 deep/预算"
-        },
-        {
-          "action": "平台公开字段",
-          "tool": "research.author.probe",
-          "note": "fxtwitter 取账号/帖子字段；kemono 取公开 API 元数据"
-        },
-        {
-          "action": "头像候选",
-          "tool": "research.avatar.fetch",
-          "note": "只下载到显式 outDir，manifest 记录尺寸/格式/摘要"
-        },
-        {
-          "action": "证据分级与档案候选",
-          "tool": "author.profile.prepare",
-          "note": "平台字段+主页+至少 1 条证据才可能 verified；研究结果先写 candidate"
-        }
+        {"action": "读研究规则与预算", "tool": "platform.rules", "note": "sections=[research]；先确认 Lens 预算与超时上限"},
+        {"action": "视频抽帧（可选）", "tool": "research.media.probe", "note": "15/50/85% 帧 ≤1600px；只作识图输入"},
+        {"action": "Lens 批处理", "tool": "research.image.search", "note": "script=lens；links/topTitles 为空不代表失败"},
+        {"action": "阶梯补证", "tool": "research.image.search", "note": "Lens 未命中再 yandex→saucenao；深挖需显式 deep/预算"},
+        {"action": "平台公开字段", "tool": "research.author.probe", "note": "fxtwitter 取账号/帖子字段；kemono 取公开 API 元数据"},
+        {"action": "头像候选", "tool": "research.avatar.fetch", "note": "只下载到显式 outDir，manifest 记录尺寸/格式/摘要"},
+        {"action": "证据分级与档案候选", "tool": "author.profile.prepare", "note": "平台字段+主页+至少 1 条证据才可能 verified；研究结果先写 candidate"}
       ],
       "guardrails": [
         "证据等级：平台公开字段 > 主页/官方链接 > 检索摘要/相似图（后两者只是线索）",

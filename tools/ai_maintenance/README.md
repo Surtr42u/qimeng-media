@@ -111,6 +111,9 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 按 RFC6901 JSON Pointer（如 `/tools/0`）、游标与条数续读，每页最多12KiB。
 有 `planRef` 时 apply/update 直接传 `{ "planRef":"<原引用>", "confirm":true }`，
 执行端读取完整原计划再验证版本/指纹/前置条件。不要从预览或脱敏路径重造计划。
+规则节原先已在 handler 摘录时截断，续读该摘录不能取回原文；因此 `platform.rules`
+另支持单个 `sections` 配合 `offset=0,limit=1000`，按 `nextOffset` 读取原始规则 JSON
+片段，供必要时补全规范；不会把缺失的后半段当成已读，也不将片段作为执行计划。
 结果引用绑定实例、凭据摘要、工具/规则版本，24小时过期；单对象32MiB、总额256MiB、
 最多128项，超限明确给出无法续读/不可执行原因。引用也不扩大原始权限。
 

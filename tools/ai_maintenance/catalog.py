@@ -161,7 +161,7 @@ def platform_tool_describe(ctx, payload: dict) -> dict:
             "catalog": "platform.catalog",
             "rules": "platform.rules",
             "playbook": "platform.playbook",
-            "note": "Schema 与规则摘录只用于理解与构造计划；执行仍由 execution 层做权限/能力/确认校验。",
+            "note": "Schema 与规则摘录用于构造计划；规则截断时用 platform.rules(sections=[节名],offset=0,limit=1000) 续读。执行仍由执行端校验。",
         },
     }
 
@@ -230,6 +230,24 @@ def platform_rules(ctx, payload: dict) -> dict:
         raise errors.configuration_error("当前上下文缺少规则源（rules.json 未加载）")
     requested = payload.get("sections")
     domain = payload.get("domain")
+    if "offset" in payload or "limit" in payload:
+        if not isinstance(requested, list) or len(requested) != 1 or domain:
+            raise errors.invalid_input("规则续读必须只指定一个 sections 路径，不同时指定 domain")
+        section = requested[0]
+        value = _resolve_rule_section(rules, section)
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        offset = payload.get("offset", 0)
+        limit = payload.get("limit", 1000)
+        if type(offset) is not int or not 0 <= offset <= len(encoded):
+            raise errors.invalid_input("规则续读 offset 超出范围")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise errors.invalid_input("规则续读 limit 必须在 1..1000")
+        end = min(len(encoded), offset + limit)
+        return {"rulepackVersion": str(getattr(ctx, "rulepack_version", "")),
+                "section": section, "encoding": "json-fragment", "fragment": encoded[offset:end],
+                "offset": offset, "totalChars": len(encoded),
+                "nextOffset": end if end < len(encoded) else None,
+                "truncated": end < len(encoded), "complete": offset == 0 and end == len(encoded)}
     sections: list[str] = []
     if isinstance(requested, list) and requested:
         if len(requested) > MAX_RULE_SECTIONS:
@@ -252,6 +270,9 @@ def platform_rules(ctx, payload: dict) -> dict:
     truncated: list[str] = []
     for name in sections:
         excerpt = _bounded(values[name])
+        if isinstance(excerpt, dict) and excerpt.get("truncated") is True:
+            excerpt["continuation"] = {"tool": "platform.rules",
+                "arguments": {"sections": [name], "offset": 0, "limit": 1000}}
         encoded_len = len(json.dumps(excerpt, ensure_ascii=False))
         if used + encoded_len > RULES_TOTAL_LIMIT:
             truncated.append(name)
@@ -267,7 +288,7 @@ def platform_rules(ctx, payload: dict) -> dict:
         "truncatedSections": truncated,
         "truncated": bool(truncated),
         "availableSections": sorted(rules.keys()),
-        "note": "节选用于按需加载领域规则；完整规则源由可信执行端保管，执行仍以服务端与执行器校验为准。",
+        "note": "规则截断/省略时，单个 sections 路径加 offset=0,limit=1000 可续读原始规则JSON；按 nextOffset 继续。片段不是完整执行参数。",
     }
 
 def _playbooks(ctx) -> dict:

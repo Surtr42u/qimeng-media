@@ -1260,6 +1260,8 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="按需读取规则节（如 mediaNaming/authorActions/fields/permissions），不加载完整 rules.json。",
         handler_ref="ai_maintenance.catalog:platform_rules", network=False, permission="read",
         input_schema=_schema({
+            "offset": _integer("单节原始规则JSON续读字符偏移，需只指定一个 sections", 0),
+            "limit": _integer("规则JSON片段字符数，按nextOffset续读；不是完整执行参数", 1, 1000),
             "sections": {"type": "array", "maxItems": 10,
                          "items": _string("rules.json 顶层节名或点路径", 1, 120)},
             "domain": _string("按领域取默认规则节：author/media/research/backup/device/maintenance/system"),

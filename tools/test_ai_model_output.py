@@ -95,6 +95,7 @@ class ModelOutputTests(unittest.TestCase):
         self.assertEqual("media.write", response["tools"][0]["permission"])
         self.assertEqual("platform.tool.describe", response["discovery"]["describe"])
         self.assertIn("next", response)
+        self.assertGreater(response["summaryOmittedCounts"]["tools"], 0)
 
     def test_large_describe_summary_keeps_tool_identity_permission_and_schema(self):
         source = {
@@ -184,7 +185,8 @@ class ModelOutputTests(unittest.TestCase):
         self.assertEqual("RESULT_TAMPERED", caught.exception.code)
 
     def test_reference_is_bound_to_instance_credential_and_rule_version(self):
-        plan = {"tool": "asset.upload", "planVersion": "1.0", "operations": [1]}
+        plan = {"tool": "asset.upload", "planVersion": "1.0",
+                "operations": [{"index": index, "action": "upload"} for index in range(120)]}
         response = model_output.present_result(
             "asset.upload.prepare", {"plan": plan}, env=self.env,
             rulepack_version="rules-test")
@@ -224,11 +226,9 @@ class ModelOutputTests(unittest.TestCase):
         with self.assertRaises(model_output.ModelOutputError) as caught:
             model_output.read_result(self.ctx, {"resultRef": "r1_../../outside"})
         self.assertEqual("RESULT_REF_INVALID", caught.exception.code)
-        response = model_output.present_result(
-            "test.query", {"ok": True}, env=self.env, rulepack_version="rules-test")
         # Small results are not stored, so create a larger object with a reference.
         response = model_output.present_result(
-            "test.query", {"items": [{"id": index} for index in range(100)]},
+            "test.query", {"items": [{"id": index} for index in range(180)]},
             env=self.env, rulepack_version="rules-test")
         with self.assertRaises(model_output.ModelOutputError) as caught:
             model_output.read_result(self.ctx, {
