@@ -3,7 +3,6 @@ package media.qimeng.app.feature.detail
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,12 +10,14 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -49,8 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
-import media.qimeng.app.core.ui.icon.ClearIcon
 import media.qimeng.app.core.ui.icon.CheckMarkIcon
+import media.qimeng.app.core.ui.icon.ClearIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
@@ -90,6 +91,9 @@ private val TAG_POOL_CHIP_PADDING = 10.dp
 /** 仅对颜色作短过渡，选中时不改变标签尺寸或位置。 */
 private const val TAG_SELECTION_TRANSITION_MS = 120
 
+/** 弹层保持固定高度，避免勾选摘要增长使底部锚定的整个弹层上移。 */
+private const val TAG_SHEET_HEIGHT_FRACTION = 0.8f
+
 /** 底部「取消/保存」按钮区顶距 18dp（U10-2 D9 拍板：旧版弹窗按钮区间距） */
 private val TAG_FOOTER_TOP_SPACING = 18.dp
 
@@ -114,7 +118,7 @@ internal fun DetailTagManageSheet(
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var draft by remember { mutableStateOf("") }
     // D11：dragHandle=null 对齐旧版弹窗无把手形态
     ModalBottomSheet(
@@ -125,7 +129,7 @@ internal fun DetailTagManageSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .fillMaxHeight(TAG_SHEET_HEIGHT_FRACTION)
                 // U10-2b：顶距 18dp=旧 sheetContainer setPadding 顶值（TAG_SHEET_CONTENT_TOP_PADDING
                 // 记档）；副标题说明行已删（用户反馈「标签间隔太多」——旧版弹窗无此行）
                 .padding(top = TAG_SHEET_CONTENT_TOP_PADDING)
@@ -147,22 +151,29 @@ internal fun DetailTagManageSheet(
                     // 标题下 12dp（SpaceL）保留：与旧版弹窗标题-内容间距同值，U10-2b 不动
                     .padding(bottom = QimengDimens.SpaceL),
             )
-            // 全量池放在动态勾选摘要之前，避免摘要换行推动正在操作的标签。
-            SheetTagPool(
-                pool = pool,
-                selectedTagIds = selectedTagIds,
-                onToggleTag = onToggleTag,
-            )
-            SheetCurrentTags(
-                pool = pool,
-                selectedTagIds = selectedTagIds,
-                onUnbindTag = onUnbindTag,
-            )
-            SheetAddTagRow(
-                draft = draft,
-                onDraftChange = { draft = it },
-                onCreateTag = onCreateTag,
-            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                // 全量池放在动态勾选摘要之前，避免摘要换行推动正在操作的标签。
+                SheetTagPool(
+                    pool = pool,
+                    selectedTagIds = selectedTagIds,
+                    onToggleTag = onToggleTag,
+                )
+                SheetCurrentTags(
+                    pool = pool,
+                    selectedTagIds = selectedTagIds,
+                    onUnbindTag = onUnbindTag,
+                )
+                SheetAddTagRow(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    onCreateTag = onCreateTag,
+                )
+            }
             SheetFooterButtons(
                 savingTags = savingTags,
                 onSave = onSave,
