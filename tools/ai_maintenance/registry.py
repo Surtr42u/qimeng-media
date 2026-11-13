@@ -273,12 +273,14 @@ def _boolean(description: str = "", default: bool | None = None) -> dict:
 
 
 def _req(path: str, method: str, *, schema: str | None = None, fields=(),
-         parameters=(), required_parameters=(), body_required: bool | None = None) -> openapi.ApiRequirement:
+         parameters=(), required_parameters=(), body_required: bool | None = None,
+         body_properties=()) -> openapi.ApiRequirement:
     return openapi.ApiRequirement(path=path, method=method, request_schema=schema,
                                   required_body_fields=tuple(fields),
                                   body_required=body_required,
                                   parameters=tuple(parameters),
-                                  required_parameters=tuple(required_parameters))
+                                  required_parameters=tuple(required_parameters),
+                                  body_properties=tuple(body_properties))
 
 
 _PROFILE_OBJECT_SCHEMA = {
@@ -696,7 +698,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         output_schema=_PLAN_RESULT_OUTPUT,
         requirements=(_req("/api/v1/assets/{assetId}", "GET"),
                       _req("/api/v1/assets/{assetId}/move", "POST", schema="MoveRequest",
-                           fields=("targetDir", "newName"), body_required=True)),
+                           fields=("targetDir",), body_properties=("newName",), body_required=True)),
     ),
     ToolSpec(
         id="asset.rename.apply", version="1.0.0", kind="write",
@@ -708,7 +710,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         output_schema=_WRITE_RESULT_OUTPUT,
         requirements=(_req("/api/v1/assets/{assetId}", "GET"),
                       _req("/api/v1/assets/{assetId}/move", "POST", schema="MoveRequest",
-                           fields=("targetDir", "newName"), body_required=True)),
+                           fields=("targetDir",), body_properties=("newName",), body_required=True)),
     ),
     ToolSpec(
         id="media.organize.prepare", version="1.1.0", kind="plan",

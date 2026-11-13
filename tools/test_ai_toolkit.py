@@ -317,6 +317,16 @@ class RulepackTest(unittest.TestCase):
         self.assertTrue(all(status == "supported" for tool_id, status in second_status.items()
                             if not tool_id.startswith(("media.organize.", "backup.", "device."))))
 
+    def test_optional_rename_field_is_required_by_tool_but_not_by_api(self):
+        with temp_dir() as directory:
+            path = directory / "openapi.yaml"
+            path.write_text(OPENAPI.read_text(encoding="utf-8").replace("newName:", "otherName:"), encoding="utf-8")
+            pack = rulepack.build_rulepack(openapi_path=path)
+        statuses = {tool["id"]: tool["status"] for tool in pack["tools"]}
+        self.assertEqual("incompatible", statuses["asset.rename.prepare"])
+        self.assertEqual("incompatible", statuses["asset.rename.apply"])
+        self.assertEqual("supported", statuses["asset.query"])
+
     def test_changed_required_field_only_degrades_dependent_write_tools(self):
         with temp_dir() as directory:
             path = directory / "openapi.yaml"
