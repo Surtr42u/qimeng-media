@@ -7,10 +7,36 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ai_maintenance import errors, execution, mcp_server, registry, task_controls
+from ai_maintenance import errors, execution, mcp_server, registry, task_controls, recipes
 
 
 class TrustedGrantTests(unittest.TestCase):
+    def test_task_grant_also_covers_recipe_primitive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            grant_path = Path(directory) / "grant.json"
+            env = {"QIMENG_API_BASE": "http://127.0.0.1:18568",
+                   "QIMENG_AI_AUTHORIZATION_FILE": str(grant_path),
+                   "QIMENG_AI_GRANTED_PERMISSIONS": "read,local.files.write"}
+            step = {"id": "transfer", "primitive": "media.transfer"}
+            payload = {"source": "synthetic-a", "target": "synthetic-b"}
+            ctx = recipes.RunContext(env, Path(directory) / "run")
+            for allowed, expect_success in (("author.create", False), ("media.transfer", True)):
+                grant_path.write_text(json.dumps({"version": 1, "apiBase": env["QIMENG_API_BASE"],
+                    "expiresAt": time.time() + 60,
+                    "allow": [{"tool": allowed, "arguments": {"source": "synthetic-a"}}]}), encoding="utf-8")
+                config = execution.load_config(env)
+                with patch.dict(recipes.PRIMITIVES, {"media.transfer": lambda *_: {"status": "ok"}}):
+                    if expect_success:
+                        result = recipes._run_step(step, {}, ctx, {}, {}, config, True,
+                                                   payload=payload, authorized=True)
+                        self.assertEqual("ok", result["status"])
+                    else:
+                        with self.assertRaises(errors.ToolError) as caught:
+                            recipes._run_step(step, {}, ctx, {}, {}, config, True,
+                                              payload=payload, authorized=True)
+                        self.assertEqual("AUTHORIZATION_MISMATCH", caught.exception.code)
+                self.assertEqual(0, config.budget.report()["pendingWrites"])
+
     def test_default_read_only_and_explicit_grants(self):
         config = execution.load_config({})
         self.assertEqual(frozenset({"read"}), config.granted_permissions)
@@ -54,6 +80,47 @@ class TrustedGrantTests(unittest.TestCase):
 
 
 class BudgetTests(unittest.TestCase):
+    def test_pending_write_blocks_other_client_until_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = {"QIMENG_AI_TASK_ID": "synthetic-write", "QIMENG_AI_STATE_DIR": directory}
+            first = task_controls.SessionBudget(env)
+            key = first.reserve("write", {"id": "one"}, side_effects=True)
+            second = task_controls.SessionBudget(env)
+            with self.assertRaises(errors.ToolError) as caught:
+                second.reserve("write", {"id": "two"}, side_effects=True)
+            self.assertEqual("TASK_OPERATION_PENDING", caught.exception.code)
+            read_key = second.reserve("readback", {"id": "one"})
+            second.complete(read_key, {"status": "applied"})
+            self.assertEqual(1, second.report()["pendingWrites"])
+            first.complete(key, {"status": "applied"})
+            second.reserve("write", {"id": "two"}, side_effects=True)
+
+    def test_concurrent_read_reservations_count_towards_no_progress_limit(self):
+        budget = task_controls.SessionBudget({"QIMENG_AI_MAX_UNCHANGED": "2"})
+        first = budget.reserve("same", {})
+        second = budget.reserve("same", {})
+        with self.assertRaises(errors.ToolError) as caught:
+            budget.reserve("same", {})
+        self.assertEqual("TASK_NO_PROGRESS", caught.exception.code)
+        budget.complete(first, {"value": 1})
+        budget.complete(second, {"value": 1})
+
+    def test_uncertain_write_remains_pending_and_preflight_error_does_not(self):
+        config = execution.load_config({})
+        with self.assertRaises(errors.ToolError):
+            execution.execute_tool("author.create", {"confirm": True}, env={}, config=config)
+        self.assertEqual(0, config.budget.report()["pendingWrites"])
+
+        def interrupted(mark_started):
+            mark_started()
+            raise RuntimeError("synthetic disconnect after operation")
+
+        with self.assertRaises(RuntimeError) as caught:
+            execution.controlled_action("synthetic.write", {}, interrupted,
+                                        env={}, config=config, side_effects=True)
+        self.assertTrue(caught.exception.operation_may_have_completed)
+        self.assertEqual(1, config.budget.report()["pendingWrites"])
+
     def test_task_budget_survives_new_client_instances(self):
         with tempfile.TemporaryDirectory() as directory:
             env = {"QIMENG_AI_TASK_ID": "synthetic-task", "QIMENG_AI_STATE_DIR": directory,
@@ -143,6 +210,13 @@ class LazyDiscoveryTests(unittest.TestCase):
         server._publish_discovered("platform.tool.describe", {"tool": {"id": "author.create"}})
         self.assertNotIn("author.create", {spec.id for spec in server._visible_tools()})
         self.assertIn("platform.result.read", {spec.id for spec in server._visible_tools()})
+        description = server._scope_discovery_result("platform.tool.describe",
+            {"tool": {"id": "author.create", "enabled": True}})
+        self.assertFalse(description["tool"]["exposedInConnection"])
+        self.assertTrue(description["tool"]["disabled"])
+        context = server._scope_discovery_result("platform.context",
+            {"tools": [{"id": "author.create"}], "next": ["author.create"]})
+        self.assertEqual([], context["next"])
         with self.assertRaises(errors.ToolError) as caught:
             execution.execute_tool("author.create", {"displayName": "synthetic", "confirm": True}, env={})
         self.assertEqual("PERMISSION_DENIED", caught.exception.code)

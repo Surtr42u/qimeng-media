@@ -18,7 +18,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import client, errors, pathguard, versions
+from . import client, errors, pathguard, versions, local_state
 
 STATE_DIR_ENV = "QIMENG_AI_STATE_DIR"
 OUTPUT_BUDGET_ENV = "QIMENG_AI_OUTPUT_BUDGET_BYTES"
@@ -33,6 +33,7 @@ ARTIFACT_TTL_SECONDS = 24 * 60 * 60
 ARTIFACT_FORMAT_VERSION = 1
 _RESULT_REF = re.compile(r"^r1_([0-9a-f]{32})$")
 _PLAN_REF = re.compile(r"^p1_([0-9a-f]{32})$")
+_SAFE_CODE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 _BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")
 _WINDOWS_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]:[\\/][^\s\"'<>]+")
 _UNC_ABSOLUTE = re.compile(r"(?<!\S)\\\\[^\\/\s]+[\\/][^\s\"'<>]+")
@@ -70,7 +71,7 @@ def _ctx_env(ctx) -> dict:
     value = getattr(ctx, "env", None)
     if value is None and isinstance(ctx, dict):
         value = ctx.get("env")
-    return dict(value or os.environ)
+    return dict(os.environ if value is None else value)
 
 
 def _ctx_rulepack_version(ctx) -> str:
@@ -180,6 +181,11 @@ def _output_budget(env) -> int:
     return value
 
 
+def validate_output_config(env=None) -> None:
+    """Validate presentation settings before any tool handler can perform side effects."""
+    _output_budget(os.environ if env is None else env)
+
+
 def _key_file(root: Path) -> Path:
     path = root / ".model-output-integrity-key"
     if path.exists() and pathguard.is_linkish(path):
@@ -241,14 +247,14 @@ def _clean_expired(directory: Path, now: float) -> list[Path]:
         try:
             info = path.stat()
         except OSError:
-            continue
+            raise ModelOutputError("RESULT_STORE_UNAVAILABLE", "本地结果容量无法核对") from None
         if not stat.S_ISREG(info.st_mode):
             continue
         if now - info.st_mtime > ARTIFACT_TTL_SECONDS:
             try:
                 path.unlink()
             except OSError:
-                pass
+                files.append(path)
             continue
         files.append(path)
     return files
@@ -259,15 +265,29 @@ def _store_result(result, binding: dict, env) -> tuple[str, str | None, int]:
     if len(result_bytes) > MAX_ARTIFACT_BYTES:
         raise ModelOutputError("RESULT_TOO_LARGE", "本地结果超过单个 artifact 的 32 MiB 上限")
     root = _state_root(env, binding)
+    try:
+        with local_state.lock_file(root / ".store.lock"):
+            return _store_result_locked(result, binding, root, result_bytes)
+    except local_state.StateLockError:
+        raise ModelOutputError("RESULT_STORE_UNAVAILABLE", "本地结果缓存被占用，未发布新结果引用") from None
+
+
+def _store_result_locked(result, binding, root, result_bytes):
     directory = _results_dir(root)
     now = int(time.time())
+    # The exclusive cache lock means these are abandoned temp files, not active writers.
+    for temporary in directory.glob(".result-*.tmp"):
+        try:
+            temporary.unlink()
+        except OSError:
+            raise ModelOutputError("RESULT_STORE_UNAVAILABLE", "本地结果临时文件无法清理") from None
     files = _clean_expired(directory, now)
     current_bytes = 0
     for path in files:
         try:
             current_bytes += path.stat().st_size
         except OSError:
-            continue
+            raise ModelOutputError("RESULT_STORE_UNAVAILABLE", "本地结果容量无法核对") from None
     if len(files) >= MAX_ARTIFACTS:
         raise ModelOutputError("RESULT_STORE_LIMIT", "本地结果缓存达到容量限制，请缩小查询范围后重试")
 
@@ -460,7 +480,7 @@ def _clip_summary(value, *, depth: int = 0, max_string: int = 220):
 def _compact_tool(item: dict) -> dict:
     keys = ("id", "version", "domain", "kind", "summary", "status", "reason", "availability",
             "permission", "permissionDescription", "permitted", "readOnly", "sideEffects",
-            "requiresConfirmation", "confirmationMode", "disabled", "deprecated")
+            "requiresConfirmation", "confirmationMode", "disabled", "disabledReason", "exposedInConnection", "deprecated")
     result = {key: item[key] for key in keys if key in item}
     requirements = item.get("goApiRequirements")
     if isinstance(requirements, list):
@@ -520,7 +540,7 @@ def _compact_described_tool(item: dict) -> dict:
     keys = ("id", "version", "kind", "domain", "status", "permission", "readOnly",
             "sideEffects", "requiresConfirmation", "confirmationMode", "availability",
             "description", "reason", "capabilityStatus", "enabled", "disabledReason",
-            "deprecated", "replacedBy", "handlerRef", "implementationAvailable")
+            "deprecated", "replacedBy", "handlerRef", "implementationAvailable", "exposedInConnection")
     result = {key: item[key] for key in keys if key in item}
     for key in ("inputSchema", "outputSchema"):
         if isinstance(item.get(key), dict):
@@ -593,6 +613,69 @@ def _plan_summary(plan: dict) -> dict:
                 summary[key + "PreviewTruncated"] = len(entries) - 3
     summary["executable"] = False
     return summary
+
+
+def presentation_failure(tool_id: str, result, exc, *, payload=None, env=None) -> dict:
+    """Return a bounded recovery notice when execution returned but rendering failed.
+
+    This is for already-dispatched side effects only. It intentionally does not include the
+    original result body: the caller must read back the operation before considering retry.
+    """
+    env = dict(os.environ if env is None else env)
+    code = getattr(exc, "code", None)
+    if not isinstance(code, str) or not _SAFE_CODE.fullmatch(code):
+        code = "RESULT_PRESENTATION_FAILED"
+    notice = {
+        "executionCompleted": True,
+        "resultPresentationFailed": True,
+        "toolId": tool_id if isinstance(tool_id, str) and _SAFE_CODE.fullmatch(tool_id) else "unknown",
+        "presentationErrorCode": code,
+        "operationIds": [],
+        "recovery": ("执行器已返回结果。请按原操作 ID 或资源 ID 回读确认最终状态；"
+                     "不要自动重试或重复提交。"),
+    }
+    status = result.get("status") if isinstance(result, dict) else None
+    if isinstance(status, str) and _SAFE_CODE.fullmatch(status):
+        notice["originalStatus"] = status
+
+    id_names = {
+        "operationid": "operationId", "uploadid": "uploadId", "jobid": "jobId",
+        "assetid": "assetId", "authorid": "authorId", "libraryid": "libraryId",
+    }
+    token = str(env.get("QIMENG_API_TOKEN") or "")
+    found = set()
+
+    def collect(value, depth=0):
+        if depth > 3 or len(found) >= 8:
+            return
+        if isinstance(value, dict):
+            for key, item in value.items():
+                field = id_names.get(_key_name(key))
+                if field and (isinstance(item, str) or type(item) is int):
+                    text = str(item)
+                    if len(text) <= 200 and not any(ord(ch) < 32 for ch in text):
+                        safe_value, flags = _model_safe(text, token=token)
+                        if not flags.get("paths") and not flags.get("credentials"):
+                            found.add((field, safe_value))
+                collect(item, depth + 1)
+        elif isinstance(value, list):
+            for item in value[:20]:
+                collect(item, depth + 1)
+
+    collect(result)
+    collect(payload)
+    notice["operationIds"] = [
+        {"kind": field, "value": value}
+        for field, value in sorted(found)[:8]
+    ]
+    try:
+        budget = _output_budget(env)
+    except ModelOutputError:
+        budget = 1024
+    while _json_size(notice) > budget and notice["operationIds"]:
+        notice["operationIds"].pop()
+        notice["operationIdsOmitted"] = True
+    return notice
 
 
 def _summary(result, *, tool_id: str, result_ref: str | None,
@@ -876,7 +959,7 @@ def _pointer_value(value, tokens: list[str]):
     for token in tokens:
         if isinstance(current, dict) and token in current:
             current = current[token]
-        elif isinstance(current, list) and token.isdigit() and int(token) < len(current):
+        elif isinstance(current, list) and re.fullmatch(r"0|[1-9][0-9]*", token) and int(token) < len(current):
             current = current[int(token)]
         else:
             raise ModelOutputError("RESULT_PATH_NOT_FOUND", "path 在本地结果中不存在")
@@ -939,7 +1022,7 @@ def _read_cursor(value) -> int:
     return int(value[2:])
 
 
-def _read_page(result_ref: str, target, path: str, cursor: int, limit: int) -> dict:
+def _read_page(result_ref: str, target, path: str, cursor: int, limit: int, *, page_bytes=MAX_PAGE_BYTES) -> dict:
     if isinstance(target, dict):
         entries = list(target.items())
         kind = "object"
@@ -948,6 +1031,15 @@ def _read_page(result_ref: str, target, path: str, cursor: int, limit: int) -> d
         kind = "array"
     else:
         if isinstance(target, str):
+            # Redact the complete value before slicing: character-sized requests must
+            # never reconstruct a physical path or credential across multiple pages.
+            target, source_flags = _model_safe(target)
+            if cursor > len(target):
+                raise ModelOutputError("RESULT_CURSOR_INVALID", "cursor 超出当前展示值范围")
+            if cursor == len(target):
+                response = {"resultRef": result_ref, "kind": "string", "count": len(target),
+                            "offset": cursor, "value": "", "nextCursor": None, "truncated": False}
+                return _with_redaction_markers(_with_safe_pointer(response, path), source_flags)
             start = cursor
             high = min(len(target), start + limit)
             # A string is returned as valid JSON text in code-point-safe chunks.
@@ -958,13 +1050,14 @@ def _read_page(result_ref: str, target, path: str, cursor: int, limit: int) -> d
                             "nextCursor": f"o:{high}" if high < len(target) else None,
                             "truncated": high < len(target)}
                 response = _with_safe_pointer(response, path)
-                safe_value, flags = _model_safe(value)
-                response["value"] = safe_value
-                response = _with_redaction_markers(response, flags)
-                if _json_size(response) <= MAX_PAGE_BYTES:
+                response["value"] = value
+                response = _with_redaction_markers(response, source_flags)
+                if _json_size(response) <= page_bytes:
                     return response
                 high -= max(1, (high - start) // 4)
             raise ModelOutputError("RESULT_PAGE_ITEM_TOO_LARGE", "字符串片段无法放入续读页")
+        if cursor != 0:
+            raise ModelOutputError("RESULT_CURSOR_INVALID", "标量结果不接受分页偏移")
         response = {"resultRef": result_ref, "kind": "scalar", "count": 1,
                     "value": target, "nextCursor": None, "truncated": False}
         response = _with_safe_pointer(response, path)
@@ -972,7 +1065,7 @@ def _read_page(result_ref: str, target, path: str, cursor: int, limit: int) -> d
         response["value"] = safe_value
         response = _with_redaction_markers(response, flags)
         safe = response
-        if _json_size(safe) > MAX_PAGE_BYTES:
+        if _json_size(safe) > page_bytes:
             raise ModelOutputError("RESULT_PAGE_ITEM_TOO_LARGE", "结果项超过续读页预算，请使用更深的 path")
         return safe
 
@@ -1001,7 +1094,7 @@ def _read_page(result_ref: str, target, path: str, cursor: int, limit: int) -> d
         safe_omitted = _safe_omitted(response["omitted"])
         safe_response = {**response, "value": safe_value, "omitted": safe_omitted}
         safe_response = _with_redaction_markers(safe_response, flags)
-        if _json_size(safe_response) > MAX_PAGE_BYTES:
+        if _json_size(safe_response) > page_bytes:
             if not selected:
                 pointer = _pointer_child(path, key)
                 safe_child, path_redacted = _safe_pointer(pointer)
@@ -1018,7 +1111,7 @@ def _read_page(result_ref: str, target, path: str, cursor: int, limit: int) -> d
                     "nextCursor": f"o:{index + 1}" if index + 1 < len(entries) else None,
                     "truncated": index + 1 < len(entries) or bool(attempted),
                 }, path)
-                if _json_size(attempted_response) > MAX_PAGE_BYTES:
+                if _json_size(attempted_response) > page_bytes:
                     break
                 omitted.append(entry)
                 index += 1
@@ -1029,6 +1122,8 @@ def _read_page(result_ref: str, target, path: str, cursor: int, limit: int) -> d
 
     # If the page only contains omitted oversize values, advance past them and make the
     # point path explicit so no data disappears silently.
+    if index == cursor and index < len(entries) and not selected and not omitted:
+        raise ModelOutputError("RESULT_PAGE_ITEM_TOO_LARGE", "本页无法包含续读指针，请缩小源查询或指定更深的 path")
     next_offset = index
     value = selected if kind == "object" else list(selected.values())
     response = {
@@ -1046,7 +1141,7 @@ def _read_page(result_ref: str, target, path: str, cursor: int, limit: int) -> d
     safe_omitted = _safe_omitted(response["omitted"])
     safe_response = {**response, "value": safe_value, "omitted": safe_omitted}
     safe_response = _with_redaction_markers(safe_response, flags)
-    if _json_size(safe_response) > MAX_PAGE_BYTES:
+    if _json_size(safe_response) > page_bytes:
         raise ModelOutputError("RESULT_PAGE_TOO_LARGE", "续读页超过 12 KiB，请减小 limit")
     return safe_response
 
@@ -1070,7 +1165,8 @@ def read_result(ctx, payload: dict) -> dict:
     limit = payload.get("limit", MAX_PAGE_ITEMS)
     if type(limit) is not int or not 1 <= limit <= MAX_PAGE_ITEMS:
         raise ModelOutputError("RESULT_LIMIT_INVALID", "limit 必须在 1..500")
-    return _read_page(result_ref, target, path, cursor, limit)
+    return _read_page(result_ref, target, path, cursor, limit,
+                      page_bytes=min(MAX_PAGE_BYTES, _output_budget(env)))
 
 
 def resolve_plan_ref(ref, *, env=None, rulepack_version: str, tool_id: str) -> dict:

@@ -111,6 +111,8 @@ def load_config(env=None) -> RuntimeConfig:
     read_only_mode = bool(tool_config.get("readOnlyMode")) or \
         env.get(READONLY_ENV, "").strip().lower() in TRUE_VALUES
     granted = _parse_granted_permissions(env, tool_config)
+    from . import model_output
+    model_output.validate_output_config(env)
     config = RuntimeConfig(openapi_path=Path(openapi_path), rules_path=Path(rules_path),
                            rules=rules, disabled=frozenset(disabled),
                            read_only_mode=read_only_mode, granted_permissions=granted)
@@ -205,31 +207,51 @@ def _client_context(spec: registry.ToolSpec, env) -> ToolContext:
     return client
 
 
-def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | None = None,
-                 skip_capability: bool = False) -> tuple[registry.ToolSpec, object]:
-    """校验并执行一个工具；返回 (工具声明, 结果)。远程异常原样抛出。"""
-    env = os.environ if env is None else env
-    config = config or load_config(env)
-    request_key = config.budget.reserve(tool_id, payload)
+def controlled_action(tool_id, payload, operation, *, env, config, side_effects=False):
+    """One lifecycle for registered tools and recipe primitives, including pending writes."""
+    request_key = config.budget.reserve(tool_id, payload, side_effects=side_effects)
+    started = False
+
+    def mark_started():
+        nonlocal started
+        started = True
+
     try:
-        spec, result = _execute_tool(tool_id, payload, env=env, config=config,
-                                     skip_capability=skip_capability)
+        result = operation(mark_started)
     except Exception as exc:
-        config.budget.complete(request_key, {"error": getattr(exc, "code", type(exc).__name__),
-                                             "status": getattr(exc, "status", None)})
+        uncertain = side_effects and started
+        config.budget.fail(request_key, {"error": getattr(exc, "code", type(exc).__name__),
+                                         "status": getattr(exc, "status", None)}, uncertain=uncertain)
+        if uncertain:
+            exc.operation_may_have_completed = True
         raise
     try:
         config.budget.complete(request_key, result)
     except errors.ToolError as exc:
-        if not spec.side_effects or not isinstance(result, dict):
+        if not side_effects or not isinstance(result, dict):
             raise
-        # The business write already returned a verified result. Preserve it and make
-        # the executor-accounting failure explicit; never turn it into a blind retry.
         result = {**result, "executorWarnings": [exc.to_dict()], "executorStopped": True}
+    return result
+
+
+def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | None = None,
+                 skip_capability: bool = False) -> tuple[registry.ToolSpec, object]:
+    """Validate and execute through the same trusted lifecycle as recipe primitives."""
+    env = os.environ if env is None else env
+    config = config or load_config(env)
+    spec = registry.get(tool_id)
+
+    def operation(mark_started):
+        _, result = _execute_tool(tool_id, payload, env=env, config=config,
+                                  skip_capability=skip_capability, mark_started=mark_started)
+        return result
+
+    result = controlled_action(tool_id, payload, operation, env=env, config=config,
+                               side_effects=bool(spec and spec.side_effects))
     return spec, result
 
 
-def _execute_tool(tool_id, payload, *, env, config, skip_capability):
+def _execute_tool(tool_id, payload, *, env, config, skip_capability, mark_started):
     spec = registry.get(tool_id)
     if spec is None:
         raise errors.unknown_tool(tool_id)
@@ -295,6 +317,7 @@ def _execute_tool(tool_id, payload, *, env, config, skip_capability):
         granted_permissions=config.granted_permissions,
         extras={"executorBudget": config.budget.report()},
     )
+    mark_started()
     result = handler(context, payload)
     output_problems = schema.validate(result, spec.output_schema)
     if output_problems:

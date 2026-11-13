@@ -182,7 +182,8 @@ class GoMcpIntegration(unittest.TestCase):
     def test_discover_upload_replay_readback_and_scan(self):
         client, _ = self.client()
         listing = client.send("tools/list", {})
-        self.assertIn("asset.upload", [t["name"] for t in listing["tools"]])
+        upload_tool = next(t for t in listing["tools"] if t["name"] == "asset.upload")
+        self.assertIn("planRef", upload_tool["inputSchema"]["properties"])
         card = self.result(client, "platform.recipe", {"action": "card", "recipeId": "media.ingest"})
         self.assertEqual("media.ingest", card["card"]["recipe"])
         prepared = self.result(client, "asset.upload.prepare", {"libraryId": self.library,

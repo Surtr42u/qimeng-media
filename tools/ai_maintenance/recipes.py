@@ -1088,19 +1088,6 @@ def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
         # partial/failed 由 run_recipe 统一记录产物并停止；这里不丢结果。
         return _tool_output(result)
     primitive_spec = effective_primitive_spec(step["primitive"], payload)
-    denial = execution.policy_denial(primitive_spec, config)
-    if denial:
-        denied = execution.policy_denied_error(primitive_spec, config)
-        if denied is not None:
-            raise denied
-        raise errors.tool_disabled(primitive_spec.id, denial)
-    if primitive_spec.side_effects and primitive_spec.requires_confirmation \
-            and not allowed:
-        raise RecipeError(
-            f"原语 {primitive_spec.id} 有副作用，必须先通过授权到本步骤的人工门禁",
-            code="RECIPE_CONFIRMATION_REQUIRED",
-            details={"step": step["id"], "primitive": primitive_spec.id},
-        )
     if ctx.resuming and step["primitive"] == "media.transfer":
         # 恢复执行时允许“目标已存在且内容一致”按 alreadyPresent 跳过；默认调用不变。
         payload = dict(payload)
@@ -1112,17 +1099,37 @@ def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
             payload = dict(payload)
             payload.setdefault("reusePushed", pushed)
     primitive = PRIMITIVES[step["primitive"]]
-    try:
-        return primitive(payload, ctx)
-    except (RecipeError, errors.ToolError):
-        raise
-    except Exception as exc:  # noqa: BLE001 - 原语错误必须转成 recipe 结构化失败
-        raise RecipeError(
-            "原语执行失败：" + type(exc).__name__,
-            code=str(getattr(exc, "code", "") or "RECIPE_STEP_FAILED"),
-            details={"step": step["id"], "error": type(exc).__name__,
-                     "message": str(exc)[:300]},
-        ) from None
+
+    def operation(mark_started):
+        denial = execution.policy_denial(primitive_spec, config)
+        if denial:
+            denied = execution.policy_denied_error(primitive_spec, config)
+            if denied is not None:
+                raise denied
+            raise errors.tool_disabled(primitive_spec.id, denial)
+        if primitive_spec.side_effects and primitive_spec.requires_confirmation \
+                and not allowed:
+            raise RecipeError(
+                f"原语 {primitive_spec.id} 有副作用，必须先通过授权到本步骤的人工门禁",
+                code="RECIPE_CONFIRMATION_REQUIRED",
+                details={"step": step["id"], "primitive": primitive_spec.id},
+            )
+        execution.task_controls.authorize(primitive_spec, payload, ctx.env)
+        mark_started()
+        try:
+            return primitive(payload, ctx)
+        except (RecipeError, errors.ToolError):
+            raise
+        except Exception as exc:
+            raise RecipeError(
+                "原语执行失败：" + type(exc).__name__,
+                code=str(getattr(exc, "code", "") or "RECIPE_STEP_FAILED"),
+                details={"step": step["id"], "error": type(exc).__name__},
+            ) from None
+
+    return execution.controlled_action(primitive_spec.id, payload, operation,
+        env=ctx.env, config=config, side_effects=primitive_spec.side_effects)
+
 
 
 def _step_version(step: dict) -> str:

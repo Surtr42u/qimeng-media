@@ -21,6 +21,29 @@ class _Context:
 
 
 class ModelOutputTests(unittest.TestCase):
+    def test_character_sized_reads_cannot_reconstruct_absolute_path(self):
+        original_path = str(self.root / "private" / "original.jpg")
+        response = model_output.present_result("test.query",
+            {"padding": "x" * 6000, "localPath": original_path, "empty": ""},
+            env=self.env, rulepack_version="rules-test")
+        cursor = None
+        fragments = []
+        while True:
+            arguments = {"resultRef": response["resultRef"], "path": "/localPath", "limit": 1}
+            if cursor is not None:
+                arguments["cursor"] = cursor
+            page = model_output.read_result(self.ctx, arguments)
+            fragments.append(page["value"])
+            cursor = page["nextCursor"]
+            if cursor is None:
+                break
+        self.assertNotEqual(original_path, "".join(fragments))
+        self.assertNotIn(str(self.root), "".join(fragments))
+        empty = model_output.read_result(self.ctx,
+            {"resultRef": response["resultRef"], "path": "/empty", "limit": 1})
+        self.assertEqual("", empty["value"])
+        self.assertIsNone(empty["nextCursor"])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="qimeng-output-")
         self.addCleanup(self.temp.cleanup)

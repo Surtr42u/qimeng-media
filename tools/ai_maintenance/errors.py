@@ -34,6 +34,9 @@ class ToolError(Exception):
             payload["recovery"] = self.recovery
         if self.details is not None:
             payload["details"] = self.details
+        if getattr(self, "operation_may_have_completed", False):
+            payload["operationMayHaveCompleted"] = True
+            payload["recovery"] = "写入可能已发生；按原操作ID回读，勿换ID或盲目重试。"
         return payload
 
 

@@ -11,7 +11,7 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import errors, pathguard
+from . import errors, pathguard, local_state
 
 
 def _failure(code, message, *, details=None):
@@ -94,7 +94,7 @@ class SessionBudget:
         self.max_seconds = _number(env, "QIMENG_AI_MAX_SECONDS", 900, 86400)
         self.max_repeats = _number(env, "QIMENG_AI_MAX_UNCHANGED", 3, 100)
         self.started = time.monotonic()
-        self.state = {"startedAt": time.time(), "calls": 0, "observations": {}}
+        self.state = {"startedAt": time.time(), "calls": 0, "observations": {}, "pending": {}}
         self.lock = threading.Lock()
         self.path = None
         task_id = env.get("QIMENG_AI_TASK_ID")
@@ -114,32 +114,11 @@ class SessionBudget:
             if self.path is None:
                 yield self.state
                 return
-            # Small executor counters, not another business-task database. The OS lock
-            # covers read/modify/atomic-publish across CLI processes and MCP sessions.
             lock_path = self.path.with_suffix(".lock")
-            if any(path.exists() and pathguard.is_linkish(path) for path in (lock_path, self.path)):
+            if pathguard.is_linkish(self.path):
                 raise _failure("TASK_BUDGET_UNAVAILABLE", "任务预算文件不能是链接，未执行操作")
-            with lock_path.open("a+b") as handle:
-                handle.seek(0, os.SEEK_END)
-                if handle.tell() == 0:
-                    handle.write(b"0")
-                    handle.flush()
-                deadline = time.monotonic() + 2
-                while True:
-                    try:
-                        handle.seek(0)
-                        if os.name == "nt":
-                            import msvcrt
-                            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                        else:
-                            import fcntl
-                            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        break
-                    except OSError:
-                        if time.monotonic() >= deadline:
-                            raise _failure("TASK_BUDGET_UNAVAILABLE", "任务预算被占用，未执行操作") from None
-                        time.sleep(.02)
-                try:
+            try:
+                with local_state.lock_file(lock_path):
                     state = self.state
                     if self.path.exists():
                         if self.path.stat().st_size > 8 * 1024 * 1024:
@@ -148,33 +127,39 @@ class SessionBudget:
                         if (not isinstance(state, dict) or type(state.get("calls")) is not int
                                 or state["calls"] < 0
                                 or not isinstance(state.get("observations"), dict)
-                                or not isinstance(state.get("startedAt"), (int, float))
+                                or type(state.get("startedAt")) not in (int, float)
                                 or not math.isfinite(state["startedAt"])):
                             raise ValueError("invalid budget")
                         for observation in state["observations"].values():
                             if (not isinstance(observation, list) or len(observation) != 2
                                     or not isinstance(observation[0], str)
                                     or type(observation[1]) is not int or observation[1] < 0):
-                                raise ValueError("invalid budget observation")
+                                raise ValueError("invalid observation")
+                        pending = state.setdefault("pending", {})
+                        if not isinstance(pending, dict):
+                            raise ValueError("invalid pending state")
+                        for entry in pending.values():
+                            if (not isinstance(entry, dict) or type(entry.get("count")) is not int
+                                    or not 1 <= entry["count"] <= 10000
+                                    or type(entry.get("sideEffects")) is not bool):
+                                raise ValueError("invalid pending state")
                     yield state
-                    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
-                                                     prefix="budget-", delete=False) as temporary:
-                        json.dump(state, temporary, separators=(",", ":"))
-                        temporary.flush()
-                        os.fsync(temporary.fileno())
-                    os.replace(temporary.name, self.path)
-                except (OSError, ValueError, TypeError):
-                    raise _failure("TASK_BUDGET_UNAVAILABLE", "任务预算记录不可用，须先核对已执行结果") from None
-                finally:
-                    handle.seek(0)
-                    if os.name == "nt":
-                        import msvcrt
-                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-                    else:
-                        import fcntl
-                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                    temporary_path = None
+                    try:
+                        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
+                                                         prefix="budget-", delete=False) as temporary:
+                            temporary_path = Path(temporary.name)
+                            json.dump(state, temporary, separators=(",", ":"))
+                            temporary.flush()
+                            os.fsync(temporary.fileno())
+                        os.replace(temporary_path, self.path)
+                    finally:
+                        if temporary_path is not None:
+                            temporary_path.unlink(missing_ok=True)
+            except (OSError, ValueError, TypeError, local_state.StateLockError):
+                raise _failure("TASK_BUDGET_UNAVAILABLE", "任务预算记录不可用，须先核对已执行结果") from None
 
-    def reserve(self, tool, payload):
+    def reserve(self, tool, payload, *, side_effects=False):
         request = hashlib.sha256(json.dumps([tool, payload], ensure_ascii=False,
                                             sort_keys=True, default=lambda _: "<non-json>").encode()).hexdigest()
         with self._state() as state:
@@ -183,20 +168,42 @@ class SessionBudget:
                 raise _failure("TASK_BUDGET_EXHAUSTED", "任务调用数或时间预算已耗尽",
                                details={"calls": state["calls"], "maxCalls": self.max_calls})
             _, unchanged = state["observations"].get(request, (None, 0))
-            if unchanged >= self.max_repeats:
+            pending = state.setdefault("pending", {})
+            if side_effects and any(entry["sideEffects"] for entry in pending.values()):
+                raise _failure("TASK_OPERATION_PENDING", "任务存在未决写入；未执行新的写操作",
+                               details={"requiresReadback": True})
+            current = pending.get(request, {"count": 0, "sideEffects": side_effects})
+            if unchanged + current["count"] >= self.max_repeats:
                 raise _failure("TASK_NO_PROGRESS", "相同请求连续未产生新结果，已停止重复调用")
             state["calls"] += 1
+            pending[request] = {"count": current["count"] + 1, "sideEffects": side_effects}
         return request
 
     def complete(self, request, result):
         digest = hashlib.sha256(json.dumps(result, ensure_ascii=False, sort_keys=True,
                                            default=lambda _: "<non-json>").encode()).hexdigest()
         with self._state() as state:
+            pending = state.setdefault("pending", {})
+            entry = pending.get(request)
+            if entry is None:
+                raise _failure("TASK_BUDGET_UNAVAILABLE", "任务调用预留记录缺失，须回读已有操作")
+            if entry["count"] == 1:
+                del pending[request]
+            else:
+                entry["count"] -= 1
             previous, count = state["observations"].get(request, (None, 0))
             state["observations"][request] = (digest, count + 1 if digest == previous else 1)
+
+    def fail(self, request, error, *, uncertain=False):
+        if not uncertain:
+            self.complete(request, error)
+        # Reservation was persisted before execution. An interrupted/uncertain write
+        # stays pending until the trusted executor reconciles its original operation.
 
     def report(self):
         with self._state() as state:
             return {"calls": state["calls"], "maxCalls": self.max_calls,
                     "maxSeconds": self.max_seconds, "maxUnchanged": self.max_repeats,
+                    "pendingWrites": sum(entry["count"] for entry in state.get("pending", {}).values()
+                                         if entry["sideEffects"]),
                     "scope": "task" if self.path else "executor-session", "modelUsage": "host-not-reported"}

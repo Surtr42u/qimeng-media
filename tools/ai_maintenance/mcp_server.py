@@ -255,6 +255,33 @@ class McpServer:
         if added:
             self._write({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
 
+    def _scope_discovery_result(self, tool_id, result):
+        if tool_id not in ("platform.catalog", "platform.context", "platform.tool.describe") \
+                or not isinstance(result, dict):
+            return result
+        if not self.env.get("QIMENG_AI_MCP_DOMAINS", "").strip():
+            return result
+        allowed = {spec.id for spec in self._allowed_tools()}
+
+        def annotated(item):
+            if not isinstance(item, dict):
+                return item
+            visible = item.get("id") in allowed
+            projected = {**item, "exposedInConnection": visible}
+            if not visible:
+                projected.update(disabled=True, enabled=False,
+                                 disabledReason="当前MCP领域配置未暴露此工具；目录可见不代表本连接可调用")
+            return projected
+
+        projected = dict(result)
+        if isinstance(result.get("tools"), list):
+            projected["tools"] = [annotated(item) for item in result["tools"]]
+        if isinstance(result.get("tool"), dict):
+            projected["tool"] = annotated(result["tool"])
+        if isinstance(result.get("next"), list):
+            projected["next"] = [name for name in result["next"] if name in allowed]
+        return projected
+
     def _tools_list(self) -> dict:
         config = self._load_config()
         document = config.document()
@@ -334,23 +361,39 @@ class McpServer:
                            "body": payload.body, "target": target}
             else:
                 failure = {"error": payload.kind, "target": target}
+            if getattr(payload, "operation_may_have_completed", False):
+                failure["operationMayHaveCompleted"] = True
+                failure["recovery"] = "按原操作ID回读，勿换ID或盲目重试。"
             return _result_response(request_id, _error_result(failure))
         if kind == "error":
             _log("tool failure: " + name + " " + type(payload).__name__)
             return _result_response(request_id, _tool_error_result(
                 errors.internal_error("工具调用内部错误")))
         spec, result = payload
+        result = self._scope_discovery_result(spec.id, result)
         self._publish_discovered(spec.id, result)
         is_error = isinstance(result, dict) and result.get("status") in ("partial", "failed")
-        result = model_output.present_result(spec.id, result, env=self.env,
-                                             rulepack_version=self._load_config().rulepack_version)
         try:
+            result = model_output.present_result(
+                spec.id, result, env=self.env,
+                rulepack_version=self._load_config().rulepack_version)
             text = json.dumps({"tool": spec.id, "toolVersion": spec.version,
                                "status": "ok", "result": result},
                               ensure_ascii=False)
-        except (TypeError, ValueError):
-            return _result_response(request_id, _tool_error_result(
-                errors.internal_error("工具结果无法序列化")))
+        except Exception as exc:  # presentation occurs after a handler may have written data
+            if spec.side_effects or not spec.read_only:
+                result = model_output.presentation_failure(
+                    spec.id, payload[1], exc, payload=arguments, env=self.env)
+                _log("result presentation failed after execution: " + spec.id + " "
+                     + result["presentationErrorCode"])
+                text = json.dumps({"tool": spec.id, "toolVersion": spec.version,
+                                   "status": "ok", "result": result},
+                                  ensure_ascii=False)
+            elif isinstance(exc, errors.ToolError):
+                return _result_response(request_id, _tool_error_result(exc))
+            else:
+                return _result_response(request_id, _tool_error_result(
+                    errors.internal_error("工具结果无法安全呈现")))
         return _result_response(request_id, {
             "content": [{"type": "text", "text": text}],
             "structuredContent": {"tool": spec.id, "status": "error" if is_error else "ok",

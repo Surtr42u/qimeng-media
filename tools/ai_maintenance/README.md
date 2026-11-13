@@ -103,6 +103,8 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
  "allow":[{"tool":"author.create","arguments":{"displayName":"已授权的测试作者"}}]}
 ```
 
+授权文件约束副作用工具和 recipe 原语；读取仍受实例级 read scope/本地读根约束，不是按作者或库隔离的读授权。
+
 `arguments` 是输入字段点路径的精确匹配，例如 `plan.planFingerprint`；省略该对象
 表示可信端授予该工具的范围内委托，不是动作级用户确认凭据。权限、Go scope、对象
 版本及本地读写根继续生效。普通授权内可连续完成，不因内部计划步骤重新询问。
@@ -120,6 +122,11 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 业务 API token 与本机路径不会展示给模型；现有维护执行器的短期 fencing leaseToken
 仍是原受控通道的能力参数，须由可信执行器保管，不能转发到其他模型或日志；本轮未
 引入该通道的 opaque leaseRef。模型 token/费用仍以宿主实际遥测为准，缺失就标未测。
+
+相同任务的副作用在执行前持久预留；存在未决写入时不派发新写操作，允许读取核验。
+进程中断或执行后无法确定结果时保留未决记录，可信端先按原操作身份回读，再核销继续；
+不把新进程或新参数当作自动重试授权。输出预算在执行前校验；业务已返回但呈现失败时
+明确报告 executionCompleted/resultPresentationFailed 与原业务状态，不伪装成未执行。
 
 只从环境变量读取，不提供命令行 token 参数：
 

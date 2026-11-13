@@ -196,6 +196,8 @@ COMMON_ERROR_CODES = (
      "recovery": "相同请求无新结果，停止循环并报告缺失条件。"},
     {"code": "TASK_BUDGET_UNAVAILABLE", "category": "budget", "exitCode": 2,
      "recovery": "核对预算记录及已有结果；不换操作ID盲目重试写入。"},
+    {"code": "TASK_OPERATION_PENDING", "category": "budget", "exitCode": 2,
+     "recovery": "前一写操作仍未决：先等待或按原操作ID回读，由可信端核销后继续。"},
 )
 
 

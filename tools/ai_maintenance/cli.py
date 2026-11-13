@@ -659,8 +659,14 @@ def _run_tool_call(args, env) -> int:
     config = _runtime_config(args, env)
     spec, result = execution.execute_tool(args.tool_id, payload, env=env, config=config)
     from . import model_output
-    shown = model_output.present_result(spec.id, result, env=env,
-                                        rulepack_version=config.rulepack_version)
+    try:
+        shown = model_output.present_result(spec.id, result, env=env,
+                                            rulepack_version=config.rulepack_version)
+    except Exception as exc:  # the handler has returned; a write must not look unexecuted
+        if not (spec.side_effects or not spec.read_only):
+            raise
+        shown = model_output.presentation_failure(spec.id, result, exc,
+                                                  payload=payload, env=env)
     _print_json_compact(_tool_envelope(spec, shown), sys.stdout)
     if isinstance(result, dict) and result.get("status") in RESULT_FAILURE_STATUSES:
         return 1
