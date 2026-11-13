@@ -222,7 +222,8 @@ def controlled_action(tool_id, payload, operation, *, env, config, side_effects=
         # INVALID_INPUT is the handler's explicit rejection contract, before mutation.
         # Entering a handler alone must not turn a correctable input error into an
         # unresolved write; unexpected/remote failures remain conservative.
-        rejected_input = isinstance(exc, errors.ToolError) and exc.code == "INVALID_INPUT"
+        rejected_input = isinstance(exc, errors.ToolError) and (
+            exc.code == "INVALID_INPUT" or exc.mutation_rejected)
         uncertain = side_effects and started and not rejected_input
         config.budget.fail(request_key, {"error": getattr(exc, "code", type(exc).__name__),
                                          "status": getattr(exc, "status", None)}, uncertain=uncertain)

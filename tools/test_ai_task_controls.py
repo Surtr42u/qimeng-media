@@ -144,6 +144,28 @@ class BudgetTests(unittest.TestCase):
             self.assertEqual(1, second.report()["calls"])
             with self.assertRaises(errors.ToolError) as caught:
                 second.reserve("query", {"cursor": "new"})
+
+    def test_explicit_prewrite_rejection_does_not_lock_later_writes(self):
+        for rejected in (errors.precondition_failed("source changed", mutation_rejected=True),
+                         errors.lease_lost("maintenance.heartbeat")):
+            config = execution.load_config({})
+            def operation(mark_started):
+                mark_started()
+                raise rejected
+            with self.assertRaises(errors.ToolError):
+                execution.controlled_action("synthetic.write", {}, operation,
+                    env={}, config=config, side_effects=True)
+            self.assertEqual(0, config.budget.report()["pendingWrites"])
+
+    def test_unqualified_precondition_can_follow_partial_effects(self):
+        config = execution.load_config({})
+        def operation(mark_started):
+            mark_started()
+            raise errors.precondition_failed("later step changed")
+        with self.assertRaises(errors.ToolError):
+            execution.controlled_action("synthetic.write", {}, operation,
+                env={}, config=config, side_effects=True)
+        self.assertEqual(1, config.budget.report()["pendingWrites"])
             self.assertEqual("TASK_BUDGET_EXHAUSTED", caught.exception.code)
 
     def test_total_calls_are_reserved_before_side_effects(self):

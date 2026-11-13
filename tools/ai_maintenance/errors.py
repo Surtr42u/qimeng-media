@@ -15,7 +15,8 @@ class ToolError(Exception):
     """工具层可分类错误；code 稳定，message 面向人，recovery 可执行。"""
 
     def __init__(self, code: str, message: str, *, category: str = "tool",
-                 exit_code: int = 2, recovery: str = "", details=None):
+                 exit_code: int = 2, recovery: str = "", details=None,
+                 mutation_rejected: bool = False):
         super().__init__(message)
         self.code = code
         self.message = message
@@ -23,6 +24,7 @@ class ToolError(Exception):
         self.exit_code = exit_code
         self.recovery = recovery
         self.details = details
+        self.mutation_rejected = mutation_rejected
 
     def to_dict(self) -> dict:
         payload = {
@@ -116,6 +118,7 @@ def lease_lost(tool_id: str, job_id: str = "", details=None) -> ToolError:
         exit_code=1,
         recovery="重新 claim 取得新 leaseToken 后再续租/写步骤/回传终态；旧 token 的写入不会被接受。",
         details=payload or None,
+        mutation_rejected=True,
     )
 
 
@@ -301,7 +304,7 @@ def plan_version_mismatch(details: dict) -> ToolError:
     )
 
 
-def precondition_failed(message: str, details=None) -> ToolError:
+def precondition_failed(message: str, details=None, *, mutation_rejected=False) -> ToolError:
     return ToolError(
         "PRECONDITION_FAILED",
         message,
@@ -309,6 +312,7 @@ def precondition_failed(message: str, details=None) -> ToolError:
         exit_code=1,
         recovery="重新读取目标现状并重新 prepare；不要覆盖或盲目重试。",
         details=details,
+        mutation_rejected=mutation_rejected,
     )
 
 
