@@ -130,7 +130,9 @@ AI 工具平台在**受信执行端进程内**直接处理未入库文件；这�
   可信执行端 CLI，不注册为 MCP 工具，不提供通用 `budget.reset`/无限续期。持久
   预算按 `(taskId, apiBase, 凭据摘要)` 隔离；pending 只保存白名单、有界的最小
   操作定位信息（uploadId、assetId+planFingerprint、authorId+expectedRevision、
-  jobId/step 等），不保存路径、token、完整 plan 或大载荷。
+  jobId/step 等），不保存绝对路径、token、完整 plan 或大载荷。为核销上传，内部
+  状态可能含相对目录/文件名，仅供可信端回读；模型可见的预算摘要只保留稳定定位
+  ID，不回显媒体名/目录。
 - **核销只认可验证回读**：reconcile 只发 GET 回读原操作身份（upload 会话/资产、
   author profile revision、asset authors/tags/fileName、maintenance job），只有
   `confirmed_applied`/`confirmed_not_applied` 才解除对应预留；HTTP/网络/解析失败

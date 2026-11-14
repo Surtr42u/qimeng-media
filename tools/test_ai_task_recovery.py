@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib import parse
 
-from ai_maintenance import cli, errors, plans, task_admin, task_controls
+from ai_maintenance import cli, errors, execution, model_output, plans, task_admin, task_controls
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "-".join(("synthetic", "task", "recovery", "credential"))
@@ -79,6 +79,8 @@ def upload_identity():
         "fileName": "synthetic.jpg",
         "bytes": 12,
         "sourceMtime": SOURCE_MTIME,
+        # 上传/入库时间校验：测试资产 addedAt=SOURCE_ISO，操作开始时间取同一秒。
+        "operationStartedAt": SOURCE_MTIME / 1000,
     }
 
 
@@ -145,6 +147,78 @@ class IdentityAndReportTests(unittest.TestCase):
             rendered = json.dumps(report, ensure_ascii=False)
             self.assertNotIn(TOKEN, rendered)
             self.assertNotIn(str(directory), rendered)
+
+    def test_model_safe_report_hides_media_names_but_keeps_locators(self):
+        with temp_dir() as directory:
+            env = task_env(directory)
+            budget = task_controls.SessionBudget(env)
+            budget.reserve("asset.upload", {"plan": upload_plan(), "confirm": True},
+                           side_effects=True)
+            safe = budget.report(include_identity=False)
+            identity = safe["pending"][0]["identity"]
+            self.assertEqual(UPLOAD_ID, identity["uploadId"])
+            self.assertNotIn("fileName", identity)
+            self.assertNotIn("directory", identity)
+            self.assertNotIn("synthetic.jpg", json.dumps(safe, ensure_ascii=False))
+            full = budget.report()
+            self.assertEqual("synthetic.jpg", full["pending"][0]["identity"]["fileName"])
+
+    def test_plan_ref_is_resolved_before_pending_reserve(self):
+        with temp_dir() as directory:
+            env = task_env(directory, base="http://127.0.0.1:18568")
+            env["QIMENG_AI_GRANTED_PERMISSIONS"] = "all"
+            config = execution.load_config(env)
+            plan = {
+                "planFingerprint": "c" * 64,
+                "tool": "asset.upload",
+                "kind": "asset.upload",
+                "operationId": UPLOAD_ID,
+                "target": {"instance": "127.0.0.1:18568",
+                           "library": {"id": "lib-synthetic"}, "objects": []},
+                "changes": [{"fileName": "synthetic.jpg", "directory": "dir", "bytes": 12}],
+                "sourceMtime": SOURCE_MTIME,
+            }
+
+            def interrupted(_tool_id, _payload, *, env, config, skip_capability,
+                            mark_started):
+                mark_started()
+                raise RuntimeError("synthetic disconnect after reservation")
+
+            with patch.object(model_output, "resolve_plan_ref", return_value=plan), \
+                    patch.object(execution, "_execute_tool", side_effect=interrupted):
+                with self.assertRaises(RuntimeError):
+                    execution.execute_tool(
+                        "asset.upload",
+                        {"planRef": "p1_0123456789abcdef0123456789abcdef",
+                         "confirm": True},
+                        env=env, config=config)
+            pending = config.budget.report()["pending"]
+            self.assertEqual(1, len(pending))
+            self.assertEqual(UPLOAD_ID, pending[0]["identity"]["uploadId"])
+            self.assertIn("operationStartedAt", pending[0]["identity"])
+            self.assertEqual(1, config.budget.report()["pendingWrites"])
+
+    def test_research_local_side_effect_does_not_create_business_pending(self):
+        with temp_dir() as directory:
+            env = task_env(directory, base="http://127.0.0.1:18568")
+            env["QIMENG_AI_GRANTED_PERMISSIONS"] = "research"
+            config = execution.load_config(env)
+
+            def interrupted(_tool_id, _payload, *, env, config, skip_capability,
+                            mark_started):
+                mark_started()
+                raise RuntimeError("synthetic local research failure")
+
+            with patch.object(execution, "_execute_tool", side_effect=interrupted):
+                with self.assertRaises(RuntimeError):
+                    execution.execute_tool(
+                        "research.work",
+                        {"path": "/synthetic/research-input.png"},
+                        env=env, config=config)
+            report = config.budget.report()
+            self.assertEqual(0, report["pendingWrites"])
+            self.assertEqual(1, report["calls"])
+            self.assertEqual([], report["pending"])
 
     def test_plan_preconditions_store_previous_sets(self):
         plan = {
@@ -405,12 +479,13 @@ class ReadbackTests(unittest.TestCase):
             200, {"id": UPLOAD_ID, "offset": 12, "size": 12})
         _StubHandler.routes["/api/v1/assets"] = (200, {
             "items": [{"id": "asset-1", "fileName": "synthetic.jpg", "sizeBytes": 12,
-                       "modifiedAt": SOURCE_ISO}],
+                       "modifiedAt": SOURCE_ISO, "addedAt": SOURCE_ISO}],
             "nextCursor": None,
         })
         _StubHandler.routes["/api/v1/assets/asset-1"] = (200, {
             "id": "asset-1", "fileName": "synthetic.jpg", "sizeBytes": 12,
-            "modifiedAt": SOURCE_ISO, "relPath": "dir/synthetic.jpg",
+            "modifiedAt": SOURCE_ISO, "addedAt": SOURCE_ISO,
+            "relPath": "dir/synthetic.jpg",
         })
         applied = self.readback("asset.upload", upload_identity(), {"uploadId": UPLOAD_ID})
         self.assertEqual(task_admin.CONFIRMED_APPLIED, applied["status"])
@@ -425,6 +500,23 @@ class ReadbackTests(unittest.TestCase):
         _StubHandler.routes["/api/v1/assets"] = (200, {"items": [], "nextCursor": None})
         missing = self.readback("asset.upload", upload_identity(), {"uploadId": UPLOAD_ID})
         self.assertEqual(task_admin.UNCERTAIN, missing["status"])
+
+    def test_upload_404_does_not_confirm_preexisting_matching_asset(self):
+        _StubHandler.routes["/api/v1/uploads/" + UPLOAD_ID] = (404, {"code": "NOT_FOUND"})
+        _StubHandler.routes["/api/v1/assets"] = (200, {
+            "items": [{"id": "asset-old", "fileName": "synthetic.jpg",
+                       "sizeBytes": 12, "modifiedAt": SOURCE_ISO,
+                       "addedAt": "2023-11-13T22:13:20Z"}],
+            "nextCursor": None,
+        })
+        _StubHandler.routes["/api/v1/assets/asset-old"] = (200, {
+            "id": "asset-old", "fileName": "synthetic.jpg", "sizeBytes": 12,
+            "modifiedAt": SOURCE_ISO, "addedAt": "2023-11-13T22:13:20Z",
+            "relPath": "dir/synthetic.jpg",
+        })
+        result = self.readback("asset.upload", upload_identity(), {"uploadId": UPLOAD_ID})
+        self.assertEqual(task_admin.UNCERTAIN, result["status"])
+        self.assertIn("unmatched", result["reason"])
 
     def test_upload_does_not_confirm_without_unique_asset(self):
         _StubHandler.routes["/api/v1/uploads/" + UPLOAD_ID] = (
@@ -465,6 +557,19 @@ class ReadbackTests(unittest.TestCase):
                              {"assetId": "asset-1", "tagIds": ["t1"]},
                              {"assetId": "asset-1"})
         self.assertEqual(task_admin.CONFIRMED_APPLIED, tags["status"])
+
+        # newAuthorNames 由服务端解析/新建后，回读按显示名与目标 ID 共同确认。
+        _StubHandler.routes[path] = (200, {
+            "id": "asset-1", "fileName": "new.jpg",
+            "authors": [{"id": "a1", "displayName": "Existing"},
+                        {"id": "new-a", "displayName": "New Author"}],
+        })
+        created_by_name = self.readback(
+            "asset.authors.apply",
+            {"assetId": "asset-1", "authorIds": ["a1"],
+             "newAuthorNames": ["New Author"], "previousAuthorIds": ["a1"]},
+            {"assetId": "asset-1"})
+        self.assertEqual(task_admin.CONFIRMED_APPLIED, created_by_name["status"])
 
         _StubHandler.routes[path] = (200, {"id": "asset-1", "fileName": "old.jpg",
                                            "authors": [{"id": "a0"}],

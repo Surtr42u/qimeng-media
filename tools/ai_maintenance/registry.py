@@ -216,6 +216,9 @@ class ToolSpec:
     permission: str = "read"
     read_only: bool = True
     side_effects: bool = False
+    # 只有会改变业务状态的副作用才进入持久未决写入/核销；研究抽帧、本地证据等
+    # 只写本机派生文件，失败不得阻断后续业务写入。
+    business_side_effects: bool = True
     requires_confirmation: bool = False
     confirmation_mode: str = "none"  # none / always / conditional
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
@@ -1028,6 +1031,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="run_pipeline.py：Lens→Yandex→SauceNAO 阶梯编排（预算/断点/失败单列），只产出本地结果文件。",
         handler_ref="ai_maintenance.tools_research:research_image_pipeline",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "jobsPath": _string("jobs JSONL 绝对路径（{id,file,rid?}）", 1),
@@ -1050,6 +1054,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="按 script 调 lens_batch.mjs / yandex_cbir.py / saucenao_batch.py；Lens 优先、结果只作线索；图片/任务单可用 artifactRef。",
         handler_ref="ai_maintenance.tools_research:research_image_search",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "script": {"type": "string", "enum": ["lens", "yandex", "saucenao"]},
@@ -1073,6 +1078,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="按 script 调 fxtwitter_probe.py（账号/帖子公开字段）或 kemono_probe.py（公开 API 元数据）。",
         handler_ref="ai_maintenance.tools_research:research_author_probe",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "script": {"type": "string", "enum": ["fxtwitter", "kemono"]},
@@ -1091,6 +1097,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="media_probe.py：ffprobe 元数据 + SHA-256 + 15/50/85% 帧抽取（只作识图输入）；支持绝对路径或 fileRef，并为帧与 JSONL 发布 artifactRef。",
         handler_ref="ai_maintenance.tools_research:research_media_probe",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "files": {"type": "array", "minItems": 1, "maxItems": 50,
@@ -1113,6 +1120,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="作品研究入口：单图/视频（path/fileRef/artifactRef 三选一）→ 本地抽帧/dHash → Lens/provider 线索 → 候选作者/作品来源/证据/排除/未解决条件；研究阶段零业务写入。",
         handler_ref="ai_maintenance.tools_research_work:research_work",
         domain="research", permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=True,
         input_schema=_schema({
             # recipe 默认填充会把未提供的可选输入解析为 null；这里显式允许
@@ -1146,6 +1154,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="avatar_fetch.py：头像 URL 规范化/下载/格式与像素校验/摘要（outDir 必填）。",
         handler_ref="ai_maintenance.tools_research:research_avatar_fetch",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "urls": {"type": "array", "minItems": 1, "maxItems": 20,

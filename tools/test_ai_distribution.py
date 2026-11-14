@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest import mock
 
 from ai_maintenance import package, versions
@@ -346,6 +346,13 @@ class DistributionTests(unittest.TestCase):
             package.build_bundle(self.root / "out")
         self.assertEqual(caught.exception.code, "OUT_NOT_EMPTY")
         self.assertTrue(package.verify_bundle(self.bundle)["ok"])
+
+    def test_local_logs_and_env_variants_are_excluded(self) -> None:
+        for name in ("debug.log", ".envrc", ".env.local", "config.local.json",
+                     "client.token", "private.key", "cert.pem"):
+            self.assertTrue(package._excluded(PurePosixPath(name), frozenset()),
+                            name)
+        self.assertFalse(package._excluded(PurePosixPath("cli.py"), frozenset()))
 
     def test_build_failure_leaves_no_partial_output(self) -> None:
         output = self.root / "atomic-out"

@@ -373,6 +373,26 @@ def _manifest_files(artifacts: Path) -> list[Path]:
             if not pathguard.is_linkish(path) and path.is_file()]
 
 
+def _clean_orphan_blobs(artifacts: Path, blobs: Path) -> None:
+    """有界清理没有对应清单的私有副本（进程在 blob/manifest 之间崩溃的残留）。"""
+    references = {path.name[:-len(MANIFEST_SUFFIX)]
+                  for path in _manifest_files(artifacts)}
+    removed = 0
+    for blob in sorted(blobs.glob(ARTIFACT_REF_PREFIX + "*" + BLOB_SUFFIX)):
+        if removed >= MAX_CLEAN_PER_PUBLISH:
+            break
+        if pathguard.is_linkish(blob):
+            continue
+        reference = blob.name[:-len(BLOB_SUFFIX)]
+        if reference in references:
+            continue
+        try:
+            blob.unlink()
+            removed += 1
+        except OSError:
+            continue
+
+
 def _blob_bytes(blobs: Path) -> int:
     total = 0
     for path in blobs.glob(ARTIFACT_REF_PREFIX + "*" + BLOB_SUFFIX):
@@ -395,6 +415,7 @@ def _publish_manifest(base_binding: dict, binding_fields: dict, env, *,
             _cleanup_temps(artifacts, blobs)
             now = int(time.time())
             _clean_expired(artifacts, blobs, now)
+            _clean_orphan_blobs(artifacts, blobs)
             if len(_manifest_files(artifacts)) >= MAX_ARTIFACTS:
                 raise errors.artifact_store_limit(
                     "产物引用缓存达到数量限制，请先等待旧引用过期或减少发布数量")
@@ -812,14 +833,60 @@ def _decode_prefix(raw: bytes) -> tuple[str, int]:
         return raw.decode("utf-8", "replace"), len(raw)
 
 
-def _text_page(path: Path, offset: int, size: int, limit: int, token: str) -> dict:
+def _open_verified(path: Path, binding: dict) -> int:
+    """打开并校验同一文件描述符：O_NOFOLLOW + fstat + 全文件 SHA-256。
+
+    读取和校验使用同一 fd，避免校验后按路径再次打开时被替换成链接/其他文件。
+    """
+    if pathguard.is_linkish(path):
+        raise errors.artifact_path_unsafe("产物文件包含链接或重解析点")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        raise errors.artifact_content_changed("产物文件无法打开或已被替换") from None
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or int(info.st_size) != binding["size"]:
+            raise errors.artifact_content_changed("产物文件大小或类型已变化，引用已失效")
+        digest = hashlib.sha256()
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        while True:
+            chunk = os.read(descriptor, 1 << 20)
+            if not chunk:
+                break
+            digest.update(chunk)
+        if digest.hexdigest() != binding["sha256"]:
+            raise errors.artifact_content_changed("产物文件内容已变化，引用已失效")
+        return descriptor
+    except Exception:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        raise
+
+
+def _read_fd(descriptor: int, size: int) -> bytes:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    chunks = []
+    remaining = size
+    while remaining > 0:
+        chunk = os.read(descriptor, min(1 << 20, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _text_page(descriptor: int, offset: int, size: int, limit: int, token: str) -> dict:
     if offset == size:
         return {"text": "", "pageBytes": 0, "nextOffset": None, "truncated": False}
     try:
-        with open(path, "rb") as handle:
-            handle.seek(offset)
-            # 多读最多 3 字节，避免把 UTF-8 多字节字符截断在页边界。
-            raw = handle.read(min(limit + 3, size - offset))
+        os.lseek(descriptor, offset, os.SEEK_SET)
+        # 多读最多 3 字节，避免把 UTF-8 多字节字符截断在页边界。
+        raw = os.read(descriptor, min(limit + 3, size - offset))
     except OSError:
         raise errors.artifact_content_changed("产物文件无法读取或已被替换") from None
     if not raw:
@@ -866,7 +933,6 @@ def read(reference, *, env=None, rulepack_version: str, offset: int = 0,
     manifest, _root, _artifacts = _load_manifest(reference, source_env, rulepack_version)
     path, root = _bound_path(manifest, source_env)
     binding = manifest["binding"]
-    _verify_identity(path, root, binding)
     mime = binding["mime"]
     response = {
         "artifactRef": manifest["artifactRef"],
@@ -887,10 +953,11 @@ def read(reference, *, env=None, rulepack_version: str, offset: int = 0,
             if binding["size"] > MAX_IMAGE_BYTES:
                 raise errors.artifact_content_too_large(
                     "图片超过 2 MiB base64 内联上限；请缩小图片或只读取元数据")
+            descriptor = _open_verified(path, binding)
             try:
-                payload = path.read_bytes()
-            except OSError:
-                raise errors.artifact_content_changed("产物文件无法读取或已被替换") from None
+                payload = _read_fd(descriptor, binding["size"])
+            finally:
+                os.close(descriptor)
             if len(payload) != binding["size"] \
                     or hashlib.sha256(payload).hexdigest() != binding["sha256"]:
                 raise errors.artifact_content_changed("产物文件内容已变化，引用已失效")
@@ -902,6 +969,7 @@ def read(reference, *, env=None, rulepack_version: str, offset: int = 0,
             response["contentIncluded"] = True
             response["imageContentBytes"] = len(payload)
         else:
+            _verify_identity(path, root, binding)
             response["includeContentHint"] = "includeContent=true 可获取有界图片内容块"
         return response
     if _is_text_mime(mime):
@@ -910,8 +978,13 @@ def read(reference, *, env=None, rulepack_version: str, offset: int = 0,
         if offset > binding["size"]:
             raise errors.invalid_input("offset 超出产物字节范围")
         token = str(source_env.get("QIMENG_API_TOKEN") or "")
-        response.update(_text_page(path, offset, binding["size"], limit, token))
+        descriptor = _open_verified(path, binding)
+        try:
+            response.update(_text_page(descriptor, offset, binding["size"], limit, token))
+        finally:
+            os.close(descriptor)
         return response
+    _verify_identity(path, root, binding)
     response["contentType"] = "binary"
     response["includeContentHint"] = "仅文本与图片内容可内联读取；其它类型只返回元数据"
     return response

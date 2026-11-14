@@ -193,9 +193,10 @@ def _excluded(rel: PurePosixPath, extra_dirs: frozenset[str]) -> bool:
         return True
     if name in GENERATED_FILE_NAMES or name.endswith(GENERATED_SUFFIXES):
         return True
-    if name == ".env" or name.startswith(".env.") or name.startswith(".coverage.") \
-            or name.endswith(LOCAL_CONFIG_SUFFIXES):
-        return True  # 本机配置/凭据/覆盖率文件不进分发物
+    if name.startswith(".env") or name.startswith(".coverage.") \
+            or ".local." in name or name.endswith(LOCAL_CONFIG_SUFFIXES) \
+            or name.lower().endswith(".log"):
+        return True  # 本机配置/凭据/日志/覆盖率文件不进分发物
     return False
 
 

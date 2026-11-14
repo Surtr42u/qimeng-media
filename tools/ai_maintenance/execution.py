@@ -239,20 +239,42 @@ def controlled_action(tool_id, payload, operation, *, env, config, side_effects=
     return result
 
 
+def _resolve_plan_ref_payload(tool_id, payload, *, env, config):
+    """在预算预留前把 planRef 解析成完整 plan，避免未决写入只有 planRefDigest。
+
+    解析只发生在可信执行端，仍由 resolve_plan_ref 校验实例/版本/工具；解析失败
+    直接拒绝，不创建 pending。解析后的 plan 与直接传 plan 走同一 Schema/指纹/
+    授权路径，requestHash 也基于完整计划。
+    """
+    if not isinstance(payload, dict) or "planRef" not in payload:
+        return payload
+    if "plan" in payload:
+        raise errors.invalid_input("必须且只能提供 plan 或 planRef 之一")
+    from . import model_output
+    resolved = dict(payload)
+    reference = resolved.pop("planRef")
+    resolved["plan"] = model_output.resolve_plan_ref(
+        reference, env=env, rulepack_version=config.rulepack_version, tool_id=tool_id)
+    return resolved
+
+
 def execute_tool(tool_id: str, payload, *, env=None, config: RuntimeConfig | None = None,
                  skip_capability: bool = False) -> tuple[registry.ToolSpec, object]:
     """Validate and execute through the same trusted lifecycle as recipe primitives."""
     env = os.environ if env is None else env
     config = config or load_config(env)
     spec = registry.get(tool_id)
+    if spec is not None and "plan" in spec.input_schema.get("properties", {}):
+        payload = _resolve_plan_ref_payload(tool_id, payload, env=env, config=config)
 
     def operation(mark_started):
         _, result = _execute_tool(tool_id, payload, env=env, config=config,
                                   skip_capability=skip_capability, mark_started=mark_started)
         return result
 
-    result = controlled_action(tool_id, payload, operation, env=env, config=config,
-                               side_effects=bool(spec and spec.side_effects))
+    result = controlled_action(
+        tool_id, payload, operation, env=env, config=config,
+        side_effects=bool(spec and spec.side_effects and spec.business_side_effects))
     return spec, result
 
 
@@ -320,7 +342,7 @@ def _execute_tool(tool_id, payload, *, env, config, skip_capability, mark_starte
         disabled_tools=config.disabled,
         read_only_mode=config.read_only_mode,
         granted_permissions=config.granted_permissions,
-        extras={"executorBudget": config.budget.report()},
+        extras={"executorBudget": config.budget.report(include_identity=False)},
     )
     mark_started()
     result = handler(context, payload)

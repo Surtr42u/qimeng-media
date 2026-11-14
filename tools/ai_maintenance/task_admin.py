@@ -23,6 +23,8 @@ UNCERTAIN = "uncertain"
 
 UPLOAD_CANDIDATE_LIMIT = 5
 ASSET_QUERY_LIMIT = 200
+# 入库时间与操作开始时间在同一主机；留出 5 分钟时钟/接收延迟余量。
+UPLOAD_CLOCK_SKEW_MS = 5 * 60 * 1000
 TERMINAL_JOB_STATUSES = ("completed", "partial", "failed")
 NON_TERMINAL_JOB_STATUSES = ("queued", "inventory", "research", "planned", "applying",
                              "verifying", "waiting_evidence", "waiting_authorization",
@@ -173,6 +175,11 @@ def _readback_upload(client, identity, _evidence):
         reason = ("upload_session_missing_and_asset_not_found" if session_missing
                   else "uploaded_asset_not_found")
         return _result("asset.upload", UNCERTAIN, reason, readback=summary)
+    started = identity.get("operationStartedAt")
+    if isinstance(started, bool) or not isinstance(started, (int, float)):
+        return _result("asset.upload", UNCERTAIN, "missing_identity.operationStartedAt",
+                       readback=summary)
+    started_ms = int(started * 1000) - UPLOAD_CLOCK_SKEW_MS
     expected_rel = "/".join(part for part in (directory, file_name) if part)
     matches = []
     for candidate in candidates[:UPLOAD_CANDIDATE_LIMIT]:
@@ -188,6 +195,10 @@ def _readback_upload(client, identity, _evidence):
         if expected_bytes is not None and detail.get("sizeBytes") != expected_bytes:
             continue
         if source_mtime is not None and _iso_millis(detail.get("modifiedAt")) != source_mtime:
+            continue
+        added = _iso_millis(detail.get("addedAt"))
+        if added is None or added < started_ms:
+            # 无法证明该资产是本次操作之后创建的：可能是预先存在的同元数据资产。
             continue
         matches.append(detail)
     if len(matches) == 1:
@@ -258,19 +269,31 @@ def _readback_asset_authors(client, identity, _evidence):
     if problem == 404 or detail is None:
         return _result("asset.authors.apply", UNCERTAIN, "asset_unavailable",
                        readback={"assetId": asset_id})
-    current = sorted({item.get("id") for item in detail.get("authors") or []
-                      if isinstance(item, dict) and isinstance(item.get("id"), str)})
+    authors = [item for item in detail.get("authors") or [] if isinstance(item, dict)]
+    current = sorted({item.get("id") for item in authors
+                      if isinstance(item.get("id"), str)})
+    current_names = {item.get("displayName") for item in authors
+                     if isinstance(item.get("displayName"), str)}
     expected = sorted({item for item in target_ids if isinstance(item, str)})
-    if current == expected:
-        return _result("asset.authors.apply", CONFIRMED_APPLIED, "asset_authors_match",
-                       readback={"assetId": asset_id, "authorIds": current})
+    new_names = {item for item in identity.get("newAuthorNames") or []
+                 if isinstance(item, str)}
     previous_ids = identity.get("previousAuthorIds")
+    previous = None
     if isinstance(previous_ids, list):
         previous = sorted({item for item in previous_ids if isinstance(item, str)})
         if current == previous:
             return _result("asset.authors.apply", CONFIRMED_NOT_APPLIED,
                            "asset_authors_match_previous",
                            readback={"assetId": asset_id, "authorIds": current})
+    if current == expected and (not new_names or new_names <= current_names):
+        return _result("asset.authors.apply", CONFIRMED_APPLIED, "asset_authors_match",
+                       readback={"assetId": asset_id, "authorIds": current})
+    # newAuthorNames 由服务端按规范身份解析/新建：目标作者 ID 全在，且计划中的
+    # 新名字都能在当前作者显示名中找到，才可确认（仍要求 current != previous）。
+    if new_names and new_names <= current_names and set(expected) <= set(current):
+        return _result("asset.authors.apply", CONFIRMED_APPLIED,
+                       "asset_authors_and_new_names_match",
+                       readback={"assetId": asset_id, "authorIds": current})
     return _result("asset.authors.apply", UNCERTAIN, "asset_authors_not_confirmed",
                    readback={"assetId": asset_id, "authorIds": current})
 

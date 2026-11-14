@@ -135,6 +135,10 @@ def _frame_percentages(payload: dict) -> tuple[int, ...]:
             values = list(media_primitives.parse_percentages(raw))
         except ValueError as exc:
             raise errors.invalid_input("frames 非法：" + str(exc)) from None
+        if len(values) > MAX_FRAME_PERCENTAGES:
+            raise errors.invalid_input(
+                f"frames 最多 {MAX_FRAME_PERCENTAGES} 个百分比")
+
     elif isinstance(raw, list):
         if not raw or len(raw) > MAX_FRAME_PERCENTAGES:
             raise errors.invalid_input(

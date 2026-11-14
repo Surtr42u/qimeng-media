@@ -143,7 +143,7 @@ AI 不需要先读源码/完整文档才知道做什么：任务入口是**任�
 | C06 预算与状态 | 100次/900秒/同请求3次无新结果的默认执行预算；显式 TASK_ID+STATE_DIR 时跨进程共享哈希计数；context 给预算状态 | 覆盖错误调用与重连、耗尽前拒绝新操作；不新增业务任务数据库。宿主模型 token/费用未知时如实标记，不承诺限制其他程序消费 |
 | C07 实际任务 | 新开 GPT-6 Luna max 子代理，业务指令简短，不继承实现背景，只通过测试工具操作隔离库；主代理按权威数据回读判定 | 测试结果、额外提示/重试、模型/宿主与源码身份逐项记录于 HANDOVER 和本地私有报告；实现协作子代理不计为盲测 |
 
-工具包1.7.0、工具契约2.1.0、规则2026-11-14.2；旧计划须重新 prepare。配置/续读契约见[工具 README](../tools/ai_maintenance/README.md#配置)，构建、部署、失败记录与实际完成情况只以[HANDOVER](HANDOVER.md)为准；本节列源码与验收要求，不提前宣称测试通过。
+工具包1.7.1、工具契约2.1.0、规则2026-11-15.1；旧计划须重新 prepare。配置/续读契约见[工具 README](../tools/ai_maintenance/README.md#配置)，构建、部署、失败记录与实际完成情况只以[HANDOVER](HANDOVER.md)为准；本节列源码与验收要求，不提前宣称测试通过。
 
 2026-11-14 后续实现：按[后续优化与合并任务书](AI_PLATFORM_OPTIMIZATION_MERGE_TASKBOOK.md)新增纯素材只读研究 `research.work`、研究产物 `artifactRef`/`platform.artifact.read`、可信端 `admin task status/reconcile/renew` 与最小可移植分发 `package.py`；研究与业务写入分开，候选恒 unconfirmed，未决写入只接受可验证 GET 回读核销，预算按实例/凭据隔离且续期只增不清零。写入仍复用既有 `author.discover` 与正式 API；远程 Streamable HTTP、动作级确认 token、真实 NAS/多执行器与独立模型验收仍未因此完成。实际云端门禁、真实图/视频与独立模型结果以 HANDOVER 为准。
 

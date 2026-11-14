@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-14.2",
+  "rulesVersion": "2026-11-15.1",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1540,9 +1540,9 @@
       "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
     ]
   },
-  "rulepackVersion": "2026-11-14.2",
+  "rulepackVersion": "2026-11-15.1",
   "platform": {
-    "platformVersion": "1.7.0",
+    "platformVersion": "1.7.1",
     "toolContractVersion": "2.1.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
@@ -1944,7 +1944,7 @@
       "read"
     ],
     "authorization": "confirm=true和普通哈希不是授权证明。权限由可信环境显式授予，Go scope/文件根/对象版本仍强制；任务授权文件可进一步限定服务实例、有效期、工具和参数。授权范围内可自动完成，参数不扩大范围。",
-    "discovery": "MCP默认lazy：context/describe/recipe成功后公布相关工具并发list_changed；不支持通知的宿主显式full。领域过滤仍是可调用边界。",
+    "discovery": "MCP默认full：标准tools/list稳定返回完整清单，兼容不刷新列表的宿主；显式lazy才按context/describe/recipe成功后公布相关工具并发送list_changed。领域过滤仍是可调用边界。",
     "output": "模型响应默认最多12288 UTF-8字节，超额给显式省略和resultRef；按platform.result.read续读。原计划留可信端，用planRef原样执行，不从摘要重建。",
     "budget": {
       "defaultMaxCalls": 100,

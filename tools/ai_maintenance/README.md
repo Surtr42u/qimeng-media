@@ -91,8 +91,8 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 
 ## 配置
 
-2026-11-14 后续源码契约更新：工具包 `1.7.0`、工具契约 `2.1.0`、规则
-`2026-11-14.2`。新增纯素材作品研究 `research.work`、受控研究产物引用
+2026-11-15 审查修复后源码契约更新：工具包 `1.7.1`、工具契约 `2.1.0`、规则
+`2026-11-15.1`。新增纯素材作品研究 `research.work`、受控研究产物引用
 `artifactRef`（`platform.artifact.read`）、可信端未决写入核销/预算续期入口与
 可移植分发工具包；旧计划须重新 prepare。默认权限仍为仅 `read`；自动化写入须在
 可信配置中明确授予权限，并由服务端 AI scope 再次约束。`author.query` 返回分页
@@ -296,7 +296,9 @@ scope 与强制矩阵的权威说明见 [SECURITY「独立 AI 客户端凭据」
 - **接续**：`research.media.probe` 返回 `frameRefs[].artifactRef` 与
   `artifactRefs`；帧引用可直接传给 `research.image.search`（yandex 的
   `artifactRef`）或 `research.lens`（`artifactRef`），jobs JSONL 用 `jobsRef`。
-  `research.work` 还返回完整证据的 `evidenceRef`。模型不需要知道物理路径，也不能
+  `research.work` 还返回完整证据的 `evidenceRef`。probe 只发布 `media-probe.jsonl`
+  明确列出的帧，不枚举调用方指定目录内的其他文件；文本读取使用同一 fd 完成
+  fstat/SHA-256 校验与分页，避免校验后被链接替换。模型不需要知道物理路径，也不能
   因为引用合法而读取未发布的任意文件。
 
 ## 可信端任务恢复与预算续期（admin task）
@@ -319,8 +321,9 @@ python -X utf8 tools/ai_maintenance/cli.py admin task renew --task-id <taskId> \
 
 - 持久账本按 `(taskId, apiBase, 凭据摘要)` 隔离；同一 taskId 在不同实例/凭据下是
   不同账本。状态只保存白名单、有界的最小操作定位信息（如 uploadId、assetId+
-  planFingerprint、authorId+expectedRevision、jobId/step），不保存路径、token、
-  完整 plan 或大载荷。
+  planFingerprint、authorId+expectedRevision、jobId/step），不保存绝对路径、
+  token、完整 plan 或大载荷；内部回读所需的相对媒体名/目录不回显到模型可见的
+  `executorBudget`/预算摘要。
 - 回读只发 GET：upload 查询会话/资产、author profile revision、asset
   authors/tags/fileName、maintenance job/step/artifact。任何 HTTP/网络/解析失败
   或证据不足都返回 `uncertain` 并保持写入阻断，不把“查不到”当已执行。重复核销
@@ -685,7 +688,7 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
 ## 已测宿主兼容性
 
 2026-11-14 原生 Codex App Server 0.167.0-alpha.4.1 实测：lazy 连接初始化为9项，
-describe 后宿主列表仍为9项，未观察到动态刷新；现已把默认改为`full`，无需为该宿主额外配置。显式lazy只用于已验证支持刷新的宿主。full 实测54项且查询成功。服务端通知和通用
+describe 后宿主列表仍为9项，未观察到动态刷新；现已把默认改为`full`，无需为该宿主额外配置。显式lazy只用于已验证支持刷新的宿主。full 在该宿主实测54项且查询成功；该数字是当时版本，新增工具后以注册表/目录实时计数为准（当前56项），不把54写成永久常量。服务端通知和通用
 MCP传输的按需发现不代表每个宿主都会刷新；此兼容模式不能声称节省初始Schema上下文。
 
 ## 单文件精确改名

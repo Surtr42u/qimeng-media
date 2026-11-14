@@ -238,7 +238,11 @@ def _safe_frame_name(raw) -> str:
 
 
 def _probe_artifact_entries(out: Path, frame_dir: Path) -> list[dict]:
-    """从 media-probe.jsonl 提取帧，失败时退回有界目录枚举。"""
+    """只从 media-probe.jsonl 列出的帧提取产物，不枚举目录内任意文件。
+
+    回退枚举曾会把调用方指定 frameDir 中的既有私有文件发布成可读 artifactRef，
+    违反“引用不扩大读授权”。没有可解析帧记录时宁可返回空产物并报告不可用。
+    """
     entries: list[dict] = []
     seen: set[str] = set()
 
@@ -258,7 +262,6 @@ def _probe_artifact_entries(out: Path, frame_dir: Path) -> list[dict]:
             "index": index, "percent": percent, "crop": crop,
         })
 
-    parsed = False
     try:
         if out.is_file() and out.stat().st_size <= 4 << 20:
             with out.open("r", encoding="utf-8", errors="replace") as handle:
@@ -281,12 +284,8 @@ def _probe_artifact_entries(out: Path, frame_dir: Path) -> list[dict]:
                             continue
                         add_entry(frame_dir / name, percent=frame.get("pct"),
                                   crop=frame.get("crop") or "full")
-                        parsed = True
     except OSError:
-        parsed = False
-    if not parsed:
-        for path in _directory_artifacts(frame_dir, limit=MAX_ARTIFACTS - 1):
-            add_entry(path)
+        pass
     return entries
 
 

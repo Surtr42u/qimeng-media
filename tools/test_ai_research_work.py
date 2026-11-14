@@ -546,6 +546,13 @@ class ResearchWorkTests(unittest.TestCase):
             })
         self.assertEqual("INVALID_INPUT", caught.exception.code)
 
+        with self.assertRaises(errors.ToolError) as caught:
+            work.research_work(context, {
+                "path": str(self.work.inputs / "still.png"),
+                "frames": "1,2,3,4,5",
+            })
+        self.assertEqual("INVALID_INPUT", caught.exception.code)
+
     def test_author_discover_contract_unchanged_and_work_recipe_discovered(self):
         old = recipes.get_recipe("author.discover", {})
         self.assertEqual(["nameHint", "profileChanges"],
@@ -568,6 +575,8 @@ class ResearchWorkTests(unittest.TestCase):
         self.assertEqual("research", spec.permission)
         self.assertFalse(spec.read_only)
         self.assertTrue(spec.side_effects)
+        # 只写本地抽帧/证据，不进入业务未决写入，失败不应阻断后续业务写。
+        self.assertFalse(spec.business_side_effects)
         self.assertTrue(spec.network)
         self.assertIn("research", registry.TOOL_RULES_REFS.get("research.work", ()))
 

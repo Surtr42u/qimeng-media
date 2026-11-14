@@ -122,6 +122,24 @@ class ArtifactRefTests(unittest.TestCase):
                                       rulepack_version=self.rulepack)
         self.assertEqual("ARTIFACT_TAMPERED", caught.exception.code)
 
+    def test_text_read_rejects_symlink_replacement(self):
+        path = self._file("text.txt", b"original text")
+        meta = self._publish(path, mime="text/plain")
+        outside = self.work.root / "outside.txt"
+        outside.write_text("outside secret", encoding="utf-8")
+        path.unlink()
+        try:
+            os.symlink(outside, path)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前平台不允许创建符号链接")
+        with self.assertRaises(errors.ToolError) as caught:
+            artifact_ref.read(meta["artifactRef"], env=self.env,
+                              rulepack_version=self.rulepack)
+        self.assertIn(caught.exception.code,
+                      ("ARTIFACT_PATH_UNSAFE", "ARTIFACT_CONTENT_CHANGED"))
+        self.assertNotIn("outside secret",
+                         json.dumps(caught.exception.to_dict(), ensure_ascii=False))
+
     def test_same_size_replacement_is_rejected(self):
         path = self._file("frame.webp", b"AAAA")
         meta = self._publish(path, kind="frame", mime="image/webp")
@@ -354,6 +372,15 @@ class ProbeHandoffTests(unittest.TestCase):
         out.write_text(json.dumps(record) + "\n", encoding="utf-8")
         return {"exitCode": 0, "timedOut": False, "elapsedMs": 5,
                 "stdout": b"", "stderr": b""}
+
+    def test_probe_does_not_enumerate_unlisted_frame_dir_files(self):
+        sentinel_dir = self.work.outputs / "custom-frames"
+        sentinel_dir.mkdir()
+        (sentinel_dir / "private-evidence.txt").write_text(
+            "must not become an artifact", encoding="utf-8")
+        entries = tools_research._probe_artifact_entries(
+            self.work.outputs / "missing.jsonl", sentinel_dir)
+        self.assertEqual([], entries)
 
     def test_probe_publishes_frame_refs_and_lens_continues_without_paths(self):
         with mock.patch.object(tools_research, "_execute", side_effect=self._fake_probe):

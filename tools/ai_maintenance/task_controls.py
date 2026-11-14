@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -520,8 +521,12 @@ def _read_state_file(path: Path):
     return state
 
 
+MODEL_SAFE_IDENTITY_KEYS = frozenset(
+    LOCATOR_KEYS + ("planFingerprint", "expectedRevision", "libraryId", "operationId"))
+
+
 def _state_report(state, *, persisted, max_calls, max_seconds, elapsed=None,
-                 task_scope=None) -> dict:
+                 task_scope=None, include_identity=True) -> dict:
     limits = state.get("limits") if isinstance(state.get("limits"), dict) else {}
     calls_candidates = [int(v) for v in (max_calls, limits.get("maxCalls")) if v is not None]
     seconds_candidates = [int(v) for v in (max_seconds, limits.get("maxSeconds")) if v is not None]
@@ -533,6 +538,10 @@ def _state_report(state, *, persisted, max_calls, max_seconds, elapsed=None,
         if not isinstance(entry, dict):
             continue
         identity = entry.get("identity") if isinstance(entry.get("identity"), dict) else None
+        if identity is not None and not include_identity:
+            # 模型可见的预算摘要只保留稳定定位 ID，不回显文件名/相对目录/待写字段。
+            identity = {key: value for key, value in identity.items()
+                        if key in MODEL_SAFE_IDENTITY_KEYS}
         pending.append({
             "requestHash": request_hash,
             "tool": entry.get("tool") or "legacy",
@@ -593,15 +602,19 @@ class SessionBudget:
         self.state = {"startedAt": time.time(), "calls": 0, "observations": {}, "pending": {}}
         self.lock = threading.Lock()
         self.path = None
-        self.api_base = str(env.get("QIMENG_API_BASE", ""))
+        # 尾部斜杠不应生成两个账本；只做无网络的无害规范化。
+        self.api_base = str(env.get("QIMENG_API_BASE", "")).rstrip("/")
         task_id = env.get("QIMENG_AI_TASK_ID")
         if task_id:
-            if not env.get("QIMENG_AI_STATE_DIR"):
+            state_dir = env.get("QIMENG_AI_STATE_DIR")
+            if not state_dir:
                 raise errors.configuration_error("持久任务预算需要 QIMENG_AI_STATE_DIR")
+            if not Path(str(state_dir)).is_absolute():
+                raise errors.configuration_error("QIMENG_AI_STATE_DIR 必须是绝对路径")
             identity = hashlib.sha256(json.dumps(
                 [task_id, self.api_base, _credential_digest(env)],
                 sort_keys=True).encode()).hexdigest()
-            self.path = Path(env["QIMENG_AI_STATE_DIR"]) / "budgets" / (identity + ".json")
+            self.path = Path(state_dir) / "budgets" / (identity + ".json")
             if self.path.parent.exists() and pathguard.is_linkish(self.path.parent):
                 raise errors.configuration_error("任务预算目录不能是链接")
 
@@ -617,6 +630,17 @@ class SessionBudget:
             return _read_state_file(self.path), True
         except (OSError, ValueError, TypeError):
             raise _failure("TASK_BUDGET_UNAVAILABLE", "任务预算记录不可用，须先核对已执行结果") from None
+
+    def _snapshot_state(self):
+        """并发安全的只读快照；未持久化时在实例锁内复制，避免遍历时被改写。"""
+        if self.path is None:
+            with self.lock:
+                return copy.deepcopy(self.state), False
+        state, persisted = self._read_state()
+        if not persisted:
+            with self.lock:
+                state = copy.deepcopy(self.state)
+        return state, persisted
 
     @contextmanager
     def _state(self):
@@ -672,13 +696,19 @@ class SessionBudget:
             if unchanged + current["count"] >= self.max_repeats:
                 raise _failure("TASK_NO_PROGRESS", "相同请求连续未产生新结果，已停止重复调用")
             state["calls"] += 1
+            created_at = current.get("createdAt") or time.time()
+            stored_identity = current.get("identity") or identity
+            if isinstance(stored_identity, dict) \
+                    and "operationStartedAt" not in stored_identity:
+                stored_identity = dict(stored_identity)
+                stored_identity["operationStartedAt"] = created_at
             pending[request] = {
                 "requestHash": request,
                 "count": current["count"] + 1,
                 "sideEffects": side_effects,
                 "tool": current.get("tool") or (tool if isinstance(tool, str) else ""),
-                "createdAt": current.get("createdAt") or time.time(),
-                "identity": current.get("identity") or identity,
+                "createdAt": created_at,
+                "identity": stored_identity,
             }
         return request
 
@@ -703,18 +733,19 @@ class SessionBudget:
         # Reservation was persisted before execution. An interrupted/uncertain write
         # stays pending until the trusted executor reconciles its original operation.
 
-    def report(self):
-        state, persisted = self._read_state()
+    def report(self, *, include_identity: bool = True):
+        state, persisted = self._snapshot_state()
         elapsed = max(0.0, time.monotonic() - self.started) if not persisted else None
         report = _state_report(state, persisted=persisted, max_calls=self.max_calls,
                                max_seconds=self.max_seconds, elapsed=elapsed,
-                               task_scope=self.path is not None)
+                               task_scope=self.path is not None,
+                               include_identity=include_identity)
         report["maxUnchanged"] = self.max_repeats
         return report
 
     def pending_entry(self, request_hash: str):
         """只读取待核销项（含最小 identity）；不存在返回 None。"""
-        state, _persisted = self._read_state()
+        state, _persisted = self._snapshot_state()
         entry = state.get("pending", {}).get(request_hash)
         if not isinstance(entry, dict):
             return None
@@ -729,7 +760,7 @@ class SessionBudget:
 
     def prior_reconciliation(self, request_hash: str):
         """只读查询已核销历史（有界、无原载荷）。"""
-        state, _persisted = self._read_state()
+        state, _persisted = self._snapshot_state()
         for entry in reversed(state.get("reconciled") or []):
             if entry.get("requestHash") == request_hash:
                 return dict(entry)
@@ -748,7 +779,7 @@ class SessionBudget:
         if problems:
             # evidence 携带路径/凭据或不是对象时，属于“拒绝核销”而不是可修正的
             # 普通参数错误：返回结构化 rejected，保持 pending 与写入阻断。
-            state, _persisted = self._read_state()
+            state, _persisted = self._snapshot_state()
             pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
             return {"status": "rejected", "reason": "evidence_invalid",
                     "requestHash": request_hash, "problems": problems,

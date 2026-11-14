@@ -2,11 +2,11 @@
 
 执行 AI：Codex（主代理完整模型名称及变体未知，负责执行控制、接线与交付）
 
-- 工具包1.7.0/契约2.1.0/规则2026-11-14.2：新增 `research.work` 纯素材只读研究（path/fileRef/artifactRef 三选一，nameHint 可选；候选/作品来源/证据/排除/未解决条件，候选恒 unconfirmed、`businessWrites=0`），写入仍走原 `author.discover`，旧输入/恢复语义不变。
+- 工具包1.7.1/契约2.1.0/规则2026-11-15.1：新增 `research.work` 纯素材只读研究（path/fileRef/artifactRef 三选一，nameHint 可选；候选/作品来源/证据/排除/未解决条件，候选恒 unconfirmed、`businessWrites=0`），写入仍走原 `author.discover`，旧输入/恢复语义不变。审查后补齐：probe 不枚举任意 frameDir、planRef 在预算预留前解析、研究本地副作用不进入业务未决写入、artifact 文本 fd 校验与孤儿清理、pending 模型摘要隐藏媒体名、upload 回读校验 addedAt。
 - 新增 `artifactRef` 与 `platform.artifact.read`：抽帧/研究 JSONL/证据复用 model-output 状态根、HMAC/TTL/锁与原子发布，绑定实例/凭据/版本/授权根/SHA-256；文本分页、图片标准 MCP image content；替换/篡改/过期/跨上下文/根移除拒绝。`research.media.probe` 输出 frameRefs/artifactRefs，lens/search 接受 artifactRef/jobsRef。
 - 新增可信端 `admin task status/list/reconcile/renew`：预算按 taskId+实例+凭据摘要隔离，pending 仅存有界定位信息；核销只接受可验证 GET 回读 applied/not_applied，unknown 保持阻断；续期只提高上限，不清零计数/观察/未决项；不注册为 MCP 工具。
 - 新增 `package.py` 最小可移植分发（build/verify/manifest/doctor）与 `docs/AI_PLATFORM_DISTRIBUTION.md`；不打包数据库/真实媒体/凭据/Go 业务实现，来源清单逐文件 SHA-256。
-- 同步工具 README、平台任务书、HANDOVER、SECURITY、ADR-0056、CAPABILITY_MAP。自动构建/单测/基准仅走云端；实际门禁、真实图/视频和独立模型结果在门禁完成后补 HANDOVER，不在本条宣称已全部通过。
+- 同步工具 README、平台任务书、HANDOVER、SECURITY、ADR-0056、CAPABILITY_MAP。自动构建/单测/基准仅走云端；首轮门禁通过后按独立审查修复 P1/P2 边界并重跑最终门禁，实际结果、失败保留与独立模型限制见 HANDOVER §0。
 
 ## feat(api): 落实有界AI上下文与可信执行控制（2026-11-14 第七百三十二笔）
 
