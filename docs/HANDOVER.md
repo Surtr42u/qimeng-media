@@ -2,10 +2,11 @@
 
 > 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-11-14。
 
-## 0. 2026-11-14 后续优化与合并（本轮进行中）
+## 0. 2026-11-14 后续优化与合并（本轮执行记录）
 
 按[后续优化与合并任务书](AI_PLATFORM_OPTIMIZATION_MERGE_TASKBOOK.md)接手 S0–S6 与
-M1–M5。当前分支仍为 `codex/ai-api-context-20261114`（PR #60）；S1–S5 源码已实现：
+M1–M5。当前分支 `codex/ai-api-context-20261114`（PR #60），最终代码 HEAD
+`097c5988`；S1–S5 源码已实现：
 
 - `research.work`：单图/视频只读研究，path/fileRef/artifactRef 三选一，nameHint 可选；
   抽帧/dHash、Lens/provider 弱线索、候选/作品来源/证据/排除/未解决条件，候选恒
@@ -16,10 +17,26 @@ M1–M5。当前分支仍为 `codex/ai-api-context-20261114`（PR #60）；S1–
   预算按 taskId+实例+凭据摘要隔离，pending 只存有界定位信息，unknown 保持阻断。
 - `package.py`：最小可移植 bundle、逐文件来源清单、`verify` 与基础/可选依赖 `doctor`。
 
-本轮未运行本地构建/单测/基准，验证计划全部走云端；实际门禁链接、测试计数、真实图/
-视频与独立模型结果、失败和限制在门禁完成后补入本节。未声称这些源码已安装到日常 PC/
-手机/NAS，也未新增远程 HTTP MCP。工具包/契约/规则版本已递增为 `1.7.0`/`2.1.0`/
-`2026-11-14.2`。
+最终 HEAD 云端门禁全部通过（17/17）：
+
+- [完整 CI（服务端/Web/Android/SDK/Windows 文件操作/桌面/协议）](https://github.com/Surtr42u/qimeng-media/actions/runs/43608430037)
+- [AI 隔离闭环（含 MCP 真实抽帧/artifactRef 接续）](https://github.com/Surtr42u/qimeng-media/actions/runs/43608430030)
+- [文档/审计](https://github.com/Surtr42u/qimeng-media/actions/runs/43608430091)
+- [依赖安全/隐私](https://github.com/Surtr42u/qimeng-media/actions/runs/43608430038)
+
+测试结果：AI 闭环 42 项命名 + 412 项 AI 回归（8 跳过；MCP 研究回归在作业安装
+ffmpeg 后实际执行，不是跳过项）+ 7 项真实 Go+MCP；文档作业全 `tools/test_*.py`
+510 项（13 跳过）。首轮失败保留：docs 曾因并发 artifact 读取测试把图片当文本、以及
+核销路径证据直接抛错而 2 项失败，已分别修正为文本夹具/结构化 `rejected` 且保留
+pending（859f0212）；MCP 研究首轮因合成 X 账号 16 字符不匹配保守正则而失败，补诊断
+后修正为合法账号（097c5988），最终两例通过。以上均为云端合成数据/临时目录，未向
+8420 写入测试数据。
+
+未完成/受限：本机未配置 GPT-6 Luna max，独立模型盲测未执行，不以同一主代理回归冒充
+盲测；真实外部 provider/Lens 网络、真实作者原帖确证、NAS/真机、远程 Streamable HTTP
+MCP 仍未验收；分发物只在云端测试中构建/校验，未在仓库外长期环境实际安装。工具包/
+契约/规则版本为 `1.7.0`/`2.1.0`/`2026-11-14.2`。合并 SHA 与分支清理结果在 M4/M5
+完成后补入本节。
 
 ## 1. 当前使用形态
 
