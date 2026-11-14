@@ -695,14 +695,17 @@ class AdminCliTests(unittest.TestCase):
             budget = task_controls.SessionBudget(env)
             key = budget.reserve("asset.upload", {"plan": upload_plan(), "confirm": True},
                                  side_effects=True)
+            added_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             _StubHandler.routes["/api/v1/uploads/" + UPLOAD_ID] = (
                 200, {"id": UPLOAD_ID, "offset": 12, "size": 12})
             _StubHandler.routes["/api/v1/assets"] = (200, {
                 "items": [{"id": "asset-1", "fileName": "synthetic.jpg", "sizeBytes": 12,
-                           "modifiedAt": SOURCE_ISO}], "nextCursor": None})
+                           "modifiedAt": SOURCE_ISO, "addedAt": added_at}],
+                "nextCursor": None})
             _StubHandler.routes["/api/v1/assets/asset-1"] = (200, {
                 "id": "asset-1", "fileName": "synthetic.jpg", "sizeBytes": 12,
-                "modifiedAt": SOURCE_ISO, "relPath": "dir/synthetic.jpg"})
+                "modifiedAt": SOURCE_ISO, "addedAt": added_at,
+                "relPath": "dir/synthetic.jpg"})
             argv = ["admin", "task", "reconcile", "--task-id", "task-synthetic",
                     "--state-dir", str(directory), "--request-hash", key]
             code, _output = self._invoke(argv, env)
