@@ -399,7 +399,7 @@ class McpServer:
                 spec.id, result, env=self.env,
                 rulepack_version=self._load_config().rulepack_version)
             text = json.dumps({"tool": spec.id, "toolVersion": spec.version,
-                               "status": "ok", "result": result},
+                               "status": "error" if is_error else "ok", "result": result},
                               ensure_ascii=False)
         except Exception as exc:  # presentation occurs after a handler may have written data
             if spec.side_effects or not spec.read_only:
@@ -408,7 +408,7 @@ class McpServer:
                 _log("result presentation failed after execution: " + spec.id + " "
                      + result["presentationErrorCode"])
                 text = json.dumps({"tool": spec.id, "toolVersion": spec.version,
-                                   "status": "ok", "result": result},
+                                   "status": "error" if is_error else "ok", "result": result},
                                   ensure_ascii=False)
             elif isinstance(exc, errors.ToolError):
                 return _result_response(request_id, _tool_error_result(exc))

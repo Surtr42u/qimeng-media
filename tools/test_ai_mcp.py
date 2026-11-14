@@ -267,6 +267,8 @@ class McpProtocolTest(unittest.TestCase):
                     response = server._tools_call(code, {"name": "research.media.probe",
                         "arguments": {"files": [str(source)]}}, set())["result"]
                 self.assertEqual(code != 0, response["isError"])
+                self.assertEqual(response["structuredContent"]["status"],
+                                 json.loads(response["content"][0]["text"])["status"])
                 result = response["structuredContent"]["result"]
                 self.assertEqual(status, result["status"])
                 self.assertEqual(code, result["exitCode"])
