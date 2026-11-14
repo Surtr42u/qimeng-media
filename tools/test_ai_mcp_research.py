@@ -133,7 +133,11 @@ class McpResearchTest(unittest.TestCase):
 
     @staticmethod
     def _tool_response(response: dict) -> dict:
-        return response["result"]["structuredContent"]["result"]
+        structured = response.get("structuredContent")
+        if not isinstance(structured, dict) or "result" not in structured:
+            raise AssertionError(
+                "MCP tool error: " + json.dumps(response, ensure_ascii=False)[:4000])
+        return structured["result"]
 
     def _call(self, request_id: int, name: str, arguments: dict) -> dict:
         response = self.server.handle_message(
