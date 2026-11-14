@@ -6,7 +6,7 @@
 
 按[后续优化与合并任务书](AI_PLATFORM_OPTIMIZATION_MERGE_TASKBOOK.md)接手 S0–S6 与
 M1–M5。当前分支 `codex/ai-api-context-20261114`（PR #60），最终代码 HEAD
-`097c5988`；S1–S5 源码已实现：
+`f3942a28`（审查修复后；交付记录文档提交在其后）；S1–S5 源码已实现：
 
 - `research.work`：单图/视频只读研究，path/fileRef/artifactRef 三选一，nameHint 可选；
   抽帧/dHash、Lens/provider 弱线索、候选/作品来源/证据/排除/未解决条件，候选恒
@@ -17,20 +17,27 @@ M1–M5。当前分支 `codex/ai-api-context-20261114`（PR #60），最终代�
   预算按 taskId+实例+凭据摘要隔离，pending 只存有界定位信息，unknown 保持阻断。
 - `package.py`：最小可移植 bundle、逐文件来源清单、`verify` 与基础/可选依赖 `doctor`。
 
-最终 HEAD 云端门禁全部通过（17/17）：
+最终代码 HEAD 云端门禁全部通过（17/17）：
 
-- [完整 CI（服务端/Web/Android/SDK/Windows 文件操作/桌面/协议）](https://github.com/Surtr42u/qimeng-media/actions/runs/43608430037)
-- [AI 隔离闭环（含 MCP 真实抽帧/artifactRef 接续）](https://github.com/Surtr42u/qimeng-media/actions/runs/43608430030)
-- [文档/审计](https://github.com/Surtr42u/qimeng-media/actions/runs/43608430091)
-- [依赖安全/隐私](https://github.com/Surtr42u/qimeng-media/actions/runs/43608430038)
+- [完整 CI（服务端/Web/Android/SDK/Windows 文件操作/桌面/协议）](https://github.com/Surtr42u/qimeng-media/actions/runs/43615760640)
+- [AI 隔离闭环（含 MCP 真实抽帧/artifactRef 接续）](https://github.com/Surtr42u/qimeng-media/actions/runs/43615760543)
+- [文档/审计](https://github.com/Surtr42u/qimeng-media/actions/runs/43615760540)
+- [依赖安全/隐私](https://github.com/Surtr42u/qimeng-media/actions/runs/43615760525)
 
-测试结果：AI 闭环 42 项命名 + 412 项 AI 回归（8 跳过；MCP 研究回归在作业安装
+测试结果：AI 闭环 42 项命名 + 419 项 AI 回归（8 跳过；MCP 研究回归在作业安装
 ffmpeg 后实际执行，不是跳过项）+ 7 项真实 Go+MCP；文档作业全 `tools/test_*.py`
-510 项（13 跳过）。首轮失败保留：docs 曾因并发 artifact 读取测试把图片当文本、以及
+517 项（13 跳过）。首轮失败保留：docs 曾因并发 artifact 读取测试把图片当文本、以及
 核销路径证据直接抛错而 2 项失败，已分别修正为文本夹具/结构化 `rejected` 且保留
 pending（859f0212）；MCP 研究首轮因合成 X 账号 16 字符不匹配保守正则而失败，补诊断
-后修正为合法账号（097c5988），最终两例通过。以上均为云端合成数据/临时目录，未向
-8420 写入测试数据。
+后修正为合法账号（097c5988）；审查修复后 CLI 上传回读夹具缺 `addedAt` 又失败 1 项，
+补齐后通过（f3942a28）。以上均为云端合成数据/临时目录，未向 8420 写入测试数据。
+
+独立只读审查（M1）发现并已修复：P1 研究 probe 不再枚举调用方 frameDir 的任意文件；
+planRef 在预算预留前解析，未决写入可核销；研究本地副作用不再进入业务未决写入。
+P2 补齐 upload 回读 `addedAt` 防预存资产误判、artifact 文本同 fd 校验防链接替换、
+模型可见预算摘要隐藏媒体名、frames 字符串上限、并发 report 快照、规则默认 full、
+`newAuthorNames` 回读；P3 同步能力图版本/工具数、分发排除日志/.env 变体、清理孤儿
+blob、STATE_DIR 绝对路径与 API base 规范化。相关回归已加入并随上述云端作业执行。
 
 未完成/受限：本机未配置 GPT-6 Luna max，独立模型盲测未执行，不以同一主代理回归冒充
 盲测；真实外部 provider/Lens 网络、真实作者原帖确证、NAS/真机、远程 Streamable HTTP
