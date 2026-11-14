@@ -63,6 +63,7 @@
 | [test_ai_pr53_fixes.py](../test_ai_pr53_fixes.py) | PR #53 安全回归：原语 partial/failed 停止与断点续跑、同文件/硬链接拒绝、安全覆盖与旧目标保留、probe 抽帧权限、Gate 范围、ADB 拉取覆盖保护（模拟 ADB）。 |
 | [test_ai_artifacts.py](../test_ai_artifacts.py) | artifactRef 回归：发布/分页读取、TTL、HMAC 篡改、同大小替换、跨凭据/实例/版本、根移除、链接/越界、容量上限、并发、probe→frame→lens 接续与 MCP 图片内容。 |
 | [test_ai_research_work.py](../test_ai_research_work.py) | `research.work` 回归：纯图/视频、无 nameHint 可开始、frame/evidence 引用接续、候选不合并、provider 受限/研究关闭降级、零业务写入与旧 author.discover 兼容。 |
+| [test_ai_mcp_research.py](../test_ai_mcp_research.py) | 真实 stdio MCP 研究回归（T01–T03）：合成图片/短视频经 MCP 抽帧、frameRefs/evidenceRef 接续、platform.artifact.read 文本/图片内容、research.lens 接受 artifactRef；云端 AI 闭环作业安装 ffmpeg 后执行，本地/缺依赖时跳过。 |
 | [test_ai_task_recovery.py](../test_ai_task_recovery.py) | 可信端恢复回归：预算账本按实例/凭据隔离、pending identity 白名单、status 只读、reconcile 幂等/并发/跨账本拒绝、renew 只增不清零、upload/author/asset 读回三态。 |
 | [test_ai_distribution.py](../test_ai_distribution.py) | 分发回归：bundle 布局、来源清单/verify、缺依赖 doctor、仓外运行、拒绝覆盖与失败无半成品。 |
 
