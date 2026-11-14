@@ -9,12 +9,14 @@ import io
 import json
 import threading
 import time
+import tempfile
 import unittest
+from pathlib import Path
 from dataclasses import replace
 from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from ai_maintenance import mcp_server, model_output, registry
+from ai_maintenance import mcp_server, model_output, registry, tools_research
 
 TOKEN = "-".join(("synthetic", "mcp", "credential"))
 
@@ -250,6 +252,25 @@ class McpProtocolTest(unittest.TestCase):
         spec = registry.get("research.media.probe")
         self.assertGreater(server._call_timeout(spec, {"timeoutSeconds": 900}), 900)
         self.assertLess(server._call_timeout(spec, {"timeoutSeconds": 100000}), 100000)
+
+    def test_research_script_failures_are_tool_errors_with_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "synthetic.mp4"
+            source.write_bytes(b"synthetic input; subprocess is stubbed")
+            server = mcp_server.McpServer(env={
+                "QIMENG_AI_GRANTED_PERMISSIONS": "read,research",
+                "QIMENG_AI_READ_ROOTS": directory, "QIMENG_AI_RESEARCH_DIR": directory})
+            for code, status in ((0, "ok"), (1, "partial"), (2, "failed"), (124, "failed")):
+                run = {"exitCode": code, "timedOut": code == 124, "elapsedMs": 1,
+                       "stdout": b"", "stderr": b"synthetic diagnostic"}
+                with patch.object(tools_research, "_execute", return_value=run):
+                    response = server._tools_call(code, {"name": "research.media.probe",
+                        "arguments": {"files": [str(source)]}}, set())["result"]
+                self.assertEqual(code != 0, response["isError"])
+                result = response["structuredContent"]["result"]
+                self.assertEqual(status, result["status"])
+                self.assertEqual(code, result["exitCode"])
+                self.assertEqual(code == 124, result["summary"]["timedOut"])
 
     def test_tool_call_timeout(self):
         def slow_execute(tool_id, payload):

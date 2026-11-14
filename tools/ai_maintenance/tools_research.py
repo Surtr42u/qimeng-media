@@ -260,6 +260,7 @@ def _result(run: dict, *, script: str, args: list, artifact_paths,
             artifact_paths = list(artifact_paths) + [log]
     artifacts = _artifacts(artifact_paths)
     return {
+        "status": "ok" if run["exitCode"] == 0 else ("partial" if run["exitCode"] == 1 else "failed"),
         "exitCode": run["exitCode"],
         "artifacts": artifacts,
         "summary": _summary(run, script=script, args=args, artifacts=artifacts,

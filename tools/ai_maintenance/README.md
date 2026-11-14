@@ -611,6 +611,7 @@ MCP传输的按需发现不代表每个宿主都会刷新；此兼容模式不�
   `build/research-kit.local/`），子进程环境剔除 `QIMENG_API_*`，研究脚本拿不到服务端 token。
 - 输入/输出路径必须是绝对路径；仓库内只允许被忽略工作根（`QIMENG_AI_RESEARCH_DIR`，
   默认 `tools/ai_maintenance/.work/research`，已忽略）。相对路径、源码树内路径直接拒绝。
+- 子进程退出码0/1/其他分别报告ok/partial/failed，MCP对非零退出码设置isError，CLI/recipe沿用失败停止；诊断和已生成工件保留。
 - 超时默认 300s、上限 900s（超时 kill 并按退出码 124 报告）；stdout/stderr 各捕获
   至多 256KiB，工具结果只返回退出码、产物 `{path,sha256,bytes}` 与有界摘要，不返回完整日志。
 - 方法学与预算（Lens 优先 → Yandex → SauceNAO；Lens 8s 间隔、SauceNAO 4 次/30s 与日上限）
