@@ -51,7 +51,7 @@ except ImportError:  # pragma: no cover - 仅在缺文件时触发
 
 
 def local_env(**extra) -> dict:
-    env = {"QIMENG_AI_OPENAPI": str(OPENAPI), "QIMENG_AI_RULES": str(RULES)}
+    env = {"QIMENG_AI_OPENAPI": str(OPENAPI), "QIMENG_AI_RULES": str(RULES), "QIMENG_AI_GRANTED_PERMISSIONS": "all", "QIMENG_AI_MCP_DISCOVERY": "full"}
     env.update({key: value for key, value in extra.items() if value is not None})
     return env
 

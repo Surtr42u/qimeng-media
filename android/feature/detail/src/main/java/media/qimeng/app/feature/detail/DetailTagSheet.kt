@@ -1,5 +1,8 @@
 package media.qimeng.app.feature.detail
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,12 +11,15 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -29,17 +35,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.TagChip
@@ -65,9 +71,6 @@ private val TAG_SECTION_TITLE_TEXT_SIZE = 13.sp
 /** ＋ 新建钮宽 52dp（U10-2 D8 拍板：旧版视觉「＋」实底主色圆钮） */
 private val TAG_ADD_BUTTON_WIDTH = 52.dp
 
-/** ＋ 字形字号 22sp（U10-2b 校正：旧版 22f MediaDetailFragment.kt:928——U10-2 曾记 20sp 系误抄） */
-private val TAG_ADD_GLYPH_TEXT_SIZE = 22.sp
-
 /** ＋ 钮与输入框间距 10dp（U10-2 D8 拍板；现成间距档 8/12dp 均不符，不硬凑） */
 private val TAG_ADD_ROW_SPACING = 10.dp
 
@@ -78,24 +81,26 @@ private val TAG_ADD_ROW_TOP_SPACING = 8.dp
  *  sheetContainer setPadding 顶 18dp——与横向 20dp 同源同处） */
 private val TAG_SHEET_CONTENT_TOP_PADDING = 18.dp
 
-/** 「其他标签」池 chip 内边距 10dp（2026-09-15 用户反馈收紧，原全局 14dp 档对齐本节视觉密度） */
-private val TAG_POOL_CHIP_PADDING = 10.dp
+/** 标签池采用较易点选的 36dp 最小高度，文字放大但不随选中改变尺寸。 */
+private val TAG_POOL_CHIP_HEIGHT = 36.dp
+private val TAG_POOL_CHIP_TEXT_SIZE = 14.sp
+
+/** 当前标签固定预留约两行，更多内容内部滚动，不挤动下方候选池。 */
+private val TAG_CURRENT_TAGS_HEIGHT = 76.dp
+
+/** 仅对颜色作短过渡，选中时不改变标签尺寸或位置。 */
+private const val TAG_SELECTION_TRANSITION_MS = 120
+
+/** 弹层保持固定高度，避免勾选摘要增长使底部锚定的整个弹层上移。 */
+private const val TAG_SHEET_HEIGHT_FRACTION = 0.8f
 
 /** 底部「取消/保存」按钮区顶距 18dp（U10-2 D9 拍板：旧版弹窗按钮区间距） */
 private val TAG_FOOTER_TOP_SPACING = 18.dp
 
 /**
- * 标签管理弹窗（LEGACY §A / Web TagDialog；自 DetailSections.kt 拆出）。U10-2 排版对齐旧版：
- * 标题 18sp Bold 居中、chip 12sp/30dp 高、弹层横向 20dp、无 dragHandle、添加行「＋」实底圆钮。
- * 「当前标签」=勾选集（实底主色 chip，ClearIcon 点击即时移除——N4 I7b 逐条删端点，失败由 VM
- * 回滚乐观态+横幅提示，D13 不动）；「其他标签」=未选池（软底 chip 点击勾选；池按服务端名字序
- * ——LEGACY §A 要求创建时间序但协议无 createdAt，名字序降级已拍板 D14；空态整区不渲染=旧版
- * GONE 语义）；新建输入框+「＋」钮（成功回调才清空输入，失败保留重试）。
- * 底部「取消/保存」双钮是 NAS 草稿整体替换模型的有意保留（不回退旧版单条即时写，D9 仅对齐
- * 顶距）。U10-2b（2026-09-14 用户反馈「标签间隔太多」）垂直空隙回收：删副标题说明行（旧版
- * 弹窗无此行，草稿模型语义由「保存」钮自身表达）、内容顶距 18dp/添加行顶距 8dp 对齐旧版
- * sheetContainer/inputRow setPadding、节间距回到分节标题自带上下 6dp 语义——chip 本体尺寸
- * 与间隙不动（8/4/30dp/14dp 与旧版一致）。
+ * 标签管理：当前标签置顶并固定内容区高度，全量候选池在其下独立滚动。
+ * 选中只改变边框与底色，无勾选图标和占位；摘要 × 仍立即解绑已有
+ * 关联，普通点选仍为保存前草稿。新建成功后清空输入，底部取消/保存沿用原流程。
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -113,7 +118,7 @@ internal fun DetailTagManageSheet(
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var draft by remember { mutableStateOf("") }
     // D11：dragHandle=null 对齐旧版弹窗无把手形态
     ModalBottomSheet(
@@ -124,7 +129,7 @@ internal fun DetailTagManageSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .fillMaxHeight(TAG_SHEET_HEIGHT_FRACTION)
                 // U10-2b：顶距 18dp=旧 sheetContainer setPadding 顶值（TAG_SHEET_CONTENT_TOP_PADDING
                 // 记档）；副标题说明行已删（用户反馈「标签间隔太多」——旧版弹窗无此行）
                 .padding(top = TAG_SHEET_CONTENT_TOP_PADDING)
@@ -134,33 +139,50 @@ internal fun DetailTagManageSheet(
                 // 底部呼吸空间与页面级留白同档（DETAIL_BOTTOM_SPACER 单源在 DetailScreen.kt）
                 .padding(bottom = DETAIL_BOTTOM_SPACER),
         ) {
-            Text(
-                text = stringResource(R.string.detail_tag_sheet_title),
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = TAG_SHEET_TITLE_TEXT_SIZE,
-                    fontWeight = FontWeight.Bold,
-                ),
-                textAlign = TextAlign.Center,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 标题下 12dp（SpaceL）保留：与旧版弹窗标题-内容间距同值，U10-2b 不动
                     .padding(bottom = QimengDimens.SpaceL),
-            )
+            ) {
+                Text(
+                    text = stringResource(R.string.detail_tag_sheet_title),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = TAG_SHEET_TITLE_TEXT_SIZE,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(R.string.detail_tag_selected_count, selectedTagIds.size),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             SheetCurrentTags(
                 pool = pool,
                 selectedTagIds = selectedTagIds,
                 onUnbindTag = onUnbindTag,
             )
-            SheetOtherTags(
-                pool = pool,
-                selectedTagIds = selectedTagIds,
-                onToggleTag = onToggleTag,
-            )
-            SheetAddTagRow(
-                draft = draft,
-                onDraftChange = { draft = it },
-                onCreateTag = onCreateTag,
-            )
+            Spacer(modifier = Modifier.height(QimengDimens.SpaceL))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                SheetTagPool(
+                    pool = pool,
+                    selectedTagIds = selectedTagIds,
+                    onToggleTag = onToggleTag,
+                )
+                SheetAddTagRow(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    onCreateTag = onCreateTag,
+                )
+            }
             SheetFooterButtons(
                 savingTags = savingTags,
                 onSave = onSave,
@@ -182,84 +204,37 @@ private fun SheetCurrentTags(
     onUnbindTag: (String) -> Unit,
 ) {
     SheetTagSection(title = stringResource(R.string.detail_tag_section_current)) {
-        val selectedChips = pool.filter { it.id in selectedTagIds }
-        if (selectedChips.isEmpty()) {
-            SheetEmptyHint()
-        } else {
-            // 2026-09-15 用户反馈「标签间距依旧没修复」收紧：横向 8→6dp（SpaceS）、
-            // 纵向 4→2dp（SpaceXXS）——U10-2b 只删了说明行未动 chip 间隙，本批落地
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
-                verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
-            ) {
-                selectedChips.forEach { chip ->
-                    DisplayPill(
-                        text = chip.name,
-                        selected = true,
-                        trailing = {
-                            Icon(
-                                imageVector = ClearIcon,
-                                contentDescription = stringResource(R.string.detail_tag_remove_selection),
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier
-                                    .padding(start = QimengDimens.SpaceS)
-                                    .size(TAG_CLEAR_ICON_SIZE)
-                                    .clickable { onUnbindTag(chip.id) },
-                            )
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * 「其他标签」分节：软底 chip=secondaryContainer（D1b——qmColorChipBg 官方映射即该槽位，
- * 文字仍 onSurfaceVariant）。空态整区不渲染（D10，旧版 GONE 语义 TagSheetHelper.kt:66——
- * 连分节标题一起跳过）。
- */
-@Composable
-private fun SheetOtherTags(
-    pool: List<TagChip>,
-    selectedTagIds: List<String>,
-    onToggleTag: (String) -> Unit,
-) {
-    // 池序 = 服务端名字序（GET /tags 恒名称升序；LEGACY 创建时间序的已拍板降级 D14）
-    val otherChips = pool.filterNot { it.id in selectedTagIds }
-    if (otherChips.isEmpty()) {
-        return
-    }
-    SheetTagSection(title = stringResource(R.string.detail_tag_section_other)) {
-        // 同上：2026-09-15 间隙收紧（8→6 / 4→2）
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
-            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TAG_CURRENT_TAGS_HEIGHT)
+                .verticalScroll(rememberScrollState()),
         ) {
-            otherChips.forEach { chip ->
-                // 2026-09-16 用户反馈「其他标签上下间隔太多，选中区是对的」根因修复：
-                // Surface(onClick=…) 会被 M3 套 48dp 最小触控目标（LocalMinimumInteractive-
-                // ComponentEnforcement），30dp chip 被隐形撑高 → 行距远大于选中区（DisplayPill
-                // 无 onClick 不受影响，故「选中的对、未选的错」）。改与 DisplayPill 同构：
-                // 普通 Surface（shape 裁剪涟漪）+ 点击挪到内容 Row，触控目标让位视觉紧凑。
-                Surface(
-                    shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
+            val selectedChips = pool.filter { it.id in selectedTagIds }
+            if (selectedChips.isEmpty()) {
+                SheetEmptyHint()
+            } else {
+                // 2026-09-15 用户反馈「标签间距依旧没修复」收紧：横向 8→6dp（SpaceS）、
+                // 纵向 4→2dp（SpaceXXS）——U10-2b 只删了说明行未动 chip 间隙，本批落地
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
+                    verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .height(QimengDimens.ChipHeight)
-                            .clickable { onToggleTag(chip.id) }
-                            // 2026-09-15 用户反馈「未选择的间距没做」：池 chip 内边距
-                            // 14→10dp 收紧（选中态带图标收尾视觉更密，池 chip 双侧 14dp
-                            // 显肥——本批与 FlowRow 间隙 6/2dp 配套的第二半）
-                            .padding(horizontal = TAG_POOL_CHIP_PADDING),
-                    ) {
-                        Text(
+                    selectedChips.forEach { chip ->
+                        DisplayPill(
                             text = chip.name,
-                            style = MaterialTheme.typography.labelLarge.merge(TagChipTextStyleOverride),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            selected = true,
+                            trailing = {
+                                Icon(
+                                    imageVector = ClearIcon,
+                                    contentDescription = stringResource(R.string.detail_tag_remove_selection),
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier
+                                        .padding(start = QimengDimens.SpaceS)
+                                        .size(TAG_CLEAR_ICON_SIZE)
+                                        .clickable { onUnbindTag(chip.id) },
+                                )
+                            },
                         )
                     }
                 }
@@ -268,13 +243,76 @@ private fun SheetOtherTags(
     }
 }
 
-/**
- * 添加行：34dp 胶囊输入框（F 批全局拍板勿动）+「＋」实底主色圆钮（D8 旧版视觉——52dp 宽、
- * 与输入行同高、100dp 圆角、22sp onPrimary 字形；enabled=空输入不可点，承自原「新建」
- * TextButton 语义）。contentDescription 承接被删除的「新建」文字的 TalkBack 语义。
- * 顶距 8dp（U10-2b：TAG_ADD_ROW_TOP_SPACING 对齐旧 inputRow setPadding 顶值，原 SpaceL 12dp 偏松）。
- * 创建成功回调才清空输入框（Web TagDialog 同款；失败保留输入供重试，错误经横幅反馈）。
- */
+/** 全量池保持名称展示顺序；点选只改变颜色和描边，不移走标签或改变尺寸。 */
+@Composable
+private fun SheetTagPool(
+    pool: List<TagChip>,
+    selectedTagIds: List<String>,
+    onToggleTag: (String) -> Unit,
+) {
+    if (pool.isEmpty()) {
+        return
+    }
+    SheetTagSection(title = stringResource(R.string.detail_tag_section_pool)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
+            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
+        ) {
+            pool.forEach { chip ->
+                key(chip.id) {
+                    val selected = chip.id in selectedTagIds
+                    val background by animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerLow,
+                        animationSpec = tween(TAG_SELECTION_TRANSITION_MS),
+                        label = "tagBackground",
+                    )
+                    val foreground by animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurface,
+                        animationSpec = tween(TAG_SELECTION_TRANSITION_MS),
+                        label = "tagForeground",
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(QimengDimens.RankCardCornerRadius),
+                        color = background,
+                        border = BorderStroke(
+                            QimengDimens.DividerThickness,
+                            if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant,
+                        ),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .heightIn(min = TAG_POOL_CHIP_HEIGHT)
+                                .toggleable(
+                                    value = selected,
+                                    role = Role.Checkbox,
+                                    onValueChange = { onToggleTag(chip.id) },
+                                )
+                                .padding(
+                                    horizontal = QimengDimens.SpaceL,
+                                    vertical = QimengDimens.SpaceS,
+                                ),
+                        ) {
+                            Text(
+                                text = chip.name,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontSize = TAG_POOL_CHIP_TEXT_SIZE,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                                color = foreground,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 新建输入框与「添加」按钮；成功回调才清空输入，失败保留重试。 */
 @Composable
 private fun SheetAddTagRow(
     draft: String,
@@ -308,8 +346,8 @@ private fun SheetAddTagRow(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
-                    text = "＋",
-                    style = TextStyle(fontSize = TAG_ADD_GLYPH_TEXT_SIZE),
+                    text = stringResource(R.string.detail_tag_create),
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
             }
@@ -351,7 +389,7 @@ private fun SheetFooterButtons(
     }
 }
 
-/** 弹窗分节标题容器（「当前标签」「其他标签」共用结构；标题 13sp Regular 次级灰，D6 旧 TagSheetHelper.kt:160-165）。
+/** 弹窗分节标题容器（「当前标签」「选择标签」共用结构；标题 13sp Regular 次级灰，D6 旧 TagSheetHelper.kt:160-165）。
  *  节顶距不设（U10-2b 移除原 SpaceL 12dp）：节间距回到「分节标题自带上下 6dp padding」语义
  *  ——旧版节间即 6dp（TagSheetHelper.kt:160-165），弹层内容顶距由外层 18dp 承担 */
 @Composable

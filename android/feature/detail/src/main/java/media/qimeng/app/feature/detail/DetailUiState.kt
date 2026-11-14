@@ -17,7 +17,7 @@ data class DetailUiState(
     val batchIndex: Int = -1,
     /** 批次清单大小（「i / N」的 N） */
     val batchSize: Int = 0,
-    /** 标签管理弹窗：全量标签池（服务端名字序）与勾选集合 */
+    /** 标签管理弹窗：全量标签池（中文拼音/数字自然展示顺序）与勾选集合；点选不重排 */
     val tagPool: List<TagChip> = emptyList(),
     val selectedTagIds: List<String> = emptyList(),
     val tagSheetOpen: Boolean = false,

@@ -29,7 +29,7 @@
 | 新功能/能力评估 | `docs/CAPABILITY_MAP.md` 对应域 + ADR 索引相关决策 |
 | 架构缘由/历史/里程碑 | `docs/adr/INDEX.md` / `docs/history/INDEX.md` / `docs/PROJECT_PLAN.md`，仅命中时读 |
 | 文档组织/维护 | `AI_README_FIRST.md`「文档维护」；完整导航见 `llms.txt` |
-| 外部AI接入平台、工具契约/CLI/MCP、受控写入 | **任务入口：`python -X utf8 tools/ai_maintenance/cli.py task <recipe>`（2–4KB 任务卡，按需加载）**；`docs/AI_PLATFORM_TASKBOOK.md`（现行执行清单）、`docs/AI_PLATFORM_AUDIT.md`、`tools/ai_maintenance/README.md`；决策见 ADR-0056（历史来源：`docs/AI_MAINTENANCE_TASKBOOK.md` 第4–6/11节、ADR-0052） |
+| 外部AI接入平台、工具契约/CLI/MCP、受控写入 | **任务入口：`python -X utf8 tools/ai_maintenance/cli.py task <recipe>`（精简任务卡，按需加载）**；`docs/AI_PLATFORM_TASKBOOK.md`（现行执行清单）、`docs/AI_PLATFORM_AUDIT.md`、`tools/ai_maintenance/README.md`；决策见 ADR-0056（历史来源：`docs/AI_MAINTENANCE_TASKBOOK.md` 第4–6/11节、ADR-0052） |
 | 维护任务队列/Worker、设备结果包、两代备份布局 | `docs/api/maintenance.md`、`docs/api/device.md`；ADR-0054/0055/0056；两代目录约定见 `docs/api/authors.md` mirror 章节 |
 | 代码/PR 审查 | 本文件「Review guidelines」；再按改动域读取上表对应专题 |
 

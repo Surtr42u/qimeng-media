@@ -55,6 +55,7 @@ class RecipeSafetyBase(unittest.TestCase):
             "QIMENG_AI_OPENAPI": str(OPENAPI),
             "QIMENG_AI_RULES": str(RULES),
             "QIMENG_AI_RECIPE_DIR": str(self.recipe_dir),
+            "QIMENG_AI_GRANTED_PERMISSIONS": "read,local.files.write",
             "QIMENG_AI_READ_ROOTS": str(self.root),
             "QIMENG_AI_WRITE_ROOTS": str(self.root),
             "QIMENG_AI_MEDIA_CACHE": str(self.root / "cache"),

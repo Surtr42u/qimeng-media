@@ -9,10 +9,14 @@ import io
 import json
 import threading
 import time
+import tempfile
 import unittest
+from pathlib import Path
+from dataclasses import replace
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from ai_maintenance import mcp_server, registry
+from ai_maintenance import mcp_server, model_output, registry, tools_research
 
 TOKEN = "-".join(("synthetic", "mcp", "credential"))
 
@@ -89,7 +93,7 @@ class McpProtocolTest(unittest.TestCase):
         cls.thread.join(timeout=5)
 
     def env(self):
-        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN}
+        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN, "QIMENG_AI_GRANTED_PERMISSIONS": "all", "QIMENG_AI_MCP_DISCOVERY": "full"}
 
     def test_stdio_client_initializes_lists_and_calls_tools(self):
         responses = SyntheticMcpClient(self.env()).run([
@@ -120,8 +124,43 @@ class McpProtocolTest(unittest.TestCase):
         self.assertFalse(context_tool["annotations"]["readOnlyHint"])
         content = call["result"]["content"][0]
         self.assertEqual("text", content["type"])
-        self.assertIn("工具状态", content["text"])
         self.assertFalse(call["result"]["isError"])
+        context_result = call["result"]["structuredContent"]["result"]
+        self.assertTrue(context_result["truncated"])
+        self.assertIn("resultRef", context_result)
+        self.assertNotIn("markdown", context_result)
+        encoded_result = json.dumps(context_result, ensure_ascii=True, separators=(",", ":"))
+        self.assertLessEqual(len(encoded_result.encode("ascii")), model_output.DEFAULT_OUTPUT_BUDGET)
+
+        # The full legacy Markdown remains available through bounded local continuation.
+        reader = DirectMcpClient(self.env())
+        reader.request({"jsonrpc": "2.0", "id": 9, "method": "initialize",
+                        "params": {"protocolVersion": "2025-06-18"}})
+        markdown_parts = []
+        cursor = None
+        for index in range(100):
+            arguments = {
+                "resultRef": context_result["resultRef"], "path": "/markdown", "limit": 500,
+            }
+            if cursor is not None:
+                arguments["cursor"] = cursor
+            read_call = reader.request({
+                "jsonrpc": "2.0", "id": 10 + index, "method": "tools/call",
+                "params": {"name": "platform.result.read", "arguments": arguments},
+            })["result"]
+            self.assertFalse(read_call["isError"], read_call)
+            page = read_call["structuredContent"]["result"]
+            self.assertLessEqual(
+                len(json.dumps(page, ensure_ascii=True, separators=(",", ":")).encode("ascii")),
+                model_output.MAX_PAGE_BYTES,
+            )
+            markdown_parts.append(page["value"])
+            cursor = page["nextCursor"]
+            if cursor is None:
+                break
+        else:
+            self.fail("result.read 未在 100 页内完成")
+        self.assertIn("工具状态", "".join(markdown_parts))
         self.assertEqual({}, ping["result"])
         self.assertNotIn(TOKEN, json.dumps(responses, ensure_ascii=False))
 
@@ -179,6 +218,61 @@ class McpProtocolTest(unittest.TestCase):
         responses = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
         self.assertEqual(-32700, responses[0]["error"]["code"])
         self.assertEqual(-32600, responses[1]["error"]["code"])
+
+    def test_default_connection_can_call_tools_without_list_refresh(self):
+        server = mcp_server.McpServer(env={}, stdout=io.StringIO(),
+            execute=lambda name, args: (registry.get(name), {"items": [], "nextCursor": None}))
+        before = server._tools_list()["tools"]
+        self.assertIn("author.query", {tool["name"] for tool in before})
+        self.assertFalse(server._initialize({})["capabilities"]["tools"]["listChanged"])
+        response = server._tools_call(1, {"name": "author.query", "arguments": {}}, set())
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(before, server._tools_list()["tools"])
+
+    def test_default_deadline_covers_long_handler_and_explicit_limit_still_applies(self):
+        original = registry.get("research.media.probe")
+        spec = replace(original, timeout_seconds=.3)
+        def execute(name, args):
+            time.sleep(.12)
+            return spec, {"exitCode": 0, "artifacts": []}
+        packet = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                  "params": {"name": spec.id, "arguments": {}}}
+        with patch.object(mcp_server, "DEFAULT_CALL_TIMEOUT_SECONDS", .02), \
+             patch.object(mcp_server, "HANDLER_COMPLETION_GRACE_SECONDS", .01), \
+             patch.object(registry, "get", return_value=spec):
+            server = mcp_server.McpServer(env={}, execute=execute)
+            self.assertFalse(server.handle_message(packet, set())["result"]["isError"])
+            capped = mcp_server.McpServer(env={}, execute=execute, timeout_seconds=.02)
+            failure = capped.handle_message(packet, set())["error"]
+            self.assertEqual(mcp_server.CALL_TIMEOUT, failure["code"])
+            self.assertTrue(failure["data"]["operationMayHaveCompleted"])
+
+    def test_declared_research_budget_includes_completion_time(self):
+        server = mcp_server.McpServer(env={})
+        spec = registry.get("research.media.probe")
+        self.assertGreater(server._call_timeout(spec, {"timeoutSeconds": 900}), 900)
+        self.assertLess(server._call_timeout(spec, {"timeoutSeconds": 100000}), 100000)
+
+    def test_research_script_failures_are_tool_errors_with_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "synthetic.mp4"
+            source.write_bytes(b"synthetic input; subprocess is stubbed")
+            server = mcp_server.McpServer(env={
+                "QIMENG_AI_GRANTED_PERMISSIONS": "read,research",
+                "QIMENG_AI_READ_ROOTS": directory, "QIMENG_AI_RESEARCH_DIR": directory})
+            for code, status in ((0, "ok"), (1, "partial"), (2, "failed"), (124, "failed")):
+                run = {"exitCode": code, "timedOut": code == 124, "elapsedMs": 1,
+                       "stdout": b"", "stderr": b"synthetic diagnostic"}
+                with patch.object(tools_research, "_execute", return_value=run):
+                    response = server._tools_call(code, {"name": "research.media.probe",
+                        "arguments": {"files": [str(source)]}}, set())["result"]
+                self.assertEqual(code != 0, response["isError"])
+                self.assertEqual(response["structuredContent"]["status"],
+                                 json.loads(response["content"][0]["text"])["status"])
+                result = response["structuredContent"]["result"]
+                self.assertEqual(status, result["status"])
+                self.assertEqual(code, result["exitCode"])
+                self.assertEqual(code == 124, result["summary"]["timedOut"])
 
     def test_tool_call_timeout(self):
         def slow_execute(tool_id, payload):

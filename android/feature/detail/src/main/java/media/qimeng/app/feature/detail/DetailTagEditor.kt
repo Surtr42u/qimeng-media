@@ -21,7 +21,7 @@ internal class DetailTagEditor(
                 .onSuccess { pool ->
                     _uiState.value = _uiState.value.copy(
                         tagSheetOpen = true,
-                        tagPool = pool,
+                        tagPool = orderDetailTags(pool),
                         selectedTagIds = asset.tags.map { it.id },
                     )
                 }
@@ -121,7 +121,7 @@ internal class DetailTagEditor(
                         tagPool = if (current.tagPool.any { it.id == chip.id }) {
                             current.tagPool
                         } else {
-                            current.tagPool + chip
+                            orderDetailTags(current.tagPool + chip)
                         },
                         selectedTagIds = (current.selectedTagIds + chip.id).distinct(),
                         errorMessage = null,

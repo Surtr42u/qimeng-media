@@ -33,6 +33,8 @@ def _base_env(workspace: Path, *, extra_roots: bool = True, storages: bool = Tru
         "QIMENG_AI_RULES": str(RULES),
         "QIMENG_AI_OPENAPI": str(OPENAPI),
         "QIMENG_AI_MEDIA_CACHE": str(workspace / "cache"),
+        "QIMENG_AI_GRANTED_PERMISSIONS": "all",
+        "QIMENG_AI_MCP_DISCOVERY": "full",
     }
     if storages:
         env["QIMENG_AI_STORAGES"] = "downloads=" + str(workspace / "storage")

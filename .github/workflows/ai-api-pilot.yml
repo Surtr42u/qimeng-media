@@ -27,6 +27,12 @@ jobs:
         with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with: { python-version: '3.13' }
+      - name: 安装 ffmpeg（MCP 研究抽帧回归依赖）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
       - name: 同 revision 的 Go 接口与隔离服务
         working-directory: server
         run: |

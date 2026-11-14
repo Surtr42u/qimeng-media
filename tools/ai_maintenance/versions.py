@@ -13,10 +13,15 @@
 from __future__ import annotations
 
 # 工具包发行版本（语义化版本）。
+# 1.7.1（2026-11-15）：审查修复（研究产物不枚举任意目录、planRef 预留前解析、
+# 本地研究副作用不进入业务未决写入、artifact 文本 fd 校验/孤儿清理等）。
+# 1.7.0（2026-11-14）：纯素材作品研究、artifactRef 受控研究产物、可信端
+# 未决写入核销/预算续期入口与可移植分发工具包。
+# 1.6.0（2026-11-14）：默认只读、任务授权/会话预算、MCP惰性发现与有界续读。
 # 1.5.0（2026-11-12）：上传/扫描接线，命名按图片/视频分序与计划版本校验。
 # 1.4.1（2026-11-10）：PR #53 合并前安全修复（原语 partial/failed、覆盖/同文件
 # 保护、ADB 拉取、probe 条件副作用、Gate 范围）；工具契约版本保持 1.4.0。
-PLATFORM_VERSION = "1.5.0"
+PLATFORM_VERSION = "1.7.1"
 
 # 工具契约版本（工具 ID/Schema/错误语义）。
 # 1.1.0（2026-11-08）：新增外部执行器控制面、设备结果包、备份导出、研究工具族
@@ -30,8 +35,11 @@ PLATFORM_VERSION = "1.5.0"
 # 1.4.0（2026-11-10）：新增 files.storages/files.search 本地文件发现（不透明
 # fileRef）、research.media.probe 的 fileRefs 输入、local.files.write/local.device
 # 权限与 PATH_*/FILE_REF_*/RECIPE_* 错误码；可用性维度拆分为 availability。
-# 工具 ID 与权限面扩展属于契约变化，旧计划必须用当前工具包重新 prepare。
-TOOL_CONTRACT_VERSION = "1.5.0"
+# 2.1.0（2026-11-14）：新增 research.work、platform.artifact.read 与
+# researchArtifacts 规则；research.lens/research.image.search 接受 artifactRef/
+# jobsRef，research.media.probe 输出 frameRefs/artifactRefs。工具 ID 与权限面
+# 扩展属于契约变化，旧计划必须用当前工具包重新 prepare。
+TOOL_CONTRACT_VERSION = "2.1.0"
 
 # 规则包（rules.json 与生成物）的 Schema 版本。
 RULEPACK_SCHEMA_VERSION = 2

@@ -118,7 +118,7 @@ class StubCase(unittest.TestCase):
         StubHandler.seen = []
 
     def env(self, base=None):
-        return {"QIMENG_API_BASE": base or self.base, "QIMENG_API_TOKEN": TOKEN}
+        return {"QIMENG_API_BASE": base or self.base, "QIMENG_API_TOKEN": TOKEN, "QIMENG_AI_GRANTED_PERMISSIONS": "all", "QIMENG_AI_MCP_DISCOVERY": "full"}
 
     def call(self, tool_id, payload, base=None):
         env = self.env(base)

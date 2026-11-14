@@ -451,6 +451,7 @@ class ApiRequirement:
     body_required: bool | None = None
     parameters: tuple[str, ...] = ()
     required_parameters: tuple[str, ...] = ()
+    body_properties: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -490,7 +491,7 @@ def check_requirement(document: Document, requirement: ApiRequirement) -> CheckR
                            "OpenAPI 路径 " + requirement.path + " 缺少 " + method.upper() + " 方法", requirement)
 
     body = operation.request_body
-    needs_body = bool(requirement.request_schema or requirement.required_body_fields
+    needs_body = bool(requirement.request_schema or requirement.required_body_fields or requirement.body_properties
                       or requirement.body_required is not None)
     if needs_body:
         if body is None:
@@ -519,6 +520,10 @@ def check_requirement(document: Document, requirement: ApiRequirement) -> CheckR
         if missing:
             return CheckResult("incompatible", "required_field_missing",
                                "schema 必需字段缺失：" + ", ".join(missing), requirement)
+        missing_properties = [field for field in requirement.body_properties if field not in schema_properties]
+        if missing_properties:
+            return CheckResult("incompatible", "body_property_missing",
+                               "schema 未声明工具使用字段：" + ", ".join(missing_properties), requirement)
         undeclared = [field for field in requirement.required_body_fields if field not in schema_properties]
         if undeclared:
             return CheckResult("incompatible", "required_field_not_in_properties",

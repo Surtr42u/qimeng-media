@@ -14,7 +14,7 @@ def _library(ctx, library_id):
     for library in libraries:
         if library.get("id") == library_id:
             return library
-    raise errors.precondition_failed("目标库不存在")
+    raise errors.precondition_failed("目标库不存在", mutation_rejected=True)
 
 
 def _source(ctx, source):
@@ -69,20 +69,20 @@ def asset_upload(ctx, payload):
     library_id = plan["target"]["library"]["id"]
     library = _library(ctx, library_id)
     if plans.digest(library.get("rootPath")) != plan["libraryRootDigest"]:
-        raise errors.precondition_failed("目标库根已变化，请重新 prepare")
+        raise errors.precondition_failed("目标库根已变化，请重新 prepare", mutation_rejected=True)
     path = _source(ctx, plan["source"])
     sha256, size = pathguard.sha256_file(path, root=path.parent)
     info = path.stat()
     if sha256 != plan["sha256"] or info.st_mtime_ns != plan["sourceMtimeNs"]:
-        raise errors.precondition_failed("源内容/时间已变化，请重新 prepare")
+        raise errors.precondition_failed("源内容/时间已变化，请重新 prepare", mutation_rejected=True)
     change = plan["changes"][0]
     upload_id = plan["operationId"]
     if _source(ctx, plan["source"]) != path:
-        raise errors.precondition_failed("源路径在上传前发生变化")
+        raise errors.precondition_failed("源路径在上传前发生变化", mutation_rejected=True)
     with path.open("rb") as stream:
         opened = os.fstat(stream.fileno())
         if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != (info.st_dev, info.st_ino, size, info.st_mtime_ns):
-            raise errors.precondition_failed("源文件在打开前被替换")
+            raise errors.precondition_failed("源文件在打开前被替换", mutation_rejected=True)
         saved = ctx.client.upload("/api/v1/assets/upload", stream, length=size,
                                   query={"libraryId": library_id, "dir": change["directory"],
                                          "filename": change["fileName"], "uploadId": upload_id,

@@ -576,7 +576,7 @@ class DetailViewModelTest {
     fun `标签流 - 拉池选中即时勾选新建入池保存重拉详情`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeDetailRepository().apply {
             detailResult = detail("b", tags = listOf(DetailTag("t1", "甲")))
-            tagPool = listOf(TagChip("t1", "甲"), TagChip("t2", "乙"))
+            tagPool = listOf(TagChip("t2", "乙"), TagChip("t1", "甲"))
             createTagResult = TagChip("t3", "新")
         }
         val vm = viewModel(repo)
@@ -595,12 +595,13 @@ class DetailViewModelTest {
         assertEquals(listOf("t1", "t2"), vm.uiState.value.selectedTagIds)
         vm.toggleTagSelection("t1")
         assertEquals(listOf("t2"), vm.uiState.value.selectedTagIds)
+        assertEquals(listOf("t1", "t2"), vm.uiState.value.tagPool.map { it.id })
 
         // 新建入池且选中
         vm.createAndSelectTag("  新  ")
         advanceUntilIdle()
         assertEquals("新", repo.createdTagNames.single()) // trim 后发请求
-        assertEquals(3, vm.uiState.value.tagPool.size)
+        assertEquals(listOf("t1", "t3", "t2"), vm.uiState.value.tagPool.map { it.id })
         assertTrue("t3" in vm.uiState.value.selectedTagIds)
 
         // 保存：PUT 载荷=勾选集；成功后重新 GET 详情、关弹窗

@@ -15,7 +15,8 @@ class ToolError(Exception):
     """工具层可分类错误；code 稳定，message 面向人，recovery 可执行。"""
 
     def __init__(self, code: str, message: str, *, category: str = "tool",
-                 exit_code: int = 2, recovery: str = "", details=None):
+                 exit_code: int = 2, recovery: str = "", details=None,
+                 mutation_rejected: bool = False):
         super().__init__(message)
         self.code = code
         self.message = message
@@ -23,6 +24,7 @@ class ToolError(Exception):
         self.exit_code = exit_code
         self.recovery = recovery
         self.details = details
+        self.mutation_rejected = mutation_rejected
 
     def to_dict(self) -> dict:
         payload = {
@@ -34,6 +36,9 @@ class ToolError(Exception):
             payload["recovery"] = self.recovery
         if self.details is not None:
             payload["details"] = self.details
+        if getattr(self, "operation_may_have_completed", False):
+            payload["operationMayHaveCompleted"] = True
+            payload["recovery"] = "写入可能已发生；按原操作ID回读，勿换ID或盲目重试。"
         return payload
 
 
@@ -113,6 +118,7 @@ def lease_lost(tool_id: str, job_id: str = "", details=None) -> ToolError:
         exit_code=1,
         recovery="重新 claim 取得新 leaseToken 后再续租/写步骤/回传终态；旧 token 的写入不会被接受。",
         details=payload or None,
+        mutation_rejected=True,
     )
 
 
@@ -189,6 +195,172 @@ def file_ref_unavailable(message: str = "fileRef 的 storage 未配置", details
         category="config",
         exit_code=2,
         recovery="检查 QIMENG_AI_STORAGES 是否仍配置该 storageId；错误只列变量名/ID，不回显物理路径。",
+        details=details,
+    )
+
+
+def artifact_ref_invalid(message: str = "artifactRef 格式非法", details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_REF_INVALID",
+        message,
+        category="usage",
+        exit_code=2,
+        recovery="重新执行发布该产物的研究步骤获取新 artifactRef；不要手工拼接或修改。",
+        details=details,
+    )
+
+
+def artifact_not_found(message: str = "artifactRef 不存在或已过期", details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_NOT_FOUND",
+        message,
+        category="local_result",
+        exit_code=2,
+        recovery=(
+            "artifactRef 只在其发布时的实例/凭据与状态根内有效；跨实例、跨凭据、"
+            "已过期或已清理时重新执行研究步骤，不要猜测路径。"
+        ),
+        details=details,
+    )
+
+
+def artifact_binding_mismatch(message: str = "artifactRef 与当前上下文不匹配",
+                              details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_BINDING_MISMATCH",
+        message,
+        category="conflict",
+        exit_code=1,
+        recovery="实例、凭据、工具契约或规则版本已变化；重新执行研究步骤生成新引用。",
+        details=details,
+    )
+
+
+def artifact_expired(message: str = "artifactRef 已过期", details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_EXPIRED",
+        message,
+        category="conflict",
+        exit_code=1,
+        recovery="重新执行研究步骤生成新 artifactRef；不要尝试延长旧引用。",
+        details=details,
+    )
+
+
+def artifact_tampered(message: str = "artifactRef 完整性校验失败", details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_TAMPERED",
+        message,
+        category="verification",
+        exit_code=1,
+        recovery="停止使用该引用；重新执行研究步骤生成新 artifactRef，并排查状态目录写入者。",
+        details=details,
+    )
+
+
+def artifact_content_changed(message: str = "artifactRef 指向的产物已变化",
+                             details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_CONTENT_CHANGED",
+        message,
+        category="conflict",
+        exit_code=1,
+        recovery="产物被删除或被替换；重新执行对应研究步骤，不要复用旧引用。",
+        details=details,
+    )
+
+
+def artifact_root_unavailable(message: str = "artifactRef 绑定的授权根不可用",
+                              details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_ROOT_UNAVAILABLE",
+        message,
+        category="permission",
+        exit_code=2,
+        recovery=(
+            "由可信执行端确认 QIMENG_AI_MEDIA_ROOTS / QIMENG_AI_READ_ROOTS / "
+            "QIMENG_AI_WRITE_ROOTS 仍包含原授权根；根移除后重新执行研究步骤。"
+        ),
+        details=details,
+    )
+
+
+def artifact_path_unsafe(message: str = "产物路径不安全", details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_PATH_UNSAFE",
+        message,
+        category="usage",
+        exit_code=2,
+        recovery="只发布授权根内的普通文件；拒绝链接/junction/reparse、目录与越界路径。",
+        details=details,
+    )
+
+
+def artifact_too_large(message: str = "产物超过大小上限", details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_TOO_LARGE",
+        message,
+        category="usage",
+        exit_code=2,
+        recovery="缩小产物（例如降低帧尺寸或减少 JSONL 行数）后重新发布。",
+        details=details,
+    )
+
+
+def artifact_store_limit(message: str = "产物引用缓存达到限制", details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_STORE_LIMIT",
+        message,
+        category="local_result",
+        exit_code=2,
+        recovery="等待旧引用过期（默认 24 小时）或减少发布数量；不要删除真实原件。",
+        details=details,
+    )
+
+
+def artifact_store_unavailable(message: str = "产物引用存储不可用",
+                               details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_STORE_UNAVAILABLE",
+        message,
+        category="local_result",
+        exit_code=2,
+        recovery="检查 QIMENG_AI_STATE_DIR 是否可写、是否被其他进程长时间占用；不要回显 token。",
+        details=details,
+    )
+
+
+def artifact_store_invalid(message: str = "产物引用存储校验失败", details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_STORE_INVALID",
+        message,
+        category="local_result",
+        exit_code=2,
+        recovery="检查状态目录未被链接替换或手工修改；必要时重新执行研究步骤。",
+        details=details,
+    )
+
+
+def artifact_context_invalid(message: str = "缺少处理产物引用的可信上下文",
+                             details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_CONTEXT_INVALID",
+        message,
+        category="config",
+        exit_code=2,
+        recovery="检查 QIMENG_API_BASE / QIMENG_API_TOKEN；引用必须绑定原实例与凭据。",
+        details=details,
+    )
+
+
+def artifact_content_too_large(message: str = "产物内联内容超过上限",
+                               details=None) -> ToolError:
+    return ToolError(
+        "ARTIFACT_CONTENT_TOO_LARGE",
+        message,
+        category="usage",
+        exit_code=2,
+        recovery="缩小图片或分批读取文本；不要请求无界内容。",
         details=details,
     )
 
@@ -298,7 +470,7 @@ def plan_version_mismatch(details: dict) -> ToolError:
     )
 
 
-def precondition_failed(message: str, details=None) -> ToolError:
+def precondition_failed(message: str, details=None, *, mutation_rejected=False) -> ToolError:
     return ToolError(
         "PRECONDITION_FAILED",
         message,
@@ -306,6 +478,7 @@ def precondition_failed(message: str, details=None) -> ToolError:
         exit_code=1,
         recovery="重新读取目标现状并重新 prepare；不要覆盖或盲目重试。",
         details=details,
+        mutation_rejected=mutation_rejected,
     )
 
 

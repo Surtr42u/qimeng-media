@@ -27,6 +27,11 @@
 
 ## 开发与验证
 
+作者AI查询使用正式 `GET /api/v1/authors/query`：SQL执行显示名/ID检索与稳定keyset
+分页，默认20条、最多100条，游标绑定过滤词；紧凑结果避免关联聚合和客户端全量
+筛选。旧 `/authors` 数组接口仍服务既有客户端。协议与语义见[作者专题](../docs/api/authors.md)，
+生成来源与实际验证状态见 HANDOVER；查询代码依旧由固定版本sqlc云端生成。
+
 作者离线头像随附属档案持久化，普通资料JSON排除图片正文；v2作者段可传输已下载图片，并为来源相同的既有档案补图。认证头像接口优先读本地图，头像来源变更同时清图。预算、幂等和旧备份兼容见[迁移专题](../docs/domain/migration.md#作者公开档案)。
 
 作者公开档案由`internal/creatorprofile`承接，HTTP只适配协议、main显式装配与取消收齐维护任务。复用kv_settings独立JSON键，0021删除资料、0022推进独立持久版本墓碑，避免删除后同ID重建的迟到写入；无既有索引变化。刷新只产生待审候选，RSS/Atom才可追踪动态；认证头像代理和请求预算见[安全专题](../docs/SECURITY.md#作者公开资料出站访问)，协议/备份见[作者API](../docs/api/authors.md#作者公开档案与维护)。HTML解析采用[官方HTML5 tokenizer](https://pkg.go.dev/golang.org/x/net@v0.59.0/html)，沿用依赖图版本v0.59.0，不升级crypto/sys；不以XML或自造正则解析网页。公开页不等于平台API，不承诺受限资料可读。

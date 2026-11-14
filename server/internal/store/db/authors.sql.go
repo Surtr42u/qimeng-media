@@ -467,6 +467,109 @@ func (q *Queries) RenameAssetAuthors(ctx context.Context, arg RenameAssetAuthors
 	return result.RowsAffected()
 }
 
+const searchAuthorsAfterCursor = `-- name: SearchAuthorsAfterCursor :many
+SELECT au.id, au.display_name, au.type
+FROM authors au
+WHERE (?1 = ''
+       OR instr(lower(au.display_name), lower(?1)) > 0
+       OR instr(lower(au.id), lower(?1)) > 0)
+  AND (au.display_name COLLATE BINARY > ?2 COLLATE BINARY
+       OR (au.display_name COLLATE BINARY = ?2 COLLATE BINARY
+           AND au.id COLLATE BINARY > ?3 COLLATE BINARY))
+ORDER BY au.display_name COLLATE BINARY ASC, au.id COLLATE BINARY ASC
+LIMIT ?4
+`
+
+type SearchAuthorsAfterCursorParams struct {
+	Query      interface{}
+	CursorName string
+	CursorID   string
+	PageLimit  int64
+}
+
+type SearchAuthorsAfterCursorRow struct {
+	ID          string
+	DisplayName string
+	Type        string
+}
+
+func (q *Queries) SearchAuthorsAfterCursor(ctx context.Context, arg SearchAuthorsAfterCursorParams) ([]SearchAuthorsAfterCursorRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchAuthorsAfterCursor,
+		arg.Query,
+		arg.CursorName,
+		arg.CursorID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchAuthorsAfterCursorRow
+	for rows.Next() {
+		var i SearchAuthorsAfterCursorRow
+		if err := rows.Scan(&i.ID, &i.DisplayName, &i.Type); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchAuthorsFirstPage = `-- name: SearchAuthorsFirstPage :many
+SELECT au.id, au.display_name, au.type
+FROM authors au
+WHERE (?1 = ''
+       OR instr(lower(au.display_name), lower(?1)) > 0
+       OR instr(lower(au.id), lower(?1)) > 0)
+ORDER BY au.display_name COLLATE BINARY ASC, au.id COLLATE BINARY ASC
+LIMIT ?2
+`
+
+type SearchAuthorsFirstPageParams struct {
+	Query     interface{}
+	PageLimit int64
+}
+
+type SearchAuthorsFirstPageRow struct {
+	ID          string
+	DisplayName string
+	Type        string
+}
+
+// SearchAuthorsFirstPage / SearchAuthorsAfterCursor: bounded AI author lookup.
+// Search is a literal substring on display_name or id. SQLite lower() folds
+// ASCII letters only; the API documents that non-ASCII matching is exact.
+// The binary (display_name, id) order is deterministic even for duplicate names.
+// The Go handler asks for page_limit+1 rows to detect a next cursor.
+func (q *Queries) SearchAuthorsFirstPage(ctx context.Context, arg SearchAuthorsFirstPageParams) ([]SearchAuthorsFirstPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchAuthorsFirstPage, arg.Query, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchAuthorsFirstPageRow
+	for rows.Next() {
+		var i SearchAuthorsFirstPageRow
+		if err := rows.Scan(&i.ID, &i.DisplayName, &i.Type); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setAuthorFollow = `-- name: SetAuthorFollow :execrows
 UPDATE authors SET followed = ? WHERE id = ?
 `

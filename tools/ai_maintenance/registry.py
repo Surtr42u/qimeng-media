@@ -186,6 +186,18 @@ COMMON_ERROR_CODES = (
      "recovery": "停止后续写入，重新读取核对差异并把已执行步骤交人工处理。"},
     {"code": "INTERNAL_ERROR", "category": "internal", "exitCode": 1,
      "recovery": "工具缺陷；保留输入与错误详情，不要重复写入。"},
+    {"code": "AUTHORIZATION_EXPIRED", "category": "permission", "exitCode": 2,
+     "recovery": "由可信执行端核对任务授权有效期，模型不能自授。"},
+    {"code": "AUTHORIZATION_MISMATCH", "category": "permission", "exitCode": 2,
+     "recovery": "核对实例、工具与参数范围；confirm 或指纹不能扩大权限。"},
+    {"code": "TASK_BUDGET_EXHAUSTED", "category": "budget", "exitCode": 2,
+     "recovery": "保留已完成结果；可信执行端决定是否为同任务增加预算。"},
+    {"code": "TASK_NO_PROGRESS", "category": "budget", "exitCode": 2,
+     "recovery": "相同请求无新结果，停止循环并报告缺失条件。"},
+    {"code": "TASK_BUDGET_UNAVAILABLE", "category": "budget", "exitCode": 2,
+     "recovery": "核对预算记录及已有结果；不换操作ID盲目重试写入。"},
+    {"code": "TASK_OPERATION_PENDING", "category": "budget", "exitCode": 2,
+     "recovery": "前一写操作仍未决：先等待或按原操作ID回读，由可信端核销后继续。"},
 )
 
 
@@ -204,6 +216,9 @@ class ToolSpec:
     permission: str = "read"
     read_only: bool = True
     side_effects: bool = False
+    # 只有会改变业务状态的副作用才进入持久未决写入/核销；研究抽帧、本地证据等
+    # 只写本机派生文件，失败不得阻断后续业务写入。
+    business_side_effects: bool = True
     requires_confirmation: bool = False
     confirmation_mode: str = "none"  # none / always / conditional
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
@@ -261,12 +276,14 @@ def _boolean(description: str = "", default: bool | None = None) -> dict:
 
 
 def _req(path: str, method: str, *, schema: str | None = None, fields=(),
-         parameters=(), required_parameters=(), body_required: bool | None = None) -> openapi.ApiRequirement:
+         parameters=(), required_parameters=(), body_required: bool | None = None,
+         body_properties=()) -> openapi.ApiRequirement:
     return openapi.ApiRequirement(path=path, method=method, request_schema=schema,
                                   required_body_fields=tuple(fields),
                                   body_required=body_required,
                                   parameters=tuple(parameters),
-                                  required_parameters=tuple(required_parameters))
+                                  required_parameters=tuple(required_parameters),
+                                  body_properties=tuple(body_properties))
 
 
 _PROFILE_OBJECT_SCHEMA = {
@@ -296,7 +313,7 @@ _PROFILE_OBJECT_SCHEMA = {
     },
 }
 
-_PLAN_REF = {"type": "object", "description": "prepare 工具返回的 plan 原样传入（禁止手工修改）"}
+_PLAN_REF = {"type": "object", "description": "只接受完整未脱敏的原 plan；优先传 planRef，不提交 planSummary/预览或手工重造计划"}
 
 _EVIDENCE_SCHEMA = {"type": "array", "maxItems": 20,
                     "items": _string("证据/来源引用（URL 或占位描述）", maximum=2000)}
@@ -330,6 +347,61 @@ _RESEARCH_OUTPUT = _schema({
     "summary": {"type": "object", "additionalProperties": True,
                 "description": "有界摘要（退出码/耗时/stdout 尾/工件路径），不含完整 stdout"},
 }, required=("exitCode", "artifacts", "summary"), additional=True)
+
+# research.work 的稳定输出：候选/作品来源/证据/排除/未解决条件均为有界数组；
+# status=ok 只表示研究流程完成，不表示作者已确认（candidates 恒 unconfirmed）。
+_RESEARCH_WORK_OUTPUT = _schema({
+    "status": {"type": "string", "enum": ["ok", "partial", "unresolved", "failed"]},
+    "summary": _string("研究结论摘要（ok 只表示流程完成，不表示作者已确认）"),
+    "media": {"type": "object", "additionalProperties": True,
+              "description": "媒体摘要：类型/字节/尺寸/时长/dHash 状态；不含本机路径"},
+    "research": {"type": "object", "additionalProperties": True,
+                 "description": "研究启停、sidecar 状态、provider 矩阵与限额摘要"},
+    "lens": {"type": "object", "additionalProperties": True,
+             "description": "Lens 尝试状态与计数；links 为空不等于失败"},
+    "frames": {"type": "array", "maxItems": 8,
+               "items": {"type": "object", "additionalProperties": True},
+               "description": "采样帧元数据（百分比/seek/摘要），不含路径"},
+    "frameRefs": {"type": "array", "maxItems": 8,
+                  "items": {"type": "object", "additionalProperties": True},
+                  "description": "已发布的帧 artifactRef，可直接接续识图工具"},
+    "candidates": {"type": "array", "maxItems": 20,
+                   "items": {"type": "object", "additionalProperties": True},
+                   "description": "候选作者；全部 verification=unconfirmed"},
+    "workSources": {"type": "array", "maxItems": 20,
+                    "items": {"type": "object", "additionalProperties": True},
+                    "description": "作品/帖子来源与平台稳定 ID/URL"},
+    "evidence": {"type": "array", "maxItems": 40,
+                 "items": {"type": "object", "additionalProperties": True},
+                 "description": "采用的证据；strength 仅 weak/medium"},
+    "excluded": {"type": "array", "maxItems": 20,
+                 "items": {"type": "object", "additionalProperties": True},
+                 "description": "有具体信号的排除项及原因"},
+    "unresolved": {"type": "array", "maxItems": 20,
+                   "items": _string("未解决条件", 1, 500)},
+    "nextActions": {"type": "array", "maxItems": 20,
+                    "items": _string("下一步动作", 1, 500)},
+    "limitations": {"type": "array", "maxItems": 20,
+                    "items": {"type": "object", "additionalProperties": True},
+                    "description": "研究关闭/依赖缺失/provider 受限/网络失败等降级原因"},
+    "queries": {"type": "array", "maxItems": 5,
+                "items": {"type": "object", "additionalProperties": True},
+                "description": "文字线索 provider 查询状态（不回显完整请求）"},
+    "artifactRefs": {"type": "array", "maxItems": 50,
+                     "items": {"type": "object", "additionalProperties": True},
+                     "description": "完整研究证据与帧的受控引用"},
+    "artifactRefStatus": {"type": "object", "additionalProperties": True,
+                          "description": "artifactRef 发布状态；不可用时明确报告"},
+    "evidenceRef": _string("完整研究证据的 artifactRef；空串表示未发布成功", 0, 64),
+    "businessWrites": {"type": "integer", "const": 0},
+    "writePhase": {"type": "string", "const": "not_started"},
+    "confirmed": {"type": "boolean", "const": False},
+    "truncated": _boolean("候选/证据是否因输出上限被截断"),
+}, required=("status", "summary", "media", "research", "frames", "frameRefs",
+             "candidates", "workSources", "evidence", "excluded", "unresolved",
+             "nextActions", "limitations", "queries", "artifactRefs",
+             "artifactRefStatus", "evidenceRef", "businessWrites", "writePhase",
+             "confirmed", "truncated"), additional=True)
 
 
 def _cleanup_actions_schema() -> dict:
@@ -426,6 +498,7 @@ TOOLS: tuple[ToolSpec, ...] = (
             "cursor": _string("分页游标 nextCursor"),
             "q": _string("全文搜索"),
             "libraryId": {"type": "string"},
+            "authorId": _string("按已查询到的作者ID过滤其关联文件，避免全库取回后筛选", 1, 512),
             "mediaType": {"type": "string", "enum": ["image", "animated_image", "video"]},
             "sort": {"type": "string", "enum": ["default", "fileDate", "addedDate",
                                                 "viewCount", "playCount", "sizeBytes",
@@ -434,19 +507,23 @@ TOOLS: tuple[ToolSpec, ...] = (
             "page": _integer("客户端便利取页（1..50，不发送 page 参数）", 1, 50),
         }),
         output_schema=_QUERY_OUTPUT,
-        requirements=(_req("/api/v1/assets", "GET", parameters=("limit", "cursor")),),
+        requirements=(_req("/api/v1/assets", "GET", parameters=("limit", "cursor", "authorId")),),
     ),
     ToolSpec(
-        id="author.query", version="1.1.0", kind="query",
-        description="GET /api/v1/authors；page/size 为客户端切片，name 按显示名/ID 子串过滤（不区分大小写）。",
+        id="author.query", version="1.2.0", kind="query",
+        description="GET /api/v1/authors/query；默认20条，使用 cursor 续页。q 按显示名/ID 子串过滤（ASCII 大小写不敏感，非 ASCII 区分大小写）；旧 name/page/size 仍接受，page 通过有界游标请求定位。",
         handler_ref="ai_maintenance.tools_query:author_query", permission="read",
         input_schema=_schema({
-            "page": _integer("页码，从 1 开始", 1),
-            "size": _integer("每页数量", 1, 1000),
-            "name": _string("按显示名/ID 子串过滤（用于未知作者查重）", 1, 200),
+            "q": _string("按显示名/ID 子串过滤（未知作者查重）；ASCII 大小写不敏感", 0, 200),
+            "cursor": _string("上一页返回的 nextCursor", maximum=4096),
+            "limit": _integer("每页数量，默认20", 1, 100, 20),
+            "page": _integer("兼容页码便利参数，从 1 开始，最多请求50页", 1, 50),
+            "size": _integer("兼容每页数量别名；与 limit 不能同时提供", 1, 100),
+            "name": _string("兼容旧参数，等同 q；与 q 不能同时提供", 0, 200),
         }),
-        output_schema=_LIST_OUTPUT,
-        requirements=(_req("/api/v1/authors", "GET"),),
+        output_schema=_QUERY_OUTPUT,
+        requirements=(_req("/api/v1/authors/query", "GET",
+                            parameters=("q", "limit", "cursor")),),
     ),
     ToolSpec(
         id="author.create", version="1.0.0", kind="write",
@@ -535,14 +612,16 @@ TOOLS: tuple[ToolSpec, ...] = (
         runtime_checks=("research.enabled（研究关闭时查询 503 RESEARCH_DISABLED）",),
     ),
     ToolSpec(
-        id="research.lens", version="1.0.0", kind="query",
-        description="POST /api/v1/research/lens：multipart 图片反查代理（需本机 sidecar；links 为空不代表失败）。",
+        id="research.lens", version="1.1.0", kind="query",
+        description="POST /api/v1/research/lens：multipart 图片反查代理（需本机 sidecar；links 为空不代表失败）；接受本地路径或 artifactRef。",
         handler_ref="ai_maintenance.tools_query:research_lens", permission="research", timeout_seconds=LENS_TOOL_TIMEOUT_SECONDS,
-        input_schema=_schema({"file": _string("本地图片路径（.jpg/.jpeg/.png/.webp，≤20MiB）", 1)},
-                             required=("file",)),
+        input_schema=_schema({"file": _string("本地图片路径（.jpg/.jpeg/.png/.webp，≤20MiB；与 artifactRef 二选一）", 1),
+                              "artifactRef": _string("研究产物引用（抽帧/截图）；与 file 只能提供一个", 1, 64)},
+                             required=()),
         output_schema=_QUERY_OUTPUT,
         requirements=(_req("/api/v1/research/lens", "POST", body_required=True),),
-        runtime_checks=("research.enabled 与 sidecar 可用性（服务端 503/504 表达）",),
+        runtime_checks=("research.enabled 与 sidecar 可用性（服务端 503/504 表达）",
+                        "file 与 artifactRef 必须且只能提供一个；artifactRef 由研究工具发布"),
     ),
     ToolSpec(
         id="author.profile.prepare", version="1.0.0", kind="plan",
@@ -668,6 +747,30 @@ TOOLS: tuple[ToolSpec, ...] = (
                       _req("/api/v1/assets/{assetId}/authors", "PUT",
                            schema="AssetAuthorsReplaceRequest", fields=("authorIds",),
                            body_required=True)),
+    ),
+    ToolSpec(
+        id="asset.rename.prepare", version="1.0.0", kind="plan",
+        description="精确修改单个常规资产文件名的只读计划：保留空格、不追加编号、留在原目录；批量编号请用 media.organize。",
+        handler_ref="ai_maintenance.tools_rename:asset_rename_prepare", permission="media.organize",
+        input_schema=_schema({"assetId": _string("资产ID", 1, 512),
+                              "newName": _string("完整目标文件名（含扩展名），精确保留内部空格", 1, 255)},
+                             required=("assetId", "newName")),
+        output_schema=_PLAN_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/assets/{assetId}", "GET"),
+                      _req("/api/v1/assets/{assetId}/move", "POST", schema="MoveRequest",
+                           fields=("targetDir",), body_properties=("newName",), body_required=True)),
+    ),
+    ToolSpec(
+        id="asset.rename.apply", version="1.0.0", kind="write",
+        description="执行单文件精确改名计划并回读；保留资产ID和关联，不覆盖目标，已达目标时不重复写。",
+        handler_ref="ai_maintenance.tools_rename:asset_rename_apply", permission="media.organize",
+        read_only=False, side_effects=True, requires_confirmation=True, confirmation_mode="always",
+        input_schema=_schema({"plan": _PLAN_REF, "confirm": _boolean("必须显式true", False)},
+                             required=("plan", "confirm")),
+        output_schema=_WRITE_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/assets/{assetId}", "GET"),
+                      _req("/api/v1/assets/{assetId}/move", "POST", schema="MoveRequest",
+                           fields=("targetDir",), body_properties=("newName",), body_required=True)),
     ),
     ToolSpec(
         id="media.organize.prepare", version="1.1.0", kind="plan",
@@ -928,6 +1031,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="run_pipeline.py：Lens→Yandex→SauceNAO 阶梯编排（预算/断点/失败单列），只产出本地结果文件。",
         handler_ref="ai_maintenance.tools_research:research_image_pipeline",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "jobsPath": _string("jobs JSONL 绝对路径（{id,file,rid?}）", 1),
@@ -946,15 +1050,18 @@ TOOLS: tuple[ToolSpec, ...] = (
                         "只返回 artifacts 与有界摘要，不回传完整 stdout"),
     ),
     ToolSpec(
-        id="research.image.search", version="1.0.0", kind="query",
-        description="按 script 调 lens_batch.mjs / yandex_cbir.py / saucenao_batch.py；Lens 优先、结果只作线索。",
+        id="research.image.search", version="1.1.0", kind="query",
+        description="按 script 调 lens_batch.mjs / yandex_cbir.py / saucenao_batch.py；Lens 优先、结果只作线索；图片/任务单可用 artifactRef。",
         handler_ref="ai_maintenance.tools_research:research_image_search",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "script": {"type": "string", "enum": ["lens", "yandex", "saucenao"]},
-            "imagePath": _string("yandex 的单图绝对路径"),
-            "jobsPath": _string("lens/saucenao 的 jobs JSONL 绝对路径"),
+            "imagePath": _string("yandex 的单图绝对路径；与 artifactRef 二选一"),
+            "artifactRef": _string("yandex 的图片产物引用（如抽帧）；与 imagePath 二选一", 1, 64),
+            "jobsPath": _string("lens/saucenao 的 jobs JSONL 绝对路径；与 jobsRef 二选一"),
+            "jobsRef": _string("lens/saucenao 的 jobs JSONL 产物引用；与 jobsPath 二选一", 1, 64),
             "outDir": _string("输出目录绝对路径（默认工作根 image-search）"),
             "maxAgeHours": _integer("缓存 TTL 小时", 1, 8760),
             "limit": _integer("最多处理 N 个待办任务", 1, 200),
@@ -962,7 +1069,8 @@ TOOLS: tuple[ToolSpec, ...] = (
         }, required=("script",)),
         output_schema=_RESEARCH_OUTPUT,
         runtime_checks=("lens 需要 Node 24+（QIMENG_RESEARCH_KIT_NODE 或 PATH），缺失返回 TOOL_NOT_IMPLEMENTED",
-                        "yandex 只接受 imagePath；lens/saucenao 只接受 jobsPath",
+                        "yandex 只接受 imagePath/artifactRef；lens/saucenao 只接受 jobsPath/jobsRef",
+                        "artifactRef 输入在结果 args 中以占位符显示，不回显绝对路径",
                         "限速/预算由脚本自身控制，工具不并发重试"),
     ),
     ToolSpec(
@@ -970,6 +1078,7 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="按 script 调 fxtwitter_probe.py（账号/帖子公开字段）或 kemono_probe.py（公开 API 元数据）。",
         handler_ref="ai_maintenance.tools_research:research_author_probe",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "script": {"type": "string", "enum": ["fxtwitter", "kemono"]},
@@ -984,10 +1093,11 @@ TOOLS: tuple[ToolSpec, ...] = (
                         "kemono 无 --out：stdout 存为 kemono-result.json 工件（256KiB 上限）"),
     ),
     ToolSpec(
-        id="research.media.probe", version="1.1.0", kind="query",
-        description="media_probe.py：ffprobe 元数据 + SHA-256 + 15/50/85% 帧抽取（只作识图输入）；支持绝对路径或 files.search 返回的 fileRef。",
+        id="research.media.probe", version="1.2.0", kind="query",
+        description="media_probe.py：ffprobe 元数据 + SHA-256 + 15/50/85% 帧抽取（只作识图输入）；支持绝对路径或 fileRef，并为帧与 JSONL 发布 artifactRef。",
         handler_ref="ai_maintenance.tools_research:research_media_probe",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "files": {"type": "array", "minItems": 1, "maxItems": 50,
@@ -1002,13 +1112,49 @@ TOOLS: tuple[ToolSpec, ...] = (
         }),
         output_schema=_RESEARCH_OUTPUT,
         runtime_checks=("files 与 fileRefs 至少提供一个；fileRef 由 files.search 生成，失效需重新搜索",
-                        "缺少 ffmpeg/ffprobe 时脚本退出码 2（环境错误），不当作识别结果",),
+                        "缺少 ffmpeg/ffprobe 时脚本退出码 2（环境错误），不当作识别结果",
+                        "成功时 frameRefs/artifactRefs 提供可接续 artifactRef；无 API 配置时 artifactRefStatus 明确不可用"),
+    ),
+    ToolSpec(
+        id="research.work", version="1.0.0", kind="query",
+        description="作品研究入口：单图/视频（path/fileRef/artifactRef 三选一）→ 本地抽帧/dHash → Lens/provider 线索 → 候选作者/作品来源/证据/排除/未解决条件；研究阶段零业务写入。",
+        handler_ref="ai_maintenance.tools_research_work:research_work",
+        domain="research", permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
+        timeout_seconds=300.0, network=True,
+        input_schema=_schema({
+            # recipe 默认填充会把未提供的可选输入解析为 null；这里显式允许
+            # null，并由 handler 按“未提供”处理，避免同一配方因空占位被 Schema 拒绝。
+            "path": {"type": ["string", "null"], "maxLength": 4096,
+                     "description": "媒体绝对路径（与 fileRef/artifactRef 三选一）"},
+            "fileRef": {"type": ["string", "null"], "maxLength": 2048,
+                        "description": "files.search 返回的不透明 fileRef（三选一）"},
+            "artifactRef": {"type": ["string", "null"], "maxLength": 64,
+                            "description": "研究产物引用（如抽帧；三选一）"},
+            "nameHint": {"type": ["string", "null"], "maxLength": 200,
+                         "description": "可选作者名/别名，仅用于文字线索，不是开始研究的前提"},
+            "frames": {"type": ["string", "array"], "maxItems": 4,
+                       "items": {"type": "integer", "minimum": 0, "maximum": 100},
+                       "description": "抽帧百分比：逗号分隔字符串或 1..4 个整数（默认 15,50,85）"},
+            "providerLimit": _integer("文字线索条数（默认 10）", 1, 20, 10),
+            "timeoutSeconds": _integer("研究时间预算秒数（默认 300，上限 900）", 1, 900, 300),
+        }),
+        output_schema=_RESEARCH_WORK_OUTPUT,
+        requirements=(_req("/api/v1/research/context", "GET"),
+                      _req("/api/v1/research/lens", "POST", body_required=True),
+                      _req("/api/v1/research/providers/{provider}/query", "POST",
+                           body_required=True)),
+        runtime_checks=("path/fileRef/artifactRef 必须且只能提供一个；nameHint 可选",
+                        "视频/动图按 15/50/85% 抽帧并复用缓存；图片用原图做 Lens",
+                        "研究阶段只读媒体与只读研究端点，businessWrites=0、writePhase=not_started",
+                        "401/403 向上抛；研究关闭/sidecar/provider 受限/网络失败记入 limitations"),
     ),
     ToolSpec(
         id="research.avatar.fetch", version="1.0.0", kind="query",
         description="avatar_fetch.py：头像 URL 规范化/下载/格式与像素校验/摘要（outDir 必填）。",
         handler_ref="ai_maintenance.tools_research:research_avatar_fetch",
         permission="research", read_only=False, side_effects=True,
+        business_side_effects=False,
         timeout_seconds=300.0, network=False,
         input_schema=_schema({
             "urls": {"type": "array", "minItems": 1, "maxItems": 20,
@@ -1230,7 +1376,7 @@ TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         id="platform.recipe", version="1.0.0", kind="context",
-        description="可执行编排配方（recipe）：list 列目录、show 取完整定义、card 取 2–4KB 任务卡；默认不加载工具 Schema/完整规则。",
+        description="可执行编排配方（recipe）：list 列目录、show 取完整定义、card 取 精简任务卡；默认不加载工具 Schema/完整规则。",
         handler_ref="ai_maintenance.recipes:platform_recipe", network=False, permission="read",
         input_schema=_schema({
             "action": {"type": "string", "enum": ["list", "show", "card"]},
@@ -1246,6 +1392,8 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="按需读取规则节（如 mediaNaming/authorActions/fields/permissions），不加载完整 rules.json。",
         handler_ref="ai_maintenance.catalog:platform_rules", network=False, permission="read",
         input_schema=_schema({
+            "offset": _integer("单节原始规则JSON续读字符偏移，需只指定一个 sections", 0),
+            "limit": _integer("规则JSON片段字符数，按nextOffset续读；不是完整执行参数", 1, 1000),
             "sections": {"type": "array", "maxItems": 10,
                          "items": _string("rules.json 顶层节名或点路径", 1, 120)},
             "domain": _string("按领域取默认规则节：author/media/research/backup/device/maintenance/system"),
@@ -1283,6 +1431,48 @@ def tool_domain(tool_id: str) -> str:
 
 TOOLS = tuple(replace(tool, domain=tool_domain(tool.id)) for tool in TOOLS)
 
+# Long plans remain on the trusted executor; model clients may pass the opaque reference.
+# Exactly-one validation is performed by execution before resolving and validating the plan.
+def _with_plan_reference(tool):
+    if "plan" not in tool.input_schema.get("properties", {}):
+        return tool
+    input_schema = dict(tool.input_schema)
+    input_schema["properties"] = {**input_schema["properties"],
+        "planRef": _string("prepare 返回的原计划引用；与 plan 只能提供一个", 1, 512)}
+    input_schema["required"] = [key for key in input_schema.get("required", []) if key != "plan"]
+    return replace(tool, input_schema=input_schema)
+
+
+TOOLS = tuple(_with_plan_reference(tool) for tool in TOOLS) + (
+    ToolSpec(
+        id="platform.result.read", version="1.0.0", kind="context", domain="system",
+        description="按 resultRef 分页/点路径续读被省略结果；计划执行直接传 planRef，不重造计划。",
+        handler_ref="ai_maintenance.model_output:read_result", network=False, permission="read",
+        input_schema=_schema({"resultRef": _string("结果引用", 1, 512),
+                              "cursor": _string("上一页 nextCursor", 1, 2048),
+                              "limit": _integer("条数或字符串字符数上限", 1, 500),
+                              "path": _string("RFC6901 JSON Pointer，如 /tools/0；省略即根对象", 0, 1000)},
+                             required=("resultRef",)),
+        output_schema=_QUERY_OUTPUT,
+    ),
+    ToolSpec(
+        id="platform.artifact.read", version="1.0.0", kind="context", domain="system",
+        description=("按 artifactRef 读取研究产物（抽帧/研究 JSONL/候选摘要/截图）：文本有界分页，"
+                     "图片可返回有界内容块；只读，不是文件写入或计划执行授权。"),
+        handler_ref="ai_maintenance.artifact_ref:read_artifact", network=False, permission="read",
+        input_schema=_schema({
+            "artifactRef": _string("研究产物引用（a1_ 开头），不能当 fileRef/planRef 使用", 1, 64),
+            "offset": _integer("文本字节偏移；默认 0", 0, 33554432, 0),
+            "limit": _integer("文本单页字节上限；默认 12288", 1, 12288, 12288),
+            "includeContent": _boolean("图片是否返回有界 base64 内容块（≤2MiB）", False),
+        }, required=("artifactRef",)),
+        output_schema=_QUERY_OUTPUT,
+        runtime_checks=("只读、纯本地、无副作用；读取前重新核对实例/凭据/版本、HMAC、TTL、授权根与文件 SHA-256",
+                        "文本单页不超过 12 KiB；图片 base64 超过 2 MiB 时明确拒绝",
+                        "artifactRef 与 fileRef/resultRef/planRef 语义分开，不能混用"),
+    ),
+)
+
 # 领域目录元数据：稳定顺序 + 中文标签 + 一句话说明（供 platform.catalog / CLI 展示）。
 DOMAINS: tuple = (
     {"id": "author", "label": "作者", "description": "作者身份/档案/来源/清理/合并与作者关联"},
@@ -1296,12 +1486,14 @@ DOMAINS: tuple = (
 
 # 工具示例：按需在 platform.tool.describe 返回；不进入 tools list / MCP tools/list 默认载荷。
 TOOL_EXAMPLES: dict = {
+    "asset.rename.prepare": ({"assetId": "synthetic-asset", "newName": "示例  精确名称.jpg"},),
+    "asset.rename.apply": ({"planRef": "<prepare 返回的 planRef>", "confirm": True},),
     "asset.upload.prepare": ({"libraryId": "lib-synthetic", "operationId": "00000000-0000-4000-8000-000000000001", "fileRef": "<files.search 返回的 fileRef>"},),
     "asset.upload": ({"plan": {"…": "asset.upload.prepare 返回的 plan"}, "confirm": True},),
     "library.scan": ({"libraryId": "lib-synthetic", "confirm": True},),
     "project.context": ({"markdown": True},),
     "asset.query": ({"limit": 20, "q": "朱诺 11", "cursor": "…"},),
-    "author.query": ({},),
+    "author.query": (({"q": "Alice", "limit": 20}),),
     "author.profile.read": ({"authorId": "author-xxx"},),
     "author.profile.prepare": ({"authorId": "author-xxx",
                                 "changes": {"biography": "合成示例", "status": "candidate"},
@@ -1320,6 +1512,7 @@ TOOL_EXAMPLES: dict = {
                                          "maxFiles": 500, "perceptualLimit": 100}}),
     "media.organize.apply": ({"plan": {"…": "prepare 返回的 plan 原样"}, "confirm": True},),
     "research.context": ({},),
+    "research.lens": ({"artifactRef": "a1_0123456789abcdef0123456789abcdef"},),
     "maintenance.status": ({"status": "queued", "limit": 20},),
     "maintenance.claim": ({"kind": "asset_research"},),
     "maintenance.heartbeat": ({"jobId": "<jobId>", "leaseToken": "<claim 返回的 token>",
@@ -1341,11 +1534,15 @@ TOOL_EXAMPLES: dict = {
     "device.apply.status": ({"targetDevice": "phone-main", "limit": 20},),
     "research.image.pipeline": ({"jobsPath": "<仓库外绝对路径>/jobs.jsonl",
                                  "maxLens": 15, "maxYandex": 10},),
-    "research.image.search": ({"script": "yandex", "imagePath": "<仓库外绝对路径>/frame.webp"},),
+    "research.image.search": ({"script": "yandex", "artifactRef": "a1_0123456789abcdef0123456789abcdef"},),
     "research.author.probe": ({"script": "fxtwitter", "target": "@example"},),
     "research.media.probe": ({"files": ["<仓库外绝对路径>/video.mp4"], "frames": "15,50,85"},),
+    "research.work": ({"fileRef": "<files.search 返回的 fileRef>", "nameHint": "可选昵称"},
+                      {"path": "<仓库外绝对路径>/work.png", "frames": "15,50,85"},),
     "research.avatar.fetch": ({"urls": ["https://example.com/avatar.png"],
                                "outDir": "<仓库外绝对路径>/avatars"},),
+    "platform.artifact.read": ({"artifactRef": "a1_0123456789abcdef0123456789abcdef",
+                                "offset": 0, "limit": 4096},),
     "trash.list": ({},),
     "trash.restore": ({"trashId": "<trashId>", "confirm": True},),
     "files.storages": ({},),
@@ -1371,6 +1568,7 @@ TOOL_RULES_REFS: dict = {
     "platform.tool.describe": ("toolCatalog", "permissions"),
     "platform.playbook": ("toolCatalog", "permissions"),
     "platform.rules": ("permissions",),
+    "platform.artifact.read": ("researchArtifacts", "permissions", "errors"),
     "author.profile.read": ("authorActions", "fields"),
     "author.profile.prepare": ("authorActions", "fields", "permissions"),
     "author.profile.update": ("authorActions", "fields", "permissions", "errors"),
@@ -1393,11 +1591,12 @@ TOOL_RULES_REFS: dict = {
     "maintenance.status": ("permissions",),
     "research.context": ("research", "permissions"),
     "research.provider.query": ("research", "permissions"),
-    "research.lens": ("research", "permissions"),
+    "research.lens": ("research", "researchArtifacts", "permissions"),
     "research.image.pipeline": ("research", "permissions"),
-    "research.image.search": ("research", "permissions"),
+    "research.image.search": ("research", "researchArtifacts", "permissions"),
     "research.author.probe": ("research", "permissions"),
-    "research.media.probe": ("research", "permissions"),
+    "research.media.probe": ("research", "researchArtifacts", "permissions"),
+    "research.work": ("research", "researchArtifacts", "permissions"),
     "research.avatar.fetch": ("research", "permissions"),
     "trash.list": ("trash", "permissions"),
     "trash.restore": ("trash", "permissions", "errors"),
@@ -1411,7 +1610,7 @@ TOOL_RULES_REFS: dict = {
 DOMAIN_RULE_SECTIONS: dict = {
     "author": ("authorActions", "fields", "permissions"),
     "media": ("mediaOrganize", "mediaNaming", "localFiles", "workflows", "permissions"),
-    "research": ("research", "permissions"),
+    "research": ("research", "researchArtifacts", "permissions"),
     "backup": ("backup", "permissions"),
     "device": ("deviceApply", "permissions"),
     "maintenance": ("maintenanceExecutor", "permissions"),
@@ -1623,6 +1822,9 @@ def describe_spec(spec: ToolSpec, document, disabled_reason: str = "", rules: di
             "requiredParameters": list(requirement.required_parameters or ()),
         })
     summary.update({
+        "modelResultContract": {"completeOutputSchema": "outputSchema 校验执行端完整结果；模型展示可能是有界摘要",
+                                "continuation": "truncated/resultRef → platform.result.read",
+                                "plan": "优先用 planRef；planSummary/planPreviewOnly 不是可提交计划"},
         "examples": [dict(example) for example in TOOL_EXAMPLES.get(spec.id, ())],
         "rulesRefs": list(refs),
         "rulesExcerpt": excerpts,
