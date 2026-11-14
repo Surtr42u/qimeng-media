@@ -9,7 +9,7 @@ require (
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/common v0.72.0
-	github.com/shirou/gopsutil/v4 v4.26.9
+	github.com/shirou/gopsutil/v4 v4.26.10
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0
 	golang.org/x/sync v0.23.0
@@ -22,7 +22,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.11.1 // indirect
+	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
