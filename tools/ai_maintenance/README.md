@@ -589,6 +589,13 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
   token。服务端 409 `LEASE_LOST` 统一映射为稳定错误码 `LEASE_LOST`（退出码 1），
   不自动重领或重试旧 token；恢复时按 `completedSteps` 跳过已完成步骤。
 
+## 已测宿主兼容性
+
+2026-11-14 原生 Codex App Server 0.167.0-alpha.4.1 实测：lazy 连接初始化为9项，
+describe 后宿主列表仍为9项，未观察到动态刷新；该宿主应显式配置
+`QIMENG_AI_MCP_DISCOVERY=full`。full 实测54项且查询成功。服务端通知和通用
+MCP传输的按需发现不代表每个宿主都会刷新；此兼容模式不能声称节省初始Schema上下文。
+
 ## 单文件精确改名
 
 单文件按指定名称改名使用 `asset.rename.prepare` → `asset.rename.apply`（支持 `planRef`），

@@ -8,7 +8,16 @@
 仅用于独立执行测试和反馈报告。前期 Luna 参与过实现/只读审查，已停止该分工，
 已有代码由主代理逐段核对并补充授权/未决操作/缓存及呈现边界，不将 Luna 审查当作验收证据。
 
-2026-11-14 正在落实现项目 AI API 优化并进行云端构建/隔离验收，源码范围见[平台任务书 §1.6](AI_PLATFORM_TASKBOOK.md#16-上述优化的现项目实现与验收入口2026-11-14)。工具包1.6.0/契约2.0.0/规则2026-11-14.1；候选应用0.2.3/code38。本轮原库只读抽取3份媒体副本，后续写入仅在隔离实例；完成结果与未验收项待本轮核验后填写，不能沿用前轮31次调用当作新版本验收。
+2026-11-14 现项目 AI API 优化已实现并完成指定隔离场景，范围见[平台任务书 §1.6](AI_PLATFORM_TASKBOOK.md#16-上述优化的现项目实现与验收入口2026-11-14)。工具包1.6.0/契约2.0.0/规则2026-11-14.1，54项工具；代码来源10753707。默认只读、任务授权/持久预算、结果有界续读/planRef、作者查询稳定分页已接线，补单文件精确改名，未改批量编号公式。
+
+- 云端代码10753707的[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/43483449014)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/43483448895)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/43483448974)、[AI闭环](https://github.com/Surtr42u/qimeng-media/actions/runs/43483448982)全部通过：AI回归333项（12跳过），独立真实Go+MCP7项通过，另有命名42项。跳过项不冒充通过；实际Go测试在专用作业执行。
+- 应用0.2.3/code38来源73c1b26a：[PC出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43471005233)、[APK出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43471011043)成功，121份云端文件逐项核对。之后仅改独立工具层/文档，OpenAPI与SDK锁摘要一致，不重标应用来源。安装到独立便携目录与指定qimeng_api35测试用户；未覆盖日常PC或真实手机。
+- 全新Luna max只做黑盒测试：查作者及关联文件、未命中查询、只读权限判断、简介修改/清空均完成；精确改名首轮发现工具缺口，补入口后实际写成但返回缺tool字段，修正后回读同ID/作者/哈希；上传并关联作者成功，主代理独立核对只新增一份、大小/哈希/作者一致。首次失败和复测分开，不能写成全部首轮通过。模型token/费用未取得遥测，不据JSON字节估造降耗比例。
+- 当前Codex原生App Server0.167.0-alpha.4.1：lazy初始化9项，describe后仍9项，未观察到宿主刷新；full模式54项且查询成功，故该宿主用full兼容。该项为实现者手动接入、0模型turn，与Luna自然语言测试分开；未改长期Codex配置。
+- 手机标签实测24项候选点选前后位置全部一致、数字自然排序、当前标签置顶且内部滚动，取消/保存重开与浅深色核验；不显示候选勾选图标。Web相册/详情/标签取消/整理入口完成实际交互，无页面错误日志；未将浏览器测试冒充Tauri原生全交互验收。
+- 实测发现并修复上传源校验、旧租约拒绝与媒体探测输入拒绝误留未决预留；网络/超时等不确定写入仍保留待核验项。中断后任务时间预算过期由可信端核对结果再续期，未重置调用计数。精确改名普通资产不追加编号，COS仍沿用整理流程。
+- 识图采用同一个新Luna max、不同作者的图/视频副本、全类别MCP权限和后台搜索；首次路径授权配置、误锁和外部provider ADDRESS_BLOCKED、用量中断均保留。候选与可靠归属分开，不能把搜索返回200或原库既有关联当作原帖证据；完整私有记录见本机忽略目录报告。
+- 原库33张表全行摘要、最初3份原件及后来图/视频2份原件的哈希/大小/修改时间核对一致，8420无测试写入。私有证据和报告位于忽略目录build/ai-acceptance-20261114.local；测试凭据/进程清理结果另见该报告。NAS、真实手机后台和长期服务仍未验收。
 
 2026-11-13 后续只读复核：AI 按需入口已实现，但尚无端到端低消耗/新模型自主任务验收。静态测得默认 51 工具 Schema 45,295 UTF-8 字节，五张任务卡 1,975–5,909 字节；发现默认全量、作者默认全返、组合输出无统一总额、摘要续读、兼容性全授予与确认非授权、统一任务预算等缺口及后续验收见[平台任务书 §1.5](AI_PLATFORM_TASKBOOK.md#15-当前-ai-api-的效果上下文与待补验收2026-11-13)。仓外 Next 规划已同步技术建议与 S33–S36；本轮只改文档，无应用实现、服务/媒体操作、新模型任务或重构实施。该静态大小不代表模型 token/费用。
 
@@ -46,7 +55,7 @@
 | arm64 手机内嵌 | 9137ce0a，0.2.2/code37（2026-11-12 安装） | 同签名（证书 SHA-256 8f62ba55…）`adb install -r` 成功；versionCode37/versionName0.2.2，firstInstallTime 保持 2026-09-12，lastUpdateTime 2026-11-12 19:12；已安装 base.apk 回拉 SHA-256 fb3804b9…与候选完全一致；内嵌 Go revision=9137ce0a/clean/android/arm64，ffmpeg/ffprobe 固定摘要匹配；安装阶段未启动 App，后续由用户本机导出本轮合并输入；后台/SAF/Doze 仍未验收 |
 | 桌面连接壳 | 原壳加载PC托管Web | 本轮更新共享Web，沿用现有壳 |
 
-2026-11-12 安装来源完整 SHA 为 `9137ce0ab7e0fd335707eec1326e79d414c50987`：[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036891)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/43204037341)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036896)、[MCP 集成](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036915)、[PC 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43204294915)与[APK 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43204026708)全部同 SHA 通过。原始 artifact ZIP 摘要匹配 GitHub digest，安装后的 exe/Web/APK 再次比对清单。后补文档提交不重标安装来源；[PR #59](https://github.com/Surtr42u/qimeng-media/pull/59)仍为草稿未合并。
+2026-11-12 安装来源完整 SHA 为 `9137ce0ab7e0fd335707eec1326e79d414c50987`：[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036891)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/43204037341)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036896)、[MCP 集成](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036915)、[PC 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43204294915)与[APK 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43204026708)全部同 SHA 通过。原始 artifact ZIP 摘要匹配 GitHub digest，安装后的 exe/Web/APK 再次比对清单。后补文档提交不重标安装来源；[PR #59](https://github.com/Surtr42u/qimeng-media/pull/59)已合并（bceb1540；本轮草稿为PR #60）。
 
 本次 PC 更新前现场 exe 实际为 `d977ece8`（旧表 `0b951acc` 只代表 11 月 8 日历史记录），按正常控制台信号停服并确认退出后整体替换程序与 Web，保留原 DataDir、配置、媒体根和本机同步环境。升级前后：assets7758、authors177、asset_authors7910、tags21、asset_tags1200、view_events22334；启用库根均可达。旧 exe/Web、旧手机 APK、两份云端包及去敏前核验材料保存在忽略目录 `build/deploy-ai-api-20261112/`；同 schema 普通更新未做全量媒体/DB 副本，不承诺仅换回旧程序即可完整数据回退。手机首轮安装会话被系统拒绝，USB 离线恢复后同签名安装成功；未改手机权限或常亮设置、未卸载/清数据。
 
