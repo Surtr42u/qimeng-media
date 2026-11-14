@@ -274,9 +274,9 @@ class ArtifactRefTests(unittest.TestCase):
 
     def test_concurrent_publish_and_read(self):
         def publish(index):
-            path = self._file("frame-%d.webp" % index,
+            path = self._file("frame-%d.txt" % index,
                               ("synthetic-%d" % index).encode("ascii"))
-            return self._publish(path, kind="frame", mime="image/webp")
+            return self._publish(path, kind="frame", mime="text/plain")
 
         with ThreadPoolExecutor(max_workers=6) as pool:
             metas = list(pool.map(publish, range(8)))

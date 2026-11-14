@@ -746,7 +746,14 @@ class SessionBudget:
             evidence = {}
         problems = evidence_problems(None, evidence)
         if problems:
-            raise errors.invalid_input("evidence 非法", details=problems)
+            # evidence 携带路径/凭据或不是对象时，属于“拒绝核销”而不是可修正的
+            # 普通参数错误：返回结构化 rejected，保持 pending 与写入阻断。
+            state, _persisted = self._read_state()
+            pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
+            return {"status": "rejected", "reason": "evidence_invalid",
+                    "requestHash": request_hash, "problems": problems,
+                    "pendingWrites": sum(item["count"] for item in pending.values()
+                                         if isinstance(item, dict) and item.get("sideEffects"))}
         with self._state() as state:
             pending = state.setdefault("pending", {})
             entry = pending.get(request_hash)
