@@ -215,7 +215,7 @@ jobs:
         with: { persist-credentials: false }
       # android/sdk 消费 sdk-chain job 的 make sdk 产物（artifact 下发）——
       # 生成链已在该 job 校验过 sdk.lock，本 job 不再二次生成（R14 去双跑）。
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: android-sdk, path: android/sdk }
       # JDK 21 与本机 Android Studio jbr 对齐（AGP 9.3.1 最低 17）；ubuntu runner 预装 Android SDK，
       # platforms/build-tools 覆盖 compileSdk 37 所需，无需 sdkmanager（runner 镜像 Readme 为准）
