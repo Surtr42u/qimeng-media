@@ -64,7 +64,7 @@ class ResearchStubHandler(BaseHTTPRequestHandler):
                 "topTitles": [{"title": "Synthetic work", "domain": "x.com"}],
                 "topDomains": ["x.com"],
                 "cites": [],
-                "links": [{"url": "https://x.com/synthetic_author/status/123",
+                "links": [{"url": "https://x.com/synthetic/status/123",
                            "domain": "x.com", "title": "Synthetic original post"}],
                 "elapsedMs": 12,
             })
