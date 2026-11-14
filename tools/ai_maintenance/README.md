@@ -139,7 +139,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_DISABLED_TOOLS` | 可选 | 逗号分隔的工具或原语 ID（如 `media.transfer`），单独禁用。 |
 | `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求/执行原语前拒绝全部有副作用工具与原语。 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
-| `QIMENG_AI_MCP_TIMEOUT` | 可选 | 显式设置MCP单次调用上限（有限正数秒）。未设置时至少120秒，且覆盖工具声明/合法timeoutSeconds预算并留5秒收尾；设置值为可信端硬上限，长任务须相应配置宿主超时。 |
+| `QIMENG_AI_MCP_TIMEOUT` | 可选 | 显式设置MCP单次调用上限（有限正数秒）。未设置时至少120秒，且覆盖工具声明/合法timeoutSeconds预算并留25秒收尾（进程退出/管道回收与结果收集）；设置值为可信端硬上限，长任务须相应配置宿主超时。 |
 | `QIMENG_AI_MCP_DOMAINS` | 可选 | 逗号分隔的领域白名单；只暴露这些域的业务工具与 `files.storages`，减少误调用面。全部 `platform.*` 安全发现元工具始终可见（只读、不扩大权限）。标准 MCP 客户端仍可能加载完整 `tools/list`，此过滤不是上下文节省保证。 |
 | `QIMENG_AI_TARGET` | 可选 | 运行目标：`pc` / `android-embedded` / `nas`（默认 pc）；recipe 据此核对能力。 |
 | `QIMENG_AI_RECIPE_DIR` | 可选 | recipe 目录覆盖（默认 `tools/ai_maintenance/recipes`）。 |
@@ -607,7 +607,7 @@ MCP传输的按需发现不代表每个宿主都会刷新；此兼容模式不�
 `research.image.pipeline/search`、`research.author.probe`、`research.media.probe`、
 `research.avatar.fetch` 只做 research_kit 的适配，不复制识别算法：
 
-- argv 始终是列表并以 `shell=False` 启动；工作目录固定仓库根（脚本默认缓存落
+- argv 始终是列表并以 `shell=False` 启动；stdin关闭，Windows不创建控制台窗口；工作目录固定仓库根（脚本默认缓存落
   `build/research-kit.local/`），子进程环境剔除 `QIMENG_API_*`，研究脚本拿不到服务端 token。
 - 输入/输出路径必须是绝对路径；仓库内只允许被忽略工作根（`QIMENG_AI_RESEARCH_DIR`，
   默认 `tools/ai_maintenance/.work/research`，已忽略）。相对路径、源码树内路径直接拒绝。

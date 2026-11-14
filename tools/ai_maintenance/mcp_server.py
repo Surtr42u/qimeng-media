@@ -48,7 +48,9 @@ SERVER_VERSION = versions.PLATFORM_VERSION
 PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
 DEFAULT_CALL_TIMEOUT_SECONDS = 120.0
-HANDLER_COMPLETION_GRACE_SECONDS = 5.0
+# Research cleanup can wait 10s for process exit and two 5s pipe pumps; leave 5s
+# for output collection as well, rather than timing out while cleanup runs.
+HANDLER_COMPLETION_GRACE_SECONDS = 25.0
 CANCEL_REQUEST_METHOD = "notifications/cancelled"
 INITIALIZED_NOTIFICATION = "notifications/initialized"
 # 领域过滤下始终保留的安全发现元工具（只读、纯本地）：不因领域白名单隐藏，

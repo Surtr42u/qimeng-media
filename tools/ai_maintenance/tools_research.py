@@ -133,7 +133,9 @@ def _execute(argv: list, *, env: dict, timeout: int) -> dict:
     """运行 argv（列表，shell=False）；超时 kill 并按 124 报告。"""
     try:
         process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   cwd=str(REPO_ROOT), env=env, shell=False)
+                                   stdin=subprocess.DEVNULL,
+                                   cwd=str(REPO_ROOT), env=env, shell=False,
+                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     except OSError:
         raise errors.tool_not_implemented(
             "research", "研究脚本无法启动（解释器/可执行文件不可用）") from None
