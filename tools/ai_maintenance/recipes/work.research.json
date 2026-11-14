@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "id": "work.research",
+  "version": "1.0.0",
+  "title": "作品研究：单图/视频只读反查候选作者与作品来源",
+  "whenToUse": "只有一张图或一段视频、没有作者名或 profileChanges 时先做只读研究；nameHint 可选。研究阶段零业务写入，输出候选/作品来源/证据/排除/未解决条件；确认作者后才进入第二阶段，仍用原有 author.discover（其 nameHint+profileChanges 输入语义不变）完成查重、建档、档案与关联。",
+  "targets": ["pc", "nas", "android-embedded"],
+  "requires": ["api"],
+  "permissions": ["research"],
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "maxLength": 4096,
+        "description": "媒体绝对路径（与 fileRef/artifactRef 三选一）"
+      },
+      "fileRef": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "files.search 返回的不透明 fileRef（三选一）"
+      },
+      "artifactRef": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "研究产物引用，如抽帧（三选一）"
+      },
+      "nameHint": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "可选作者名/别名，仅用于文字线索；不是开始研究的前提"
+      },
+      "frames": {
+        "type": ["string", "array"],
+        "maxItems": 4,
+        "items": {"type": "integer", "minimum": 0, "maximum": 100},
+        "default": "15,50,85",
+        "description": "视频/动图抽帧百分比（默认 15,50,85；缓存复用）"
+      },
+      "providerLimit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 10,
+        "description": "文字线索条数（默认 10）"
+      },
+      "timeoutSeconds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 900,
+        "default": 300,
+        "description": "研究时间预算秒数（默认 300）"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "researchStatus",
+      "tool": "research.context",
+      "note": "读取 research.enabled、sidecar 状态、provider 矩阵与限额；关闭时只记录 limitation，不伪造识别",
+      "input": {}
+    },
+    {
+      "id": "workResearch",
+      "tool": "research.work",
+      "note": "只读研究：媒体类型/抽帧/dHash → Lens/provider 线索 → candidates/workSources/evidence/excluded/unresolved；businessWrites=0",
+      "input": {
+        "path": "$inputs.path",
+        "fileRef": "$inputs.fileRef",
+        "artifactRef": "$inputs.artifactRef",
+        "nameHint": "$inputs.nameHint",
+        "frames": "$inputs.frames",
+        "providerLimit": "$inputs.providerLimit",
+        "timeoutSeconds": "$inputs.timeoutSeconds"
+      }
+    }
+  ],
+  "artifacts": [
+    "研究证据 JSON artifactRef（evidenceRef）",
+    "视频/动图采样帧 frameRefs",
+    "候选作者/作品来源/排除项/未解决条件"
+  ],
+  "guardrails": [
+    "研究阶段零业务写入：不新建作者、不改档案、不关联资产；businessWrites=0、writePhase=not_started",
+    "candidates 一律 unconfirmed；Lens 标题/域名/链接、provider 摘要、转载页、水印、同名账号最高只作 weak/medium",
+    "不同平台稳定 ID/不同作者候选不合并；没有可靠排除时 excluded 为空数组",
+    "研究结束仍可为 unresolved；确认作者后才用 author.discover 完成写入，旧 recipe 输入/恢复语义保持不变",
+    "401/403 向上抛；研究关闭/sidecar 缺失/provider 受限/网络失败按 limitations 降级，不返回伪造空成功"
+  ],
+  "readback": [
+    "核对 status 与 limitations 是否一致：ok 只表示研究流程完成，不表示作者已确认",
+    "核对 candidates 全部 verification=unconfirmed、authorConfirmed=false；作品来源有平台稳定 ID/URL 时仍需主页互证",
+    "需要完整证据时用 platform.artifact.read 读取 evidenceRef；后续写入走 author.discover 的查重/计划/确认/回读"
+  ]
+}

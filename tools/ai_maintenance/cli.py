@@ -24,7 +24,7 @@ if __package__ in (None, ""):  # 支持 python tools/ai_maintenance/cli.py 直�
     __package__ = "ai_maintenance"
 
 from . import client as http_client
-from . import errors, execution, recipes, registry, rulepack, schema
+from . import errors, execution, recipes, registry, rulepack, schema, task_admin, task_controls
 from .client import (ApiClient, ConfigError, HTTPStatusError, LENS_CONTENT_TYPES,  # noqa: F401
                      LENS_TIMEOUT_SECONDS, MAX_RESPONSE_BYTES, NetworkError, NoRedirect,
                      REQUEST_TIMEOUT_SECONDS, ResponseError, TOKEN_MAX_LENGTH,
@@ -215,6 +215,36 @@ def build_parser() -> argparse.ArgumentParser:
         "lens", help="POST /api/v1/research/lens（multipart file）", parents=[json_parent]
     )
     lens.add_argument("--file", required=True, metavar="PATH", help="本地图片：JPEG/PNG/WebP，≤20MiB")
+    admin = sub.add_parser(
+        "admin", help="可信端管理：任务预算查询、未决写入回读核销与续期（不注册为 MCP 工具）")
+    admin_sub = admin.add_subparsers(dest="admin_command", required=True)
+    admin_task = admin_sub.add_parser("task", help="任务预算账本管理（需 --state-dir 或 QIMENG_AI_STATE_DIR）")
+    admin_task_sub = admin_task.add_subparsers(dest="admin_task_command", required=True)
+
+    admin_status = admin_task_sub.add_parser("status", help="只读查询任务预算、期限与未决项", parents=[json_parent])
+    admin_status.add_argument("--task-id", required=True, metavar="ID")
+    admin_status.add_argument("--state-dir", metavar="PATH")
+
+    admin_list = admin_task_sub.add_parser("list", help="只读列出状态目录内各账本摘要", parents=[json_parent])
+    admin_list.add_argument("--state-dir", metavar="PATH")
+
+    admin_reconcile = admin_task_sub.add_parser(
+        "reconcile", help="按原操作身份回读并核销一个未决写入（只读回读，不产生新写入）", parents=[json_parent])
+    admin_reconcile.add_argument("--task-id", required=True, metavar="ID")
+    admin_reconcile.add_argument("--request-hash", required=True, metavar="SHA256")
+    admin_reconcile.add_argument("--evidence-json", metavar="JSON", help="补充证据 JSON 对象；只能核对 identity")
+    admin_reconcile.add_argument("--state-dir", metavar="PATH")
+    admin_reconcile.add_argument("--confirm", action="store_true", help="可信端显式确认执行核销")
+
+    admin_renew = admin_task_sub.add_parser(
+        "renew", help="可信端授权后提高预算上限；保留已用调用/观察/未决项", parents=[json_parent])
+    admin_renew.add_argument("--task-id", required=True, metavar="ID")
+    admin_renew.add_argument("--max-calls", type=int, metavar="N")
+    admin_renew.add_argument("--max-seconds", type=int, metavar="N")
+    admin_renew.add_argument("--authorization-file", metavar="PATH",
+                             help="可选授权文件：allow 必须包含 {\"tool\":\"budget.renew\"}")
+    admin_renew.add_argument("--state-dir", metavar="PATH")
+    admin_renew.add_argument("--confirm", action="store_true", help="可信端显式确认续期")
     return parser
 
 
@@ -691,6 +721,163 @@ def _run_legacy(args, env) -> int:
     return 0
 
 
+def _admin_state_env(args, env) -> dict:
+    """admin task 的状态目录必须显式给出；taskId 由 CLI 覆盖环境，避免静默串账本。"""
+    state_dir = getattr(args, "state_dir", None) or env.get("QIMENG_AI_STATE_DIR")
+    if not state_dir:
+        raise UsageError("admin task 必须显式提供 --state-dir 或 QIMENG_AI_STATE_DIR")
+    merged = dict(env)
+    merged["QIMENG_AI_STATE_DIR"] = state_dir
+    task_id = getattr(args, "task_id", None)
+    if task_id is not None:
+        if not task_id or len(task_id) > 512 or any(ord(ch) < 32 for ch in task_id):
+            raise UsageError("--task-id 非法")
+        merged["QIMENG_AI_TASK_ID"] = task_id
+    return merged
+
+
+def _admin_evidence(raw) -> dict:
+    if raw is None:
+        return {}
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        raise UsageError("--evidence-json 不是合法 JSON") from None
+    if not isinstance(value, dict):
+        raise UsageError("--evidence-json 必须是 JSON 对象")
+    if len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) \
+            > task_controls.EVIDENCE_MAX_BYTES:
+        raise UsageError("--evidence-json 超出大小上限")
+    return value
+
+
+def _admin_list(args, env) -> int:
+    from pathlib import Path
+
+    state_dir = getattr(args, "state_dir", None) or env.get("QIMENG_AI_STATE_DIR")
+    if not state_dir:
+        raise UsageError("admin task list 必须显式提供 --state-dir 或 QIMENG_AI_STATE_DIR")
+    budgets = Path(state_dir) / "budgets"
+    ledgers = []
+    degraded = False
+    if budgets.exists():
+        if not budgets.is_dir():
+            raise UsageError("--state-dir 下的 budgets 不是目录")
+        for path in sorted(budgets.glob("*.json")):
+            try:
+                summary = task_controls.inspect_budget_file(path)
+            except errors.ToolError:
+                ledgers.append({"ledgerId": path.stem, "status": "unavailable"})
+                degraded = True
+                continue
+            summary["ledgerId"] = path.stem
+            summary["status"] = "ok"
+            ledgers.append(summary)
+    _print_json({"command": "admin.task.list",
+                 "status": "partial" if degraded else "ok", "ledgers": ledgers}, sys.stdout)
+    return 1 if degraded else 0
+
+
+def _admin_status(args, env) -> int:
+    budget = task_controls.SessionBudget(_admin_state_env(args, env))
+    report = budget.report()
+    report["taskId"] = args.task_id
+    if not report.get("persisted"):
+        report["status"] = "not_found"
+        report["verdict"] = "unknown"
+        _print_json(report, sys.stdout)
+        return 1
+    report["status"] = "ok"
+    report["verdict"] = "unresolved" if report["pendingWrites"] else "clear"
+    _print_json(report, sys.stdout)
+    return 0
+
+
+def _admin_reconcile(args, env) -> int:
+    if not args.confirm:
+        raise UsageError("admin task reconcile 必须显式 --confirm")
+    request_hash = args.request_hash
+    if (len(request_hash) != 64
+            or any(ch not in "0123456789abcdef" for ch in request_hash)):
+        raise UsageError("--request-hash 必须是 64 位小写 SHA-256")
+    evidence = _admin_evidence(args.evidence_json)
+    merged_env = _admin_state_env(args, env)
+    budget = task_controls.SessionBudget(merged_env)
+    entry = budget.pending_entry(request_hash)
+    if entry is None:
+        prior = budget.prior_reconciliation(request_hash)
+        snapshot = budget.report()
+        if prior is not None:
+            _print_json({"command": "admin.task.reconcile", "taskId": args.task_id,
+                         "requestHash": request_hash, "status": "already_reconciled",
+                         "verdict": prior.get("verdict"), "tool": prior.get("tool"),
+                         "calls": snapshot["calls"], "deadline": snapshot["deadline"],
+                         "pending": snapshot["pending"],
+                         "pendingWrites": snapshot["pendingWrites"]}, sys.stdout)
+            return 0
+        _print_json({"command": "admin.task.reconcile", "taskId": args.task_id,
+                     "requestHash": request_hash, "status": "not_found",
+                     "verdict": "unknown", "calls": snapshot["calls"],
+                     "deadline": snapshot["deadline"], "pending": snapshot["pending"],
+                     "pendingWrites": snapshot["pendingWrites"]}, sys.stdout)
+        return 1
+    identity = entry["identity"]
+    locators = {key: identity[key] for key in task_controls.LOCATOR_KEYS
+                if isinstance(identity.get(key), str) and identity[key]}
+    merged_evidence = dict(locators)
+    merged_evidence.update(evidence)
+    readback = task_admin.readback(entry["tool"], entry["identity"], env=merged_env,
+                                   evidence=merged_evidence)
+    if readback["status"] not in (task_admin.CONFIRMED_APPLIED,
+                                  task_admin.CONFIRMED_NOT_APPLIED):
+        snapshot = budget.report()
+        _print_json({"command": "admin.task.reconcile", "taskId": args.task_id,
+                     "requestHash": request_hash, "tool": entry["tool"],
+                     "status": "uncertain", "verdict": "uncertain",
+                     "calls": snapshot["calls"], "deadline": snapshot["deadline"],
+                     "pending": snapshot["pending"],
+                     "readback": readback}, sys.stdout)
+        return 1
+    reconciled = budget.reconcile(request_hash, readback["status"], merged_evidence)
+    snapshot = budget.report()
+    _print_json({"command": "admin.task.reconcile", "taskId": args.task_id,
+                 "requestHash": request_hash, "tool": entry["tool"],
+                 "status": reconciled["status"],
+                 "verdict": reconciled.get("verdict") or readback["status"],
+                 "calls": snapshot["calls"], "deadline": snapshot["deadline"],
+                 "pending": snapshot["pending"],
+                 "pendingWrites": reconciled.get("pendingWrites"),
+                 "readback": {"status": readback["status"], "reason": readback["reason"],
+                              "readback": readback.get("readback")}}, sys.stdout)
+    return 0 if reconciled["status"] in ("reconciled", "already_reconciled") else 1
+
+
+def _admin_renew(args, env) -> int:
+    if not args.confirm:
+        raise UsageError("admin task renew 必须显式 --confirm")
+    if args.max_calls is None and args.max_seconds is None:
+        raise UsageError("admin task renew 至少提供 --max-calls 或 --max-seconds")
+    budget = task_controls.SessionBudget(_admin_state_env(args, env))
+    renewal = budget.renew(max_calls=args.max_calls, max_seconds=args.max_seconds,
+                           authorization_file=args.authorization_file or None)
+    _print_json({"command": "admin.task.renew", "taskId": args.task_id,
+                 "status": "renewed", "renewal": renewal,
+                 "budget": budget.report()}, sys.stdout)
+    return 0
+
+
+def _run_admin(args, env) -> int:
+    if args.admin_task_command == "list":
+        return _admin_list(args, env)
+    if args.admin_task_command == "status":
+        return _admin_status(args, env)
+    if args.admin_task_command == "reconcile":
+        return _admin_reconcile(args, env)
+    if args.admin_task_command == "renew":
+        return _admin_renew(args, env)
+    raise UsageError("未知 admin task 子命令")
+
+
 def _legacy_error_payload(exc) -> dict:
     if exc.code == "INVALID_INPUT":
         return {"error": "usage_error", "message": exc.message}
@@ -733,6 +920,8 @@ def main(argv=None) -> int:
             return _run_tools(args, env)
         if args.command == "tool":
             return _run_tool_call(args, env)
+        if args.command == "admin":
+            return _run_admin(args, env)
         return _run_legacy(args, env)
     except UsageError as exc:
         _print_json({"error": "usage_error", "message": str(exc)}, sys.stderr)

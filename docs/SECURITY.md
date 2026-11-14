@@ -118,6 +118,33 @@ AI 工具平台在**受信执行端进程内**直接处理未入库文件；这�
 - **边界**：本地工具不得修改已入库资产的索引、作者、标签、业务关联或正式媒体路径；这些只能走 Go `/api/v1` 的计划/确认/回读。`--state-dir` 由操作者提供，只把该运行目录追加为本次运行的写根，不授权其他媒体目标。
 - **未覆盖**：真实 NAS/多用户目录、网络文件系统语义、跨卷复制失败恢复、fileRef 的加密完整性（当前为配置内可达即可读，非签名令牌）未做现场验收；`QIMENG_AI_STORAGES` 中的路径本身仍由管理员保护。
 
+### 研究产物引用、可信恢复与分发边界（2026-11-14）
+
+- **artifactRef 不是文件授权**：研究抽帧、JSONL 与证据的 `artifactRef` 绑定 API
+  origin、凭据摘要、平台/工具契约/规则版本、来源工具、授权根、相对路径、大小、
+  SHA-256、MIME 与 TTL。清单用本机状态目录的 HMAC 密钥校验，不含绝对路径、token
+  或原始大载荷；读取时重新核对根授权、路径/链接段、文件 size+SHA-256。跨实例/
+  凭据/版本、替换、篡改、过期、根移除均拒绝。模型不能因为持有引用而读取未发布
+  的任意文件，`platform.artifact.read` 只读且不扩大原权限。
+- **可信端恢复入口与模型工具分离**：`admin task status/list/reconcile/renew` 只在
+  可信执行端 CLI，不注册为 MCP 工具，不提供通用 `budget.reset`/无限续期。持久
+  预算按 `(taskId, apiBase, 凭据摘要)` 隔离；pending 只保存白名单、有界的最小
+  操作定位信息（uploadId、assetId+planFingerprint、authorId+expectedRevision、
+  jobId/step 等），不保存路径、token、完整 plan 或大载荷。
+- **核销只认可验证回读**：reconcile 只发 GET 回读原操作身份（upload 会话/资产、
+  author profile revision、asset authors/tags/fileName、maintenance job），只有
+  `confirmed_applied`/`confirmed_not_applied` 才解除对应预留；HTTP/网络/解析失败
+  或证据不足返回 `uncertain` 并继续阻断写入。重复核销幂等，并发只成功一次，跨
+  任务/实例/凭据不能核销。`renew` 只提高上限，保留已用计数、观察、未决项与开始
+  时间，不因 resume 清零或恢复过期授权；可选授权文件必须实例匹配、未过期且明确
+  包含 `{"tool":"budget.renew"}`。
+- **分发物不携带秘密或业务数据**：`package.py` 只打包工具核心、recipes、rules、
+  OpenAPI 快照、可选 research_kit、安装说明与逐文件来源清单；不打包数据库、真实
+  媒体、凭据、日志或 Go 业务实现。清单只含 POSIX 相对路径、长度与 SHA-256，不含
+  本机用户名/工作区绝对路径。`doctor` 区分基础依赖（Python/API 配置）与可选研究
+  依赖（Node/ffmpeg/ffprobe/browser/adb），缺可选依赖只报告能力不可用，不伪装
+  成功。分发物默认仍只读、只连显式配置的 API；8420 真库禁止测试写入。
+
 ## 开发模式（红线 5 的受限例外）
 
 - **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。

@@ -181,6 +181,18 @@ def write_roots(env=None) -> tuple[Path, ...]:
     return tuple(resolved for _raw, resolved in _dedupe_entries(entries))
 
 
+def trusted_root_entries(env=None) -> tuple[tuple[Path, Path], ...]:
+    """读写可信根的 (原始写法, 真实路径) 清单，供需要根别名的受控引用使用。
+
+    只暴露路径对应关系，不扩大授权；调用方仍须执行根内包含、链接段与文件身份检查。
+    """
+    entries = (media_root_entries(env)
+               + _parse_root_entries(env, READ_ROOTS_ENV)
+               + _parse_root_entries(env, WRITE_ROOTS_ENV)
+               + _implicit_entries(env))
+    return tuple(_dedupe_entries(entries))
+
+
 def _root_entries(env, mode: str) -> list[tuple[Path, Path]]:
     if mode == "read":
         return _dedupe_entries(media_root_entries(env)

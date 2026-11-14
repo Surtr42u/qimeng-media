@@ -56,6 +56,7 @@ _SUMMARY_REQUIRED_KEYS = (
     "truncated", "task", "recipe",
     "playbook", "tool", "permissions", "tools", "next", "discovery", "items", "domains", "steps",
     "availableTasks", "availableRecipes", "availableDomains", "availablePlaybooks",
+    "artifactRefs", "frameRefs", "artifactRefStatus",
 )
 
 

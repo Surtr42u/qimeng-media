@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-14.1",
+  "rulesVersion": "2026-11-14.2",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1409,13 +1409,70 @@
       "saucenao": "4 次/30s，日上限 90（脚本内置）"
     },
     "toolTimeoutSeconds": {"default": 300, "max": 900},
+    "workResearch": {
+      "tool": "research.work",
+      "entry": "只给一张图或一段视频即可开始；path/fileRef/artifactRef 三选一，nameHint 可选，authorId/assetId/profileChanges 不是前提。",
+      "zeroBusinessWrites": "研究阶段不新建作者、不改档案、不关联资产；businessWrites=0、writePhase=not_started、confirmed=false。",
+      "media": "视频/动图按 15/50/85% 抽帧并复用缓存；图片直接用原图做 Lens，不能因为没有视频 duration 就结束为已研究。",
+      "evidenceLevels": "Lens topTitles/topDomains/links、provider 检索摘要、转载页、标签、水印、同名账号最高 weak/medium；只有平台稳定 ID/URL 与主页/原帖互证才可能升级，研究阶段 candidates 一律 unconfirmed。",
+      "excluded": "只有实际出现同一 URL/同一平台稳定 ID 的重复项或明确聚合/搜索页时才写 excluded 并给出 reason；没有可靠排除就空数组，不编造。",
+      "unresolved": "至少包含“未取得原帖/作品页与作者主页互证”；按缺失补充 nameHint/视觉反查/provider 受限/元数据无作者等条件，不把不同作者候选合并。",
+      "nextPhase": "确认作者后才进入写入阶段：仍由 author.discover 等现有工具查重、prepare/计划/确认/回读；旧 author.discover 的 nameHint+profileChanges 输入语义不变，research.work 不自动补造。"
+    },
     "rules": [
       "识图先 Lens：Lens 没有稳定外链，links/topTitles 为空不代表失败，也不能单独支撑归属；Lens 未命中再按 Yandex→SauceNAO 阶梯补证。",
       "作者核验以平台公开接口（fxtwitter/kemono 等）字段为主证据；bing/wayback 等检索摘要只是线索，不能单独支撑 verified。",
       "真实作者名单、图片、结果、帧与证据只写被忽略的本地目录；不写媒体库/数据库，不上传凭据，不访问付费内容或绕过验证码。",
       "算法唯一实现在 tools/research_kit/；工具层只组 argv、校验路径/超时并枚举产物，不复制识别算法。",
+      "作品研究可从单张图片或单段视频开始：nameHint 与 profileChanges 不是前提；nameHint 只增加文字线索，缺省不等于失败。",
+      "研究阶段零业务写入：research.work 只产出 candidates/workSources/evidence/excluded/unresolved，businessWrites=0；不得把研究输出直接当作者档案或关联写入。",
+      "所有候选保持 unconfirmed；转载页、标签、水印、同名账号和检索摘要不能写成 confirmed，升级 verified 必须回到平台公开字段与创作者可控主页互证。",
+      "研究阶段不得补造 nameHint/profileChanges 来凑 author.discover 配方；没有作者线索时输出 unresolved 或候选，写入阶段由用户确认后显式提供。",
+      "不同平台稳定 ID 或不同作者候选不得合并；同一 URL/稳定 ID 的重复项只在 excluded 中记录原因。",
+      "两阶段边界：作品研究（research.work）结束后，写入仍走 author.discover 等工具，旧 recipe 输入/恢复语义保持不变。",
       "方法学与证据分级以 tools/IMAGE_RESEARCH.md、tools/AUTHOR_RESEARCH.md 与 tools/research_kit/README.md 为准，本节不复制全文。"
     ]
+  },
+  "researchArtifacts": {
+    "artifactRef": "a1_<32 位小写十六进制>：研究产物（抽帧、研究 JSON/JSONL、候选摘要、必要截图）的只读引用。它不是 fileRef（输入文件）、resultRef（完整结果续读）或 planRef（完整计划），不能当文件写入授权或计划授权使用。",
+    "binding": [
+      "引用绑定 API origin 与凭据摘要、platformVersion/toolContractVersion/rulepackVersion、来源工具、授权根、相对路径、大小、SHA-256、MIME、标签、来源步骤、创建与过期时间。",
+      "清单用本机状态目录的 HMAC 密钥校验；清单不含本机绝对路径、token 或原始大载荷。",
+      "artifactRef 只在其发布时的实例/凭据与状态根内有效；跨实例、跨凭据、版本变化、根移除、文件替换、篡改或过期都必须明确拒绝。"
+    ],
+    "publish": [
+      "发布只接受可信根（QIMENG_AI_MEDIA_ROOTS / QIMENG_AI_READ_ROOTS / QIMENG_AI_WRITE_ROOTS 与仓库忽略工作根）内的普通文件；解析后仍在根内，拒绝目录、链接/junction/reparse 与超限文件。",
+      "研究 JSON/JSONL 与候选摘要可发布为私有副本；不复制真实原件，也不删除/修改原件。",
+      "默认 TTL 86400 秒；单个 artifact 上限 32 MiB，引用清单最多 256 个，私有副本合计 64 MiB；过期清理每次有界，跨进程发布使用同一状态锁并原子发布清单。"
+    ],
+    "read": [
+      "用 platform.artifact.read（只读、纯本地、无副作用、permission=read）读取；输入 artifactRef、offset、limit、includeContent。",
+      "文本按字节偏移分页，单页不超过 12 KiB，返回 nextOffset/truncated；图片默认只返回元数据，includeContent=true 时返回不超过 2 MiB 的有界 base64，MCP 适配为独立 image 内容块。",
+      "读取时重新核对绑定、HMAC、TTL、根授权、路径与文件大小/SHA-256；不能因为引用合法就扩大为任意文件读取。"
+    ],
+    "handoff": [
+      "research.media.probe 成功时为 media-probe.jsonl 与每张帧返回 frameRefs/artifactRefs；无有效 API 配置时返回 artifactRefStatus 明确不可用，不伪造空引用。",
+      "帧引用可直接传给 research.image.search（script=yandex 的 artifactRef）或 research.lens（artifactRef）；jobs JSONL 可用 jobsRef。path 与 ref 必须二选一。",
+      "research.work 成功时为每张采样帧发布 frameRefs，并用 publish_json 发布完整研究证据（evidenceRef）；帧与证据都走同一 artifactRef 状态/TTL，不另造缓存。",
+      "研究证据用 platform.artifact.read 按 offset/limit 分页读取；结果中的 media/frames 不回显本机绝对路径，只有不透明引用与相对标签。",
+      "工具结果与 args 以占位符显示 artifactRef 输入，不把本机绝对路径回显给模型。"
+    ],
+    "errors": {
+      "ARTIFACT_REF_INVALID": "格式非法；重新发布获取新引用。",
+      "ARTIFACT_NOT_FOUND": "不存在/已清理或跨实例凭据；重新执行研究步骤。",
+      "ARTIFACT_BINDING_MISMATCH": "实例、凭据、工具契约或规则版本不匹配；重新发布。",
+      "ARTIFACT_EXPIRED": "超过有效期；重新执行研究步骤，不能延长旧引用。",
+      "ARTIFACT_TAMPERED": "清单 HMAC/结构校验失败；停止使用并重新发布。",
+      "ARTIFACT_CONTENT_CHANGED": "文件删除、替换或 SHA-256 不一致；重新执行研究步骤。",
+      "ARTIFACT_ROOT_UNAVAILABLE": "原授权根已移除；由可信端恢复授权或重新发布。",
+      "ARTIFACT_PATH_UNSAFE": "链接/越界/目录等不安全路径；只发布授权根内普通文件。",
+      "ARTIFACT_TOO_LARGE": "单个产物超过 32 MiB；缩小产物后重新发布。",
+      "ARTIFACT_STORE_LIMIT": "数量或私有副本容量达到上限；等待过期或减少发布。",
+      "ARTIFACT_STORE_UNAVAILABLE": "状态目录不可用/被占用；检查 QIMENG_AI_STATE_DIR 后重试。",
+      "ARTIFACT_STORE_INVALID": "状态目录被链接替换或清单目录异常；停止使用并排查。",
+      "ARTIFACT_CONTEXT_INVALID": "缺少有效 API 实例/凭据，引用无法绑定或读取；检查配置。",
+      "ARTIFACT_CONTENT_TOO_LARGE": "文本片段或图片内联超过上限；缩小内容或只读元数据。"
+    }
   },
   "deviceApply": {
     "endpoint": "POST/GET /api/v1/device/apply-tasks",
@@ -1483,10 +1540,10 @@
       "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
     ]
   },
-  "rulepackVersion": "2026-11-14.1",
+  "rulepackVersion": "2026-11-14.2",
   "platform": {
-    "platformVersion": "1.6.0",
-    "toolContractVersion": "2.0.0",
+    "platformVersion": "1.7.0",
+    "toolContractVersion": "2.1.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
   },
@@ -1836,14 +1893,18 @@
       "whenToUse": "需要从图片/账号线索确认真实作者身份、主页与作品归属时。",
       "risk": "normal",
       "baseTools": ["research.image.pipeline", "research.image.search", "research.author.probe",
-                    "research.media.probe", "research.avatar.fetch", "research.provider.query"],
+                    "research.media.probe", "research.avatar.fetch", "research.provider.query",
+                    "research.work", "platform.artifact.read"],
+      "ruleSections": ["research", "researchArtifacts", "permissions"],
       "steps": [
-        {"action": "读研究规则与预算", "tool": "platform.rules", "note": "sections=[research]；先确认 Lens 预算与超时上限"},
-        {"action": "视频抽帧（可选）", "tool": "research.media.probe", "note": "15/50/85% 帧 ≤1600px；只作识图输入"},
-        {"action": "Lens 批处理", "tool": "research.image.search", "note": "script=lens；links/topTitles 为空不代表失败"},
-        {"action": "阶梯补证", "tool": "research.image.search", "note": "Lens 未命中再 yandex→saucenao；深挖需显式 deep/预算"},
+        {"action": "读研究规则与预算", "tool": "platform.rules", "note": "sections=[research,researchArtifacts]；先确认 Lens 预算、artifactRef TTL 与超时上限"},
+        {"action": "单素材只读研究（可选）", "tool": "research.work", "note": "只有一张图/视频时先跑；nameHint 可选；产出 candidates/workSources/unresolved，businessWrites=0；确认后才继续档案候选"},
+        {"action": "视频抽帧（可选）", "tool": "research.media.probe", "note": "15/50/85% 帧 ≤1600px；只作识图输入；成功时取 frameRefs[].artifactRef"},
+        {"action": "Lens 批处理", "tool": "research.image.search", "note": "script=lens；links/topTitles 为空不代表失败；jobsRef 可替代 jobsPath"},
+        {"action": "阶梯补证", "tool": "research.image.search", "note": "Lens 未命中再 yandex/saucenao；yandex 用 artifactRef，深挖需显式 deep/预算"},
         {"action": "平台公开字段", "tool": "research.author.probe", "note": "fxtwitter 取账号/帖子字段；kemono 取公开 API 元数据"},
         {"action": "头像候选", "tool": "research.avatar.fetch", "note": "只下载到显式 outDir，manifest 记录尺寸/格式/摘要"},
+        {"action": "读取关键证据", "tool": "platform.artifact.read", "note": "按 artifactRef 分页读研究 JSONL；只取必要证据，不遍历磁盘"},
         {"action": "证据分级与档案候选", "tool": "author.profile.prepare", "note": "平台字段+主页+至少 1 条证据才可能 verified；研究结果先写 candidate"}
       ],
       "guardrails": [
@@ -1851,6 +1912,30 @@
         "Lens 无稳定外链，不得当作识别成功",
         "不伪造证据、不写标签池、不把研究脚本输出当业务写入",
         "真实作者数据只放忽略目录，不上传外部模型上下文之外的第三方服务"
+      ]
+    },
+    "research.work": {
+      "domain": "research",
+      "title": "作品研究：单图/视频 → 抽帧/Lens/文字线索 → 候选与未解决条件（只读）",
+      "whenToUse": "只有一张图或一段视频、尚未有作者名或 profileChanges 时；先只读研究，确认候选后才进入 author.discover 写入阶段。",
+      "risk": "normal",
+      "baseTools": ["research.context", "research.work", "platform.artifact.read",
+                    "research.image.search", "research.author.probe"],
+      "ruleSections": ["research", "researchArtifacts", "permissions"],
+      "steps": [
+        {"action": "读研究规则与预算", "tool": "platform.rules", "note": "sections=[research,researchArtifacts]；确认研究开关、Lens sidecar/provider 矩阵与 artifactRef TTL"},
+        {"action": "单素材只读研究", "tool": "research.work", "note": "path/fileRef/artifactRef 三选一；nameHint 可选；视频 15/50/85% 抽帧，图片原图 Lens；输出 candidates/workSources/evidence/excluded/unresolved"},
+        {"action": "读取完整证据", "tool": "platform.artifact.read", "note": "evidenceRef 分页读取；帧用 frameRefs[].artifactRef 接续 research.lens/research.image.search；不遍历磁盘"},
+        {"action": "候选核对", "note": "核对候选主页与原帖/作品页互链、平台稳定 ID 与发布时间；同名账号/转载页/水印只作线索；不同平台 ID 不合并"},
+        {"action": "结束或转写入", "note": "研究可结束为 unresolved；确认作者后仍用 author.discover（nameHint/profileChanges 必填）查重/建档/档案/关联，写入不在 research.work 内"}
+      ],
+      "guardrails": [
+        "research.work 只读：businessWrites=0、writePhase=not_started；不新建作者/不改档案/不关联资产",
+        "candidates 全部 unconfirmed；ok 只表示研究流程完成，不表示作者已确认",
+        "Lens 标题/域名/链接、provider 摘要、转载页、标签、水印、同名账号最高 weak/medium",
+        "没有可靠排除时 excluded 为空数组；不同平台稳定 ID/不同作者候选不得合并",
+        "外部 AI 可用自己的公开搜索；provider 受限不是伪造成功或反复重试的理由",
+        "写入阶段保留旧 author.discover 输入/Schema 与恢复语义，不自动补造 nameHint/profileChanges"
       ]
     }
   },

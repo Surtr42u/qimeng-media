@@ -9,7 +9,7 @@ import os
 from urllib import parse
 
 from . import client as http_client
-from . import errors
+from . import artifact_ref, errors
 
 MAX_AUTHOR_PAGE_SIZE = 100
 DEFAULT_AUTHOR_PAGE_SIZE = 20
@@ -315,7 +315,20 @@ def lens_multipart(file_path: str) -> tuple[bytes, str]:
 
 
 def research_lens(ctx, payload: dict) -> dict:
-    body, content_type = lens_multipart(payload.get("file"))
+    file_value = payload.get("file")
+    ref_value = payload.get("artifactRef")
+    has_file = file_value not in (None, "")
+    has_ref = ref_value not in (None, "")
+    if has_file and has_ref:
+        raise errors.invalid_input("file 与 artifactRef 只能提供一个")
+    if not has_file and not has_ref:
+        raise errors.invalid_input("必须提供 file 或 artifactRef")
+    if has_ref:
+        if not getattr(ctx, "rulepack_version", ""):
+            raise errors.artifact_context_invalid("当前上下文缺少规则版本，无法解析 artifactRef")
+        file_value = str(artifact_ref.resolve_path(
+            ref_value, env=ctx.env, rulepack_version=ctx.rulepack_version))
+    body, content_type = lens_multipart(file_value)
     return ctx.client.post(
         "/api/v1/research/lens",
         data=body,

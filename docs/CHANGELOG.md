@@ -1,3 +1,13 @@
+## feat(ai): 纯素材研究、受控产物与可信恢复（2026-11-14 第七百三十三笔）
+
+执行 AI：Codex（主代理完整模型名称及变体未知，负责执行控制、接线与交付）
+
+- 工具包1.7.0/契约2.1.0/规则2026-11-14.2：新增 `research.work` 纯素材只读研究（path/fileRef/artifactRef 三选一，nameHint 可选；候选/作品来源/证据/排除/未解决条件，候选恒 unconfirmed、`businessWrites=0`），写入仍走原 `author.discover`，旧输入/恢复语义不变。
+- 新增 `artifactRef` 与 `platform.artifact.read`：抽帧/研究 JSONL/证据复用 model-output 状态根、HMAC/TTL/锁与原子发布，绑定实例/凭据/版本/授权根/SHA-256；文本分页、图片标准 MCP image content；替换/篡改/过期/跨上下文/根移除拒绝。`research.media.probe` 输出 frameRefs/artifactRefs，lens/search 接受 artifactRef/jobsRef。
+- 新增可信端 `admin task status/list/reconcile/renew`：预算按 taskId+实例+凭据摘要隔离，pending 仅存有界定位信息；核销只接受可验证 GET 回读 applied/not_applied，unknown 保持阻断；续期只提高上限，不清零计数/观察/未决项；不注册为 MCP 工具。
+- 新增 `package.py` 最小可移植分发（build/verify/manifest/doctor）与 `docs/AI_PLATFORM_DISTRIBUTION.md`；不打包数据库/真实媒体/凭据/Go 业务实现，来源清单逐文件 SHA-256。
+- 同步工具 README、平台任务书、HANDOVER、SECURITY、ADR-0056、CAPABILITY_MAP。自动构建/单测/基准仅走云端；实际门禁、真实图/视频和独立模型结果在门禁完成后补 HANDOVER，不在本条宣称已全部通过。
+
 ## feat(api): 落实有界AI上下文与可信执行控制（2026-11-14 第七百三十二笔）
 
 执行 AI：Codex（主代理完整模型名称及变体未知，负责执行控制、接线与交付）；GPT-6 Luna max（前期参与实现已停止，主代理核对修正；后续仅独立测试/反馈）
@@ -244,23 +254,6 @@
 - 用户 2026-11-07 补充要求：统一管理操作提示词/业务规范/工作流、减少对源码与完整文档依赖、MCP 调用期间处理取消、平台独立部署与版本。新增 platform.playbook（按领域列模板或按名取单个，规则节选有界，模板可选不强制路径）；rules.json 增 playbooks（author.profile/media.organize/author.cleanup/maintenance.jobs/backup.rotate）与 toolCatalog.discovery，版本升 2026-11-07.6；CLI 增 playbook 子命令，MCP initialize 指引更新。
 - MCP serve_forever 改为 tools/call 独立线程 dispatch + 写锁 + 并发上限（QIMENG_AI_MCP_MAX_CONCURRENCY，默认 4）+ 有副作用工具全局串行；取消通知在调用期间可处理，只读工具立即 -32800、有副作用工具等真实结果（避免误以为未执行）；完成后清理取消标记防 request id 复用误判；新增/更新 MCP 取消与串行化测试。新增 docs/AI_PLATFORM_OPERATIONS.md（CLI/MCP 独立启动停止、配置、版本兼容、升级、NAS 边界）。
 - 验证：test_ai_catalog 22、test_ai_mcp 11、test_ai_toolkit 47、test_ai_maintenance 31 通过；未跑全量与 CI。
-
-## docs(ai): Go 业务 API 缺口与 AI 客户端权限模型方案（2026-11-07 第七百零四笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理）
-
-- 按用户 2026-11-07 追加长期架构要求落方案：[Go API 缺口与 AI 客户端权限模型](AI_PLATFORM_API_GAPS.md) 复核作者/媒体/文件/备份/任务既有接口（结论：基础操作完整，缺口集中在 AI 客户端身份/权限/审计），列 G1–G8 缺口（AI 客户端凭据+scope 撤销审计、业务审计归属、服务端高风险确认、外部执行器领取、批量能力、设备配对、作品/剧集模型、限流预算）与分阶段计划；新增 [ADR-0057](adr/0057-AI客户端凭据与细粒度权限模型.md) 与索引。
-- 权限模型：AI 客户端凭据与用户会话分离、可轮换/撤销、scope 集合（read/research/author.write/asset.author.write/media.organize/backup.export/maintenance.read|write 与高风险 author.destructive/backup.restore/admin.*）；低风险写可在授权范围内自动执行，高风险单独 scope+动作级确认；权限由 Go 中间件与服务层强制，审计按客户端/动作/目标/结果/请求 ID 归属；拒绝任意 SQL/文件/shell；长任务复用维护账本；NAS 底座与 AI 平台独立升级。
-- 本 PR 只收尾现有代码与测试，不改 Go/OpenAPI/migration；ADR-0056 补充工具目录/惰性加载/权限分离；taskbook §4.4/§5.4、CAPABILITY_MAP、HANDOVER §9.3、tools README 同步。验证：check_docs 0 错误、tools 单测 205 项本机通过（扩展性 18 项）、check_privacy passed；Go 与三端未改；云端 CI 见 HANDOVER §9.2。未安装、Go 权限实现未开始（P1+）。
-
-## feat(tools): 工具目录按需发现、惰性模块加载与权限分离（2026-11-07 第七百零三笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理）
-
-- 按用户 2026-11-07 扩展性要求做最小增量（仅 tools/ai_maintenance/ 与文档，不改 Go /api/v1、OpenAPI、schema、三端）：新增 platform.catalog 精简领域目录（author/media/research/backup/device/maintenance/system，28 个工具；无 Schema，默认隐藏已废弃工具）、platform.tool.describe 按需返回单个工具 Schema/示例/规则摘录/Go API 能力依赖、platform.rules 按节/领域读取有界规则（不加载完整 rules.json）；CLI 增 catalog 与 tools list --compact/--domain，tools show 输出按需描述；MCP tools/list 仍返回完整清单并新增 _meta.domain 与 catalog 指引。
-- 注册表改为惰性 module:handler 引用：目录/状态计算不导入 tools_*.py / media_naming.py，首次执行/描述才导入；实现模块缺失→unavailable/TOOL_NOT_IMPLEMENTED；新增 deprecated/replacedBy（目录默认隐藏、执行 TOOL_DEPRECATED）；rules.json 增 toolCatalog 规则节（领域/发现策略/惰性加载/权限模型/管理员 Bearer 绕过风险评估）并升 rulesVersion/rulepackVersion 2026-11-07.5。
-- 权限与发现分离：execution 按 QIMENG_AI_GRANTED_PERMISSIONS 或 toolConfig.grantedPermissions 在 Schema/计划/网络前强制拒绝（PERMISSION_DENIED）；未配置默认授予全部声明权限仅为兼容旧 CLI。管理员 Bearer 绕过风险已写入 README/ADR-0056/rules：工具层隐藏 token 不能阻止模型直接调用 Go API，正式开放 AI 写入前需受限凭据或执行端隔离。
-- 示例与规则摘录集中在 registry（TOOL_EXAMPLES/TOOL_RULES_REFS），describe 有界返回；目录 JSON 约为完整 tools list 的 1/11（28 工具实测），120 个合成工具仍有界；新增 tools/test_ai_catalog.py 18 项与既有回归，tools 全套 205 项本机通过、check_docs 0 错误、check_privacy passed；云端 CI 见 HANDOVER §9.2。未安装、未接真实 AI 客户端。
 
 # CHANGELOG - 变更历史
 

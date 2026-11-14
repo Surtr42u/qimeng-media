@@ -2,6 +2,25 @@
 
 > 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-11-14。
 
+## 0. 2026-11-14 后续优化与合并（本轮进行中）
+
+按[后续优化与合并任务书](AI_PLATFORM_OPTIMIZATION_MERGE_TASKBOOK.md)接手 S0–S6 与
+M1–M5。当前分支仍为 `codex/ai-api-context-20261114`（PR #60）；S1–S5 源码已实现：
+
+- `research.work`：单图/视频只读研究，path/fileRef/artifactRef 三选一，nameHint 可选；
+  抽帧/dHash、Lens/provider 弱线索、候选/作品来源/证据/排除/未解决条件，候选恒
+  unconfirmed、`businessWrites=0`；写入仍走原 `author.discover`。
+- `artifactRef`：抽帧/研究 JSONL/证据的不透明受控引用，绑定实例/凭据/版本/授权根/
+  SHA-256 与 TTL；`platform.artifact.read` 文本分页、图片标准 MCP image content。
+- `admin task status/list/reconcile/renew`：可信端预算查询、GET 回读核销与续期；
+  预算按 taskId+实例+凭据摘要隔离，pending 只存有界定位信息，unknown 保持阻断。
+- `package.py`：最小可移植 bundle、逐文件来源清单、`verify` 与基础/可选依赖 `doctor`。
+
+本轮未运行本地构建/单测/基准，验证计划全部走云端；实际门禁链接、测试计数、真实图/
+视频与独立模型结果、失败和限制在门禁完成后补入本节。未声称这些源码已安装到日常 PC/
+手机/NAS，也未新增远程 HTTP MCP。工具包/契约/规则版本已递增为 `1.7.0`/`2.1.0`/
+`2026-11-14.2`。
+
 ## 1. 当前使用形态
 
 本轮分工已按用户2026-11-14纠正：后续代码实现与审查由主代理负责；GPT-6 Luna max

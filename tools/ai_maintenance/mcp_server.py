@@ -217,6 +217,9 @@ class McpServer:
                 "QIMENG_AI_MCP_DOMAINS 服务端过滤只是减少暴露面，不能当作上下文节省保证。"
                 "本地文件用 files.storages/files.search 发现（只读、有界、不返回绝对路径）；"
                 "fileRef 失效需重新搜索，不要手工拼接。"
+                "研究抽帧/证据用 artifactRef 接续（research.media.probe → frameRefs[].artifactRef → "
+                "research.image.search/research.lens），用 platform.artifact.read 分页读取；"
+                "artifactRef 不是文件写入或计划授权。"
                 "大结果有 resultRef/truncated，用 platform.result.read 取必要部分；"
                 "prepare 返回 planRef 时直接传给 apply，不抄写或重造计划。"
                 "写入须在可信配置授权范围内，confirm=true 不授予新权限；"
@@ -394,6 +397,18 @@ class McpServer:
         result = self._scope_discovery_result(spec.id, result)
         self._publish_discovered(spec.id, result)
         is_error = isinstance(result, dict) and result.get("status") in ("partial", "failed")
+        image_block = None
+        if spec.id == "platform.artifact.read" and isinstance(result, dict):
+            # 图片内容走标准 MCP image content block；structuredContent/result 只保留
+            # 元数据，避免把 base64 同时塞进文本与结构载荷。
+            encoded = result.pop("imageBase64", None)
+            if isinstance(encoded, str) and encoded:
+                mime = result.get("mime")
+                if isinstance(mime, str) and mime.startswith("image/"):
+                    image_block = {"type": "image", "data": encoded, "mimeType": mime}
+                    result["imageContentIncluded"] = True
+                else:
+                    result["imageContentOmitted"] = True
         try:
             result = model_output.present_result(
                 spec.id, result, env=self.env,
@@ -415,8 +430,11 @@ class McpServer:
             else:
                 return _result_response(request_id, _tool_error_result(
                     errors.internal_error("工具结果无法安全呈现")))
+        content = [{"type": "text", "text": text}]
+        if image_block is not None:
+            content.append(image_block)
         return _result_response(request_id, {
-            "content": [{"type": "text", "text": text}],
+            "content": content,
             "structuredContent": {"tool": spec.id, "status": "error" if is_error else "ok",
                                   "result": result},
             "isError": bool(is_error),

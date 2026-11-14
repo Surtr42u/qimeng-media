@@ -27,12 +27,14 @@
 | `tools_backup.py` | backup.export：`GET /export/qimeng-backup` 流式落盘（临时文件 + 原子改名）、摘要与预算。 |
 | `tools_device.py` | device.apply.prepare/submit/status：本地段校验、manifest 计划、multipart 登记与回读。 |
 | `tools_maintenance.py` | maintenance.claim/heartbeat/step.record/artifact.record/complete：执行器控制面（leaseToken 是能力凭据）。 |
-| `tools_research.py` | research_kit 适配：argv 组装、路径/超时边界、产物枚举（算法仍在 `../research_kit/`）；`research.media.probe` 接受 `fileRefs`，返回的 argv 对 fileRef 输入脱敏。 |
+| `tools_research.py` | research_kit 适配：argv 组装、路径/超时边界、产物枚举（算法仍在 `../research_kit/`）；`research.media.probe` 接受 `fileRefs`，为帧/JSONL 发布 `frameRefs`/`artifactRefs`，返回的 argv 对 fileRef/artifactRef 输入脱敏。 |
+| `tools_research_work.py` | `research.work`：单图/视频只读作品研究；媒体探测/抽帧复用 `media_primitives`，Lens/provider 只作弱线索，输出 candidates/workSources/evidence/excluded/unresolved 且 `businessWrites=0`。 |
 | `tools_files.py` | `files.storages` / `files.search`：授权存储枚举与有界文件搜索，返回不透明 `fileRef` 与相对路径，不返回物理绝对路径。 |
 | `tools_trash.py` | trash.list / trash.restore（需确认 + 回读）。 |
 | `pathguard.py` | 本地读写授权边界：`QIMENG_AI_READ_ROOTS`/`QIMENG_AI_WRITE_ROOTS`/媒体根/忽略工作根、链接与 reparse 检查、TOCTOU 复核与文件摘要。 |
 | `safefile.py` | 本地文件安全发布：同文件/硬链接身份判断、同目录临时文件、无覆盖/原子覆盖发布；不承载业务规则。 |
 | `fileref.py` | 逻辑存储与 `fileRef` 唯一实现：`QIMENG_AI_STORAGES`、自描述引用（storageId+相对路径+size+mtime）、失效校验与 path/fileRef 二选一解析。 |
+| `artifact_ref.py` | 研究产物 `artifactRef`：复用 model-output 状态根/HMAC/TTL/锁，绑定实例+凭据+版本与授权根；抽帧/研究 JSONL/证据可跨工具接续，读取时复核路径/大小/SHA-256；不是 fileRef/resultRef/planRef。 |
 | `measure_locator.py` | 隔离合成测量：路径式定位 vs `fileRef` 的调用次数、返回字符量、绝对路径暴露与定位正确率；不联网、不读真实媒体。 |
 | `media_naming.py` | **组图命名纯规划/校验引擎**（作品索引、`(1)..(n)` 页码、计划指纹、`SerializedLocks`、回读报告）；ENGINE_VERSION=1.0.0。 |
 | `media_scan.py` | **媒体批次内容扫描（只读）**：md5/可选 dHash64/视频时长+分辨率+抽帧、最大文件去重候选、序号延顺建议、根目录对齐与 contact sheet 计划；SCAN_ENGINE_VERSION=1.0.0。 |
@@ -43,8 +45,10 @@
 | `tools_media.py` | media.organize.prepare 适配层：scan 模式调用内容扫描；libraryId+groups 模式调用命名引擎；apply 加锁逐步 move 并回读。 |
 | `profile_import.py` | 作者公开档案受控填充的**唯一写入实现**；旧脚本 `../import_creator_profiles.py` 只转发。 |
 | `rulepack.py` | 生成规则包（分离版本 + 工具状态 + 能力核对），稳定可比较。 |
-| `cli.py` | 统一入口：任务卡/recipe/run + 兼容旧只读子命令 + `version`/`tools`/`tool call`（仓库根 `qai`/`qai.cmd` 为短入口）。 |
-| `mcp_server.py` | stdio MCP 适配器（JSON-RPC 2.0 最小子集），与 CLI 共用注册表与 dispatch。 |
+| `cli.py` | 统一入口：任务卡/recipe/run + 兼容旧只读子命令 + `version`/`tools`/`tool call` + 可信端 `admin task status/list/reconcile/renew`（仓库根 `qai`/`qai.cmd` 为短入口）。 |
+| `task_admin.py` | 可信端只读回读：按 uploadId/assetId/authorId/jobId 等原操作身份走 GET 查询，输出 confirmed_applied/confirmed_not_applied/uncertain；不调用 complete 或写接口。 |
+| `package.py` | 最小可移植分发：build/verify/manifest/doctor；生成镜像仓库相对布局的 bundle、逐文件 SHA-256 来源清单与依赖诊断，不打包数据库/真实媒体/凭据。 |
+| `mcp_server.py` | stdio MCP 适配器（JSON-RPC 2.0 最小子集），与 CLI 共用注册表与 dispatch；`platform.artifact.read` 图片内容以标准 MCP image content 块返回。 |
 | [test_ai_maintenance.py](../test_ai_maintenance.py) | 规则包/旧 CLI 合同回归（合成数据、127.0.0.1 stub）。 |
 | [test_ai_catalog.py](../test_ai_catalog.py) | 扩展性回归：精简领域目录/按需 describe+rules、惰性模块加载、模块缺失/废弃/禁用、权限与发现分离、并发、CLI/MCP 一致性（18 项）。 |
 | [test_ai_toolkit.py](../test_ai_toolkit.py) | 分块解析、能力降级、注册表/禁用、计划指纹、作者/清理/合并/资产流程。 |
@@ -57,6 +61,10 @@
 | [test_ai_contract_consistency.py](../test_ai_contract_consistency.py) | 契约一致性：领域发现与 MCP 元工具可见性、工具状态维度、规则点路径/截断、示例 Schema、playbook/recipe 引用、files 工具契约、版本同源。 |
 | [test_ai_integration_local_files.py](../test_ai_integration_local_files.py) | 主代理跨模块验收：files.search → fileRef → media.probe/file.hash → recipe 复用、失效、分页与 MCP 领域过滤。 |
 | [test_ai_pr53_fixes.py](../test_ai_pr53_fixes.py) | PR #53 安全回归：原语 partial/failed 停止与断点续跑、同文件/硬链接拒绝、安全覆盖与旧目标保留、probe 抽帧权限、Gate 范围、ADB 拉取覆盖保护（模拟 ADB）。 |
+| [test_ai_artifacts.py](../test_ai_artifacts.py) | artifactRef 回归：发布/分页读取、TTL、HMAC 篡改、同大小替换、跨凭据/实例/版本、根移除、链接/越界、容量上限、并发、probe→frame→lens 接续与 MCP 图片内容。 |
+| [test_ai_research_work.py](../test_ai_research_work.py) | `research.work` 回归：纯图/视频、无 nameHint 可开始、frame/evidence 引用接续、候选不合并、provider 受限/研究关闭降级、零业务写入与旧 author.discover 兼容。 |
+| [test_ai_task_recovery.py](../test_ai_task_recovery.py) | 可信端恢复回归：预算账本按实例/凭据隔离、pending identity 白名单、status 只读、reconcile 幂等/并发/跨账本拒绝、renew 只增不清零、upload/author/asset 读回三态。 |
+| [test_ai_distribution.py](../test_ai_distribution.py) | 分发回归：bundle 布局、来源清单/verify、缺依赖 doctor、仓外运行、拒绝覆盖与失败无半成品。 |
 
 生成物默认输出到 stdout；`--out` 写入文件。本目录 `.gitignore` 已忽略 `rulepack.json`；
 建议写到被忽略的 `build/ai-maintenance/`。
@@ -82,10 +90,13 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 
 ## 配置
 
-2026-11-14 源码契约更新：工具包 `1.6.0`、工具契约 `2.0.0`、规则 `2026-11-14.1`。
-默认权限改为仅 `read`；自动化写入须在可信配置中明确授予权限，并由服务端 AI scope
-再次约束。旧计划须重新 prepare；`author.query` 返回分页对象（默认20条），旧
-`authors` 子命令保留数组形状但默认只取一页。当前构建、安装与验收状态见 HANDOVER。
+2026-11-14 后续源码契约更新：工具包 `1.7.0`、工具契约 `2.1.0`、规则
+`2026-11-14.2`。新增纯素材作品研究 `research.work`、受控研究产物引用
+`artifactRef`（`platform.artifact.read`）、可信端未决写入核销/预算续期入口与
+可移植分发工具包；旧计划须重新 prepare。默认权限仍为仅 `read`；自动化写入须在
+可信配置中明确授予权限，并由服务端 AI scope 再次约束。`author.query` 返回分页
+对象（默认20条），旧 `authors` 子命令保留数组形状但默认只取一页。当前构建、
+安装与验收状态见 HANDOVER。
 
 | 配置 | 默认与用途 |
 |---|---|
@@ -262,6 +273,78 @@ scope 与强制矩阵的权威说明见 [SECURITY「独立 AI 客户端凭据」
 字符串比短路径长），收益在调用次数、绝对路径隐藏与跨步骤复用，而不是重复载荷本身。
 以上为合成环境实测，不代表所有目录规模或 token 比例。
 
+## 研究产物 artifactRef（2026-11-14）
+
+`research.media.probe` 与 `research.work` 为抽帧、研究 JSONL 与完整研究证据发布
+`artifactRef`（`a1_<32hex>`）。它与 `fileRef`（输入文件）、`resultRef`（完整结果
+续读）、`planRef`（完整计划）语义分开，**不是文件写入或计划执行授权**：
+
+- **存储与绑定**：复用 `QIMENG_AI_STATE_DIR` 下同一 model-output 状态根、HMAC
+  密钥、跨进程锁与原子发布；绑定 API origin/凭据摘要、平台/工具契约/规则版本、
+  来源工具、授权根、相对路径、大小、SHA-256、MIME、标签、来源步骤和有效期。
+  清单不含绝对路径、token 或原始大载荷。
+- **发布**：只接受 `QIMENG_AI_MEDIA_ROOTS`/`QIMENG_AI_READ_ROOTS`/
+  `QIMENG_AI_WRITE_ROOTS` 与仓库忽略工作根内的普通文件；拒绝目录、链接/
+  junction/reparse、越界和超限文件。默认 TTL 24h，单 artifact ≤32MiB，清单最多
+  256 个，私有副本合计 ≤64MiB；过期清理有界。
+- **读取**：`platform.artifact.read` 是唯一模型入口（只读、纯本地、permission=read）。
+  文本按字节偏移分页，单页 ≤12KiB，返回 `nextOffset/truncated`；图片默认只给
+  元数据，`includeContent=true` 时有界返回 ≤2MiB base64，MCP 适配为标准 image
+  content 块。读取时重新核对实例/凭据/版本、HMAC、TTL、根授权、路径与文件
+  size+SHA-256；替换/篡改/过期/跨上下文/根移除分别返回稳定错误码。
+- **接续**：`research.media.probe` 返回 `frameRefs[].artifactRef` 与
+  `artifactRefs`；帧引用可直接传给 `research.image.search`（yandex 的
+  `artifactRef`）或 `research.lens`（`artifactRef`），jobs JSONL 用 `jobsRef`。
+  `research.work` 还返回完整证据的 `evidenceRef`。模型不需要知道物理路径，也不能
+  因为引用合法而读取未发布的任意文件。
+
+## 可信端任务恢复与预算续期（admin task）
+
+未决写入与持久预算的正式管理入口只在可信执行端 CLI，不注册为 MCP 工具：
+
+```powershell
+# 只读查询：调用数/期限/未决项最小定位信息（不回显 token、完整请求或媒体路径）
+python -X utf8 tools/ai_maintenance/cli.py admin task status --task-id <taskId> --state-dir <stateDir>
+python -X utf8 tools/ai_maintenance/cli.py admin task list --state-dir <stateDir>
+
+# 按原操作身份回读后核销；只有 confirmed_applied / confirmed_not_applied 才解除对应预留
+python -X utf8 tools/ai_maintenance/cli.py admin task reconcile --task-id <taskId> \
+  --state-dir <stateDir> --request-hash <sha256> --evidence-json '{"assetId":"<id>"}' --confirm
+
+# 可信端授权后提高预算上限；保留 calls/observations/pending/startedAt，不清零
+python -X utf8 tools/ai_maintenance/cli.py admin task renew --task-id <taskId> \
+  --state-dir <stateDir> --max-calls 200 --max-seconds 1800 --confirm
+```
+
+- 持久账本按 `(taskId, apiBase, 凭据摘要)` 隔离；同一 taskId 在不同实例/凭据下是
+  不同账本。状态只保存白名单、有界的最小操作定位信息（如 uploadId、assetId+
+  planFingerprint、authorId+expectedRevision、jobId/step），不保存路径、token、
+  完整 plan 或大载荷。
+- 回读只发 GET：upload 查询会话/资产、author profile revision、asset
+  authors/tags/fileName、maintenance job/step/artifact。任何 HTTP/网络/解析失败
+  或证据不足都返回 `uncertain` 并保持写入阻断，不把“查不到”当已执行。重复核销
+  幂等；并发核销只有一次成功；跨任务/实例/凭据不能核销。
+- `renew` 只允许提高上限（绝对上限 10000 次/86400 秒），保留已用计数、重复观察、
+  未决项与开始时间；不因 resume 自动清零或恢复过期授权。`--authorization-file`
+  可选，提供时要求合法有效期/实例且 allow 明确包含 `{"tool":"budget.renew"}`。
+
+## 可移植分发与依赖检查
+
+`tools/ai_maintenance/package.py` 生成可从仓库外空目录运行的最小工具包（工具核心、
+recipes、rules、OpenAPI 快照、可选 research_kit、安装说明与逐文件来源清单），
+不打包数据库、真实媒体、凭据或 Go 业务实现：
+
+```powershell
+python -X utf8 tools/ai_maintenance/package.py build --out <空目录>
+python -X utf8 tools/ai_maintenance/package.py verify --bundle <bundle>
+python -X utf8 tools/ai_maintenance/package.py doctor --bundle <bundle>
+```
+
+完整布局、清单字段、基础/可选依赖分级、启动/停止、凭据撤销与升级/回退说明见
+[分发与接入说明](../../docs/AI_PLATFORM_DISTRIBUTION.md) 与包内 `INSTALL.md`。
+`doctor` 缺基础依赖（Python/API 配置）exit 2，缺 Node/ffmpeg/ffprobe/browser
+等可选研究依赖只 warning 并明确能力不可用；`--online` 只 GET healthz/readyz。
+
 ## 版本与兼容
 
 | 版本 | 含义 | 变化时的影响 |
@@ -425,9 +508,11 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 | `maintenance.claim` / `heartbeat` / `step.record` / `artifact.record` / `complete` | supported | 外部 AI 执行器控制面（ADR-0058）：领取租约/fencing token、续租、幂等步骤、工件元数据、终态回传；409 统一映射 `LEASE_LOST`。 |
 | `research.image.pipeline` / `research.image.search` | supported | research_kit 适配：Lens→Yandex→SauceNAO 阶梯与单工具调用，只返回退出码/产物/有界摘要。 |
 | `files.storages` / `files.search` | supported | 本地文件发现：授权 storage 枚举、有界搜索、分页与不透明 `fileRef`；只读、不返回物理绝对路径。 |
-| `research.author.probe` / `research.media.probe` / `research.avatar.fetch` | supported | fxtwitter/kemono 公开字段、ffprobe 抽帧、头像下载；算法在 `../research_kit/`；`research.media.probe` 支持 `fileRefs`。 |
+| `research.author.probe` / `research.media.probe` / `research.avatar.fetch` | supported | fxtwitter/kemono 公开字段、ffprobe 抽帧、头像下载；算法在 `../research_kit/`；`research.media.probe` 支持 `fileRefs` 并发布 `frameRefs`/`artifactRefs`。 |
 | `trash.list` / `trash.restore` | supported | 回收站只读列表与恢复（需 confirm、前置检查与回读）。 |
 | `asset.trash` / `asset.tags.replace` | supported | 删除一律进回收站（回读 404）；标签整体替换（读详情出计划、确认指纹、回读）。 |
+| `research.work` | supported | 单图/视频只读作品研究：path/fileRef/artifactRef 三选一，nameHint 可选；抽帧/dHash、Lens/provider 弱线索、候选/作品来源/证据/排除/未解决条件；研究阶段零业务写入，候选恒 unconfirmed。 |
+| `platform.artifact.read` | supported | 按 artifactRef 分页读研究产物；文本 ≤12KiB/页、图片可有界 image content；只读、纯本地，不是文件写入或计划授权。 |
 | `platform.context` / `platform.catalog` / `platform.tool.describe` / `platform.rules` / `platform.playbook` | supported | 按任务/领域取相关工具、Schema 摘要、规则节、示例与 playbook；精简领域目录；按需工具 Schema/示例/规则摘录；可选工作流模板（纯本地、只读；不写业务数据）。 |
 
 ## 计划与受控写入
@@ -487,7 +572,9 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - `tools/list` 的 `name/description/inputSchema` 与 CLI/注册表完全一致；
   `tools/call` 返回 `content[0].text`（结构化 JSON 文本）+ `structuredContent` +
   `isError`，业务失败（如未确认/planned/工具错误）以 `isError=true` 返回，
-  协议错误以 JSON-RPC error 返回。
+  协议错误以 JSON-RPC error 返回。`platform.artifact.read` 的
+  `includeContent=true` 图片结果额外返回标准 `{"type":"image",...}` 内容块；
+  元数据仍保留在文本/结构载荷中，base64 不重复写入 `structuredContent`。
 - 不注册任意 shell/Python/文件执行工具；不新增写入通道；写工具仍走计划/确认/
   执行/回读。
 - 远程 HTTP/网络/响应错误沿用 CLI 的结构化字段（HTTP 为 status/error/body/target），
@@ -541,6 +628,8 @@ JSON-RPC）验证 initialize、tools/list、tools/call、ping、错误、超时�
 
 AI 平台以 CLI 与 MCP stdio 两种进程形态独立运行，不监听网络端口；配置、版本兼容、升级与运行边界见
 [独立 AI 平台：部署、升级与运行边界](../../docs/AI_PLATFORM_OPERATIONS.md)。新增/废弃工具只改本包与规则，不需要三端发版。
+可移植发行物用 `package.py build/verify/doctor` 生成和检查，布局、来源清单与最小接入
+说明见[分发与接入说明](../../docs/AI_PLATFORM_DISTRIBUTION.md)。
 
 ## 测试与门禁
 
@@ -564,7 +653,10 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
 本地读写根/链接与 reparse 拒绝、fileRef 生成/失效/替换、原语只读/权限/门禁、recipe
 产物篡改与 running 步骤、规则一致性/MCP 元工具可见性、files.search 分页与状态维度。
 全部使用合成数据与回环 stub；命名引擎自身另跑 `python -m unittest test_media_naming`。
-当前 `test_ai_*.py` 全套 288 项通过。
+2026-11-14 批次另覆盖 artifactRef 生命周期/越权/篡改/过期/替换/并发、`research.work`
+纯素材研究与降级、可信端 reconcile/renew 与读回三态、可移植分发与仓外运行；新增测试
+与既有回归统一由云端执行，实际通过数量与失败保留以 HANDOVER 和 CI 记录为准，不在
+本地用“手动测试”替代。
 
 ## 备份导出、设备结果包与执行器控制面
 

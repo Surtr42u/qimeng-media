@@ -15,6 +15,7 @@ saucenao / fxtwitter / kemono / media_probe / avatar_fetch）；本模块只做�
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -24,7 +25,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import errors, fileref, pathguard
+from . import artifact_ref, errors, fileref, pathguard
 from .runtime import ToolContext
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -220,6 +221,142 @@ def _directory_artifacts(directory: Path, *, limit: int = MAX_ARTIFACTS) -> list
     return collected
 
 
+def _frame_mime(path: Path) -> str:
+    return {
+        ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".gif": "image/gif", ".avif": "image/avif",
+    }.get(path.suffix.lower(), "application/octet-stream")
+
+
+def _safe_frame_name(raw) -> str:
+    """帧记录里的 file 只允许 basename，拒绝越界/绝对路径。"""
+    if not isinstance(raw, str) or not raw or raw != Path(raw).name:
+        return ""
+    if any(ord(ch) < 32 for ch in raw) or "/" in raw or "\\" in raw:
+        return ""
+    return raw
+
+
+def _probe_artifact_entries(out: Path, frame_dir: Path) -> list[dict]:
+    """从 media-probe.jsonl 提取帧，失败时退回有界目录枚举。"""
+    entries: list[dict] = []
+    seen: set[str] = set()
+
+    def add_entry(path: Path, *, percent=None, crop="full") -> None:
+        key = str(path)
+        if key in seen or not path.is_file():
+            return
+        seen.add(key)
+        index = len([item for item in entries if item["kind"] == "frame"]) + 1
+        crop_text = "" if crop in (None, "", "full") else " " + str(crop)
+        label = "抽帧 " + (str(percent) + "%" if percent is not None else "")
+        entries.append({
+            "path": str(path), "kind": "frame",
+            "label": (label + crop_text).strip(),
+            "mime": _frame_mime(path),
+            "sourceStep": "research.media.probe.extract_frames",
+            "index": index, "percent": percent, "crop": crop,
+        })
+
+    parsed = False
+    try:
+        if out.is_file() and out.stat().st_size <= 4 << 20:
+            with out.open("r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    frames = record.get("frames") if isinstance(record, dict) else None
+                    if not isinstance(frames, list):
+                        continue
+                    for frame in frames:
+                        if not isinstance(frame, dict):
+                            continue
+                        name = _safe_frame_name(frame.get("file"))
+                        if not name:
+                            continue
+                        add_entry(frame_dir / name, percent=frame.get("pct"),
+                                  crop=frame.get("crop") or "full")
+                        parsed = True
+    except OSError:
+        parsed = False
+    if not parsed:
+        for path in _directory_artifacts(frame_dir, limit=MAX_ARTIFACTS - 1):
+            add_entry(path)
+    return entries
+
+
+def _publish_probe_artifacts(ctx: ToolContext, out: Path, frame_dir: Path) -> dict:
+    """为 probe 产物发布 artifactRef；失败只降级状态，不影响原探测结果。"""
+    entries: list[dict] = []
+    if out.is_file():
+        entries.append({
+            "path": str(out), "kind": "media-probe-jsonl",
+            "label": "media-probe.jsonl",
+            "mime": "application/x-ndjson",
+            "sourceStep": "research.media.probe.metadata",
+        })
+    entries.extend(_probe_artifact_entries(out, frame_dir))
+
+    published: list[dict] = []
+    frame_refs: list[dict] = []
+    problems: list[dict] = []
+    status = "available"
+    status_code = ""
+    status_message = ""
+    for entry in entries:
+        try:
+            meta = artifact_ref.publish_file(
+                entry["path"], env=ctx.env, tool_id="research.media.probe",
+                rulepack_version=getattr(ctx, "rulepack_version", ""),
+                kind=entry["kind"], label=entry["label"], mime=entry["mime"],
+                source_step=entry["sourceStep"])
+        except errors.ToolError as exc:
+            if exc.code == "ARTIFACT_CONTEXT_INVALID":
+                status = "unavailable"
+                status_code = exc.code
+                status_message = exc.message
+                break
+            status = "partial" if published else "unavailable"
+            status_code = status_code or exc.code
+            status_message = status_message or exc.message
+            problems.append({"label": entry["label"], "code": exc.code,
+                             "message": exc.message})
+            continue
+        row = {
+            "kind": meta["kind"], "label": meta["label"],
+            "artifactRef": meta["artifactRef"], "mime": meta["mime"],
+            "bytes": meta["bytes"], "sha256": meta["sha256"],
+            "sourceStep": meta["sourceStep"],
+        }
+        published.append(row)
+        if entry["kind"] == "frame":
+            frame_refs.append({
+                "index": entry["index"], "percent": entry["percent"],
+                "crop": entry["crop"], "artifactRef": meta["artifactRef"],
+                "label": meta["label"], "mime": meta["mime"],
+                "bytes": meta["bytes"], "sha256": meta["sha256"],
+            })
+    if not entries:
+        status = "unavailable"
+        status_code = status_code or "ARTIFACT_NOT_FOUND"
+        status_message = status_message or "本次探测没有可发布的产物"
+    result = {
+        "status": status,
+        "code": status_code,
+        "message": status_message,
+        "artifactRefs": published,
+        "frameRefs": frame_refs,
+    }
+    if problems:
+        result["errors"] = problems[:10]
+    return result
+
+
 def _write_log(directory: Path, name: str, raw: bytes) -> Path | None:
     if not raw:
         return None
@@ -305,31 +442,63 @@ def research_image_pipeline(ctx: ToolContext, payload: dict) -> dict:
 # research.image.search
 # --------------------------------------------------------------------------- #
 
+def _artifact_or_path(ctx: ToolContext, payload: dict, *, path_key: str, ref_key: str,
+                      kind: str) -> tuple[str, str | None]:
+    """path 与 artifactRef 二选一；返回 (可信路径, argv 脱敏占位符)。"""
+    path_value = payload.get(path_key)
+    ref_value = payload.get(ref_key)
+    has_path = path_value not in (None, "")
+    has_ref = ref_value not in (None, "")
+    if has_path and has_ref:
+        raise errors.invalid_input(f"{kind} 不能同时提供 {path_key} 与 {ref_key}")
+    if not has_path and not has_ref:
+        raise errors.invalid_input(f"{kind} 必须提供 {path_key} 或 {ref_key}")
+    if not has_ref:
+        return _input_path(ctx, path_value, path_key), None
+    if not isinstance(ref_value, str):
+        raise errors.artifact_ref_invalid("artifactRef 必须是字符串")
+    if not getattr(ctx, "rulepack_version", ""):
+        raise errors.artifact_context_invalid("当前上下文缺少规则版本，无法解析 artifactRef")
+    resolved = artifact_ref.resolve_path(
+        ref_value, env=ctx.env, rulepack_version=ctx.rulepack_version)
+    return str(resolved), f"<{ref_key}:artifact>"
+
+
 def _search_argv(ctx: ToolContext, payload: dict, directory: Path) -> tuple:
     script_name = payload.get("script")
     out = directory / (script_name + "-results.jsonl")
+    replacements: dict[str, str] = {}
     if script_name == "lens":
-        jobs = _input_path(ctx, payload.get("jobsPath"), "jobsPath")
+        jobs, placeholder = _artifact_or_path(
+            ctx, payload, path_key="jobsPath", ref_key="jobsRef", kind="lens")
+        if placeholder:
+            replacements[jobs] = placeholder
         node = _node_binary(ctx.env)
         argv = [node, str(_script("lens_batch.mjs")), "--jobs", jobs, "--out", str(out)]
         if payload.get("limit") is not None:
             argv += ["--limit", str(payload["limit"])]
         if payload.get("maxAgeHours") is not None:
             argv += ["--max-age-hours", str(payload["maxAgeHours"])]
-        return argv, out, "lens_batch.mjs"
+        return argv, out, "lens_batch.mjs", replacements
     if script_name == "yandex":
-        image = _input_path(ctx, payload.get("imagePath"), "imagePath")
+        image, placeholder = _artifact_or_path(
+            ctx, payload, path_key="imagePath", ref_key="artifactRef", kind="yandex")
+        if placeholder:
+            replacements[image] = placeholder
         argv = _python() + [str(_script("yandex_cbir.py")), image, "--out", str(out)]
         if payload.get("maxAgeHours") is not None:
             argv += ["--max-age-hours", str(payload["maxAgeHours"])]
-        return argv, out, "yandex_cbir.py"
-    jobs = _input_path(ctx, payload.get("jobsPath"), "jobsPath")
+        return argv, out, "yandex_cbir.py", replacements
+    jobs, placeholder = _artifact_or_path(
+        ctx, payload, path_key="jobsPath", ref_key="jobsRef", kind="saucenao")
+    if placeholder:
+        replacements[jobs] = placeholder
     argv = _python() + [str(_script("saucenao_batch.py")), "--jobs", jobs, "--out", str(out)]
     if payload.get("limit") is not None:
         argv += ["--limit", str(payload["limit"])]
     if payload.get("maxAgeHours") is not None:
         argv += ["--max-age-hours", str(payload["maxAgeHours"])]
-    return argv, out, "saucenao_batch.py"
+    return argv, out, "saucenao_batch.py", replacements
 
 
 def research_image_search(ctx: ToolContext, payload: dict) -> dict:
@@ -337,22 +506,24 @@ def research_image_search(ctx: ToolContext, payload: dict) -> dict:
     if script_name not in SEARCH_SCRIPTS:
         raise errors.invalid_input("script 必须是 " + "/".join(SEARCH_SCRIPTS))
     if script_name == "yandex":
-        if payload.get("imagePath") is None:
-            raise errors.invalid_input("yandex 需要 imagePath")
-        if payload.get("jobsPath") is not None:
-            raise errors.invalid_input("yandex 只接受 imagePath，不接受 jobsPath")
+        if payload.get("imagePath") is None and payload.get("artifactRef") is None:
+            raise errors.invalid_input("yandex 需要 imagePath 或 artifactRef")
+        if payload.get("jobsPath") is not None or payload.get("jobsRef") is not None:
+            raise errors.invalid_input("yandex 只接受 imagePath/artifactRef，不接受 jobsPath/jobsRef")
     else:
-        if payload.get("jobsPath") is None:
-            raise errors.invalid_input(script_name + " 需要 jobsPath")
-        if payload.get("imagePath") is not None:
-            raise errors.invalid_input(script_name + " 只接受 jobsPath，不接受 imagePath")
+        if payload.get("jobsPath") is None and payload.get("jobsRef") is None:
+            raise errors.invalid_input(script_name + " 需要 jobsPath 或 jobsRef")
+        if payload.get("imagePath") is not None or payload.get("artifactRef") is not None:
+            raise errors.invalid_input(script_name + " 只接受 jobsPath/jobsRef，不接受 imagePath/artifactRef")
     directory = _output_dir(ctx, payload.get("outDir"), "image-search")
-    argv, out, script_file = _search_argv(ctx, payload, directory)
+    argv, out, script_file, replacements = _search_argv(ctx, payload, directory)
     run = _execute(argv, env=_clean_env(ctx), timeout=_timeout(payload))
-    return _result(run, script=script_file, args=argv[1:], artifact_paths=[out],
+    display_args = [replacements.get(item, item) for item in argv[1:]]
+    return _result(run, script=script_file, args=display_args, artifact_paths=[out],
                    directory=directory,
                    notes=["Lens 优先、结果仅作线索；links/topTitles 为空不代表失败，也不能单独支撑作者核验。",
-                          "限速/预算由脚本自身（Lens 间隔、SauceNAO 4 次/30s 与日上限）控制，不要并发重试。"])
+                          "限速/预算由脚本自身（Lens 间隔、SauceNAO 4 次/30s 与日上限）控制，不要并发重试。",
+                          "artifactRef 输入在 args 中以占位符显示，不把本机绝对路径放进结果。"])
 
 
 # --------------------------------------------------------------------------- #
@@ -454,8 +625,15 @@ def research_media_probe(ctx: ToolContext, payload: dict) -> dict:
         # 不替换脚本/输出目录/抽帧目录等执行元数据。
         display_args = [placeholders.get(item, item) for item in argv[1:]]
         notes.append("fileRef 输入不会把物理路径放进结果；args 中媒体路径以 <fileRef:N>/<media:N> 显示。")
-    return _result(run, script="media_probe.py", args=display_args,
-                   artifact_paths=artifact_paths, directory=directory, notes=notes)
+    result = _result(run, script="media_probe.py", args=display_args,
+                     artifact_paths=artifact_paths, directory=directory, notes=notes)
+    # 产物引用只影响接续能力：发布失败（例如未配置 API 凭据）时保留原探测结果，
+    # 并明确报告 artifactRefStatus，绝不伪造空引用。
+    references = _publish_probe_artifacts(ctx, out, frame_dir)
+    result["artifactRefs"] = references.pop("artifactRefs")
+    result["frameRefs"] = references.pop("frameRefs")
+    result["artifactRefStatus"] = references
+    return result
 
 
 # --------------------------------------------------------------------------- #
