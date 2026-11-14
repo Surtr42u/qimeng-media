@@ -221,7 +221,14 @@ class McpResearchTest(unittest.TestCase):
         self.assertIn(result["status"], ("ok", "partial", "unresolved"))
         self.assertEqual(0, result["businessWrites"])
         self.assertEqual([], result["frameRefs"])
-        self.assertGreaterEqual(len(result["candidates"]), 1)
+        self.assertGreaterEqual(
+            len(result["candidates"]), 1,
+            json.dumps({"research": result.get("research"),
+                        "limitations": result.get("limitations"),
+                        "lens": result.get("lens"),
+                        "queries": result.get("queries"),
+                        "workSources": result.get("workSources"),
+                        "status": result.get("status")}, ensure_ascii=False))
         for candidate in result["candidates"]:
             self.assertEqual("unconfirmed", candidate["verification"])
             self.assertFalse(candidate["authorConfirmed"])
