@@ -239,7 +239,7 @@ class LazyDiscoveryTests(unittest.TestCase):
 
     def test_cold_discovery_is_small_and_requested_tool_is_published(self):
         output = io.StringIO()
-        server = mcp_server.McpServer(env={}, stdout=output)
+        server = mcp_server.McpServer(env={"QIMENG_AI_MCP_DISCOVERY": "lazy"}, stdout=output)
         cold = server._tools_list()["tools"]
         full = mcp_server.McpServer(env={"QIMENG_AI_MCP_DISCOVERY": "full"})._tools_list()["tools"]
         self.assertLess(len(json.dumps(cold)), len(json.dumps(full)) / 2)

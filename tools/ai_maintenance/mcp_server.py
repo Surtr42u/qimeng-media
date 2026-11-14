@@ -11,15 +11,15 @@
 - ping：返回空结果；
 - tools/list：从注册表导出 name/description/inputSchema；
 - tools/call：dispatch 到注册表；结果以 content[0].text（结构化 JSON 文本）
-  + structuredContent + isError 返回；工具调用有超时（默认 120s，可用
+  + structuredContent + isError 返回；工具调用有超时（默认至少120s，并覆盖声明的工具执行预算，可用
   QIMENG_AI_MCP_TIMEOUT 覆盖）并尽力响应 notifications/cancelled；
 - 收到 tools/call 后由独立线程执行，主循环继续读取 stdin，因此调用期间仍能
   及时处理取消/初始化等通知；有副作用工具被取消时不提前返回（避免“已取消”
   与实际继续写入的不确定状态），只读工具可立即返回 -32800；
 - 其他方法：-32601 Method not found；非法参数/未知工具：-32602。
 
-默认 lazy 从发现工具开始，context/describe/recipe 成功后发布相关工具；full 保留
-完整清单兼容。不支持 list_changed 的客户端需显式选择 full；实际 token/费用仍须
+默认full提供稳定完整工具清单；显式lazy时从发现工具开始，context/describe/recipe
+成功后发布相关工具。lazy要求宿主刷新列表；实际 token/费用仍须
 宿主遥测，不能由 JSON 字节推算。领域过滤时始终保留安全发现元工具
 （全部 `platform.*` 与 `files.storages`），`tools/list` 与 `tools/call` 使用同一可见
 集合，不扩大任何执行权限。
@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import queue
 import sys
@@ -47,6 +48,7 @@ SERVER_VERSION = versions.PLATFORM_VERSION
 PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18")
 DEFAULT_CALL_TIMEOUT_SECONDS = 120.0
+HANDLER_COMPLETION_GRACE_SECONDS = 5.0
 CANCEL_REQUEST_METHOD = "notifications/cancelled"
 INITIALIZED_NOTIFICATION = "notifications/initialized"
 # 领域过滤下始终保留的安全发现元工具（只读、纯本地）：不因领域白名单隐藏，
@@ -119,9 +121,12 @@ class McpServer:
         self.timeout_seconds = float(
             timeout_seconds if timeout_seconds is not None
             else self.env.get("QIMENG_AI_MCP_TIMEOUT", DEFAULT_CALL_TIMEOUT_SECONDS))
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise errors.configuration_error("QIMENG_AI_MCP_TIMEOUT 必须是有限正数秒")
+        self._explicit_timeout = timeout_seconds is not None or "QIMENG_AI_MCP_TIMEOUT" in self.env
         self.config = None
         self._config_lock = threading.Lock()
-        self.discovery = self.env.get("QIMENG_AI_MCP_DISCOVERY", "lazy")
+        self.discovery = self.env.get("QIMENG_AI_MCP_DISCOVERY", "full")
         if self.discovery not in ("lazy", "full"):
             raise errors.configuration_error("QIMENG_AI_MCP_DISCOVERY 必须为 lazy 或 full")
         self._published = {spec.id for spec in registry.TOOLS
@@ -131,6 +136,7 @@ class McpServer:
         # 写 stdout 与工具执行线程分离：调用期间主循环仍可处理取消通知。
         self._write_lock = threading.Lock()
         self._pending_calls: list[threading.Thread] = []
+        self._shutdown_deadline = 0.0
         # 并发上限：主循环异步化后可能同时堆积多个 tools/call；默认 4，可用
         # QIMENG_AI_MCP_MAX_CONCURRENCY 调整。有副作用工具串行执行，避免两个
         # 写计划同时通过前置校验后并发落盘。
@@ -201,11 +207,11 @@ class McpServer:
                 "绮梦影库 AI 工具平台。已有任务先用 platform.context(task)，如 author.profile/"
                 "author.discover/media.ingest/media.batch/device.sync；简单查询可按领域取 context。"
                 "该操作自动公布相关工具；取单工具 platform.tool.describe(toolId) 也会公布它，"
-                "随后接收 tools/list_changed；不支持变更通知的宿主由可信端配置 MCP_DISCOVERY=full。"
+                "仅显式lazy模式动态发布并通知tools/list_changed。"
                 "工具较多时也可先调用 platform.catalog 取精简领域目录，再用 platform.tool.describe "
                 "按需取单个工具的 Schema/示例，用 platform.rules 按需读规则节，需要工作流模板时用 "
                 "platform.playbook（可选模板，不是唯一路径）；默认不要读取全量规则包。"
-                "默认 lazy 清单仅含发现工具，full 模式会加载完整 tools/list；"
+                "默认full提供稳定完整工具清单，不依赖宿主刷新；支持动态发现的宿主可显式选择lazy。"
                 "QIMENG_AI_MCP_DOMAINS 服务端过滤只是减少暴露面，不能当作上下文节省保证。"
                 "本地文件用 files.storages/files.search 发现（只读、有界、不返回绝对路径）；"
                 "fileRef 失效需重新搜索，不要手工拼接。"
@@ -292,6 +298,17 @@ class McpServer:
             for spec in self._visible_tools()
         ]}
 
+    def _call_timeout(self, spec, arguments):
+        if self._explicit_timeout:
+            return self.timeout_seconds
+        handler_timeout = spec.timeout_seconds
+        declared = spec.input_schema.get("properties", {}).get("timeoutSeconds", {})
+        requested = arguments.get("timeoutSeconds")
+        if declared and type(requested) is int \
+                and declared.get("minimum", 1) <= requested <= declared.get("maximum", 900):
+            handler_timeout = max(handler_timeout, requested)
+        return max(self.timeout_seconds, handler_timeout + HANDLER_COMPLETION_GRACE_SECONDS)
+
     def _tools_call(self, request_id, params: dict, cancelled: set) -> dict:
         name = params.get("name")
         arguments = params.get("arguments", {})
@@ -327,7 +344,7 @@ class McpServer:
 
         thread = threading.Thread(target=worker, daemon=True, name="mcp-tool-call")
         thread.start()
-        deadline = time.monotonic() + self.timeout_seconds
+        deadline = time.monotonic() + self._call_timeout(spec, arguments)
         cancel_noted = False
         while True:
             try:
@@ -342,12 +359,14 @@ class McpServer:
                         if not cancel_noted:
                             _log("cancel ignored for side-effect tool: " + name)
                             cancel_noted = True
-                        continue
-                    return _error_response(request_id, CALL_CANCELLED, "Request cancelled")
+                    else:
+                        return _error_response(request_id, CALL_CANCELLED, "Request cancelled")
                 if time.monotonic() >= deadline:
                     _log("tool call timeout: " + name)
                     return _error_response(request_id, CALL_TIMEOUT,
-                                           "Tool call timed out: " + name)
+                                           "Tool call timed out: " + name,
+                                           {"operationMayHaveCompleted": bool(spec.side_effects or not spec.read_only),
+                                            "recovery": "按原操作ID回读结果，勿换ID或盲目重试。"})
         thread.join(timeout=0.1)
         # 完成后清掉取消标记：避免客户端复用 request id 时把新请求误判为已取消。
         cancelled.discard(request_id)
@@ -436,6 +455,13 @@ class McpServer:
                         and message.get("method") == "tools/call"
                         and "id" in message)
             if is_async:
+                params = message.get("params") or {}
+                name = params.get("name") if isinstance(params, dict) else None
+                spec = registry.get(name) if isinstance(name, str) else None
+                arguments = params.get("arguments", {}) if isinstance(params, dict) else {}
+                if spec is not None and isinstance(arguments, dict):
+                    self._shutdown_deadline = max(self._shutdown_deadline,
+                        time.monotonic() + self._call_timeout(spec, arguments))
                 # 工具调用独立线程执行，主循环不阻塞；notifications/cancelled 等
                 # 通知在调用进行中即可被读取并写入共享 cancelled 集合。
                 thread = threading.Thread(target=dispatch, args=(message, True),
@@ -446,7 +472,7 @@ class McpServer:
             else:
                 dispatch(message, False)
         # stdin 结束：给仍在执行的调用留出收尾/写出响应的机会（不无限等待）。
-        deadline = time.monotonic() + max(1.0, self.timeout_seconds)
+        deadline = max(time.monotonic() + max(1.0, self.timeout_seconds), self._shutdown_deadline)
         for thread in self._pending_calls:
             thread.join(timeout=max(0.0, deadline - time.monotonic()))
         return 0

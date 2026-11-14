@@ -89,7 +89,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 
 | 配置 | 默认与用途 |
 |---|---|
-| `QIMENG_AI_MCP_DISCOVERY` | `lazy`：只公布发现工具；context/describe/recipe 后发布相关业务工具并通知 list_changed。不支持通知的宿主显式用 `full` |
+| `QIMENG_AI_MCP_DISCOVERY` | 默认 `full`：稳定完整清单，兼容不刷新工具列表的宿主；显式 `lazy`：按context/describe/recipe发布并通知list_changed，仅供已验证会刷新的宿主 |
 | `QIMENG_AI_OUTPUT_BUDGET_BYTES` | 12288：MCP/通用 tool call 与任务上下文的展示 result 上限；不包括协议外壳和宿主可能重复呈现的 text/structuredContent |
 | `QIMENG_AI_STATE_DIR` | 私有执行端状态根；未设时结果续读用系统临时目录。完整计划保存在本机，不入源码或公开报告 |
 | `QIMENG_AI_TASK_ID` | 与显式 STATE_DIR 一起配置后，同任务跨 CLI/MCP 客户端共享预算；不是模型参数，不建立第二套业务任务账本 |
@@ -139,7 +139,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_DISABLED_TOOLS` | 可选 | 逗号分隔的工具或原语 ID（如 `media.transfer`），单独禁用。 |
 | `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求/执行原语前拒绝全部有副作用工具与原语。 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
-| `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
+| `QIMENG_AI_MCP_TIMEOUT` | 可选 | 显式设置MCP单次调用上限（有限正数秒）。未设置时至少120秒，且覆盖工具声明/合法timeoutSeconds预算并留5秒收尾；设置值为可信端硬上限，长任务须相应配置宿主超时。 |
 | `QIMENG_AI_MCP_DOMAINS` | 可选 | 逗号分隔的领域白名单；只暴露这些域的业务工具与 `files.storages`，减少误调用面。全部 `platform.*` 安全发现元工具始终可见（只读、不扩大权限）。标准 MCP 客户端仍可能加载完整 `tools/list`，此过滤不是上下文节省保证。 |
 | `QIMENG_AI_TARGET` | 可选 | 运行目标：`pc` / `android-embedded` / `nas`（默认 pc）；recipe 据此核对能力。 |
 | `QIMENG_AI_RECIPE_DIR` | 可选 | recipe 目录覆盖（默认 `tools/ai_maintenance/recipes`）。 |
@@ -493,7 +493,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - 远程 HTTP/网络/响应错误沿用 CLI 的结构化字段（HTTP 为 status/error/body/target），
   在 MCP 中标记 isError=true；保留服务端错误码与脱敏正文，不统一吞为 INTERNAL_ERROR。
 - token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
-- 工具分类发现：默认 lazy 先返回发现工具，按任务/工具发布后通过标准 list_changed 通知；
+- 工具分类发现：默认full稳定列出全部已暴露工具，不要求动态刷新；显式lazy按任务/工具发布后通过标准list_changed通知；
   `full` 兼容模式返回全部工具与 `inputSchema`。任务开始时客户端可先
   调用 `platform.context`（task/domain）取相关工具、Schema 摘要、规则节与 playbook；工具较多时
   再调用 `platform.catalog`（精简领域目录）与 `platform.tool.describe` 取单个工具 Schema/
@@ -592,8 +592,7 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
 ## 已测宿主兼容性
 
 2026-11-14 原生 Codex App Server 0.167.0-alpha.4.1 实测：lazy 连接初始化为9项，
-describe 后宿主列表仍为9项，未观察到动态刷新；该宿主应显式配置
-`QIMENG_AI_MCP_DISCOVERY=full`。full 实测54项且查询成功。服务端通知和通用
+describe 后宿主列表仍为9项，未观察到动态刷新；现已把默认改为`full`，无需为该宿主额外配置。显式lazy只用于已验证支持刷新的宿主。full 实测54项且查询成功。服务端通知和通用
 MCP传输的按需发现不代表每个宿主都会刷新；此兼容模式不能声称节省初始Schema上下文。
 
 ## 单文件精确改名

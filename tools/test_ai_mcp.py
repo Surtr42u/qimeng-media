@@ -10,6 +10,8 @@ import json
 import threading
 import time
 import unittest
+from dataclasses import replace
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ai_maintenance import mcp_server, model_output, registry
@@ -214,6 +216,40 @@ class McpProtocolTest(unittest.TestCase):
         responses = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
         self.assertEqual(-32700, responses[0]["error"]["code"])
         self.assertEqual(-32600, responses[1]["error"]["code"])
+
+    def test_default_connection_can_call_tools_without_list_refresh(self):
+        server = mcp_server.McpServer(env={}, stdout=io.StringIO(),
+            execute=lambda name, args: (registry.get(name), {"items": [], "nextCursor": None}))
+        before = server._tools_list()["tools"]
+        self.assertIn("author.query", {tool["name"] for tool in before})
+        self.assertFalse(server._initialize({})["capabilities"]["tools"]["listChanged"])
+        response = server._tools_call(1, {"name": "author.query", "arguments": {}}, set())
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(before, server._tools_list()["tools"])
+
+    def test_default_deadline_covers_long_handler_and_explicit_limit_still_applies(self):
+        original = registry.get("research.media.probe")
+        spec = replace(original, timeout_seconds=.3)
+        def execute(name, args):
+            time.sleep(.12)
+            return spec, {"exitCode": 0, "artifacts": []}
+        packet = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                  "params": {"name": spec.id, "arguments": {}}}
+        with patch.object(mcp_server, "DEFAULT_CALL_TIMEOUT_SECONDS", .02), \
+             patch.object(mcp_server, "HANDLER_COMPLETION_GRACE_SECONDS", .01), \
+             patch.object(registry, "get", return_value=spec):
+            server = mcp_server.McpServer(env={}, execute=execute)
+            self.assertFalse(server.handle_message(packet, set())["result"]["isError"])
+            capped = mcp_server.McpServer(env={}, execute=execute, timeout_seconds=.02)
+            failure = capped.handle_message(packet, set())["error"]
+            self.assertEqual(mcp_server.CALL_TIMEOUT, failure["code"])
+            self.assertTrue(failure["data"]["operationMayHaveCompleted"])
+
+    def test_declared_research_budget_includes_completion_time(self):
+        server = mcp_server.McpServer(env={})
+        spec = registry.get("research.media.probe")
+        self.assertGreater(server._call_timeout(spec, {"timeoutSeconds": 900}), 900)
+        self.assertLess(server._call_timeout(spec, {"timeoutSeconds": 100000}), 100000)
 
     def test_tool_call_timeout(self):
         def slow_execute(tool_id, payload):
