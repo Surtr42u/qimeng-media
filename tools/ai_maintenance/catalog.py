@@ -34,6 +34,7 @@ MAX_RULE_PATH_SEGMENTS = 4
 
 # 任务别名：让外部 AI 用业务语言（backup.sync 等）找到同一组工具/模板。
 TASK_ALIASES: dict = {
+    "asset.rename": {"extraTools": ("asset.query", "asset.rename.prepare", "asset.rename.apply")},
     "backup.sync": {"playbook": "device.apply", "extraTools": ("backup.export",)},
     "device.sync": {"playbook": "device.apply"},
     "maintenance.jobs": {"playbook": "maintenance.jobs"},
@@ -120,7 +121,7 @@ def platform_catalog(ctx, payload: dict) -> dict:
             for item in _recipe_map(ctx).values()
         ],
         "discovery": {
-            "recipe": "platform.recipe（action=card 取 2–4KB 任务卡）",
+            "recipe": "platform.recipe（action=card 取 精简任务卡）",
             "describeTool": "platform.tool.describe",
             "rules": "platform.rules",
             "playbook": "platform.playbook",
@@ -128,6 +129,7 @@ def platform_catalog(ctx, payload: dict) -> dict:
         },
         "disabledTools": sorted(getattr(ctx, "disabled_tools", frozenset()) or ()),
         "readOnlyMode": bool(getattr(ctx, "read_only_mode", False)),
+        "executorBudget": (getattr(ctx, "extras", None) or {}).get("executorBudget"),
     }
 
 
@@ -160,7 +162,7 @@ def platform_tool_describe(ctx, payload: dict) -> dict:
             "catalog": "platform.catalog",
             "rules": "platform.rules",
             "playbook": "platform.playbook",
-            "note": "Schema 与规则摘录只用于理解与构造计划；执行仍由 execution 层做权限/能力/确认校验。",
+            "note": "Schema 与规则摘录用于构造计划；规则截断时用 platform.rules(sections=[节名],offset=0,limit=1000) 续读。执行仍由执行端校验。",
         },
     }
 
@@ -229,6 +231,24 @@ def platform_rules(ctx, payload: dict) -> dict:
         raise errors.configuration_error("当前上下文缺少规则源（rules.json 未加载）")
     requested = payload.get("sections")
     domain = payload.get("domain")
+    if "offset" in payload or "limit" in payload:
+        if not isinstance(requested, list) or len(requested) != 1 or domain:
+            raise errors.invalid_input("规则续读必须只指定一个 sections 路径，不同时指定 domain")
+        section = requested[0]
+        value = _resolve_rule_section(rules, section)
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        offset = payload.get("offset", 0)
+        limit = payload.get("limit", 1000)
+        if type(offset) is not int or not 0 <= offset <= len(encoded):
+            raise errors.invalid_input("规则续读 offset 超出范围")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise errors.invalid_input("规则续读 limit 必须在 1..1000")
+        end = min(len(encoded), offset + limit)
+        return {"rulepackVersion": str(getattr(ctx, "rulepack_version", "")),
+                "section": section, "encoding": "json-fragment", "fragment": encoded[offset:end],
+                "offset": offset, "totalChars": len(encoded),
+                "nextOffset": end if end < len(encoded) else None,
+                "truncated": end < len(encoded), "complete": offset == 0 and end == len(encoded)}
     sections: list[str] = []
     if isinstance(requested, list) and requested:
         if len(requested) > MAX_RULE_SECTIONS:
@@ -251,6 +271,9 @@ def platform_rules(ctx, payload: dict) -> dict:
     truncated: list[str] = []
     for name in sections:
         excerpt = _bounded(values[name])
+        if isinstance(excerpt, dict) and excerpt.get("truncated") is True:
+            excerpt["continuation"] = {"tool": "platform.rules",
+                "arguments": {"sections": [name], "offset": 0, "limit": 1000}}
         encoded_len = len(json.dumps(excerpt, ensure_ascii=False))
         if used + encoded_len > RULES_TOTAL_LIMIT:
             truncated.append(name)
@@ -266,7 +289,7 @@ def platform_rules(ctx, payload: dict) -> dict:
         "truncatedSections": truncated,
         "truncated": bool(truncated),
         "availableSections": sorted(rules.keys()),
-        "note": "节选用于按需加载领域规则；完整规则源由可信执行端保管，执行仍以服务端与执行器校验为准。",
+        "note": "规则截断/省略时，单个 sections 路径加 offset=0,limit=1000 可续读原始规则JSON；按 nextOffset 继续。片段不是完整执行参数。",
     }
 
 def _playbooks(ctx) -> dict:
@@ -607,8 +630,8 @@ def platform_context(ctx, payload: dict) -> dict:
         try:
             from . import recipes
             recipe_card = recipes.task_card(task, getattr(ctx, "env", None))
-        except Exception:
-            recipe_card = None
+        except errors.ToolError:
+            raise
     playbook = playbooks.get(playbook_name) if playbook_name else None
     bounded_playbook = None
     if isinstance(playbook, dict):
@@ -637,7 +660,7 @@ def platform_context(ctx, payload: dict) -> dict:
         guardrails.extend(str(item) for item in playbook.get("guardrails") or ())
     guardrails.extend([
         "看见工具不等于有权执行：permitted=false 的工具必须由可信执行端先授权。",
-        "写入工具必须先 prepare、人工确认后带 confirm=true 与计划指纹执行，并回读。",
+        "写入须在可信配置授权内；prepare 后传 planRef（或完整原计划）与 confirm=true，并回读；confirm 不授予权限。",
         "不得把真实媒体、令牌或含个人信息的任务记录发送到外部模型上下文。",
     ])
     available_tasks = sorted(playbooks.keys())[:CONTEXT_AVAILABLE_TASKS]
@@ -685,6 +708,7 @@ def platform_context(ctx, payload: dict) -> dict:
         "truncated": truncated,
         "truncatedSections": truncated_sections,
         "guardrails": guardrails,
+        "executorBudget": (getattr(ctx, "extras", None) or {}).get("executorBudget"),
         "next": next_tools,
         "discovery": {
             "catalog": "platform.catalog",

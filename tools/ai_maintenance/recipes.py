@@ -922,14 +922,21 @@ def _write_json_atomic(path: Path, value) -> None:
 
 def _clip(value, limit: int = 300):
     if isinstance(value, str):
-        return value if len(value) <= limit else value[:limit] + "…"
+        return value if len(value) <= limit else value[:limit] + f"…（省略 {len(value) - limit} 字符）"
     if isinstance(value, (int, float, bool)) or value is None:
         return value
     if isinstance(value, list):
-        return [_clip(item, limit) for item in value[:3]] + (["…"] if len(value) > 3 else [])
+        return [_clip(item, limit) for item in value[:3]] + (
+            [f"…（省略 {len(value) - 3} 项）"] if len(value) > 3 else [])
     if isinstance(value, dict):
-        return {key: _clip(item, limit) for key, item in list(value.items())[:12]}
-    return str(value)[:limit]
+        items = list(value.items())
+        result = {key: _clip(item, limit) for key, item in items[:12]}
+        if len(items) > 12:
+            result["_truncated"] = True
+            result["_omittedKeys"] = len(items) - 12
+        return result
+    text = str(value)
+    return text if len(text) <= limit else text[:limit] + f"…（省略 {len(text) - limit} 字符）"
 
 
 def summarize_output(value) -> dict:
@@ -942,7 +949,10 @@ def summarize_output(value) -> dict:
 
 
 def _pick_summary(value: dict) -> dict:
-    keys = ("status", "summary", "message", "count", "matchCount", "items",
+    keys = ("status", "error", "errorCode", "code", "message", "summary", "count",
+            "totalCount", "totalMatched", "returned", "nextCursor", "platformVersion",
+            "toolContractVersion", "rulepackVersion", "planVersion", "planRef", "resultRef",
+            "truncated", "matchCount", "items",
             "authorId", "id", "displayName", "revision", "plan", "diagnostics",
             "applied", "artifacts", "sheets", "pushed", "failed", "bytes",
             "frames", "dimensions", "durationMs", "dhashStatus", "missing",
@@ -952,11 +962,33 @@ def _pick_summary(value: dict) -> dict:
         if key in value:
             result[key] = _clip(value[key])
     if not result:
-        result = {key: _clip(item) for key, item in list(value.items())[:8]}
+        items = list(value.items())
+        result = {key: _clip(item) for key, item in items[:8]}
+        if len(items) > 8:
+            result["_truncated"] = True
+            result["_omittedKeys"] = len(items) - 8
     encoded = json.dumps(result, ensure_ascii=False)
     if len(encoded) > MAX_SUMMARY_CHARS:
-        return {"truncated": True, "chars": len(encoded),
-                "preview": encoded[:MAX_SUMMARY_CHARS]}
+        # Keep this a structured JSON summary; never cut encoded JSON in the middle of a token.
+        compact = {}
+        omitted = []
+        for key in ("status", "error", "errorCode", "code", "message", "summary", "count",
+                    "totalCount", "totalMatched", "returned", "nextCursor", "platformVersion",
+                    "toolContractVersion", "rulepackVersion", "planVersion", "planRef",
+                    "resultRef", "truncated", "items", "diagnostics", "plan"):
+            if key not in result:
+                continue
+            candidate = {**compact, key: _clip(value[key], 48)}
+            if len(json.dumps(candidate, ensure_ascii=False)) <= MAX_SUMMARY_CHARS - 120:
+                compact = candidate
+            else:
+                omitted.append(key)
+        if len(encoded) > MAX_SUMMARY_CHARS:
+            compact["truncated"] = True
+            compact["summaryChars"] = len(encoded)
+            if omitted:
+                compact["omittedFields"] = omitted
+        return compact
     return result
 
 
@@ -1056,19 +1088,6 @@ def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
         # partial/failed 由 run_recipe 统一记录产物并停止；这里不丢结果。
         return _tool_output(result)
     primitive_spec = effective_primitive_spec(step["primitive"], payload)
-    denial = execution.policy_denial(primitive_spec, config)
-    if denial:
-        denied = execution.policy_denied_error(primitive_spec, config)
-        if denied is not None:
-            raise denied
-        raise errors.tool_disabled(primitive_spec.id, denial)
-    if primitive_spec.side_effects and primitive_spec.requires_confirmation \
-            and not allowed:
-        raise RecipeError(
-            f"原语 {primitive_spec.id} 有副作用，必须先通过授权到本步骤的人工门禁",
-            code="RECIPE_CONFIRMATION_REQUIRED",
-            details={"step": step["id"], "primitive": primitive_spec.id},
-        )
     if ctx.resuming and step["primitive"] == "media.transfer":
         # 恢复执行时允许“目标已存在且内容一致”按 alreadyPresent 跳过；默认调用不变。
         payload = dict(payload)
@@ -1080,17 +1099,37 @@ def _run_step(step: dict, recipe: dict, ctx: RunContext, inputs: dict,
             payload = dict(payload)
             payload.setdefault("reusePushed", pushed)
     primitive = PRIMITIVES[step["primitive"]]
-    try:
-        return primitive(payload, ctx)
-    except (RecipeError, errors.ToolError):
-        raise
-    except Exception as exc:  # noqa: BLE001 - 原语错误必须转成 recipe 结构化失败
-        raise RecipeError(
-            "原语执行失败：" + type(exc).__name__,
-            code=str(getattr(exc, "code", "") or "RECIPE_STEP_FAILED"),
-            details={"step": step["id"], "error": type(exc).__name__,
-                     "message": str(exc)[:300]},
-        ) from None
+
+    def operation(mark_started):
+        denial = execution.policy_denial(primitive_spec, config)
+        if denial:
+            denied = execution.policy_denied_error(primitive_spec, config)
+            if denied is not None:
+                raise denied
+            raise errors.tool_disabled(primitive_spec.id, denial)
+        if primitive_spec.side_effects and primitive_spec.requires_confirmation \
+                and not allowed:
+            raise RecipeError(
+                f"原语 {primitive_spec.id} 有副作用，必须先通过授权到本步骤的人工门禁",
+                code="RECIPE_CONFIRMATION_REQUIRED",
+                details={"step": step["id"], "primitive": primitive_spec.id},
+            )
+        execution.task_controls.authorize(primitive_spec, payload, ctx.env)
+        mark_started()
+        try:
+            return primitive(payload, ctx)
+        except (RecipeError, errors.ToolError):
+            raise
+        except Exception as exc:
+            raise RecipeError(
+                "原语执行失败：" + type(exc).__name__,
+                code=str(getattr(exc, "code", "") or "RECIPE_STEP_FAILED"),
+                details={"step": step["id"], "error": type(exc).__name__},
+            ) from None
+
+    return execution.controlled_action(primitive_spec.id, payload, operation,
+        env=ctx.env, config=config, side_effects=primitive_spec.side_effects)
+
 
 
 def _step_version(step: dict) -> str:
@@ -1640,7 +1679,8 @@ def task_card(recipe_id: str, env=None) -> dict:
     for step in recipe["steps"]:
         action = (step.get("tool") or step.get("primitive") or "gate")
         if step.get("gate"):
-            gates.append({"id": step["id"], "message": step.get("message", "")})
+            # The message is already carried by the corresponding step note.
+            gates.append({"id": step["id"]})
         steps.append({
             "id": step["id"],
             "action": action,

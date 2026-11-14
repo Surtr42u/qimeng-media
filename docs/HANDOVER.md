@@ -1,8 +1,35 @@
 # HANDOVER - 当前工作交接
 
-> 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-11-12。
+> 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-11-14。
 
 ## 1. 当前使用形态
+
+本轮分工已按用户2026-11-14纠正：后续代码实现与审查由主代理负责；GPT-6 Luna max
+仅用于独立执行测试和反馈报告。前期 Luna 参与过实现/只读审查，已停止该分工，
+已有代码由主代理逐段核对并补充授权/未决操作/缓存及呈现边界，不将 Luna 审查当作验收证据。
+
+2026-11-14 后续通用MCP优化代码24d2b23e：默认full稳定清单，lazy仅显式可选；默认超时覆盖工具/合法请求预算并留25秒收尾，显式上限不被覆盖，副作用超时保留原ID回读提示。Windows研究子进程关闭stdin/不创建控制台；脚本非零退出映射partial/failed，MCP的isError、文字与结构状态一致，CLI/recipe停止失败任务。沿用标准stdio，不新增私有MCP或远程HTTP入口。
+
+- 代码24d2b23e[AI闭环](https://github.com/Surtr42u/qimeng-media/actions/runs/43572051430)与[文档工作流](https://github.com/Surtr42u/qimeng-media/actions/runs/43572051421)通过：337项AI回归（12跳过）、7项真实Go+MCP和42项命名；全量应用CI/安全状态查看PR #60，不借旧head宣称全部门禁通过。
+- 实际Codex无discovery配置即发现54项，查询成功，不依赖刷新；同一视频通过MCP在1.21秒生成元数据及15/50/85%三张帧，源SHA256一致、无警告。运行来源39706da2，后续24仅统一失败文字状态并由云端回归保护；便携工具已刷新至24，清单分别记录安装与实测来源。先前仅加长等待仍跑满300秒，后台启动修正后才成功，保留失败，不能只归因于120秒外层限制。
+- 13套隔离数据库的测试AI凭据全部撤销，原库33表及5份原件守恒，进程/端口关闭。仅复制媒体与隔离实例；真实作者归属、provider地址限制、其他宿主及NAS仍未验收。私有报告build/ai-acceptance-20261114.local/MCP-COMPATIBILITY.md。下面保留前一轮验收来源。
+
+2026-11-14 现项目 AI API 优化已实现并完成指定隔离场景，范围见[平台任务书 §1.6](AI_PLATFORM_TASKBOOK.md#16-上述优化的现项目实现与验收入口2026-11-14)。工具包1.6.0/契约2.0.0/规则2026-11-14.1，54项工具；代码来源10753707。默认只读、任务授权/持久预算、结果有界续读/planRef、作者查询稳定分页已接线，补单文件精确改名，未改批量编号公式。
+
+- 云端代码10753707的[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/43483449014)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/43483448895)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/43483448974)、[AI闭环](https://github.com/Surtr42u/qimeng-media/actions/runs/43483448982)全部通过：AI回归333项（12跳过），独立真实Go+MCP7项通过，另有命名42项。跳过项不冒充通过；实际Go测试在专用作业执行。
+- 应用0.2.3/code38来源73c1b26a：[PC出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43471005233)、[APK出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43471011043)成功，121份云端文件逐项核对。之后仅改独立工具层/文档，OpenAPI与SDK锁摘要一致，不重标应用来源。安装到独立便携目录与指定qimeng_api35测试用户；未覆盖日常PC或真实手机。
+- 全新Luna max只做黑盒测试：查作者及关联文件、未命中查询、只读权限判断、简介修改/清空均完成；精确改名首轮发现工具缺口，补入口后实际写成但返回缺tool字段，修正后回读同ID/作者/哈希；上传并关联作者成功，主代理独立核对只新增一份、大小/哈希/作者一致。首次失败和复测分开，不能写成全部首轮通过。模型token/费用未取得遥测，不据JSON字节估造降耗比例。
+- 当前Codex原生App Server0.167.0-alpha.4.1：lazy初始化9项，describe后仍9项，未观察到宿主刷新；full模式54项且查询成功，故该宿主用full兼容。该项为实现者手动接入、0模型turn，与Luna自然语言测试分开；未改长期Codex配置。
+- 手机标签实测24项候选点选前后位置全部一致、数字自然排序、当前标签置顶且内部滚动，取消/保存重开与浅深色核验；不显示候选勾选图标。Web相册/详情/标签取消/整理入口完成实际交互，无页面错误日志；未将浏览器测试冒充Tauri原生全交互验收。
+- 实测发现并修复上传源校验、旧租约拒绝与媒体探测输入拒绝误留未决预留；网络/超时等不确定写入仍保留待核验项。中断后任务时间预算过期由可信端核对结果再续期，未重置调用计数。精确改名普通资产不追加编号，COS仍沿用整理流程。
+- 识图采用同一个新Luna max、不同作者的图/视频副本、全类别MCP权限和后台搜索；首次路径授权配置、误锁和外部provider ADDRESS_BLOCKED、用量中断均保留。候选与可靠归属分开，不能把搜索返回200或原库既有关联当作原帖证据；完整私有记录见本机忽略目录报告。
+- 原库33张表全行摘要、最初3份原件及后来图/视频2份原件的哈希/大小/修改时间核对一致，8420无测试写入。私有证据和报告位于忽略目录build/ai-acceptance-20261114.local；测试凭据/进程清理结果另见该报告。NAS、真实手机后台和长期服务仍未验收。
+
+2026-11-13 后续只读复核：AI 按需入口已实现，但尚无端到端低消耗/新模型自主任务验收。静态测得默认 51 工具 Schema 45,295 UTF-8 字节，五张任务卡 1,975–5,909 字节；发现默认全量、作者默认全返、组合输出无统一总额、摘要续读、兼容性全授予与确认非授权、统一任务预算等缺口及后续验收见[平台任务书 §1.5](AI_PLATFORM_TASKBOOK.md#15-当前-ai-api-的效果上下文与待补验收2026-11-13)。仓外 Next 规划已同步技术建议与 S33–S36；本轮只改文档，无应用实现、服务/媒体操作、新模型任务或重构实施。该静态大小不代表模型 token/费用。
+
+2026-11-13 用户要求实际 Codex 接入测试并补全闭环。用 Codex App Server 0.167.0-alpha.4.1 原生 MCP 客户端、工具包/契约 1.5.0 与隔离 Go 云端产物 `ab37e0c7`（modified=false），发现 51 个工具；31 次实际调用中 23 次正常、8 次预期拒绝。已核验目录/Schema、隔离库和合成资产查询、参数/未知工具与 404 传播、工具只读及服务端 403、合成作者 prepare 无写入、确认/指纹门禁、revision 0→1 回读、同计划 already_applied、全新连接读回和撤销缓存窗口后 401。8 个测试凭据全部撤销，目标端口关闭、未发现本轮残留进程；未改全局 Codex 配置、未向 8420 写测试数据。脱敏记录与摘要留忽略目录 `build/codex-mcp-trial.local/`。
+
+测试由当前实现者逐次经官方 `mcpServer/tool/call` 选择调用，没有让测试客户端读项目源码或原始媒体；未启动额外模型 turn，不冒充全新 AI 自然语言盲测。首次独立客户端继承桌面定制 node_repl transport 后启动失败，改用仅加载测试 MCP 的进程级配置后通过，未改原配置。桌面 GUI 热挂载、其他客户端、全部业务工具与 NAS 长期运行未验收；本轮无应用实现修改或部署。
 
 2026-11-12 用户明确要求手机和电脑一起更新，已完成同源 `9137ce0a` 云端产物安装：PC 0.2.2/schema26 后台运行，arm64 真机 0.2.2/code37 同签名保留数据覆盖安装。完整门禁、实际安装字节、PC 健康与数据回读见 §2；未打开浏览器、桌面壳或手机 App。此为现项目手机内嵌过渡形态维护；Next 仍为 PC/NAS 单核心、手机纯客户端。
 
@@ -34,7 +61,7 @@
 | arm64 手机内嵌 | 9137ce0a，0.2.2/code37（2026-11-12 安装） | 同签名（证书 SHA-256 8f62ba55…）`adb install -r` 成功；versionCode37/versionName0.2.2，firstInstallTime 保持 2026-09-12，lastUpdateTime 2026-11-12 19:12；已安装 base.apk 回拉 SHA-256 fb3804b9…与候选完全一致；内嵌 Go revision=9137ce0a/clean/android/arm64，ffmpeg/ffprobe 固定摘要匹配；安装阶段未启动 App，后续由用户本机导出本轮合并输入；后台/SAF/Doze 仍未验收 |
 | 桌面连接壳 | 原壳加载PC托管Web | 本轮更新共享Web，沿用现有壳 |
 
-2026-11-12 安装来源完整 SHA 为 `9137ce0ab7e0fd335707eec1326e79d414c50987`：[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036891)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/43204037341)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036896)、[MCP 集成](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036915)、[PC 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43204294915)与[APK 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43204026708)全部同 SHA 通过。原始 artifact ZIP 摘要匹配 GitHub digest，安装后的 exe/Web/APK 再次比对清单。后补文档提交不重标安装来源；[PR #59](https://github.com/Surtr42u/qimeng-media/pull/59)仍为草稿未合并。
+2026-11-12 安装来源完整 SHA 为 `9137ce0ab7e0fd335707eec1326e79d414c50987`：[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036891)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/43204037341)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036896)、[MCP 集成](https://github.com/Surtr42u/qimeng-media/actions/runs/43204036915)、[PC 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43204294915)与[APK 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/43204026708)全部同 SHA 通过。原始 artifact ZIP 摘要匹配 GitHub digest，安装后的 exe/Web/APK 再次比对清单。后补文档提交不重标安装来源；[PR #59](https://github.com/Surtr42u/qimeng-media/pull/59)已合并（bceb1540；本轮草稿为PR #60）。
 
 本次 PC 更新前现场 exe 实际为 `d977ece8`（旧表 `0b951acc` 只代表 11 月 8 日历史记录），按正常控制台信号停服并确认退出后整体替换程序与 Web，保留原 DataDir、配置、媒体根和本机同步环境。升级前后：assets7758、authors177、asset_authors7910、tags21、asset_tags1200、view_events22334；启用库根均可达。旧 exe/Web、旧手机 APK、两份云端包及去敏前核验材料保存在忽略目录 `build/deploy-ai-api-20261112/`；同 schema 普通更新未做全量媒体/DB 副本，不承诺仅换回旧程序即可完整数据回退。手机首轮安装会话被系统拒绝，USB 离线恢复后同签名安装成功；未改手机权限或常亮设置、未卸载/清数据。
 
@@ -84,7 +111,7 @@ Web内置浏览器目录选择仍返回AbortError，页面持续显示未绑定�
 
 ## 3. 当前维护结果与后续边界
 
-当前草稿 PR #59 未合并；早期草稿 PR42 的交付来源仍保留历史记录，后补文档不重标已安装包。数据一致性是各次回读时点的结果，两套单机服务之后各自新增数据仍须通过现有同步流程合并。常规维护不自动重启旧任务书或已暂停的身份研究。两代备份、Android Worker、设备结果包 API、服务端权威回读、外部执行器通道与 AI 客户端 HTTP 管理已包含在 §2 当前安装包中；真实维护目录未执行两代迁移，标签按既定要求保持明文。设备配对、包清理与真机后台同步仍未实现/未验收，端到端桥接不能写成已具备，具体边界见 §9.3/§10。
+PR #59 已于2026-11-12合并（bceb1540；当前本轮草稿为 PR #60）；早期草稿 PR42 的交付来源仍保留历史记录，后补文档不重标已安装包。数据一致性是各次回读时点的结果，两套单机服务之后各自新增数据仍须通过现有同步流程合并。常规维护不自动重启旧任务书或已暂停的身份研究。两代备份、Android Worker、设备结果包 API、服务端权威回读、外部执行器通道与 AI 客户端 HTTP 管理已包含在 §2 当前安装包中；真实维护目录未执行两代迁移，标签按既定要求保持明文。设备配对、包清理与真机后台同步仍未实现/未验收，端到端桥接不能写成已具备，具体边界见 §9.3/§10。
 
 ## 4. 本地操作约定
 

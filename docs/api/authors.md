@@ -26,7 +26,9 @@ v2备份还可携带离线头像图片；认证头像接口优先读本地持久
 
 TXT 导入/保护/移除/统一重建事务在 authorimport，手动、备份与本机同步入口共用；HTTP 只校验参数、映射领域结果和冲突载荷，协议字段不变。
 
-端点：GET /authors、**POST /authors、PUT/DELETE /authors/{id}、POST /authors/merge**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow
+端点：GET /authors、**GET /authors/query、POST /authors、PUT/DELETE /authors/{id}、POST /authors/merge**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow
+
+`GET /authors/query` 是 AI/轻量查重使用的有界查询，保持既有 `GET /authors` 全量响应不变。`q`（最多200字符）trim 后对显示名或 ID 做 literal 子串匹配；ASCII 字母大小写不敏感，非 ASCII 大小写敏感。结果按显示名、ID 的 SQLite BINARY 升序，ID 作为同名稳定次序；`limit` 缺省 20、范围 1..100。`cursor` 传上页 `nextCursor` 继续 keyset 分页，且绑定上次查询的 q，换 q 返回 400；响应为 `{items:[{id,displayName,type}],nextCursor}`，游标为空值表示到底。响应不包含计数、关注态、记录时间等列表附加字段。
 
 作者 TXT 手动导入沿用普通 JSON 请求 **1 MiB** 上限（`httpapi.maxJSONBody`），不是同步通道或便携备份上限；限制包含 filename/content/conflictResolution 的整个 UTF-8 JSON 及转义开销。Android 在数据层先校验文件名/声明大小，再按原始字节上限+1 截止并核对实际 SDK 序列化大小；Web 读前检查 File 大小、出网前核对 JSON 字节。超限不提交片段，失败可重选。保留各端既有 UTF-8 解码策略，不增加编码支持；服务端拒绝仍为最后防线。本项澄清已有上限，不新增协议字段/schema 或限制。
 

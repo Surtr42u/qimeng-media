@@ -78,9 +78,57 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 
 `context`/`version`/`tools list`/`tools show` 纯本地：不联网、不需要 token。
 注意：`context` 输出完整规则包（约 490KB，面向排障/CI）；模型上下文请优先用
-`task`（2–4KB 任务卡）或 `task-context --task ...`，不要默认整包读取。
+`task`（精简任务卡，当前体积见下文）或 `task-context --task ...`，不要默认整包读取。
 
 ## 配置
+
+2026-11-14 源码契约更新：工具包 `1.6.0`、工具契约 `2.0.0`、规则 `2026-11-14.1`。
+默认权限改为仅 `read`；自动化写入须在可信配置中明确授予权限，并由服务端 AI scope
+再次约束。旧计划须重新 prepare；`author.query` 返回分页对象（默认20条），旧
+`authors` 子命令保留数组形状但默认只取一页。当前构建、安装与验收状态见 HANDOVER。
+
+| 配置 | 默认与用途 |
+|---|---|
+| `QIMENG_AI_MCP_DISCOVERY` | 默认 `full`：稳定完整清单，兼容不刷新工具列表的宿主；显式 `lazy`：按context/describe/recipe发布并通知list_changed，仅供已验证会刷新的宿主 |
+| `QIMENG_AI_OUTPUT_BUDGET_BYTES` | 12288：MCP/通用 tool call 与任务上下文的展示 result 上限；不包括协议外壳和宿主可能重复呈现的 text/structuredContent |
+| `QIMENG_AI_STATE_DIR` | 私有执行端状态根；未设时结果续读用系统临时目录。完整计划保存在本机，不入源码或公开报告 |
+| `QIMENG_AI_TASK_ID` | 与显式 STATE_DIR 一起配置后，同任务跨 CLI/MCP 客户端共享预算；不是模型参数，不建立第二套业务任务账本 |
+| `QIMENG_AI_MAX_CALLS` / `QIMENG_AI_MAX_SECONDS` / `QIMENG_AI_MAX_UNCHANGED` | 100 / 900 / 3；含工具错误的调用计数、时间与相同请求无新结果停止。未绑定持久任务时只约束当前执行会话 |
+| `QIMENG_AI_AUTHORIZATION_FILE` | 可选的可信任务授权文件，进一步收窄实例、工具、参数和有效期；模型不能靠 confirm=true 或自算指纹扩权 |
+
+任务授权文件（占位示例；`expiresAt` 用实际 Unix 秒，不从模型参数接受）：
+
+```json
+{"version":1,"apiBase":"http://127.0.0.1:18568","expiresAt":1800000000,
+ "allow":[{"tool":"author.create","arguments":{"displayName":"已授权的测试作者"}}]}
+```
+
+授权文件约束副作用工具和 recipe 原语；读取仍受实例级 read scope/本地读根约束，不是按作者或库隔离的读授权。
+
+`arguments` 是输入字段点路径的精确匹配，例如 `plan.planFingerprint`；省略该对象
+表示可信端授予该工具的范围内委托，不是动作级用户确认凭据。权限、Go scope、对象
+版本及本地读写根继续生效。普通授权内可连续完成，不因内部计划步骤重新询问。
+
+超过展示预算时返回 `truncated`、省略信息及 `resultRef`；用 `platform.result.read`
+按 RFC6901 JSON Pointer（如 `/tools/0`）、游标与条数续读，每页最多12KiB。
+有 `planRef` 时 apply/update 直接传 `{ "planRef":"<原引用>", "confirm":true }`，
+执行端读取完整原计划再验证版本/指纹/前置条件。不要从预览或脱敏路径重造计划。
+规则节原先已在 handler 摘录时截断，续读该摘录不能取回原文；因此 `platform.rules`
+另支持单个 `sections` 配合 `offset=0,limit=1000`，按 `nextOffset` 读取原始规则 JSON
+片段，供必要时补全规范；不会把缺失的后半段当成已读，也不将片段作为执行计划。
+结果引用绑定实例、凭据摘要、工具/规则版本，24小时过期；单对象32MiB、总额256MiB、
+最多128项，超限明确给出无法续读/不可执行原因。引用也不扩大原始权限。
+
+业务 API token 与本机路径不会展示给模型；现有维护执行器的短期 fencing leaseToken
+仍是原受控通道的能力参数，须由可信执行器保管，不能转发到其他模型或日志；本轮未
+引入该通道的 opaque leaseRef。模型 token/费用仍以宿主实际遥测为准，缺失就标未测。
+
+相同任务的副作用在执行前持久预留；存在未决写入时不派发新写操作，允许读取核验。
+上传前源文件校验拒绝、媒体探测在创建输出/启动子进程前的输入解析拒绝、服务端明确拒绝旧租约时释放本次预留；一般前置条件异常
+可能发生在多步操作之后，仍保留未决状态，不能仅凭错误类别假定没有副作用。
+进程中断或执行后无法确定结果时保留未决记录，可信端先按原操作身份回读，再核销继续；
+不把新进程或新参数当作自动重试授权。输出预算在执行前校验；业务已返回但呈现失败时
+明确报告 executionCompleted/resultPresentationFailed 与原业务状态，不伪装成未执行。
 
 只从环境变量读取，不提供命令行 token 参数：
 
@@ -91,7 +139,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_DISABLED_TOOLS` | 可选 | 逗号分隔的工具或原语 ID（如 `media.transfer`），单独禁用。 |
 | `QIMENG_AI_READONLY` | 可选 | 取 `1/true` 时在发起请求/执行原语前拒绝全部有副作用工具与原语。 |
 | `QIMENG_AI_OPENAPI` / `QIMENG_AI_RULES` | 可选 | 排障/验证时覆盖 OpenAPI 与规则源路径。 |
-| `QIMENG_AI_MCP_TIMEOUT` | 可选 | MCP 单次工具调用超时秒数（默认 120）。 |
+| `QIMENG_AI_MCP_TIMEOUT` | 可选 | 显式设置MCP单次调用上限（有限正数秒）。未设置时至少120秒，且覆盖工具声明/合法timeoutSeconds预算并留25秒收尾（进程退出/管道回收与结果收集）；设置值为可信端硬上限，长任务须相应配置宿主超时。 |
 | `QIMENG_AI_MCP_DOMAINS` | 可选 | 逗号分隔的领域白名单；只暴露这些域的业务工具与 `files.storages`，减少误调用面。全部 `platform.*` 安全发现元工具始终可见（只读、不扩大权限）。标准 MCP 客户端仍可能加载完整 `tools/list`，此过滤不是上下文节省保证。 |
 | `QIMENG_AI_TARGET` | 可选 | 运行目标：`pc` / `android-embedded` / `nas`（默认 pc）；recipe 据此核对能力。 |
 | `QIMENG_AI_RECIPE_DIR` | 可选 | recipe 目录覆盖（默认 `tools/ai_maintenance/recipes`）。 |
@@ -104,7 +152,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 | `QIMENG_AI_WRITE_ROOTS` | 本地写入必填 | 逗号/分号分隔的绝对路径：允许复制/整理/抽帧/拼图/备份落盘等写操作。与读根分开授权；未配置的目录默认拒绝。 |
 | `QIMENG_AI_MEDIA_ROOTS` | media.organize scan 必填 | 逗号/分号分隔的绝对路径：允许 `media.organize.prepare` scan 模式只读扫描的媒体/维护根，并计入读根。未配置时拒绝本地扫描；仓库内只允许忽略工作根。 |
 | `QIMENG_AI_STORAGES` | 本地文件发现必填 | `storageId=绝对路径` 形式（分号/逗号分隔），声明逻辑存储；storageId 需匹配 `^[a-z][a-z0-9_-]{1,31}$`。storage 根**本身即读授权**；写入该存储还需把根加入 `QIMENG_AI_WRITE_ROOTS`。 |
-| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/asset.write/asset.delete/trash.restore/media.organize/backup.export/device.apply/maintenance.execute/admin.maintenance/local.files.write/local.device 或 all）。未配置=授予全部已声明权限（兼容旧 CLI）；生产执行器应显式收窄。工具可见≠有权执行，execute_tool 与原语策略在调用前强制检查。 |
+| `QIMENG_AI_GRANTED_PERMISSIONS` | 可选 | 逗号分隔的已授予权限（read/research/author.profile.write/author.cleanup/asset.authors.write/asset.write/asset.delete/trash.restore/media.organize/backup.export/device.apply/maintenance.execute/admin.maintenance/local.files.write/local.device 或 all）。未配置=仅授予 read；写入须显式配置最小权限。工具可见≠有权执行，execute_tool 与原语策略在调用前强制检查。 |
 
 ```powershell
 $env:QIMENG_API_BASE = "http://127.0.0.1:8420"
@@ -242,7 +290,7 @@ python -X utf8 tools/ai_maintenance/cli.py research context|provider|lens ...
 ```
 
 `assets` 的 `--page` 只是按 `nextCursor` 顺序取页，不向服务端发送 `page` 参数；
-`authors` 的 `--page/--size` 是客户端切片。research 默认人读摘要，全局 `--json`
+`authors` 的 `--page/--size` 沿服务端游标取页，默认只返回一页20条。research 默认人读摘要，全局 `--json`
 （子命令前后都可）输出原始 JSON。
 
 ### 通用机器可读入口
@@ -257,8 +305,13 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.prepare --in
 
 ### 任务卡与可执行 recipe（优先入口）
 
-不需要先读项目文档：先取 2–4KB 任务卡，按卡上的步骤/输入/门禁执行；执行到某步
+不需要先读项目文档：先取精简任务卡，按卡上的步骤/输入/门禁执行；执行到某步
 再按需查看该工具 Schema。
+
+体积与效果边界：原 2–4KB 是目标而非硬限额；2026-11-13 五张内置卡的紧凑 JSON
+为 1,975–5,909 UTF-8 字节，完整 MCP 清单为 45,295 字节。按需入口已有实现，但
+这是优化前快照；2026-11-14 已实现展示预算、服务端分页与续读，实际验收状态见 HANDOVER。历史证据集中在
+[平台任务书 §1.5](../../docs/AI_PLATFORM_TASKBOOK.md#15-当前-ai-api-的效果上下文与待补验收2026-11-13)。
 
 ```powershell
 # 1) 列配方 / 看任务卡（默认紧凑 JSON，不加载完整规则包）
@@ -418,7 +471,7 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - **权限与发现分离**：catalog/describe 只声明权限；`execute_tool` 与原语策略在
   Schema/计划/远程请求/文件操作之前按 `QIMENG_AI_GRANTED_PERMISSIONS`（或
   `rules.json` `toolConfig.grantedPermissions`）强制拒绝未授权工具/原语
-  （`PERMISSION_DENIED`）。未配置时默认授予全部已声明权限只是兼容旧 CLI；生产执行器
+  （`PERMISSION_DENIED`）。未配置时默认仅授予 read；生产执行器
   应显式收窄并审计。看见工具≠有权执行，CLI 与 MCP 走同一检查。
 - **受限凭据（ADR-0057 P1 已实现）**：服务端新增独立 AI 客户端凭据与 scope 强制（`qimeng ai-client` 本地管理、`ai_audit` 写审计）。生产执行端应使用 `-scopes` 收窄的 AI token，而不是管理员 Bearer；未映射写请求默认 403，删除/合并/恢复需各自高风险 scope。工具层隐藏 token 仍不能阻止“执行环境直接调 Go API”：管理员 Bearer 仍是全权凭据，只注入可信执行端进程环境、不下发给模型，AI 写入只用于受信本机维护；模型侧可见的只是工具声明。剩余边界与路线见 [Go API 缺口与 AI 客户端权限模型](../../docs/AI_PLATFORM_API_GAPS.md)、[ADR-0057](../../docs/adr/0057-AI客户端凭据与细粒度权限模型.md)、[SECURITY](../../docs/SECURITY.md#独立-ai-客户端凭据scope-与审计adr-0057-p1p22026-11-08)。
 - 本机沙箱若限制系统临时目录/目录权限，测试临时目录放在被忽略的
@@ -440,7 +493,8 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
 - 远程 HTTP/网络/响应错误沿用 CLI 的结构化字段（HTTP 为 status/error/body/target），
   在 MCP 中标记 isError=true；保留服务端错误码与脱敏正文，不统一吞为 INTERNAL_ERROR。
 - token 由 MCP 服务进程继承环境变量，不出现在工具参数或响应中。
-- 工具分类发现：标准 `tools/list` 仍返回全部工具与 `inputSchema`；任务开始时客户端可先
+- 工具分类发现：默认full稳定列出全部已暴露工具，不要求动态刷新；显式lazy按任务/工具发布后通过标准list_changed通知；
+  `full` 兼容模式返回全部工具与 `inputSchema`。任务开始时客户端可先
   调用 `platform.context`（task/domain）取相关工具、Schema 摘要、规则节与 playbook；工具较多时
   再调用 `platform.catalog`（精简领域目录）与 `platform.tool.describe` 取单个工具 Schema/
   示例，用 `platform.rules` 按需读规则节、`platform.playbook` 读可选模板；descriptor 附带
@@ -459,19 +513,29 @@ python -X utf8 tools/ai_maintenance/cli.py tool call author.profile.update --inp
   "mcpServers": {
     "qimeng-ai": {
       "command": "python",
-      "args": ["-X", "utf8", "tools/ai_maintenance/mcp_server.py"],
+      "args": ["-X", "utf8", "D:/path/to/qimeng-media/tools/ai_maintenance/mcp_server.py"],
       "env": {
         "QIMENG_API_BASE": "http://127.0.0.1:8420",
-        "QIMENG_API_TOKEN": "<admin-token>"
+        "QIMENG_API_TOKEN": "<scope-read-ai-client-token>",
+        "QIMENG_AI_READONLY": "1",
+        "QIMENG_AI_GRANTED_PERMISSIONS": "read"
       }
     }
   }
 }
 ```
 
+### 在 ZCode 添加（先只读）
+
+按 [ZCode 官方 MCP 文档](https://zcode.z.ai/cn/docs/mcp-services)，进入「设置 → MCP 服务器 → 新建 MCP 服务器」：选择需要使用的用户/工作区作用域，名称 `qimeng-ai`，类型 `stdio（本地命令）`；命令 `python`，参数采用上面的绝对脚本路径（替换项目目录）。也可在「完整配置」模式粘贴上述 JSON，展开环境变量填入当前绮梦地址和专用只读凭据，然后启用。若 Python 不在该应用的 PATH 中，命令改为已安装 Python 3.13 的完整路径。
+
+绮梦凭据与 Telegram BotFather token 不同，不能互填。由管理员用现有服务端二进制的 `ai-client create -config <当前配置文件> -label zcode-readonly -scopes read` 签发凭据，再在本机界面填写一次返回的 token；配置须指向当前服务实例的数据目录，不能误建另一实例。这里不自动签发真实凭据、不修改 ZCode 配置；示例只用于只读接入，不表示已允许自动整理或删除。
+
+启用后新开/重连会话，先让 Agent 读取 `platform.catalog`，再列出媒体库以验证实际连接。通过 Telegram 操作时，选用配置了该 MCP 的同一工作区；是否正确透传工具以实际 ZCode 会话验证为准。尚未完成 ZCode 真实接入验收，不把配置示例当作兼容认证。
+
 **验证状态**：已在协议层用两个独立合成客户端（完整 stdio 帧序列 / 直接逐条
 JSON-RPC）验证 initialize、tools/list、tools/call、ping、错误、超时、取消与脱敏；
-Codex/Claude 等真实 AI 客户端接入尚未实测。远程接入遵守既有隧道策略，不新增监听面。
+2026-11-13 已用实际 Codex App Server 0.167.0-alpha.4.1 原生 MCP 客户端完成隔离接入核验：发现 51 个工具，31 次调用（23 正常、8 预期拒绝），覆盖只读查询、参数/未知工具、404、只读及 scope 拦截、合成作者计划确认/指纹拒绝/写后回读、同计划重放、重连及撤销后 401；8 个测试凭据均撤销，进程已清理。调用由当前实现者逐次选择、未启动额外模型 turn，不计为新 AI 无源码自然语言盲测；桌面 GUI 热挂载、ZCode/Claude、全部业务工具与 NAS 仍未验收。首次继承桌面定制 node_repl 配置的独立客户端启动失败，改用仅包含本次 MCP 的进程级配置后通过，未修改用户长期配置。证据与边界见 [HANDOVER](../../docs/HANDOVER.md) 当前记录；远程接入仍遵守隧道策略。
 
 ## 独立部署与升级
 
@@ -525,15 +589,29 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
   token。服务端 409 `LEASE_LOST` 统一映射为稳定错误码 `LEASE_LOST`（退出码 1），
   不自动重领或重试旧 token；恢复时按 `completedSteps` 跳过已完成步骤。
 
+## 已测宿主兼容性
+
+2026-11-14 原生 Codex App Server 0.167.0-alpha.4.1 实测：lazy 连接初始化为9项，
+describe 后宿主列表仍为9项，未观察到动态刷新；现已把默认改为`full`，无需为该宿主额外配置。显式lazy只用于已验证支持刷新的宿主。full 实测54项且查询成功。服务端通知和通用
+MCP传输的按需发现不代表每个宿主都会刷新；此兼容模式不能声称节省初始Schema上下文。
+
+## 单文件精确改名
+
+单文件按指定名称改名使用 `asset.rename.prepare` → `asset.rename.apply`（支持 `planRef`），
+保留内部空格与扩展名，不追加作品编号；权限沿用 `media.organize`，调用已有 Go move API，
+资产 ID 与常规作者关联回读一致，同计划重放不再写入。COS 文件名决定派生归属，此入口
+明确拒绝 COS，沿用媒体整理流程。批量组图编号仍使用 `media.organize.*`，不改变领域公式。
+
 ## 研究工具包接入（research.*）
 
 `research.image.pipeline/search`、`research.author.probe`、`research.media.probe`、
 `research.avatar.fetch` 只做 research_kit 的适配，不复制识别算法：
 
-- argv 始终是列表并以 `shell=False` 启动；工作目录固定仓库根（脚本默认缓存落
+- argv 始终是列表并以 `shell=False` 启动；stdin关闭，Windows不创建控制台窗口；工作目录固定仓库根（脚本默认缓存落
   `build/research-kit.local/`），子进程环境剔除 `QIMENG_API_*`，研究脚本拿不到服务端 token。
 - 输入/输出路径必须是绝对路径；仓库内只允许被忽略工作根（`QIMENG_AI_RESEARCH_DIR`，
   默认 `tools/ai_maintenance/.work/research`，已忽略）。相对路径、源码树内路径直接拒绝。
+- 子进程退出码0/1/其他分别报告ok/partial/failed，MCP对非零退出码设置isError，CLI/recipe沿用失败停止；诊断和已生成工件保留。
 - 超时默认 300s、上限 900s（超时 kill 并按退出码 124 报告）；stdout/stderr 各捕获
   至多 256KiB，工具结果只返回退出码、产物 `{path,sha256,bytes}` 与有界摘要，不返回完整日志。
 - 方法学与预算（Lens 优先 → Yandex → SauceNAO；Lens 8s 间隔、SauceNAO 4 次/30s 与日上限）

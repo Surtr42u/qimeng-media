@@ -85,7 +85,7 @@ class RulepackCapabilityTest(unittest.TestCase):
         profile = pack["capabilities"]["write"]["author.profile.update"]
         self.assertEqual("implemented", profile["implementationStatus"])
         self.assertEqual("available", profile["apiStatus"])
-        self.assertEqual("2026-11-12.1", pack["rulepackVersion"])
+        self.assertEqual("2026-11-14.1", pack["rulepackVersion"])
         self.assertIn("mediaOrganize", pack)
         self.assertEqual(["media.organize.prepare", "media.organize.apply"],
                          pack["mediaOrganize"]["tools"])
@@ -218,6 +218,7 @@ class MediaScanTest(unittest.TestCase):
             "QIMENG_AI_OPENAPI": str(OPENAPI),
             "QIMENG_AI_RULES": str(RULES),
             "QIMENG_AI_MEDIA_ROOTS": ",".join(str(item) for item in roots),
+            "QIMENG_AI_GRANTED_PERMISSIONS": "read,media.organize",
         }
 
     def _prepare(self, env, payload):

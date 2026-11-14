@@ -31,7 +31,7 @@ from .client import (ApiClient, ConfigError, HTTPStatusError, LENS_CONTENT_TYPES
                      read_config, target_label, validate_base_url)
 
 DEFAULT_AUTHOR_PAGE_SIZE = 50
-MAX_AUTHOR_PAGE_SIZE = 1000
+MAX_AUTHOR_PAGE_SIZE = 100
 ASSET_LIMIT_MAX = 200
 ASSET_DEFAULT_LIMIT = 60
 MAX_ASSET_PAGE = 50
@@ -179,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     authors = sub.add_parser("authors", help="GET /api/v1/authors（--page/--size 为客户端切片）", parents=[json_parent])
     authors.add_argument("--page", type=int, metavar="N", help="页码，从 1 开始")
-    authors.add_argument("--size", type=int, metavar="N", help="每页数量 1..1000")
+    authors.add_argument("--size", type=int, metavar="N", help="每页数量 1..100（默认20）")
 
     for command, help_text in (
         ("author-profile", "GET /api/v1/authors/{authorId}/profile"),
@@ -533,7 +533,9 @@ def _run_catalog(args, env) -> int:
     config = _runtime_config(args, env)
     _, catalog = execution.execute_tool("platform.catalog", _catalog_payload(args), config=config)
     if getattr(args, "json", False):
-        _print_json(catalog, sys.stdout)
+        from . import model_output
+        _print_json_compact(model_output.present_result("platform.catalog", catalog, env=env,
+                             rulepack_version=config.rulepack_version), sys.stdout)
     else:
         sys.stdout.write(_human_catalog(catalog))
     return 0
@@ -551,7 +553,9 @@ def _run_task_context(args, env) -> int:
         payload["maxTools"] = args.max_tools
     config = _runtime_config(args, env)
     _, result = execution.execute_tool("platform.context", payload, config=config)
-    _print_json(result, sys.stdout)
+    from . import model_output
+    _print_json_compact(model_output.present_result("platform.context", result, env=env,
+                         rulepack_version=config.rulepack_version), sys.stdout)
     return 0
 
 
@@ -563,7 +567,9 @@ def _run_playbook(args, env) -> int:
     if getattr(args, "domain", None):
         payload["domain"] = args.domain
     _, result = execution.execute_tool("platform.playbook", payload, config=config)
-    _print_json(result, sys.stdout)
+    from . import model_output
+    _print_json_compact(model_output.present_result("platform.playbook", result, env=env,
+                         rulepack_version=config.rulepack_version), sys.stdout)
     return 0
 
 
@@ -652,7 +658,16 @@ def _run_tool_call(args, env) -> int:
     payload = _tool_payload(args)
     config = _runtime_config(args, env)
     spec, result = execution.execute_tool(args.tool_id, payload, env=env, config=config)
-    _print_json(_tool_envelope(spec, result), sys.stdout)
+    from . import model_output
+    try:
+        shown = model_output.present_result(spec.id, result, env=env,
+                                            rulepack_version=config.rulepack_version)
+    except Exception as exc:  # the handler has returned; a write must not look unexecuted
+        if not (spec.side_effects or not spec.read_only):
+            raise
+        shown = model_output.presentation_failure(spec.id, result, exc,
+                                                  payload=payload, env=env)
+    _print_json_compact(_tool_envelope(spec, shown), sys.stdout)
     if isinstance(result, dict) and result.get("status") in RESULT_FAILURE_STATUSES:
         return 1
     return 0
@@ -665,6 +680,10 @@ def _run_legacy(args, env) -> int:
     config = execution.load_config(env)
     spec, result = execution.execute_tool(tool_id, payload, env=env, config=config,
                                           skip_capability=True)
+    if args.command == "authors" and isinstance(result, dict):
+        # The legacy subcommand keeps its historical array shape; author.query
+        # itself now returns a bounded {items, nextCursor} page.
+        result = result.get("items", [])
     if args.command == "research" and not getattr(args, "json", False):
         sys.stdout.write(_render_research_summary(args.research_command, result))
     else:

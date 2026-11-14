@@ -118,7 +118,7 @@ class StubServerTest(unittest.TestCase):
         StubHandler.seen = []
 
     def env(self, **extra):
-        return dict({"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN}, **extra)
+        return dict({"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN, "QIMENG_AI_GRANTED_PERMISSIONS": "all", "QIMENG_AI_MCP_DISCOVERY": "full"}, **extra)
 
     def config(self, **extra):
         return execution.load_config(self.env(**extra))
@@ -198,7 +198,7 @@ class RegistrationTest(unittest.TestCase):
     def setUp(self):
         self.document, _raw = openapi.parse_file(OPENAPI)
         self.config = execution.load_config({"QIMENG_API_BASE": "http://127.0.0.1:1",
-                                             "QIMENG_API_TOKEN": TOKEN})
+                                             "QIMENG_API_TOKEN": TOKEN, "QIMENG_AI_GRANTED_PERMISSIONS": "all", "QIMENG_AI_MCP_DISCOVERY": "full"})
 
     def test_new_tools_registered_supported_with_permissions(self):
         for tool_id, (permission, read_only, confirm) in NEW_TOOL_PERMISSIONS.items():
@@ -223,12 +223,12 @@ class RegistrationTest(unittest.TestCase):
         self.assertIn("research.image.pipeline", domains["research"]["tools"])
 
     def test_versions_and_rules_sections(self):
-        self.assertEqual("1.5.0", versions.PLATFORM_VERSION)
-        self.assertEqual("1.5.0", versions.TOOL_CONTRACT_VERSION)
+        self.assertEqual("1.6.0", versions.PLATFORM_VERSION)
+        self.assertEqual("2.0.0", versions.TOOL_CONTRACT_VERSION)
         rules = rulepack.load_rules(RULES)
-        self.assertEqual("2026-11-12.1", rules["rulepackVersion"])
+        self.assertEqual("2026-11-14.1", rules["rulepackVersion"])
         self.assertEqual(rules["rulesVersion"], rules["rulepackVersion"])
-        self.assertEqual("1.5.0", rules["platform"]["platformVersion"])
+        self.assertEqual("1.6.0", rules["platform"]["platformVersion"])
         for section in ("research", "deviceApply", "maintenanceExecutor", "trash"):
             self.assertIn(section, rules)
         for code in ("PERMISSION_DENIED", "TOOL_DEPRECATED", "FORBIDDEN_SCOPE", "LEASE_LOST"):

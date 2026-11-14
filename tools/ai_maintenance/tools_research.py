@@ -133,7 +133,9 @@ def _execute(argv: list, *, env: dict, timeout: int) -> dict:
     """运行 argv（列表，shell=False）；超时 kill 并按 124 报告。"""
     try:
         process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   cwd=str(REPO_ROOT), env=env, shell=False)
+                                   stdin=subprocess.DEVNULL,
+                                   cwd=str(REPO_ROOT), env=env, shell=False,
+                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     except OSError:
         raise errors.tool_not_implemented(
             "research", "研究脚本无法启动（解释器/可执行文件不可用）") from None
@@ -258,6 +260,7 @@ def _result(run: dict, *, script: str, args: list, artifact_paths,
             artifact_paths = list(artifact_paths) + [log]
     artifacts = _artifacts(artifact_paths)
     return {
+        "status": "ok" if run["exitCode"] == 0 else ("partial" if run["exitCode"] == 1 else "failed"),
         "exitCode": run["exitCode"],
         "artifacts": artifacts,
         "summary": _summary(run, script=script, args=args, artifacts=artifacts,
@@ -412,15 +415,20 @@ def research_media_probe(ctx: ToolContext, payload: dict) -> dict:
         raise errors.invalid_input(f"files+fileRefs 最多 {MAX_MEDIA_FILES} 项")
     resolved = []
     placeholders: dict[str, str] = {}
-    for index, item in enumerate(files, 1):
-        path = _input_path(ctx, item, "files[]")
-        resolved.append(path)
-        placeholders.setdefault(path, f"<media:{index}>")
-    for index, item in enumerate(file_refs, 1):
-        path = str(fileref.resolve_input(None, item, env=ctx.env, mode="read",
-                                         kind="fileRefs[]"))
-        resolved.append(path)
-        placeholders.setdefault(path, f"<fileRef:{index}>")
+    try:
+        for index, item in enumerate(files, 1):
+            path = _input_path(ctx, item, "files[]")
+            resolved.append(path)
+            placeholders.setdefault(path, f"<media:{index}>")
+        for index, item in enumerate(file_refs, 1):
+            path = str(fileref.resolve_input(None, item, env=ctx.env, mode="read",
+                                             kind="fileRefs[]"))
+            resolved.append(path)
+            placeholders.setdefault(path, f"<fileRef:{index}>")
+    except errors.ToolError as exc:
+        # Input resolution is read-only and precedes output creation/subprocesses.
+        exc.mutation_rejected = True
+        raise
     directory = _output_dir(ctx, None, "media-probe")
     out = directory / "media-probe.jsonl"
     if payload.get("frameDir") is None:

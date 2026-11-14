@@ -186,6 +186,18 @@ COMMON_ERROR_CODES = (
      "recovery": "停止后续写入，重新读取核对差异并把已执行步骤交人工处理。"},
     {"code": "INTERNAL_ERROR", "category": "internal", "exitCode": 1,
      "recovery": "工具缺陷；保留输入与错误详情，不要重复写入。"},
+    {"code": "AUTHORIZATION_EXPIRED", "category": "permission", "exitCode": 2,
+     "recovery": "由可信执行端核对任务授权有效期，模型不能自授。"},
+    {"code": "AUTHORIZATION_MISMATCH", "category": "permission", "exitCode": 2,
+     "recovery": "核对实例、工具与参数范围；confirm 或指纹不能扩大权限。"},
+    {"code": "TASK_BUDGET_EXHAUSTED", "category": "budget", "exitCode": 2,
+     "recovery": "保留已完成结果；可信执行端决定是否为同任务增加预算。"},
+    {"code": "TASK_NO_PROGRESS", "category": "budget", "exitCode": 2,
+     "recovery": "相同请求无新结果，停止循环并报告缺失条件。"},
+    {"code": "TASK_BUDGET_UNAVAILABLE", "category": "budget", "exitCode": 2,
+     "recovery": "核对预算记录及已有结果；不换操作ID盲目重试写入。"},
+    {"code": "TASK_OPERATION_PENDING", "category": "budget", "exitCode": 2,
+     "recovery": "前一写操作仍未决：先等待或按原操作ID回读，由可信端核销后继续。"},
 )
 
 
@@ -261,12 +273,14 @@ def _boolean(description: str = "", default: bool | None = None) -> dict:
 
 
 def _req(path: str, method: str, *, schema: str | None = None, fields=(),
-         parameters=(), required_parameters=(), body_required: bool | None = None) -> openapi.ApiRequirement:
+         parameters=(), required_parameters=(), body_required: bool | None = None,
+         body_properties=()) -> openapi.ApiRequirement:
     return openapi.ApiRequirement(path=path, method=method, request_schema=schema,
                                   required_body_fields=tuple(fields),
                                   body_required=body_required,
                                   parameters=tuple(parameters),
-                                  required_parameters=tuple(required_parameters))
+                                  required_parameters=tuple(required_parameters),
+                                  body_properties=tuple(body_properties))
 
 
 _PROFILE_OBJECT_SCHEMA = {
@@ -296,7 +310,7 @@ _PROFILE_OBJECT_SCHEMA = {
     },
 }
 
-_PLAN_REF = {"type": "object", "description": "prepare 工具返回的 plan 原样传入（禁止手工修改）"}
+_PLAN_REF = {"type": "object", "description": "只接受完整未脱敏的原 plan；优先传 planRef，不提交 planSummary/预览或手工重造计划"}
 
 _EVIDENCE_SCHEMA = {"type": "array", "maxItems": 20,
                     "items": _string("证据/来源引用（URL 或占位描述）", maximum=2000)}
@@ -426,6 +440,7 @@ TOOLS: tuple[ToolSpec, ...] = (
             "cursor": _string("分页游标 nextCursor"),
             "q": _string("全文搜索"),
             "libraryId": {"type": "string"},
+            "authorId": _string("按已查询到的作者ID过滤其关联文件，避免全库取回后筛选", 1, 512),
             "mediaType": {"type": "string", "enum": ["image", "animated_image", "video"]},
             "sort": {"type": "string", "enum": ["default", "fileDate", "addedDate",
                                                 "viewCount", "playCount", "sizeBytes",
@@ -434,19 +449,23 @@ TOOLS: tuple[ToolSpec, ...] = (
             "page": _integer("客户端便利取页（1..50，不发送 page 参数）", 1, 50),
         }),
         output_schema=_QUERY_OUTPUT,
-        requirements=(_req("/api/v1/assets", "GET", parameters=("limit", "cursor")),),
+        requirements=(_req("/api/v1/assets", "GET", parameters=("limit", "cursor", "authorId")),),
     ),
     ToolSpec(
-        id="author.query", version="1.1.0", kind="query",
-        description="GET /api/v1/authors；page/size 为客户端切片，name 按显示名/ID 子串过滤（不区分大小写）。",
+        id="author.query", version="1.2.0", kind="query",
+        description="GET /api/v1/authors/query；默认20条，使用 cursor 续页。q 按显示名/ID 子串过滤（ASCII 大小写不敏感，非 ASCII 区分大小写）；旧 name/page/size 仍接受，page 通过有界游标请求定位。",
         handler_ref="ai_maintenance.tools_query:author_query", permission="read",
         input_schema=_schema({
-            "page": _integer("页码，从 1 开始", 1),
-            "size": _integer("每页数量", 1, 1000),
-            "name": _string("按显示名/ID 子串过滤（用于未知作者查重）", 1, 200),
+            "q": _string("按显示名/ID 子串过滤（未知作者查重）；ASCII 大小写不敏感", 0, 200),
+            "cursor": _string("上一页返回的 nextCursor", maximum=4096),
+            "limit": _integer("每页数量，默认20", 1, 100, 20),
+            "page": _integer("兼容页码便利参数，从 1 开始，最多请求50页", 1, 50),
+            "size": _integer("兼容每页数量别名；与 limit 不能同时提供", 1, 100),
+            "name": _string("兼容旧参数，等同 q；与 q 不能同时提供", 0, 200),
         }),
-        output_schema=_LIST_OUTPUT,
-        requirements=(_req("/api/v1/authors", "GET"),),
+        output_schema=_QUERY_OUTPUT,
+        requirements=(_req("/api/v1/authors/query", "GET",
+                            parameters=("q", "limit", "cursor")),),
     ),
     ToolSpec(
         id="author.create", version="1.0.0", kind="write",
@@ -668,6 +687,30 @@ TOOLS: tuple[ToolSpec, ...] = (
                       _req("/api/v1/assets/{assetId}/authors", "PUT",
                            schema="AssetAuthorsReplaceRequest", fields=("authorIds",),
                            body_required=True)),
+    ),
+    ToolSpec(
+        id="asset.rename.prepare", version="1.0.0", kind="plan",
+        description="精确修改单个常规资产文件名的只读计划：保留空格、不追加编号、留在原目录；批量编号请用 media.organize。",
+        handler_ref="ai_maintenance.tools_rename:asset_rename_prepare", permission="media.organize",
+        input_schema=_schema({"assetId": _string("资产ID", 1, 512),
+                              "newName": _string("完整目标文件名（含扩展名），精确保留内部空格", 1, 255)},
+                             required=("assetId", "newName")),
+        output_schema=_PLAN_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/assets/{assetId}", "GET"),
+                      _req("/api/v1/assets/{assetId}/move", "POST", schema="MoveRequest",
+                           fields=("targetDir",), body_properties=("newName",), body_required=True)),
+    ),
+    ToolSpec(
+        id="asset.rename.apply", version="1.0.0", kind="write",
+        description="执行单文件精确改名计划并回读；保留资产ID和关联，不覆盖目标，已达目标时不重复写。",
+        handler_ref="ai_maintenance.tools_rename:asset_rename_apply", permission="media.organize",
+        read_only=False, side_effects=True, requires_confirmation=True, confirmation_mode="always",
+        input_schema=_schema({"plan": _PLAN_REF, "confirm": _boolean("必须显式true", False)},
+                             required=("plan", "confirm")),
+        output_schema=_WRITE_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/assets/{assetId}", "GET"),
+                      _req("/api/v1/assets/{assetId}/move", "POST", schema="MoveRequest",
+                           fields=("targetDir",), body_properties=("newName",), body_required=True)),
     ),
     ToolSpec(
         id="media.organize.prepare", version="1.1.0", kind="plan",
@@ -1230,7 +1273,7 @@ TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         id="platform.recipe", version="1.0.0", kind="context",
-        description="可执行编排配方（recipe）：list 列目录、show 取完整定义、card 取 2–4KB 任务卡；默认不加载工具 Schema/完整规则。",
+        description="可执行编排配方（recipe）：list 列目录、show 取完整定义、card 取 精简任务卡；默认不加载工具 Schema/完整规则。",
         handler_ref="ai_maintenance.recipes:platform_recipe", network=False, permission="read",
         input_schema=_schema({
             "action": {"type": "string", "enum": ["list", "show", "card"]},
@@ -1246,6 +1289,8 @@ TOOLS: tuple[ToolSpec, ...] = (
         description="按需读取规则节（如 mediaNaming/authorActions/fields/permissions），不加载完整 rules.json。",
         handler_ref="ai_maintenance.catalog:platform_rules", network=False, permission="read",
         input_schema=_schema({
+            "offset": _integer("单节原始规则JSON续读字符偏移，需只指定一个 sections", 0),
+            "limit": _integer("规则JSON片段字符数，按nextOffset续读；不是完整执行参数", 1, 1000),
             "sections": {"type": "array", "maxItems": 10,
                          "items": _string("rules.json 顶层节名或点路径", 1, 120)},
             "domain": _string("按领域取默认规则节：author/media/research/backup/device/maintenance/system"),
@@ -1283,6 +1328,32 @@ def tool_domain(tool_id: str) -> str:
 
 TOOLS = tuple(replace(tool, domain=tool_domain(tool.id)) for tool in TOOLS)
 
+# Long plans remain on the trusted executor; model clients may pass the opaque reference.
+# Exactly-one validation is performed by execution before resolving and validating the plan.
+def _with_plan_reference(tool):
+    if "plan" not in tool.input_schema.get("properties", {}):
+        return tool
+    input_schema = dict(tool.input_schema)
+    input_schema["properties"] = {**input_schema["properties"],
+        "planRef": _string("prepare 返回的原计划引用；与 plan 只能提供一个", 1, 512)}
+    input_schema["required"] = [key for key in input_schema.get("required", []) if key != "plan"]
+    return replace(tool, input_schema=input_schema)
+
+
+TOOLS = tuple(_with_plan_reference(tool) for tool in TOOLS) + (
+    ToolSpec(
+        id="platform.result.read", version="1.0.0", kind="context", domain="system",
+        description="按 resultRef 分页/点路径续读被省略结果；计划执行直接传 planRef，不重造计划。",
+        handler_ref="ai_maintenance.model_output:read_result", network=False, permission="read",
+        input_schema=_schema({"resultRef": _string("结果引用", 1, 512),
+                              "cursor": _string("上一页 nextCursor", 1, 2048),
+                              "limit": _integer("条数或字符串字符数上限", 1, 500),
+                              "path": _string("RFC6901 JSON Pointer，如 /tools/0；省略即根对象", 0, 1000)},
+                             required=("resultRef",)),
+        output_schema=_QUERY_OUTPUT,
+    ),
+)
+
 # 领域目录元数据：稳定顺序 + 中文标签 + 一句话说明（供 platform.catalog / CLI 展示）。
 DOMAINS: tuple = (
     {"id": "author", "label": "作者", "description": "作者身份/档案/来源/清理/合并与作者关联"},
@@ -1296,12 +1367,14 @@ DOMAINS: tuple = (
 
 # 工具示例：按需在 platform.tool.describe 返回；不进入 tools list / MCP tools/list 默认载荷。
 TOOL_EXAMPLES: dict = {
+    "asset.rename.prepare": ({"assetId": "synthetic-asset", "newName": "示例  精确名称.jpg"},),
+    "asset.rename.apply": ({"planRef": "<prepare 返回的 planRef>", "confirm": True},),
     "asset.upload.prepare": ({"libraryId": "lib-synthetic", "operationId": "00000000-0000-4000-8000-000000000001", "fileRef": "<files.search 返回的 fileRef>"},),
     "asset.upload": ({"plan": {"…": "asset.upload.prepare 返回的 plan"}, "confirm": True},),
     "library.scan": ({"libraryId": "lib-synthetic", "confirm": True},),
     "project.context": ({"markdown": True},),
     "asset.query": ({"limit": 20, "q": "朱诺 11", "cursor": "…"},),
-    "author.query": ({},),
+    "author.query": (({"q": "Alice", "limit": 20}),),
     "author.profile.read": ({"authorId": "author-xxx"},),
     "author.profile.prepare": ({"authorId": "author-xxx",
                                 "changes": {"biography": "合成示例", "status": "candidate"},
@@ -1623,6 +1696,9 @@ def describe_spec(spec: ToolSpec, document, disabled_reason: str = "", rules: di
             "requiredParameters": list(requirement.required_parameters or ()),
         })
     summary.update({
+        "modelResultContract": {"completeOutputSchema": "outputSchema 校验执行端完整结果；模型展示可能是有界摘要",
+                                "continuation": "truncated/resultRef → platform.result.read",
+                                "plan": "优先用 planRef；planSummary/planPreviewOnly 不是可提交计划"},
         "examples": [dict(example) for example in TOOL_EXAMPLES.get(spec.id, ())],
         "rulesRefs": list(refs),
         "rulesExcerpt": excerpts,

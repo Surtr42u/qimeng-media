@@ -4,9 +4,15 @@
 
 ## AI 工具平台任务卡与可执行 recipe
 
+2026-11-14 工具包1.6.0/契约2.0.0：默认只读、稳定MCP清单与可选按需发布，作者正式检索分页，
+有界展示/续读/planRef，可信任务授权与调用/时间/无进展预算。用简短任务取相关
+上下文，不需要先读源码或整包规则；原规则摘录超长还可从原始规则单节分页续读。
+配置与兼容边界集中见[工具说明](ai_maintenance/README.md#配置)，实际云端/独立
+模型/隔离交互结果见 HANDOVER；真实内容仅在用户授权的副本上验证，不写原库。
+
 2026-11-12 新增正式入库配方 `media.ingest`（`asset.upload.prepare` → gate → `asset.upload`），输入包含持久化 operationId；直接上传已入库，`library.scan` 只用于已投放文件的异步扫描。图片/视频编号政策与计划校验同源。`test_ai_go_mcp_integration.py` 由云端显式提供同 revision 的 Go 二进制，创建隔离目录/受限凭据，经真正 stdio MCP 验证上传、回读、权限、租约及配方恢复；未配置二进制时跳过，不回退现装服务。调用结果及模型手动实调边界见 [HANDOVER](../docs/HANDOVER.md)，详细契约见 [工具 README](ai_maintenance/README.md)。
 
-外部 AI 的默认入口不是完整规则包，而是 2–4KB 任务卡：`qai task author.discover` / `qai task media.batch`。任务卡给出输入、步骤、工具/原语、人工门禁、产物与执行命令；执行 `qai run <recipe>` 时只读步骤先跑，遇到 gate 停下，人工核对产物后同一 `--state-dir` 带 `--yes` 通过下一个门禁（多门禁需逐级确认）。每步产物写入运行目录（JSON + sha256），模型只拿有界摘要。
+外部 AI 的默认入口不是完整规则包，而是精简任务卡：`qai task author.discover` / `qai task media.batch`。任务卡给出输入、步骤、工具/原语、人工门禁、产物与执行命令；执行 `qai run <recipe>` 时只读步骤先跑，遇到 gate 停下，人工核对产物后同一 `--state-dir` 带 `--yes` 通过下一个门禁（多门禁需逐级确认）。每步产物写入运行目录（JSON + sha256），模型只拿有界摘要。
 
 内置配方：未知作者 `author.discover`（抽帧/Google Lens → 搜索/查重 → author.create → candidate 档案 → 关联 → 回读）、已有作者 `author.profile`、媒体批次 `media.batch`、设备结果包 `device.sync`。原语唯一实现：抽帧/dHash/拼图/缓存在 `ai_maintenance/media_primitives.py`，ADB 显式真机在 `device_adb.py`，HTTP 在 `client.py`；禁止为单次任务另写临时脚本。未入库文件用 `files.storages`/`files.search` 取得 `fileRef` 与相对路径，再交给 `media.probe`/`file.hash`/recipe 复用；读写根与逻辑存储用 `QIMENG_AI_READ_ROOTS`/`QIMENG_AI_WRITE_ROOTS`/`QIMENG_AI_STORAGES` 显式配置。详见 [AI 工具平台 README](ai_maintenance/README.md) 与 [统一任务书](../docs/AI_PLATFORM_TASKBOOK.md)。
 

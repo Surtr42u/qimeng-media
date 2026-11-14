@@ -11,8 +11,9 @@ from urllib import parse
 from . import client as http_client
 from . import errors
 
-MAX_AUTHOR_PAGE_SIZE = 1000
-DEFAULT_AUTHOR_PAGE_SIZE = 50
+MAX_AUTHOR_PAGE_SIZE = 100
+DEFAULT_AUTHOR_PAGE_SIZE = 20
+MAX_AUTHOR_PAGE = 50
 ASSET_LIMIT_MAX = 200
 ASSET_DEFAULT_LIMIT = 60
 MAX_ASSET_PAGE = 50
@@ -62,6 +63,7 @@ def _asset_query_args(payload: dict) -> dict:
     return {
         "q": payload.get("q"),
         "libraryId": payload.get("libraryId"),
+        "authorId": payload.get("authorId"),
         "mediaType": media_type,
         "sort": sort,
         "order": order,
@@ -102,28 +104,59 @@ def asset_query(ctx, payload: dict) -> dict:
     return data
 
 
-def author_query(ctx, payload: dict) -> list:
-    data = ctx.client.get("/api/v1/authors")
-    if not isinstance(data, list):
-        raise errors.internal_error("作者列表响应不是数组")
-    name = payload.get("name")
-    if isinstance(name, str) and name.strip():
-        needle = name.strip().casefold()
-        data = [
-            author for author in data
-            if isinstance(author, dict) and (
-                needle in str(author.get("displayName") or "").casefold()
-                or needle in str(author.get("id") or "").casefold()
-            )
-        ]
+def author_query(ctx, payload: dict) -> dict:
+    """作者服务端子串查询与游标分页；旧 name/page/size 继续作便利别名。"""
+    q = payload.get("q")
+    legacy_name = payload.get("name")
+    if q is not None and legacy_name is not None:
+        raise errors.invalid_input("q 与旧参数 name 不能同时使用")
+    q = legacy_name if q is None else q
+    if q is not None and (not isinstance(q, str) or len(q) > 200):
+        raise errors.invalid_input("q 必须是最多 200 个字符的字符串")
+    q = q.strip() if isinstance(q, str) else ""
+
+    limit = payload.get("limit")
+    legacy_size = payload.get("size")
+    if limit is not None and legacy_size is not None:
+        raise errors.invalid_input("limit 与旧参数 size 不能同时使用")
+    limit = legacy_size if limit is None else limit
+    if limit is None:
+        limit = DEFAULT_AUTHOR_PAGE_SIZE
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= MAX_AUTHOR_PAGE_SIZE:
+        raise errors.invalid_input(f"limit/size 必须在 1..{MAX_AUTHOR_PAGE_SIZE}")
+
     page = payload.get("page")
-    size = payload.get("size")
-    if page is None and size is None:
+    if page is not None and (not isinstance(page, int) or isinstance(page, bool)
+                             or not 1 <= page <= MAX_AUTHOR_PAGE):
+        raise errors.invalid_input(f"page 必须在 1..{MAX_AUTHOR_PAGE}")
+    cursor = payload.get("cursor")
+    if cursor is not None and (not isinstance(cursor, str) or len(cursor) > 4096):
+        raise errors.invalid_input("cursor 必须是最多 4096 个字符的字符串")
+    if page is not None and cursor:
+        raise errors.invalid_input("page 与 cursor 不能同时使用")
+
+    def fetch_page(after: str | None) -> dict:
+        params = {"limit": limit}
+        if q:
+            params["q"] = q
+        if after:
+            params["cursor"] = after
+        data = ctx.client.get("/api/v1/authors/query", params)
+        if (not isinstance(data, dict) or not isinstance(data.get("items"), list)
+                or "nextCursor" not in data
+                or (data["nextCursor"] is not None and not isinstance(data["nextCursor"], str))):
+            raise errors.internal_error("作者查询响应不是有效分页对象")
         return data
-    page = 1 if page is None else page
-    size = DEFAULT_AUTHOR_PAGE_SIZE if size is None else size
-    start = (page - 1) * size
-    return data[start:start + size]
+
+    next_cursor = cursor or None
+    if page is not None:
+        next_cursor = None
+        for _ in range(page - 1):
+            current = fetch_page(next_cursor)
+            next_cursor = current["nextCursor"]
+            if not next_cursor:
+                return {"items": [], "nextCursor": None}
+    return fetch_page(next_cursor)
 
 
 def _author_id(payload: dict) -> str:

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-12.1",
+  "rulesVersion": "2026-11-14.1",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1483,10 +1483,10 @@
       "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
     ]
   },
-  "rulepackVersion": "2026-11-12.1",
+  "rulepackVersion": "2026-11-14.1",
   "platform": {
-    "platformVersion": "1.5.0",
-    "toolContractVersion": "1.5.0",
+    "platformVersion": "1.6.0",
+    "toolContractVersion": "2.0.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
   },
@@ -1853,5 +1853,21 @@
         "真实作者数据只放忽略目录，不上传外部模型上下文之外的第三方服务"
       ]
     }
+  },
+  "executionControls": {
+    "defaultPermissions": [
+      "read"
+    ],
+    "authorization": "confirm=true和普通哈希不是授权证明。权限由可信环境显式授予，Go scope/文件根/对象版本仍强制；任务授权文件可进一步限定服务实例、有效期、工具和参数。授权范围内可自动完成，参数不扩大范围。",
+    "discovery": "MCP默认lazy：context/describe/recipe成功后公布相关工具并发list_changed；不支持通知的宿主显式full。领域过滤仍是可调用边界。",
+    "output": "模型响应默认最多12288 UTF-8字节，超额给显式省略和resultRef；按platform.result.read续读。原计划留可信端，用planRef原样执行，不从摘要重建。",
+    "budget": {
+      "defaultMaxCalls": 100,
+      "defaultMaxSeconds": 900,
+      "defaultMaxUnchanged": 3,
+      "scope": "MCP/共享配置的执行会话；显式TASK_ID+STATE_DIR时跨客户端持久共享",
+      "modelTokensAndCost": "仅宿主可得的实际遥测，不从字节估造；不控制外部账号所有消费"
+    },
+    "authorQuery": "正式/api/v1/authors/query服务端检索/游标分页，默认20条；AI返回分页对象。旧/authors数组不变。"
   }
 }

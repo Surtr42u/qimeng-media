@@ -120,7 +120,7 @@ class StubServerTest(unittest.TestCase):
         StubHandler.seen = []
 
     def env(self):
-        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN}
+        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": TOKEN, "QIMENG_AI_GRANTED_PERMISSIONS": "all", "QIMENG_AI_MCP_DISCOVERY": "full"}
 
     def config(self, **extra_env):
         env = dict(self.env(), **extra_env)
@@ -287,9 +287,9 @@ class RulepackTest(unittest.TestCase):
         with temp_dir() as directory:
             first = rulepack.build_rulepack()
             second = rulepack.build_rulepack()
-        self.assertEqual(first["platformVersion"], "1.5.0")
-        self.assertEqual(first["toolContractVersion"], "1.5.0")
-        self.assertEqual(first["rulepackVersion"], "2026-11-12.1")
+        self.assertEqual(first["platformVersion"], "1.6.0")
+        self.assertEqual(first["toolContractVersion"], "2.0.0")
+        self.assertEqual(first["rulepackVersion"], "2026-11-14.1")
         self.assertNotEqual(first["platformVersion"], first["rulepackVersion"])
         self.assertEqual(rulepack.dumps_pack(first), rulepack.dumps_pack(second))
         self.assertEqual(len(first["tools"]), len(registry.TOOLS))
@@ -316,6 +316,16 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(first_status, second_status)
         self.assertTrue(all(status == "supported" for tool_id, status in second_status.items()
                             if not tool_id.startswith(("media.organize.", "backup.", "device."))))
+
+    def test_optional_rename_field_is_required_by_tool_but_not_by_api(self):
+        with temp_dir() as directory:
+            path = directory / "openapi.yaml"
+            path.write_text(OPENAPI.read_text(encoding="utf-8").replace("newName:", "otherName:"), encoding="utf-8")
+            pack = rulepack.build_rulepack(openapi_path=path)
+        statuses = {tool["id"]: tool["status"] for tool in pack["tools"]}
+        self.assertEqual("incompatible", statuses["asset.rename.prepare"])
+        self.assertEqual("incompatible", statuses["asset.rename.apply"])
+        self.assertEqual("supported", statuses["asset.query"])
 
     def test_changed_required_field_only_degrades_dependent_write_tools(self):
         with temp_dir() as directory:
@@ -344,7 +354,7 @@ class RulepackTest(unittest.TestCase):
 class RegistryTest(StubServerTest):
     def test_listing_exposes_contract_and_schema(self):
         listing = execution.tool_listing(self.config())
-        self.assertEqual("1.5.0", listing["platformVersion"])
+        self.assertEqual("1.6.0", listing["platformVersion"])
         by_id = {tool["id"]: tool for tool in listing["tools"]}
         self.assertEqual(set(by_id), set(registry.tool_ids()))
         sample = by_id["author.profile.update"]
@@ -496,7 +506,7 @@ class AuthorProfileFlowTest(StubServerTest):
         self.routes_for([current])
         plan = self.prepare({"nickname": "Synthetic New"})
         self.assertEqual("author.profile.update", plan["tool"])
-        self.assertEqual("1.5.0", plan["versions"]["toolContractVersion"])
+        self.assertEqual("2.0.0", plan["versions"]["toolContractVersion"])
         self.assertEqual(plan["planFingerprint"], plans.compute_fingerprint(plan))
         self.assertEqual(["nickname"], [change["field"] for change in plan["changes"]])
         self.assertEqual(0, plan["preconditions"]["revision"])
@@ -763,8 +773,8 @@ class CliToolTest(StubServerTest):
         status, stdout, stderr = self.run_cli(["version"])
         self.assertEqual(0, status)
         payload = json.loads(stdout)
-        self.assertEqual("1.5.0", payload["platformVersion"])
-        self.assertEqual("2026-11-12.1", payload["rulepackVersion"])
+        self.assertEqual("1.6.0", payload["platformVersion"])
+        self.assertEqual("2026-11-14.1", payload["rulepackVersion"])
         self.assertIn("sha256", payload["openapi"])
         status, stdout, stderr = self.run_cli(["tools", "list", "--json"])
         self.assertEqual(0, status)

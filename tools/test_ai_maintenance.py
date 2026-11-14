@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch
 from urllib import error, parse
 from urllib.error import HTTPError, URLError
 
-from ai_maintenance import cli, rulepack
+from ai_maintenance import cli, rulepack, versions
 
 ROOT = Path(__file__).resolve().parents[1]
 OPENAPI = ROOT / "api" / "openapi.yaml"
@@ -51,6 +51,7 @@ class StubHandler(BaseHTTPRequestHandler):
     seen = []
     posts = []
     asset_page_responses = None
+    author_page_responses = None
 
     def do_GET(self):
         self._handle("GET")
@@ -76,6 +77,11 @@ class StubHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/v1/assets" and type(self).asset_page_responses is not None:
             cursor = parse.parse_qs(parsed.query).get("cursor", [None])[0]
             status, payload, content_type = type(self).asset_page_responses.get(
+                cursor, (200, {"items": [], "nextCursor": None}, "application/json")
+            )
+        elif parsed.path == "/api/v1/authors/query" and type(self).author_page_responses is not None:
+            cursor = parse.parse_qs(parsed.query).get("cursor", [None])[0]
+            status, payload, content_type = type(self).author_page_responses.get(
                 cursor, (200, {"items": [], "nextCursor": None}, "application/json")
             )
         else:
@@ -118,9 +124,10 @@ class RulepackTest(unittest.TestCase):
         self.assertEqual(2, pack["schemaVersion"])
         self.assertNotIn("generatedAt", pack)
         self.assertEqual(hashlib.sha256(raw).hexdigest(), pack["openapiSha256"])
-        self.assertEqual("1.5.0", pack["platformVersion"])
-        self.assertEqual("1.5.0", pack["toolContractVersion"])
-        self.assertEqual("2026-11-12.1", pack["rulepackVersion"])
+        rules_version = json.loads(RULES.read_text(encoding="utf-8"))["rulepackVersion"]
+        self.assertEqual(versions.PLATFORM_VERSION, pack["platformVersion"])
+        self.assertEqual(versions.TOOL_CONTRACT_VERSION, pack["toolContractVersion"])
+        self.assertEqual(rules_version, pack["rulepackVersion"])
         self.assertEqual(pack["rulepackVersion"], pack["rulesVersion"])
         for known in (
             "/api/v1/healthz",
@@ -418,6 +425,7 @@ class CliHTTPTest(unittest.TestCase):
         StubHandler.seen = []
         StubHandler.posts = []
         StubHandler.asset_page_responses = None
+        StubHandler.author_page_responses = None
 
     def run_cli(self, argv, env=None):
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -426,7 +434,11 @@ class CliHTTPTest(unittest.TestCase):
         return status, stdout.getvalue(), stderr.getvalue()
 
     def api_env(self):
-        return {"QIMENG_API_BASE": self.base, "QIMENG_API_TOKEN": SYNTHETIC_TOKEN}
+        return {
+            "QIMENG_API_BASE": self.base,
+            "QIMENG_API_TOKEN": SYNTHETIC_TOKEN,
+            "QIMENG_AI_GRANTED_PERMISSIONS": "read,research",
+        }
 
     def test_health_and_libraries_send_expected_path_and_bearer(self):
         status, stdout, stderr = self.run_cli(["health"])
@@ -462,12 +474,26 @@ class CliHTTPTest(unittest.TestCase):
         self.assertEqual(["lib-1"], query["libraryId"])
         self.assertNotIn("page", query)
 
-    def test_authors_page_size_are_client_side_slices(self):
+    def test_authors_page_size_uses_server_cursor_and_keeps_legacy_array(self):
+        StubHandler.author_page_responses = {
+            None: (200, {"items": [{"id": "a1"}, {"id": "a2"}],
+                         "nextCursor": "author-cursor-1"}, "application/json"),
+            "author-cursor-1": (200, {"items": [{"id": "a3"}, {"id": "a4"}],
+                                      "nextCursor": "author-cursor-2"}, "application/json"),
+        }
         status, stdout, stderr = self.run_cli(["authors", "--page", "2", "--size", "2"])
         self.assertEqual(0, status)
         self.assertEqual("", stderr)
         self.assertEqual(["a3", "a4"], [item["id"] for item in json.loads(stdout)])
-        self.assertEqual("/api/v1/authors", StubHandler.seen[-1][0])
+        paths = [parse.urlsplit(path).path for path, _ in StubHandler.seen]
+        self.assertEqual(["/api/v1/authors/query", "/api/v1/authors/query"], paths)
+        self.assertNotIn("/api/v1/authors", paths)
+        first_query = parse.parse_qs(parse.urlsplit(StubHandler.seen[0][0]).query)
+        second_query = parse.parse_qs(parse.urlsplit(StubHandler.seen[1][0]).query)
+        self.assertEqual(["2"], first_query["limit"])
+        self.assertNotIn("cursor", first_query)
+        self.assertEqual(["2"], second_query["limit"])
+        self.assertEqual(["author-cursor-1"], second_query["cursor"])
 
     def test_author_profile_and_sources_quote_author_id(self):
         for argv, expected in (
