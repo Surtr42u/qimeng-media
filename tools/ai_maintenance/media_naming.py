@@ -194,7 +194,7 @@ class CandidateGroup:
 
 @dataclass(frozen=True)
 class NamingRules:
-    """命名规则（用户需求默认值见字段默认；调用方可显式覆盖）。"""
+    """命名规则（用户需求默认值见字段默认；页码括号固定半角圆括号，其余可显式覆盖）。"""
 
     min_confidence: float = DEFAULT_MIN_CONFIDENCE
     require_confirmed: bool = True
@@ -226,13 +226,18 @@ class NamingRules:
             or not all(isinstance(part, str) and part for part in page_bracket)
         ):
             raise NamingError(ERR_INVALID_REQUEST, "rules.pageBracket 必须是两个非空字符串")
+        if (page_bracket[0], page_bracket[1]) != DEFAULT_PAGE_BRACKET:
+            raise NamingError(
+                ERR_INVALID_REQUEST,
+                "组图页码固定半角圆括号 (1)…(n)，不支持自定义 pageBracket",
+            )
         max_work_number = rules.get("maxWorkNumber", DEFAULT_MAX_WORK_NUMBER)
         if not isinstance(max_work_number, int) or isinstance(max_work_number, bool) or max_work_number < 1:
             raise NamingError(ERR_INVALID_REQUEST, "rules.maxWorkNumber 必须是正整数")
         return cls(
             min_confidence=min_confidence,
             require_confirmed=require_confirmed,
-            page_bracket=(page_bracket[0], page_bracket[1]),
+            page_bracket=DEFAULT_PAGE_BRACKET,
             max_work_number=max_work_number,
         )
 
@@ -498,8 +503,17 @@ class FamilyIndex:
     marker: str
 
     def next_work_number(self) -> int:
-        """下一可用作品编号 = 已占最大编号 + 1（不回收空号，避免复用已删作品编号）。"""
-        return max(self.work_numbers) + 1 if self.work_numbers else 1
+        """下一可用作品编号：优先补最小空号；无空号时取最大编号 +1。
+
+        2026-11-15 用户确认回收空号：改名/删除后不保留空号，新作品优先补位；
+        批量重编号由确认后的命名计划把后续作品顺延。
+        """
+        if not self.work_numbers:
+            return 1
+        number = 1
+        while number in self.work_numbers:
+            number += 1
+        return number
 
     def max_page(self, work_number: int) -> int:
         pages = self.work_numbers.get(work_number, ())
@@ -1164,12 +1178,12 @@ def validate_plan(
         if isinstance(target_name, str) and target_name in current_set and target_name != change.get("sourceName"):
             fail(ERR_TARGET_CONFLICT, "目标文件名已被其他现存文件占用", targetName=target_name)
 
-    # 编号连续性/占用复核：作品编号必须从当前最大已占 +1 起连续分配；
-    # 补图必须指向该 family 既有作品编号且页号从既有最大页 +1 起连续。
+    # 编号回收/占用复核：新作品优先补当前最小空号；补图必须指向该
+    # family 既有作品编号且页号从既有最大页 +1 起连续。
     current_indexes = {category: build_work_index([name for name in current
                                                  if numbering_category(name) == category])
                        for category in {numbering_category(name) for name in current}}
-    last_assigned: dict[tuple[str, str], int] = {}
+    used_numbers: dict[tuple[str, str], set[int]] = {}
     for group in groups:
         family = group.get("family")
         family_key = group.get("familyKey")
@@ -1186,6 +1200,10 @@ def validate_plan(
         numbering_key = (family_key, category)
         category_index = current_indexes.get(category)
         family_index = category_index.families.get(family_key) if category_index is not None else None
+        used = used_numbers.setdefault(
+            numbering_key,
+            set(family_index.work_numbers) if family_index and family_index.work_numbers else set(),
+        )
         if group.get("existingWorkNumber"):
             if family_index is None or work_number not in family_index.work_numbers:
                 fail(ERR_WORK_NUMBER_CONFLICT, "补图作品编号不存在", family=family, workNumber=work_number)
@@ -1196,14 +1214,16 @@ def validate_plan(
             if pages != expected_pages:
                 fail(ERR_WORK_NUMBER_CONFLICT, "补图页码必须从既有最大页 +1 起连续", family=family)
         else:
-            current_max = max(family_index.work_numbers) if family_index and family_index.work_numbers else 0
-            expected = max(current_max, last_assigned.get(numbering_key, 0)) + 1
-            if work_number < expected:
+            if work_number in used:
                 fail(ERR_WORK_NUMBER_CONFLICT, "作品编号与已占编号冲突", family=family, workNumber=work_number)
-            elif work_number > expected:
-                fail(ERR_WORK_NUMBER_GAP, "作品编号不得人为跳号", family=family, workNumber=work_number)
             else:
-                last_assigned[numbering_key] = work_number
+                expected = 1
+                while expected in used:
+                    expected += 1
+                if work_number > expected:
+                    fail(ERR_WORK_NUMBER_GAP, "作品编号不得人为跳号", family=family, workNumber=work_number)
+                else:
+                    used.add(work_number)
         if work_number > rule_set.max_work_number:
             fail(ERR_WORK_NUMBER_CONFLICT, "作品编号超过规则上限", family=family)
         group_pages = list(group.get("pages") or ())

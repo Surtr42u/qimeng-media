@@ -419,6 +419,27 @@ class RecipeGuardTests(unittest.TestCase):
             recipe["permissions"] = permissions
         return _write_recipe(self.recipe_dir, recipe)
 
+    def test_scan_only_batch_does_not_require_device_permissions(self):
+        env = dict(self.env)
+        env["QIMENG_AI_RECIPE_DIR"] = str(ROOT / "tools" / "ai_maintenance" / "recipes")
+        recipe = recipes.get_recipe("media.batch", env)
+        required = recipes._required_step_permissions(
+            recipe, {"scan": {"root": "/tmp/scan"}})
+        self.assertNotIn("local.device", required)
+        self.assertNotIn("device.apply", required)
+        self.assertIn("local.files.write", required)
+        self.assertIn("read", required)
+        full = recipes._required_step_permissions(recipe, {
+            "scan": {"root": "/tmp/scan"},
+            "libraryId": "lib-1",
+            "groups": [{"family": "测试  角色", "files": [{"name": "a.png"}]}],
+            "transferItems": [{"source": "/a", "target": "/b"}],
+            "deviceRemoteDir": "/sdcard/测试",
+            "deviceLocalPaths": ["/a"],
+        })
+        self.assertIn("media.organize", full)
+        self.assertIn("local.device", full)
+
     def test_recipe_permissions_must_cover_primitive_steps(self):
         recipe_id = self._transfer_recipe(permissions=["read"])
         with self.assertRaises(recipes.RecipeError) as caught:

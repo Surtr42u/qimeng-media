@@ -685,8 +685,18 @@ class SessionBudget:
             elapsed = (time.time() - state["startedAt"]) if self.path else (time.monotonic() - self.started)
             max_calls, max_seconds = self._effective_limits(state)
             if state["calls"] >= max_calls or elapsed >= max_seconds:
-                raise _failure("TASK_BUDGET_EXHAUSTED", "任务调用数或时间预算已耗尽",
-                               details={"calls": state["calls"], "maxCalls": max_calls})
+                reason = "seconds" if elapsed >= max_seconds else "calls"
+                raise _failure(
+                    "TASK_BUDGET_EXHAUSTED",
+                    "任务调用数或时间预算已耗尽",
+                    details={
+                        "calls": state["calls"],
+                        "maxCalls": max_calls,
+                        "seconds": round(elapsed, 3),
+                        "maxSeconds": max_seconds,
+                        "reason": reason,
+                    },
+                )
             _, unchanged = state["observations"].get(request, (None, 0))
             pending = state.setdefault("pending", {})
             if side_effects and any(entry["sideEffects"] for entry in pending.values()):

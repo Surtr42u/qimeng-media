@@ -748,13 +748,109 @@ def _known_permissions() -> frozenset[str]:
             | frozenset(spec.permission for spec in PRIMITIVE_SPECS.values()))
 
 
-def _required_step_permissions(recipe: dict) -> dict[str, list[str]]:
-    """收集 recipe 每个 tool/primitive 步骤所需权限（gate 不占权限）。"""
+def _input_lookup(inputs: dict, path: str):
+    """只解析 $inputs 引用；缺失返回 (False, None)，不抛模板错误。"""
+    current = inputs
+    for part in path.split("."):
+        if not part:
+            continue
+        if not isinstance(current, dict) or part not in current:
+            return False, None
+        current = current[part]
+    return True, current
+
+
+def _condition_permission_state(condition, inputs: dict, step_states: dict[str, bool | None]):
+    """按已解析输入估算步骤是否会执行。
+
+    True/False 为确定结果；None 表示依赖尚未执行的 $steps/$run 输出，权限检查
+    必须保守计入。只用于 recipe 启动前的权限预检，不替代运行时 evaluate_condition。
+    """
+    if condition is None:
+        return True
+    if isinstance(condition, str):
+        if condition.startswith("$inputs"):
+            rest = condition[len("$inputs"):].lstrip(".")
+            known, value = _input_lookup(inputs, rest)
+            return bool(value) if known else False
+        if condition.startswith("$steps."):
+            step_id = condition[len("$steps."):].split(".", 1)[0]
+            return False if step_states.get(step_id) is False else None
+        return None
+    if not isinstance(condition, dict) or len(condition) != 1:
+        return None
+    key, value = next(iter(condition.items()))
+    if key in ("notEmpty", "empty", "truthy"):
+        if not isinstance(value, str):
+            return None
+        if value.startswith("$inputs"):
+            rest = value[len("$inputs"):].lstrip(".")
+            known, resolved = _input_lookup(inputs, rest)
+            if not known:
+                return True if key == "empty" else False
+        elif value.startswith("$steps."):
+            step_id = value[len("$steps."):].split(".", 1)[0]
+            if step_states.get(step_id) is False:
+                return True if key == "empty" else False
+            return None
+        else:
+            return None
+        if key == "notEmpty":
+            return resolved not in (None, "", [], {})
+        if key == "empty":
+            return resolved in (None, "", [], {})
+        return bool(resolved)
+    if key in ("equals", "notEquals"):
+        resolved_values = []
+        for item in value:
+            if isinstance(item, str) and item.startswith("$inputs"):
+                rest = item[len("$inputs"):].lstrip(".")
+                known, resolved = _input_lookup(inputs, rest)
+                if not known:
+                    return None
+                resolved_values.append(resolved)
+            elif isinstance(item, str) and (item.startswith("$steps.") or item.startswith("$run.")):
+                return None
+            else:
+                resolved_values.append(item)
+        equal = resolved_values[0] == resolved_values[1]
+        return equal if key == "equals" else not equal
+    if key in ("and", "or"):
+        states = [_condition_permission_state(item, inputs, step_states) for item in value]
+        if key == "and":
+            if any(state is False for state in states):
+                return False
+            if any(state is None for state in states):
+                return None
+            return True
+        if any(state is True for state in states):
+            return True
+        if any(state is None for state in states):
+            return None
+        return False
+    return None
+
+
+def _required_step_permissions(recipe: dict, inputs: dict | None = None) -> dict[str, list[str]]:
+    """收集 recipe 每个 tool/primitive 步骤所需权限（gate 不占权限）。
+
+    传入 inputs 时按步骤条件静态过滤确定不会执行的步骤；依赖 $steps/$run 输出的
+    条件仍按未知保守计入。只做扫描/拼图时不应强迫调用方持有设备推送权限。
+    """
     required: dict[str, list[str]] = {}
+    step_states: dict[str, bool | None] = {}
     for step in recipe["steps"]:
+        step_id = step["id"]
+        if inputs is None:
+            state: bool | None = True
+        else:
+            state = _condition_permission_state(step.get("when"), inputs, step_states)
+        step_states[step_id] = state
+        if state is False:
+            continue
         permission = _step_permission(step)
         if permission:
-            required.setdefault(permission, []).append(step["id"])
+            required.setdefault(permission, []).append(step_id)
     return required
 
 
@@ -1336,7 +1432,7 @@ def run_recipe(recipe_id: str, inputs=None, *, env=None, state_dir=None,
                      "hints": target.get("hints") or {}},
         )
     config = config or execution.load_config(env)
-    required_permissions = _required_step_permissions(recipe)
+    required_permissions = _required_step_permissions(recipe, inputs)
     declared_permissions = recipe.get("permissions") if "permissions" in recipe else None
     if declared_permissions is not None:
         missing_declared = sorted(set(required_permissions) - set(declared_permissions or []))

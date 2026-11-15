@@ -417,6 +417,12 @@ python -X utf8 tools/ai_maintenance/cli.py run author.discover --state-dir <runD
 - `media.batch`：内容扫描 → 拼图目检 → 命名/关联 → 设备推送 → 回读
 - `device.sync`：备份导出 → 设备结果包登记 → 提交 → 查询
 
+工作流补充（2026-11-15 实际批次后固定）：
+- `media.scan` 的 `contactSheets` 覆盖所有图片/视频分组（含单文件），不再只覆盖重复组；按日期/名称前缀生成，供全批目检。
+- `asset.upload`/`media.transfer` 只写文件，**不会自动建立作者关联**；normal 库上传/转移后需对目标资产调用 `asset.authors.prepare → apply`（权限 `asset.authors.write`，维护作者 TXT 作品行）。COS 作者由目录扫描派生，不走该关联工具。
+- `media.batch` 的启动权限检查按输入条件过滤确定不会执行的步骤（依赖 `$steps/$run` 输出的条件仍保守计入）；只做扫描/拼图时仍需要 `local.files.write`，不再要求设备推送权限。`device.push` 必须显式 `QIMENG_ADB_SERIAL`，拒绝默认模拟器。
+- MCP 交互会话默认预算 100 次/900 秒（`QIMENG_AI_MAX_CALLS`/`QIMENG_AI_MAX_SECONDS`）；长批次建议用 CLI/recipe（每进程独立会话）或显式提高预算。`TASK_BUDGET_EXHAUSTED` 的 details 现含 `seconds`/`maxSeconds`/`reason`。
+
 执行器把每步产物写到 `<runDir>/artifacts/*.json`（含 sha256），模型只拿到有界摘要；
 写入步骤必须先过 gate 再带 `--yes`；一次 `--yes` 只通过下一个门禁，工具自身仍校验 plan 指纹与 confirm。配方是数据：
 新增编排只加 `recipes/*.json`（必要时加一个原语），不改 CLI/MCP。

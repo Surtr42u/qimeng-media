@@ -36,6 +36,7 @@ DEFAULT_PERCEPTUAL_LIMIT = 100
 HARD_PERCEPTUAL_LIMIT = 500
 DEFAULT_MAX_FILE_BYTES = 8 << 30
 DEFAULT_MAX_TOTAL_HASH_BYTES = 32 << 30
+MAX_REVIEW_SHEETS = 200
 
 from .media_types import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 VARIANT_TOKENS = {
@@ -557,6 +558,82 @@ def _sequence_groups(files: list[dict]) -> tuple[list[dict], list[dict]]:
     return groups, sheets
 
 
+def _review_key(item: dict) -> str:
+    """全量目检分组键：优先 6 位日期前缀，其次既有 baseKey/文件名前缀。"""
+    name = str(item.get("fileName") or item.get("relPath") or "")
+    stem = os.path.splitext(os.path.basename(name))[0]
+    match = re.match(r"^(\d{6})(?:[\s._-]|$)", stem)
+    if match:
+        return match.group(1)
+    base = str(item.get("baseKey") or "")
+    if base and base != stem:
+        return base
+    cut = len(stem)
+    for marker in (" ", "(", "（", "[", "【"):
+        index = stem.find(marker)
+        if index > 0:
+            cut = min(cut, index)
+    return stem[:cut] or stem
+
+
+def _review_sheets(files: list[dict], sequence_sheets: list[dict]) -> list[dict]:
+    """按批次/日期前缀生成全量目检拼图，不只覆盖重复/序号组。
+
+    2026-11-15 修复：实际批次里只有重复组出现在 contactSheets，30+ 个
+    日期组要人工另做拼图；这里对所有图片/视频按日期或名称前缀补全。
+    """
+    page_info: dict[str, tuple[Any, Any]] = {}
+    for sheet in sequence_sheets:
+        for item in sheet.get("files") or ():
+            if isinstance(item, dict) and isinstance(item.get("relPath"), str):
+                page_info[item["relPath"]] = (item.get("pageNumber"), item.get("suggestedPage"))
+    buckets: dict[str, list[dict]] = {}
+    for item in files:
+        if item.get("mediaType") not in ("image", "video"):
+            continue
+        key = _review_key(item)
+        if key:
+            buckets.setdefault(key, []).append(item)
+    ordered = sorted(buckets)
+    if len(ordered) > MAX_REVIEW_SHEETS:
+        keep = ordered[:MAX_REVIEW_SHEETS - 1]
+        rest = ordered[MAX_REVIEW_SHEETS - 1:]
+        merged = {key: buckets[key] for key in keep}
+        merged["其他"] = [item for key in rest for item in buckets[key]]
+        buckets = merged
+        ordered = sorted(buckets)
+    sheets: list[dict] = []
+    for key in ordered:
+        members = sorted(
+            buckets[key],
+            key=lambda item: (
+                item.get("pageNumber") is None,
+                item.get("pageNumber") or 0,
+                item.get("relPath") or "",
+            ),
+        )
+        sheet_files = []
+        for index, item in enumerate(members, 1):
+            rel = item.get("relPath") or ""
+            page, suggested = page_info.get(rel, (item.get("pageNumber"), None))
+            sheet_files.append({
+                "order": index,
+                "fileName": item.get("fileName"),
+                "relPath": rel,
+                "sizeBytes": item.get("sizeBytes"),
+                "pageNumber": page,
+                "suggestedPage": suggested,
+            })
+        sheets.append({
+            "groupId": "sheet-" + plans.digest({"reviewKey": key})[:12],
+            "label": key,
+            "fileCount": len(sheet_files),
+            "files": sheet_files,
+            "note": "按批次/日期前缀生成的全量目检拼图；逐张确认分组、顺序、重复与变体。",
+        })
+    return sheets
+
+
 def _align(source: dict, target: dict) -> dict:
     source_files = {item["relPath"].casefold(): item for item in source["files"]
                     if item.get("mediaType") in ("image", "video")}
@@ -720,7 +797,12 @@ def build_scan_plan(payload: dict, *, env=None, cache: bool = True) -> dict:
     duplicates = _duplicate_groups(source["files"], options["dedupeMode"])
     if target is not None:
         duplicates.extend(_duplicate_groups(target["files"], options["dedupeMode"]))
-    sequences, sheets = _sequence_groups(source["files"])
+    sequences, sequence_sheets = _sequence_groups(source["files"])
+    if options.get("libraryId"):
+        # 库根扫描可能覆盖数千资产；全量分组拼图只用于本地批次根，库根仍只给重复组。
+        sheets = sequence_sheets
+    else:
+        sheets = _review_sheets(source["files"], sequence_sheets)
     alignment = _align(source, target) if target is not None else None
     suggestions: list[str] = []
     if duplicates:

@@ -20,6 +20,8 @@
 
 内置配方：未知作者 `author.discover`（抽帧/Google Lens → 搜索/查重 → author.create → candidate 档案 → 关联 → 回读）、纯素材只读研究 `work.research`（`research.work`，只给图/视频即可开始，输出候选/证据/未解决条件，零业务写入；确认后再走 `author.discover` 写入）、已有作者 `author.profile`、媒体批次 `media.batch`、设备结果包 `device.sync`。原语唯一实现：抽帧/dHash/拼图/缓存在 `ai_maintenance/media_primitives.py`，ADB 显式真机在 `device_adb.py`，HTTP 在 `client.py`；禁止为单次任务另写临时脚本。未入库文件用 `files.storages`/`files.search` 取得 `fileRef` 与相对路径，再交给 `media.probe`/`file.hash`/recipe 复用；读写根与逻辑存储用 `QIMENG_AI_READ_ROOTS`/`QIMENG_AI_WRITE_ROOTS`/`QIMENG_AI_STORAGES` 显式配置。详见 [AI 工具平台 README](ai_maintenance/README.md) 与 [统一任务书](../docs/AI_PLATFORM_TASKBOOK.md)。
 
+2026-11-15 工作流修正：组图页码固定半角圆括号 `(1)`–`(n)`；作品编号优先补最小空号（prepare/validate 同步），无空号才取最大 +1。`media.scan` 对本地批次根生成全量 `contactSheets`，库根仍只给重复组。recipe 权限按输入条件过滤；`TASK_BUDGET_EXHAUSTED` details 含 `seconds/maxSeconds/reason`。上传/转移不自动关联作者，normal 库需 `asset.authors.prepare → apply`；设备结果包 `claimed` 恢复见 [设备 API](../docs/api/device.md)。
+
 ## 虚拟UI预览
 
 UI虚拟数据与独立预览服务器固定维护在[ui-preview](ui-preview/README.md)，与真实库完全隔离；夹具可供人工预览和Web浏览器回归共同复用。云端产物、当前候选清单和截图固定放忽略的`build/ui-preview.local/`，不再为每次视觉调整复制一套测试数据。
