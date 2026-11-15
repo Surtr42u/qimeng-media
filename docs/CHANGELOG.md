@@ -1,3 +1,14 @@
+## fix(ai): 固定命名页码与批次扫描工作流（2026-11-15 第七百三十五笔）
+
+执行 AI：opencode-go-chat/deepseek-v4.1-flash（主代理负责实现、数据操作与测试；子代理负责 MCP scope/凭据排查）
+
+- 命名引擎：组图页码固定半角圆括号 `(1)`–`(n)`，`NamingRules` 拒绝自定义 `pageBracket`；作品编号改为**优先补最小空号**（prepare/validate 同步），无空号才取最大+1。同步 `docs/domain/files.md`（两空格基名、`生或死` 统一、双出处 `+`/`&` 示例、空号回收）与 `docs/domain/authors.md`（COS 作品目录命名）。
+- 批次扫描：`media.scan` 对本地批次根生成**全量分组 contactSheets**（不再只覆盖重复组）；akiryo 批次实测 43 张拼图覆盖 83 个文件。库根扫描仍只给重复组，避免大库拼图爆炸。
+- recipe 权限预检：按输入条件过滤确定不会执行的步骤；`media.batch` 仅扫描/拼图时不再要求设备推送权限（仍需要 `local.files.write`），完整运行仍要求对应权限。新增 `test_scan_only_batch_does_not_require_device_permissions`。
+- MCP 预算：`TASK_BUDGET_EXHAUSTED` details 增加 `seconds/maxSeconds/reason`；本机 MCP 配置提高到 500 次/3600 秒（重启后生效）。工具 README 补充长批次 CLI/recipe 建议、上传后作者关联需单独 `asset.authors.prepare → apply`、COS 作者由目录扫描派生。
+- 真机实操：akiryo 批次 83 个文件上传并关联（作者 90 资产：78 图 + 12 视频）；手机 654 图/532 视频、旧名 0 残留；视频 9 以 14 秒帧封装内嵌封面并回读；PC/手机 cos 目录 `生或死5 → 生或死`，手机当前备份 `生或死5` 为 0。第二个设备结果包手机数据已应用但账本仍 `claimed`，恢复路径已写入 `docs/api/device.md`（App 设备领取页「立即应用」或下一轮 Worker，禁止重复登记）。
+- 验证：`check_docs` 160 文件 0 错误；tools 全量单测 527 项通过（7 跳过），含 `test_ai_platform_20261110`、`test_media_naming`、`test_ai_toolkit.MediaOrganizeTest`、`test_ai_files_refs`、`test_ai_task_recovery`；改动模块 `py_compile` 通过。未改 OpenAPI/SDK/Go 服务端与历史迁移；改动未涉及真实库测试写入。
+
 ## fix(app): 标签弹层按内容收起并固定新建行位置（2026-11-15 第七百三十四笔）
 
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
@@ -253,14 +264,6 @@
 
 - 对应 PR #44 Codex inline finding/用户报告 1/2/4/5/6：1) 媒体目录筛选改用 GET /assets directory（精确、不递归、空串=库根），修正 AssetSummary 无 relPath 导致的子目录恒空/根目录误选；_directory 拒绝绝对路径/盘符/反斜杠/空段/./..，media 能力声明补 directory。2) plans.verify_plan 增 instance 校验，跨实例计划抛 PRECONDITION_FAILED(instance_mismatch)，profile/cleanup/asset apply 传 ctx.target，media apply 等价校验。3) cleanup apply 的 inventory 签名扩展 profile revision/status/empty/hasXProfile+sources，执行前整体复检、delete 前逐项复检，变化拒绝并保留已执行步骤。4) cleanup merge 分支不再无条件读 authorId，按动作读取必填参数修复 KeyError。5) asset.authors apply 回读按服务端别名保守归一与 PUT 前作者索引识别按名解析/复用作者，其余额外 id 仍 READBACK_MISMATCH。
 - 验证：新增 test_ai_regressions 12 项 + 受影响 24 项通过；未跑全套/CI/真实库。
-
-## feat(tools): 按需工作流模板 platform.playbook、MCP 调用异步化与独立部署文档（2026-11-08 第七百零五笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理）
-
-- 用户 2026-11-07 补充要求：统一管理操作提示词/业务规范/工作流、减少对源码与完整文档依赖、MCP 调用期间处理取消、平台独立部署与版本。新增 platform.playbook（按领域列模板或按名取单个，规则节选有界，模板可选不强制路径）；rules.json 增 playbooks（author.profile/media.organize/author.cleanup/maintenance.jobs/backup.rotate）与 toolCatalog.discovery，版本升 2026-11-07.6；CLI 增 playbook 子命令，MCP initialize 指引更新。
-- MCP serve_forever 改为 tools/call 独立线程 dispatch + 写锁 + 并发上限（QIMENG_AI_MCP_MAX_CONCURRENCY，默认 4）+ 有副作用工具全局串行；取消通知在调用期间可处理，只读工具立即 -32800、有副作用工具等真实结果（避免误以为未执行）；完成后清理取消标记防 request id 复用误判；新增/更新 MCP 取消与串行化测试。新增 docs/AI_PLATFORM_OPERATIONS.md（CLI/MCP 独立启动停止、配置、版本兼容、升级、NAS 边界）。
-- 验证：test_ai_catalog 22、test_ai_mcp 11、test_ai_toolkit 47、test_ai_maintenance 31 通过；未跑全量与 CI。
 
 # CHANGELOG - 变更历史
 

@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-from ai_maintenance import (cli, errors, execution, media_scan, openapi,
+from ai_maintenance import (cli, errors, execution, media_naming, media_scan, openapi,
                              registry, rulepack, tools_media)
 from ai_maintenance.runtime import ToolContext
 
@@ -389,6 +389,50 @@ class MediaScanTest(unittest.TestCase):
                                        {"plan": plan, "confirm": True},
                                        env=env, config=config)
             self.assertEqual("TOOL_NOT_IMPLEMENTED", caught.exception.code)
+
+
+class NamingWorkflowFixTest(unittest.TestCase):
+    def test_page_bracket_is_fixed_to_ascii_parentheses(self):
+        rules = media_naming.NamingRules.coerce({})
+        self.assertEqual(("(", ")"), rules.page_bracket)
+        with self.assertRaises(media_naming.NamingError) as caught:
+            media_naming.NamingRules.coerce({"pageBracket": ["【", "】"]})
+        self.assertEqual(media_naming.ERR_INVALID_REQUEST, caught.exception.code)
+
+    def test_next_work_number_reclaims_smallest_gap(self):
+        index = media_naming.build_work_index([
+            "拳皇  不知火舞 1.png",
+            "拳皇  不知火舞 3.png",
+            "拳皇  不知火舞 4.png",
+        ])
+        self.assertEqual(2, index.next_work_number("拳皇  不知火舞"))
+        dense = media_naming.build_work_index([
+            "拳皇  不知火舞 1.png",
+            "拳皇  不知火舞 2.png",
+        ])
+        self.assertEqual(3, dense.next_work_number("拳皇  不知火舞"))
+
+    def test_review_sheets_cover_single_and_date_groups(self):
+        files = [
+            {"relPath": "210825 1.png", "fileName": "210825 1.png",
+             "mediaType": "image", "sizeBytes": 1},
+            {"relPath": "210825 2.png", "fileName": "210825 2.png",
+             "mediaType": "image", "sizeBytes": 1},
+            {"relPath": "230514.png", "fileName": "230514.png",
+             "mediaType": "image", "sizeBytes": 1},
+            {"relPath": "post-video-1_chf3_prob3.mp4",
+             "fileName": "post-video-1_chf3_prob3.mp4",
+             "mediaType": "video", "sizeBytes": 1},
+        ]
+        sheets = media_scan._review_sheets(files, [])
+        by_label = {sheet["label"]: sheet for sheet in sheets}
+        self.assertEqual(2, by_label["210825"]["fileCount"])
+        self.assertEqual(1, by_label["230514"]["fileCount"])
+        self.assertEqual(4, sum(sheet["fileCount"] for sheet in sheets))
+        self.assertTrue(any(
+            any(item["relPath"].startswith("post-video") for item in sheet["files"])
+            for sheet in sheets
+        ))
 
 
 if __name__ == "__main__":

@@ -51,7 +51,7 @@ class ParseAndIndexTest(unittest.TestCase):
         current = ["海景 20.mp4", "海景 21.png", "a.mp4", "b.jpg", "c.mp4"]
         plan = plan_for([group("海景", ["a.mp4"]), group("海景", ["b.jpg"]),
                          group("海景", ["c.mp4"])], current)
-        self.assertEqual(["海景 21.mp4", "海景 22.jpg", "海景 22.mp4"],
+        self.assertEqual(["海景 01.mp4", "海景 01.jpg", "海景 02.mp4"],
                          [change["targetName"] for change in plan["changes"]])
         self.assertTrue(naming.validate_plan(plan, current)["ok"])
         self.assertFalse(naming.validate_plan(plan, ["海景 21.png", "b.jpg"])["ok"])
@@ -113,7 +113,7 @@ class ParseAndIndexTest(unittest.TestCase):
     def test_work_index_full_width_page_brackets(self):
         index = naming.build_work_index(["名 11（1）.png", "名 11（2）.png"])
         self.assertEqual((1, 2), index.family("名").work_numbers[11])
-        self.assertEqual(12, index.next_work_number("名"))
+        self.assertEqual(1, index.next_work_number("名"))
 
 
 class PreparePlanTest(unittest.TestCase):
@@ -172,7 +172,7 @@ class PreparePlanTest(unittest.TestCase):
     def test_existing_group_pages_occupy_one_number(self):
         current = ["名 11 (1).png", "名 11 (2).png", "名 11 (3).png", "x.png"]
         plan = plan_for([group("名", ["x.png"])], current)
-        self.assertEqual(12, plan["groups"][0]["workNumber"])
+        self.assertEqual(1, plan["groups"][0]["workNumber"])
 
     def test_append_pages_keeps_work_number_and_skips_missing_pages(self):
         current = ["名 11 (1).png", "名 11 (2).png", "名 11 (4).png", "a.png", "b.png"]
@@ -186,20 +186,20 @@ class PreparePlanTest(unittest.TestCase):
     def test_zero_padding_work_number_width_preserved(self):
         current = ["名 0007 (1).png", "a.png", "b.png"]
         plan = plan_for([group("名", ["a.png", "b.png"])], current)
-        self.assertEqual("名 0008 (1).png", plan["changes"][0]["targetName"])
-        self.assertEqual("名 0008 (2).png", plan["changes"][1]["targetName"])
+        self.assertEqual("名 0001 (1).png", plan["changes"][0]["targetName"])
+        self.assertEqual("名 0001 (2).png", plan["changes"][1]["targetName"])
 
     def test_tight_separator_style_preserved_for_work_number(self):
         current = ["朱诺11(1).png", "朱诺11(2).png", "a.png", "b.png"]
         plan = plan_for([group("朱诺", ["a.png", "b.png"])], current)
-        self.assertEqual("朱诺12 (1).png", plan["changes"][0]["targetName"])
+        self.assertEqual("朱诺01 (1).png", plan["changes"][0]["targetName"])
 
     def test_full_width_existing_page_brackets_still_advance_work_number(self):
         current = ["名 11（1）.png", "名 11（2）.png", "a.png", "b.png"]
         plan = plan_for([group("名", ["a.png", "b.png"])], current)
-        self.assertEqual(12, plan["groups"][0]["workNumber"])
-        self.assertEqual("名 12 (1).png", plan["changes"][0]["targetName"])
-        self.assertEqual("名 12 (2).png", plan["changes"][1]["targetName"])
+        self.assertEqual(1, plan["groups"][0]["workNumber"])
+        self.assertEqual("名 01 (1).png", plan["changes"][0]["targetName"])
+        self.assertEqual("名 01 (2).png", plan["changes"][1]["targetName"])
 
     def test_multiple_families_get_independent_numbers(self):
         current = ["甲 1.png", "甲 2.png", "乙 1.png", "乙 2.png", "乙 3.png", "a.png", "b.png"]
