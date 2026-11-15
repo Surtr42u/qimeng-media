@@ -1,3 +1,10 @@
+## fix(app): 标签弹层按内容收起并固定新建行位置（2026-11-15 第七百三十四笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
+
+- Android 详情标签管理弹层由固定屏幕 80% 高度改为最大 80%：内容少时按内容高度收起、内容多时候选池内部滚动；“新建标签/添加”行移出候选池滚动区，固定在保存栏上方，消除用户截图中的大块空白。同步 `docs/GUIDE_UI.md` 与 `android/README.md`。PR #62 合并 `c84bff91`；云端 Android assembleDebug/test/lint 与完整 CI 通过。
+- 按用户要求重编并同签名覆盖安装 0.2.3/code38 最终 APK（run 43695963988，APK SHA-256 `f483a395…`，内嵌 revision `c84bff91`）；firstInstallTime 保持，用户确认修复。双端安装、PC 0.2.3/`38e98062` 与 ZCode MCP 接入记录见 HANDOVER §0.1；未改 OpenAPI/SDK/服务端。
+
 ## feat(ai): 纯素材研究、受控产物与可信恢复（2026-11-14 第七百三十三笔）
 
 执行 AI：Codex（主代理完整模型名称及变体未知，负责执行控制、接线与交付）
