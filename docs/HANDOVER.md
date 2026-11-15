@@ -65,15 +65,22 @@ ci/文档/依赖安全均成功。`codex/ai-api-context-20261114` 与
   配置和媒体根未移动。启动后 `healthz/readyz` 均 200，HTTP 返回的 `index.html`
   SHA-256 与已安装 `web/dist/index.html` 一致；进程路径为
   `server/qimeng-server.exe`。日常启动脚本会复用健康后端，不重复启动。
-- **Android 构建**：[build-apk run 43692157676](https://github.com/Surtr42u/qimeng-media/actions/runs/43692157676)
-  成功；artifact ZIP SHA-256 `f951d227…`；APK 34,587,579 bytes、SHA-256
-  `d58ab5bf…`，包名 `media.qimeng.app`、versionName `0.2.3`/versionCode 38，
-  签名证书 SHA-256 `8f62ba55…`，内嵌 `libqimeng.so` 含 revision `38e98062`。
+- **Android 构建**：首轮 [build-apk run 43692157676](https://github.com/Surtr42u/qimeng-media/actions/runs/43692157676)
+  出 0.2.3/code38 并安装；随后按用户截图修复标签弹层（PR #62，merge `c84bff91`），
+  最终重新构建 [build-apk run 43695963988](https://github.com/Surtr42u/qimeng-media/actions/runs/43695963988)
+  成功。最终 artifact ZIP SHA-256 `c34f6547…`；APK 34,587,827 bytes、SHA-256
+  `f483a395…`，包名 `media.qimeng.app`、versionName `0.2.3`/versionCode 38，
+  签名证书 SHA-256 `8f62ba55…`，内嵌 `libqimeng.so` 含 revision `c84bff91`。
+- **标签弹层修复**：`DetailTagSheet` 由固定屏幕 80% 高度改为最大 80%（内容少时
+  按内容收起、内容多时候选池内部滚动）；“新建标签/添加”行移出滚动区、固定在保存栏
+  上方，消除用户截图中的大块空白。同步 `GUIDE_UI` 与 `android/README`；云端
+  Android assembleDebug/test/lint 与完整 CI 通过。
 - **Android 安装**：按用户指定安装到已连接真机 NX721J（arm64，未使用默认设备或
-  雷电模拟器）；`adb install -r` 成功，未卸载、未清数据。升级前为 0.2.2/code37；
-  升级后 firstInstallTime `2026-09-12 13:08:45` 保持不变，lastUpdateTime
-  `2026-11-15 16:21:51`；回拉已安装 base.apk 的 SHA-256 与候选 APK 完全一致。
-  按要求未启动 App，后台/Doze/SAF 仍未验收。
+  雷电模拟器）；两次 `adb install -r` 均成功，未卸载、未清数据。升级前为
+  0.2.2/code37；最终 firstInstallTime `2026-09-12 13:08:45` 保持不变，
+  lastUpdateTime `2026-11-15 16:57:21`；回拉已安装 base.apk 的 SHA-256 与最终
+  候选 APK `f483a395…` 完全一致；启动过一次用于标签弹层视觉复核，用户确认修复。
+  后台/Doze/SAF 仍未验收。
 - **ZCode MCP**：在用户级 `~/.zcode/cli/config.json` 增加 stdio 服务 `qimeng-ai`
   （未写仓库、未改工作区配置；原配置备份为 `config.json.bak-20261115`）。使用新签发
   的只读+研究 AI 客户端凭据（scope `read,research`，明文只在用户级环境，未打印/未入库）；
