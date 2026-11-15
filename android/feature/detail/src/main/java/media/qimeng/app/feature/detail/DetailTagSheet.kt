@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -41,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -91,7 +91,8 @@ private val TAG_CURRENT_TAGS_HEIGHT = 76.dp
 /** 仅对颜色作短过渡，选中时不改变标签尺寸或位置。 */
 private const val TAG_SELECTION_TRANSITION_MS = 120
 
-/** 弹层保持固定高度，避免勾选摘要增长使底部锚定的整个弹层上移。 */
+/** 弹层最大高度占屏幕 80%；内容少时按内容高度收起，内容多时内部滚动。
+ *  当前标签区高度固定，选中不改变尺寸，因此不再需要强制固定整层高度。 */
 private const val TAG_SHEET_HEIGHT_FRACTION = 0.8f
 
 /** 底部「取消/保存」按钮区顶距 18dp（U10-2 D9 拍板：旧版弹窗按钮区间距） */
@@ -120,6 +121,7 @@ internal fun DetailTagManageSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var draft by remember { mutableStateOf("") }
+    val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * TAG_SHEET_HEIGHT_FRACTION
     // D11：dragHandle=null 对齐旧版弹窗无把手形态
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -129,7 +131,9 @@ internal fun DetailTagManageSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(TAG_SHEET_HEIGHT_FRACTION)
+                // 只限制最大高度，不再强制 80%：内容少时底部保存紧跟“添加”行，
+                // 避免中间出现整块空白；内容超过上限时由下方标签池滚动。
+                .heightIn(max = maxSheetHeight)
                 // U10-2b：顶距 18dp=旧 sheetContainer setPadding 顶值（TAG_SHEET_CONTENT_TOP_PADDING
                 // 记档）；副标题说明行已删（用户反馈「标签间隔太多」——旧版弹窗无此行）
                 .padding(top = TAG_SHEET_CONTENT_TOP_PADDING)
@@ -168,7 +172,9 @@ internal fun DetailTagManageSheet(
             Spacer(modifier = Modifier.height(QimengDimens.SpaceL))
             Column(
                 modifier = Modifier
-                    .weight(1f)
+                    // fill=false：标签池内容不足时按内容高度，整层随内容收起；
+                    // 内容超出上限时仍拿到剩余高度并内部滚动。
+                    .weight(1f, fill = false)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
             ) {
@@ -177,12 +183,14 @@ internal fun DetailTagManageSheet(
                     selectedTagIds = selectedTagIds,
                     onToggleTag = onToggleTag,
                 )
-                SheetAddTagRow(
-                    draft = draft,
-                    onDraftChange = { draft = it },
-                    onCreateTag = onCreateTag,
-                )
             }
+            // 新建行固定在候选池滚动区之外、保存栏之上：标签池再长也不会把
+            // “新建标签/添加”推到屏幕外，内容少时也不会在它与保存之间留空白。
+            SheetAddTagRow(
+                draft = draft,
+                onDraftChange = { draft = it },
+                onCreateTag = onCreateTag,
+            )
             SheetFooterButtons(
                 savingTags = savingTags,
                 onSave = onSave,
