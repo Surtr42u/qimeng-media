@@ -42,8 +42,47 @@ blob、STATE_DIR 绝对路径与 API base 规范化。相关回归已加入并�
 未完成/受限：本机未配置 GPT-6 Luna max，独立模型盲测未执行，不以同一主代理回归冒充
 盲测；真实外部 provider/Lens 网络、真实作者原帖确证、NAS/真机、远程 Streamable HTTP
 MCP 仍未验收；分发物只在云端测试中构建/校验，未在仓库外长期环境实际安装。工具包/
-契约/规则版本为 `1.7.1`/`2.1.0`/`2026-11-15.1`。合并 SHA 与分支清理结果在 M4/M5
-完成后补入本节。
+契约/规则版本为 `1.7.1`/`2.1.0`/`2026-11-15.1`。
+
+M4/M5：PR #60 已合并到 master，merge commit `38e98062`（包含 `fc815e45`）；合并后
+ci/文档/依赖安全均成功。`codex/ai-api-context-20261114` 与
+`codex/tag-picker-stable-20261113` 远程/本地分支已删除；未合并的 dependabot 分支
+属于独立依赖 PR，保留。
+
+## 0.1 2026-11-15 双端 0.2.3 安装与 ZCode MCP
+
+用户要求构建并安装最新双端，同时把 MCP 接入 ZCode；构建全部在 GitHub Actions 完成，
+未在本地编译或跑单测。以下为实际安装记录，`§2` 的 2026-11-12 表格是历史来源，不再代表
+当前已装版本。
+
+- **PC 构建**：[build-pc run 43692155432](https://github.com/Surtr42u/qimeng-media/actions/runs/43692155432)
+  成功；artifact `pc-windows-amd64` ZIP SHA-256 `05a1b7a5…`、16,209,116 bytes。
+  解包后 121 个清单项（服务端 1 + Web 120）逐文件 SHA-256/大小与 `release-manifest.json`
+  一致；服务端 `-version` 为 `0.2.3`、revision `38e98062`、`modified=false`、schema26；
+  OpenAPI/SDK 锁摘要与 master 一致。
+- **PC 安装**：未发现 8420 旧进程；整体替换 `server/qimeng-server.exe` 与 `web/dist`，
+  原 exe/Web 保留在忽略的 `build/deploy-latest-20261115/old-pc/`，`qimeng-data/`、
+  配置和媒体根未移动。启动后 `healthz/readyz` 均 200，HTTP 返回的 `index.html`
+  SHA-256 与已安装 `web/dist/index.html` 一致；进程路径为
+  `server/qimeng-server.exe`。日常启动脚本会复用健康后端，不重复启动。
+- **Android 构建**：[build-apk run 43692157676](https://github.com/Surtr42u/qimeng-media/actions/runs/43692157676)
+  成功；artifact ZIP SHA-256 `f951d227…`；APK 34,587,579 bytes、SHA-256
+  `d58ab5bf…`，包名 `media.qimeng.app`、versionName `0.2.3`/versionCode 38，
+  签名证书 SHA-256 `8f62ba55…`，内嵌 `libqimeng.so` 含 revision `38e98062`。
+- **Android 安装**：按用户指定安装到已连接真机 NX721J（arm64，未使用默认设备或
+  雷电模拟器）；`adb install -r` 成功，未卸载、未清数据。升级前为 0.2.2/code37；
+  升级后 firstInstallTime `2026-09-12 13:08:45` 保持不变，lastUpdateTime
+  `2026-11-15 16:21:51`；回拉已安装 base.apk 的 SHA-256 与候选 APK 完全一致。
+  按要求未启动 App，后台/Doze/SAF 仍未验收。
+- **ZCode MCP**：在用户级 `~/.zcode/cli/config.json` 增加 stdio 服务 `qimeng-ai`
+  （未写仓库、未改工作区配置；原配置备份为 `config.json.bak-20261115`）。使用新签发
+  的只读+研究 AI 客户端凭据（scope `read,research`，明文只在用户级环境，未打印/未入库）；
+  MCP 进程实测发现 56 项工具，`author.query`、`research.context`、`health.check`
+  均成功。当前 ZCode 会话在配置写入前启动，新会话/重启 ZCode 后生效；撤销入口为
+  服务端 `ai-client revoke`（同 DataDir）。
+- **数据与清理**：本轮没有向 8420 写测试数据；AI 客户端凭据创建是本次 MCP 接入的
+  正式配置写。`local-sync/` 仅有已处理的 `.synced/作者总表.txt`，无待导入文件；
+  Android 未卸载/清数据。未删除 `server/console.err`。
 
 ## 1. 当前使用形态
 
