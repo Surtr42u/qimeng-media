@@ -3,9 +3,10 @@
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
 
 - 桌面端显示最早 M1 验收页的根因：8420 上的后端不是从 `server/` 工作目录启动，默认相对路径 `../web/dist` 未命中，服务端按设计回退内嵌验收页。服务端在相对 `web.static_dir` 于当前工作目录未命中时，再按可执行文件所在目录解析一次（绝对路径与正常命中语义不变）；启动脚本同时把 `QIMENG_WEB_STATIC_DIR` 固定到 checkout 的 `web/dist`。新增 `resolveStaticDir` 单测，覆盖 cwd 命中、exe 目录兜底、都未命中与绝对路径。
-- 本批数据修正：`守望先锋  DVA 34.mp4` → `守望先锋  朱诺 19.mp4`（FPSBlyck 关联保持）；`守望先锋  DVA 35.mp4` 与 `生化危机  格蕾丝 5.mp4` 关联既有常规作者 `其他搁置`，不再留空。手机端数据待随本轮设备结果包同步。
-- 本机 MCP 配置补充 `author.profile.write`/`library.write` 权限与真实批次媒体根（配置在仓外，不随仓库分发；MCP 重启后生效），减少再次用管理员会话绕过工具权限的情况。
-- 验证：`gofmt`；`go test ./internal/httpapi -run 'TestResolveStaticDir|TestSPA' -count=1` 通过；按 `server/` 工作目录重启后 `/` 与 `web/dist/index.html` SHA-256 一致，healthz/readyz 200，桌面端加载到 React Web 而非 M1 页。云端编译与双端安装结果见 HANDOVER §2。
+- 本批数据修正：`守望先锋  DVA 34.mp4` → `守望先锋  朱诺 19.mp4`（FPSBlyck 关联保持）；`守望先锋  DVA 35.mp4` 与 `生化危机  格蕾丝 5.mp4` 关联既有常规作者 `其他搁置`，不再留空。手机端已通过设备结果包 `d9ef9fc2-6ffd-4e7f-8f09-18bafeecbf75` 应用：权威计数 assets 7851/authors 178/assetAuthorRefs 8003/tags 21/assetTagRefs 1258/viewEvents 22756，`hashVerified=true`；手机回读 `朱诺 19` 存在、`DVA 34` 不存在，上述两个作品作者均为 `其他搁置`，作者总表 SHA-256 与 PC 完全一致。
+- 上传配方与作者规则：`media.ingest` 明确 `fileName` 必须是 `{出处}  {角色} {作品编号}.ext` 的最终名、不得沿用源文件原名，未识别作者的作品必须关联 `其他搁置`；同步 `tools/ai_maintenance/README.md` 与 `docs/domain/authors.md`。
+- 本机 MCP 配置补充 `author.profile.write`/`library.write`/`backup.export`/`device.apply` 权限与真实批次/维护目录媒体根（配置在仓外，不随仓库分发；MCP 重启后生效），减少再次用管理员会话绕过工具权限的情况。手机原设备令牌失效后已用 PC 新签发的 `device.apply`/`phone-main` 专用令牌替换。
+- 验证：`gofmt`；`go test ./internal/httpapi -run 'TestResolveStaticDir|TestSPA' -count=1` 通过；按 `server/` 工作目录重启后 `/` 与 `web/dist/index.html` SHA-256 一致，healthz/readyz 200；另在仓库根以默认相对路径启动隔离实例（端口 18421、临时数据目录）仍投放同一 React Web，证明 exe 目录兜底生效。云端 PC 包 run 43873526041 安装 revision `74597408`（exe SHA-256 `0a44a554…`），APK run 43873579739 同签名覆盖安装 0.2.3/code38（候选与已安装 base.apk SHA-256 均为 `72cd0c69…`）。
 
 ## fix(ai): 固定命名页码与批次扫描工作流（2026-11-15 第七百三十五笔）
 

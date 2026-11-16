@@ -3,7 +3,7 @@
   "id": "media.ingest",
   "version": "1.0.0",
   "title": "正式上传：源文件计划 → 确认 → 流式入库与回读",
-  "whenToUse": "将已明确命名的本地文件上传至指定库；分组、图片/视频分序和关联可按需组合已有工具。上传已入库，不自动再扫描。",
+  "whenToUse": "将已按库命名规范确定最终名的本地文件上传至指定库；最终名必须是 `{出处}  {角色} {作品编号}.ext`（组图页再加 ` ({页码})`），不得直接使用源文件原名。上传后用 asset.authors.prepare → apply 关联作者；未识别作者时关联库内既有常规作者 `其他搁置`，不得留空。上传已入库，不自动再扫描。",
   "targets": [
     "pc",
     "nas"
@@ -20,7 +20,7 @@
     "properties": {
       "upload": {
         "type": "object",
-        "description": "asset.upload.prepare 的输入：libraryId、持久化 operationId(UUID)，path/fileRef 二选一，可选 fileName/directory/sourceMtime。"
+        "description": "asset.upload.prepare 的输入：libraryId、持久化 operationId(UUID)，path/fileRef 二选一，fileName 必须是符合库命名规范的最终名（不得省略为源文件名），可选 directory/sourceMtime。"
       }
     },
     "required": [
@@ -36,7 +36,7 @@
     {
       "id": "confirmUpload",
       "gate": true,
-      "message": "核对源摘要、目标库/目录、最终名和时间后确认上传"
+      "message": "核对源摘要、目标库/目录、最终名（必须符合 `{出处}  {角色} {作品编号}.ext`）和时间后确认上传"
     },
     {
       "id": "upload",
@@ -54,6 +54,7 @@
   ],
   "readback": [
     "资产 ID、最终路径和大小符合计划；自动改名不得静默算成功",
-    "重复调用同一计划不新增第二份（完成凭据七天有效）"
+    "重复调用同一计划不新增第二份（完成凭据七天有效）",
+    "上传后已建立作者关联；未识别作者的作品关联 `其他搁置`，不得留空"
   ]
 }

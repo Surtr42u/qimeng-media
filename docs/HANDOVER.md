@@ -91,6 +91,18 @@ ci/文档/依赖安全均成功。`codex/ai-api-context-20261114` 与
   正式配置写。`local-sync/` 仅有已处理的 `.synced/作者总表.txt`，无待导入文件；
   Android 未卸载/清数据。未删除 `server/console.err`。
 
+## 0.2 2026-11-16 桌面端旧界面修复、双端安装与本批数据同步
+
+用户报告桌面端启动显示最早的 M1 验收页，并要求修正 `DVA 34` 归属（实际为朱诺）、未识别作者归入 `其他搁置`、修复实际操作问题后云端编译安装。
+
+- **根因与修复**：8420 上的后端由上一轮手动启动，工作目录不是 `server/`，默认相对静态目录 `../web/dist` 未命中，按设计回退内嵌 M1 验收页。源码 `74597408` 在相对 `web.static_dir` 于 cwd 未命中时按可执行文件目录再解析一次；`_server-common.cmd` 同时固定绝对 `QIMENG_WEB_STATIC_DIR=%~dp0web\dist`。新增 `resolveStaticDir` 单测；另用隔离实例（端口 18421、临时数据目录、cwd=仓库根、默认相对路径）实测仍投放与 `web/dist/index.html` SHA-256 一致的 React Web。
+- **PC 构建/安装**：[build-pc run 43873526041](https://github.com/Surtr42u/qimeng-media/actions/runs/43873526041) 成功，安装 revision `74597408`、`modified=false`、0.2.3/schema26；exe SHA-256 `0a44a5540d5cc2f1bfa91c18d7216f8eba45b8a5a6f69e860be6839e6d1a4873`，Web 120 文件。旧 exe/Web 保留在忽略的 `build/cloud-pc-20261116/previous/`；`qimeng-data/`、配置和媒体根未移动。启动后 healthz/readyz 200，`/` 与 `web/dist/index.html` SHA-256 一致；桌面壳加载该地址即新 React Web。
+- **APK 构建/安装**：[build-apk run 43873579739](https://github.com/Surtr42u/qimeng-media/actions/runs/43873579739) 成功，0.2.3/code38，签名证书 SHA-256 `8f62ba55…`；候选与安装后回拉 base.apk 的 SHA-256 均为 `72cd0c695e888877a8f07f27486c308b1b0bf8179e57e90dabf19adb384dc84a`（34,587,355 bytes）。按用户指定安装到真机 NX721J（未使用默认设备/雷电模拟器），未卸载、未清数据；firstInstallTime 保持 `2026-09-12 13:08:45`，lastUpdateTime `2026-11-16 21:16:54`。
+- **数据修正**：PC 通过正式 API 把 `守望先锋  DVA 34.mp4` 改为 `守望先锋  朱诺 19.mp4`（FPSBlyck 关联保持）；`守望先锋  DVA 35.mp4` 与 `生化危机  格蕾丝 5.mp4` 关联既有常规作者 `其他搁置`。手机磁盘先改名（大小 34,395,127、mtime `1794831480` 保持），再由设备结果包应用。
+- **手机同步**：设备结果包任务 `d9ef9fc2-6ffd-4e7f-8f09-18bafeecbf75` 状态 `applied`，`hashVerified=true`；authoritativeState assets 7851/authors 178/assetAuthorRefs 8003/tags 21/assetTagRefs 1258/viewEvents 22756；手机当前备份 SHA-256 `d269442feb94acad65d506246ae88a8fa5b9a5a6443fbadaa0f33613280d0a70`，sidecar 一致。回读：`朱诺 19` 存在、`DVA 34` 不存在；`DVA 35` 与 `格蕾丝 5` 的作者均为 `其他搁置`；`朱诺 18/19` 仍为 FPSBlyck；作者总表 SHA-256 `fba82690…` 与 PC 完全一致。FPSBlyck 档案与离线头像仍在备份中。
+- **操作问题**：本机 MCP 配置（仓外 `~/.zcode/cli/config.json`）补充 `author.profile.write`/`library.write`/`backup.export`/`device.apply` 权限与 `akiryo`、`新建文件夹`、`资料维护` 媒体根；MCP 重启后生效。手机原设备令牌失效，已用 PC 新签发的 `device.apply`/`phone-main` 专用令牌替换；旧令牌未回显、未入库。
+- **验证边界**：本分支完整 CI/文档/依赖安全由 PR 触发，结果以 PR 为准；桌面壳未做窗口级截图验收，以服务端投放字节一致和用户实际打开为准；手机后台 Worker/Doze/SAF 仍沿用既有未验收边界。
+
 ## 1. 当前使用形态
 
 本轮分工已按用户2026-11-14纠正：后续代码实现与审查由主代理负责；GPT-6 Luna max
