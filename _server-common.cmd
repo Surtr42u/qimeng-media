@@ -35,6 +35,11 @@ rem retry); root-level *.txt is imported as an author fragment (keep) and
 rem moved to .synced\. Empty root = idle. Keep repo-relative (no username
 rem in this tracked file - AGENTS.md rule 14).
 set QIMENG_LOCAL_SYNC_ROOT=%~dp0local-sync
+rem Pin the SPA dist path to this checkout: the default is relative to the
+rem server working directory, but a stale process started from elsewhere
+rem would silently fall back to the embedded M1 page. Absolute here keeps
+rem every launcher mode on the installed web build.
+set QIMENG_WEB_STATIC_DIR=%~dp0web\dist
 set DESKTOP_EXE=%~dp0desktop\src-tauri\target\release\qimeng-media-desktop.exe
 
 if /i "%~1"=="nobrowser" goto nobrowser

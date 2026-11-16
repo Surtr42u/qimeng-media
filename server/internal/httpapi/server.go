@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -493,6 +494,18 @@ func New(deps Deps) (*Server, error) {
 	// 时也可访问，serveIndex 见 page.go）。
 	{
 		dir := deps.Cfg.Web.StaticDir
+		if dir != "" && !spaReady(dir) {
+			// 相对路径默认依赖 server/ 工作目录；从其它目录启动时按
+			// 可执行文件位置兜底，避免静默回退内嵌验收页（桌面端显示
+			// M1 页的根因）。显式绝对路径不参与。
+			if exe, err := os.Executable(); err == nil {
+				resolved := resolveStaticDir(dir, filepath.Dir(exe))
+				if resolved != dir {
+					logger.Info("SPA 静态目录按可执行文件位置解析", "configured", dir, "resolved", resolved)
+					dir = resolved
+				}
+			}
+		}
 		if spaReady(dir) {
 			spa, err := newSPAHandler(dir, logger)
 			if err != nil {

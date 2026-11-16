@@ -420,6 +420,7 @@ python -X utf8 tools/ai_maintenance/cli.py run author.discover --state-dir <runD
 工作流补充（2026-11-15 实际批次后固定）：
 - `media.scan` 的 `contactSheets` 覆盖所有图片/视频分组（含单文件），不再只覆盖重复组；按日期/名称前缀生成，供全批目检。
 - `asset.upload`/`media.transfer` 只写文件，**不会自动建立作者关联**；normal 库上传/转移后需对目标资产调用 `asset.authors.prepare → apply`（权限 `asset.authors.write`，维护作者 TXT 作品行）。COS 作者由目录扫描派生，不走该关联工具。
+- 上传的 `fileName` 必须是已确定的库命名 `{出处}  {角色} {作品编号}.ext`（组图页再加 ` ({页码})`），**不得直接沿用源文件原名**；`media.ingest` 的确认门禁会复核。未识别作者的作品必须关联库内既有常规作者 `其他搁置`，不得让新上传资产保持零作者。
 - `media.batch` 的启动权限检查按输入条件过滤确定不会执行的步骤（依赖 `$steps/$run` 输出的条件仍保守计入）；只做扫描/拼图时仍需要 `local.files.write`，不再要求设备推送权限。`device.push` 必须显式 `QIMENG_ADB_SERIAL`，拒绝默认模拟器。
 - MCP 交互会话默认预算 100 次/900 秒（`QIMENG_AI_MAX_CALLS`/`QIMENG_AI_MAX_SECONDS`）；长批次建议用 CLI/recipe（每进程独立会话）或显式提高预算。`TASK_BUDGET_EXHAUSTED` 的 details 现含 `seconds`/`maxSeconds`/`reason`。
 
