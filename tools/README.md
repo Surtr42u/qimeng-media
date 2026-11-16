@@ -22,6 +22,8 @@
 
 2026-11-15 工作流修正：组图页码固定半角圆括号 `(1)`–`(n)`；作品编号优先补最小空号（prepare/validate 同步），无空号才取最大 +1。`media.scan` 对本地批次根生成全量 `contactSheets`，库根仍只给重复组。recipe 权限按输入条件过滤；`TASK_BUDGET_EXHAUSTED` details 含 `seconds/maxSeconds/reason`。上传/转移不自动关联作者，normal 库需 `asset.authors.prepare → apply`；设备结果包 `claimed` 恢复见 [设备 API](../docs/api/device.md)。
 
+2026-11-16 工作流补充：`media.ingest` 的 `fileName` 必须是已确定的库命名 `{出处}  {角色} {作品编号}.ext`（组图页再加 ` ({页码})`），不得沿用源文件原名；未识别作者的作品必须关联库内既有常规作者 `其他搁置`，不得留空。详见 [工具 README](ai_maintenance/README.md) 与[作者规则](../docs/domain/authors.md)。
+
 ## 虚拟UI预览
 
 UI虚拟数据与独立预览服务器固定维护在[ui-preview](ui-preview/README.md)，与真实库完全隔离；夹具可供人工预览和Web浏览器回归共同复用。云端产物、当前候选清单和截图固定放忽略的`build/ui-preview.local/`，不再为每次视觉调整复制一套测试数据。

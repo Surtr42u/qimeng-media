@@ -302,6 +302,7 @@ SQLite 默认 WAL/FULL：通过连接 DSN 对每条连接设置同步，优先�
 - **Termux 形态 A dev-login 是共享密钥缓解的漏网路径**（2026-10-03 记档）：`deploy/termux/qimeng-start.sh` 同样以 `QIMENG_AUTH_DEV_MODE=1` 绑 127.0.0.1:18430，与上条同一台设备共享回环，但**没有**共享密钥门禁——同机恶意 App 可直接 `POST /auth/dev-login` 免密取得 admin token（后果同上条）。内嵌形态 B 已用随机共享密钥缓解（`X-Qimeng-Dev-Secret`），Termux 形态 A 是该缓解未覆盖的路径。理论缓解 = 密钥落 `~/.qimeng/`（权限 0600）+ App 侧取用，但 App 跨沙箱读 Termux 私有目录无标准通道、如何把密钥交给 App 需产品决策——暂记边界待立项。
 - **App token 明文 DataStore**：2026-09-06 风险接受决策（代码注释记档）。2026-09-17 补备份排除规则（`dataExtractionRules`/`fullBackupContent` 排除 `server_config.preferences_pb`）——明文本机落盘在接受范围，随系统/云备份外带不在，已关闭。2026-10-03 审查批扩排除面：暂存浏览事件 Room 库（`databases/qimeng_events.db` 及 `-wal`/`-shm` 三文件，两规则文件同集排除）——行为数据随系统/云备份外带面一并关闭；`client_prefs`（UI 偏好 + 搜索历史）维持可备份（低敏感口径，风险接受）。
 - **web token 存 localStorage**：Bearer-SPA 常见取舍（XSS 可读面）；多会话模型下泄露后果收敛为单会话（可 logout 吊销），维持现状，有实测需求再动协议（cookie/刷新机制）。
+- **SPA 静态目录相对路径兜底**：`web.static_dir` 为相对路径时先按启动工作目录解析，未命中再按可执行文件所在目录解析；只影响托管目录选择，不绕过 `os.Root` 的根内约束，也不接受请求参数指定目录。可执行文件目录被替换等同于替换程序本体，属于部署完整性边界。
 
 ## 远程访问姿势（将来启用）
 
