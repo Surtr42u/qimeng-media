@@ -59,6 +59,22 @@ func spaReady(staticDir string) bool {
 	return err == nil && !info.IsDir()
 }
 
+// resolveStaticDir 在相对静态目录按当前工作目录不可用时，改按可执行文件
+// 所在目录解析一次。默认 "../web/dist" 依赖 server/ 工作目录约定；从仓库
+// 根、桌面壳或计划任务等其它目录启动时，旧行为会静默回退内嵌验收页
+// （桌面端因此显示 M1 页）。仅在 cwd 解析失败时兜底，显式绝对路径与正常
+// 部署语义不变。
+func resolveStaticDir(staticDir, exeDir string) string {
+	if staticDir == "" || filepath.IsAbs(staticDir) || spaReady(staticDir) || exeDir == "" {
+		return staticDir
+	}
+	candidate := filepath.Join(exeDir, staticDir)
+	if spaReady(candidate) {
+		return candidate
+	}
+	return staticDir
+}
+
 // ServeHTTP 一次请求的四条判定路径：
 //  1. 文件存在（非目录）→ 直发（内容寻址缓存头见 serveFile）；
 //  2. 路径命中目录（如 /assets/）→ 走回退；

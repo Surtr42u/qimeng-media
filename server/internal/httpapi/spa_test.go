@@ -190,3 +190,41 @@ func TestSPAFallbackToEmbedded(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveStaticDir 相对静态目录在 cwd 不可用时按可执行文件目录兜底：
+// 正常 cwd 命中不改变、exe 目录命中才替换、都缺失保持原值、绝对路径不动。
+func TestResolveStaticDir(t *testing.T) {
+	t.Run("cwd 命中保持不变", func(t *testing.T) {
+		cwd := t.TempDir()
+		writeDist(t, filepath.Join(cwd, "web", "dist"))
+		t.Chdir(cwd)
+		if got := resolveStaticDir("web/dist", filepath.Join(t.TempDir(), "exe")); got != "web/dist" {
+			t.Fatalf("cwd 命中时应保持相对路径，得到 %q", got)
+		}
+	})
+
+	t.Run("cwd 未命中按 exe 目录解析", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		exeDir := t.TempDir()
+		writeDist(t, filepath.Join(exeDir, "web", "dist"))
+		want := filepath.Join(exeDir, "web", "dist")
+		if got := resolveStaticDir("web/dist", exeDir); got != want {
+			t.Fatalf("应按可执行文件目录解析为 %q，得到 %q", want, got)
+		}
+	})
+
+	t.Run("都未命中保持原值", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		if got := resolveStaticDir("web/dist", t.TempDir()); got != "web/dist" {
+			t.Fatalf("都未命中时应保持原值，得到 %q", got)
+		}
+	})
+
+	t.Run("绝对路径不参与兜底", func(t *testing.T) {
+		abs := filepath.Join(t.TempDir(), "dist")
+		writeDist(t, abs)
+		if got := resolveStaticDir(abs, t.TempDir()); got != abs {
+			t.Fatalf("绝对路径不应改变，得到 %q", got)
+		}
+	})
+}
