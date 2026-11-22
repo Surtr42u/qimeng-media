@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-15.1",
+  "rulesVersion": "2026-11-22.1",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1540,7 +1540,7 @@
       "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
     ]
   },
-  "rulepackVersion": "2026-11-15.1",
+  "rulepackVersion": "2026-11-22.1",
   "platform": {
     "platformVersion": "1.7.1",
     "toolContractVersion": "2.1.0",
@@ -1723,6 +1723,79 @@
     },
     "examples": "示例随 platform.tool.describe 按需返回（registry.TOOL_EXAMPLES），不进入默认 tools list。"
   },
+  "fieldNotes": {
+    "version": "2026-11-22.1",
+    "title": "实战经验：本机现场踩过的坑（执行前按需读）",
+    "summary": "Windows + ZCode + 绮梦 1.7.1 现场验证过的问题与规避方式；媒体库任务开始前先读本节，可显著减少反复确认与误操作。库 ID、存储与预算一律以运行环境实读为准（library.query / files.storages），不要凭记忆写死。",
+    "items": [
+      {
+        "id": "files.search.false-empty",
+        "symptom": "files.search 返回 status=ok 但 files=[]",
+        "cause": "未配置 QIMENG_AI_STORAGES 时 available=false，属于假成功，不代表没有文件",
+        "action": "先 files.storages 确认 configured；存在多个存储时必须带 storageId；storageId 必须匹配 ^[a-z][a-z0-9_-]{1,31}$（首字符必须是字母，3d 非法，改用 vid3d）"
+      },
+      {
+        "id": "budget.exhausted",
+        "symptom": "TASK_BUDGET_EXHAUSTED，连只读调用也被拒",
+        "cause": "默认 900 秒 / 100 次，时间与次数独立，先到先卡",
+        "action": "改 mcp.servers.qimeng-ai.env 的 QIMENG_AI_MAX_SECONDS / QIMENG_AI_MAX_CALLS 触发热加载以重置；硬上限 86400 秒 / 10000 次，不存在无上限"
+      },
+      {
+        "id": "pending.write",
+        "symptom": "TASK_OPERATION_PENDING，之后所有写操作被挡",
+        "cause": "任一带副作用的请求失败或被拒（403/409/READBACK_MISMATCH）都会留下未决项；内存账本按请求哈希记录",
+        "action": "先按原操作 ID 回读确认是否已生效；确认未执行后再重启服务（改 config 触发热加载）清账本；不要换 ID 重试写入"
+      },
+      {
+        "id": "scope.go-independent",
+        "symptom": "FORBIDDEN_SCOPE（如 asset.delete）",
+        "cause": "Go 服务端按 AI 客户端 token 的 scope 校验，独立于 QIMENG_AI_GRANTED_PERMISSIONS=all",
+        "action": "由桌面端补 scope，或临时改 ai_clients.scopes_json 并在用完后恢复；删除分三步：对 assets 发 DELETE 进回收站，再查 trash 列表取条目 id，最后对该条目发 DELETE 做物理删除"
+      },
+      {
+        "id": "filename.case-collision",
+        "symptom": "上传或改名后文件名多出 (2) 后缀",
+        "cause": "Windows 文件名不区分大小写，库里可能已有同名不同大小写文件（如 2b 2 (2).jpg）",
+        "action": "写入前用 ls + asset.query 同时核对大小写变体；被自动加后缀时用 asset.rename 精确改回，不要重传"
+      },
+      {
+        "id": "numbering.scheme",
+        "symptom": "新图片/新视频该编几号",
+        "cause": "图片与视频是两套独立编号，但同库常以作品号把视频与页面关联，且历史文件大小写不统一",
+        "action": "先不分大小写枚举同前缀全部文件，确认系列占用；例如 2B 图片系列 1/2/3 已占，新系列从 4 起；定号前先做 dHash 查重"
+      },
+      {
+        "id": "media.truncated",
+        "symptom": "视频容器时长正常但后半段无画面",
+        "cause": "下载中断的 MP4：容器头声明完整时长，数据在中途 offset 截断",
+        "action": "ffmpeg -v error -i x -f null - 检查是否报 partial file；按 15/50/85% 抽帧看是否失败；再找同内容完整档，用帧 dHash 确认同一份后替换"
+      },
+      {
+        "id": "adb.gitbash-path",
+        "symptom": "adb push 的远端路径被自动改写成 Git 安装目录下的 storage/ 前缀",
+        "cause": "Git Bash 的 MSYS 路径自动转换",
+        "action": "命令前加 MSYS_NO_PATHCONV=1 即可关闭 MSYS 路径转换"
+      },
+      {
+        "id": "lens.sidecar-disabled",
+        "symptom": "research.lens 返回 503 RESEARCH_SIDECAR_DISABLED",
+        "cause": "本机未配置 Lens sidecar",
+        "action": "改用 research.image.search script=yandex；结果只作线索，必须用时长与画面 dHash 二次确认作者/同一性"
+      }
+    ],
+    "workflow": [
+      "启动三连：health_check → files_storages → library_query（只读、返回小）",
+      "任务卡：platform.context(task=..., includeSchemas=false) 先拿步骤与门禁；需要单工具细节再 platform.tool.describe",
+      "写操作：prepare（只读）→ 人工确认 → apply(confirm=true, planRef) → 回读",
+      "长结果用 platform.result.read 续读，避免重复调用同一工具"
+    ],
+    "localTools": {
+      "ffmpegHint": "ffmpeg/ffprobe 用系统已装的 ffmpeg 9.0.1 完整版（tools 目录下的 ffmpeg-9.0.1-full_build/bin）",
+      "adbHint": "adb 用 Android SDK platform-tools 下的 adb.exe（where adb 可定位）",
+      "phoneSerialHint": "序列号用 adb devices 现场读取，不要写死",
+      "phoneLayoutHint": "手机媒体根与 PC 库结构一致：1/HHH 下的 2 图、3 视频 等子目录"
+    }
+  },
   "playbooks": {
     "media.ingest": {
       "domain": "media",
@@ -1740,7 +1813,8 @@
       "ruleSections": [
         "mediaNaming",
         "permissions",
-        "errors"
+        "errors",
+        "fieldNotes"
       ],
       "steps": [
         {
@@ -1785,7 +1859,7 @@
       "title": "混合媒体批次整理（根目录对齐/最大文件去重/序号延顺/拼图核验/受控合并）",
       "whenToUse": "需要把本地批次与目标文件夹/库根对齐、清理重复内容、延续组图序号或整理乱码下载名时；先按内容指纹生成只读计划并目检，再决定受控合并。",
       "risk": "high",
-      "ruleSections": ["mediaOrganize", "mediaNaming", "permissions", "errors"],
+      "ruleSections": ["mediaOrganize", "mediaNaming", "permissions", "errors", "fieldNotes"],
       "baseTools": ["media.organize.prepare", "media.organize.apply", "asset.query", "maintenance.inventory", "backup.export"],
       "steps": [
         {"action": "读取任务上下文与规则", "tool": "platform.context", "note": "task=media.organize；只加载相关工具/规则，不加载全量规则包"},
