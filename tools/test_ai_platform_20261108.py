@@ -226,7 +226,7 @@ class RegistrationTest(unittest.TestCase):
         self.assertEqual("1.7.1", versions.PLATFORM_VERSION)
         self.assertEqual("2.1.0", versions.TOOL_CONTRACT_VERSION)
         rules = rulepack.load_rules(RULES)
-        self.assertEqual("2026-11-15.1", rules["rulepackVersion"])
+        self.assertEqual("2026-11-22.1", rules["rulepackVersion"])
         self.assertEqual(rules["rulesVersion"], rules["rulepackVersion"])
         self.assertEqual("1.7.1", rules["platform"]["platformVersion"])
         for section in ("research", "deviceApply", "maintenanceExecutor", "trash"):
