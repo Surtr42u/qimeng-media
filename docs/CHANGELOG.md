@@ -1,3 +1,11 @@
+## fix(ai): 规则包新增 fieldNotes 现场经验节并修复依赖漏洞（2026-11-23 第七百三十七笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
+
+- 规则包 `rulepackVersion` 由 2026-11-15.1 升至 2026-11-22.1：新增顶层节 `fieldNotes`，记录本机现场验证过的 9 类问题与处理（`files.search` 未配存储时的假空结果、任务预算 900 秒默认值与硬上限、失败写入留下的未决项、Go 服务端 scope 独立于 MCP 权限、Windows 大小写重名导致的 ` (2)` 自动后缀、图片与视频编号规则、下载截断 MP4 的识别方法、Git Bash 改写 adb 远端路径、Lens sidecar 未启用时的替代路径），并附按需取上下文的四步工作流；该节已挂入 `media.organize`、`media.ingest` 的 `ruleSections`，`platform.context` 取任务卡时自动带出。同步 CAPABILITY_MAP、HANDOVER、AI_PLATFORM_TASKBOOK、tools README 的当前版本号与三份单测的版本断言。
+- 依赖安全：定时任务 2026-11-23 12:47 的 `cargo audit` 报 2 个漏洞，`desktop/src-tauri/Cargo.lock` 升级 `cookie 0.18.2 → 0.18.3`（RUSTSEC-2026-0594，6.5 medium）、`url 2.5.8 → 2.5.9`（RUSTSEC-2026-0592）及传递依赖 `form_urlencoded 1.2.2 → 1.2.3`；源码零改动，`cargo metadata --no-deps --locked` 通过。
+- 验证：改动模块 `python -m unittest` 通过；`privacy`、`docs` 与 `cargo-vulnerabilities` 以 PR #65 的检查结果为准。
+
 ## fix(server): SPA 静态目录按可执行文件位置兜底（2026-11-16 第七百三十六笔）
 
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
@@ -260,13 +268,6 @@
 
 - 根因：先整代轮换当前→上次再写新当前且无事务标记；中断后重复轮换/半成品被当上次代/正文摘要分开写导致永久摘要不符或丢失完整旧代。修复：新增 maintenance-generation.ts 两代写入原语与恢复判定；写快照前落 .两代轮换状态.json（old/next 摘要），整代轮换（相同跳过、缺摘要补）、写新当前（正文先摘要后）、最后删状态；下次写入按断点自愈，不可判定拒绝并保留现场；相同数据重复导出只刷新当前并修复过期摘要；旧 flat3 只读兼容不变。
 - 验证：maintenance-folder.test.ts 24/24、tsc --noEmit、oxlint 0；未跑全量 vitest/Playwright/vite build/真实服务端。待测：真实浏览器崩溃中断自愈、真实 FS removeEntry 失败、跨浏览器差异。
-
-## fix(app): 修复两代布局历史备份恢复读取（上次代跨目录/旧 flat3 只读回退）（2026-11-08 第七百零七笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 android-client 实现与 JVM 验证）
-
-- 根因：上次代在独立目录 上次/备份/影库备份.json，恢复入口仍按当前目录+影库备份（上次）.json 拼路径，历史恢复永远读不到；偏好改指当前代后旧 flat3 历史文件也不可达。修复：新增纯 JVM MaintenanceBackupSlots 按槽解析真实文件（两代优先/旧 flat3 只读回退/摘要核对）；MaintenanceFolderRepository 增 readManagedBackup+managedBackupStatus；AutoBackupRunner.readBackup 返回真实文件名+字节，BackupViewModel 以真实名进 v2 校验链并按上次/上上次分槽提示；维护/备份页三代文案改两代。
-- 验证：本机 kotlinc+JUnit 28 项 JVM 通过（临时目录）；未跑 Gradle/CI/真机。待测：恢复上次成功路径、旧 flat3 回退、64MB 摘要、SAF 旧目录回退；UI 历史列表/迁移入口未接线。
 
 # CHANGELOG - 变更历史
 
