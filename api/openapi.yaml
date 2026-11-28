@@ -136,6 +136,35 @@ paths:
       parameters: [ { $ref: "#/components/parameters/LibraryId" } ]
       responses:
         "202": { description: 已触发 }
+  /api/v1/libraries/{libraryId}/ingest-local:
+    post:
+      summary: 本机/局域网直接入库（移动或复制文件 + 建索引；不走 HTTP 流式上传）
+      description: |
+        用于服务端与本机源文件同机/同分区（或局域网挂载）的场景：入库 = 文件移动 +
+        索引，毫秒级完成，替代 `POST /assets/upload` 的流式收流（3GB 约 2 分钟）。
+        外网/手机 App/跨设备上传仍走 upload 通道，两者索引结果一致（同一入库管线：
+        DB 行/视频探测/富化/library.changed/文件数指标）。
+        三条硬约束（不放宽）：① sourcePath 必须落在服务端配置的读根
+        `ingest_local.read_roots`（环境变量 `QIMENG_INGEST_LOCAL_ROOTS`，逗号/分号分隔；
+        未配置则该端点一律拒绝）内，目标必须在库根内，判定拒绝 `..` 与符号链接逃逸；
+        ② 绝不覆盖已存在文件——目标存在且 size+SHA256 一致返回 already_present（源不动），
+        内容不同返回 409；③ 本通道不删除库内资产（删除仍只走回收站端点）。
+        移动语义：同分区 rename（原子零拷贝）；跨分区复制 → 长度+SHA256 复核 → 建索引
+        成功后才删源；move=false 只复制、源保留。任何失败都不丢源文件。
+      parameters: [ { $ref: "#/components/parameters/LibraryId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IngestLocalRequest" }
+      responses:
+        "201": { description: 已落位并入索引（status=ingested）, content: { application/json: { schema: { $ref: "#/components/schemas/IngestLocalResult" } } } }
+        "200": { description: 目标已存在且 size+SHA256 一致（status=already_present，源未动）, content: { application/json: { schema: { $ref: "#/components/schemas/IngestLocalResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: '未配置读根，或 sourcePath 不在任何授权读根内', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "507": { $ref: "#/components/responses/StorageUnavailable" }
   /api/v1/libraries/{libraryId}/enabled:
     put:
       summary: 库启用/停用开关（停用仅隐藏浏览面，记录全保留，二次确认场景）
@@ -3012,6 +3041,31 @@ components:
           properties:
             origin:          { type: [string, "null"], description: 关联溯源通道（ADR-0032 受控词表 client/txt/import/local-sync/scanner/legacy，与备份导出 LegacyAuthorMediaRef.origin 同名同义）。null/缺省=不可考 }
             createdAtMillis: { type: [integer, "null"], format: int64, description: 关联成立毫秒（与备份导出 LegacyAuthorMediaRef.createdAtMillis 同名同义）。null/缺省=不可考（存量行 NULL 哨兵如实记不可考，禁止伪造） }
+
+    IngestLocalRequest:
+      description: 本机直接入库请求（POST /libraries/{libraryId}/ingest-local）
+      type: object
+      required: [sourcePath, fileName]
+      properties:
+        sourcePath: { type: string, description: '源文件绝对路径（必须位于服务端 ingest_local.read_roots 内；不接受相对路径/符号链接源）' }
+        fileName:   { type: string, description: '库内文件名（沿用既有命名清洗与媒体扩展名白名单；可与源文件名不同，如按命名引擎重命名）' }
+        directory:  { type: string, description: '库内目标目录（相对路径，空/缺省 = 库根）' }
+        move:       { type: boolean, default: true, description: 'true=移动（同分区 rename；跨分区复制校验后删源）；false=复制保留源。默认 true（本机入库语义）' }
+
+    IngestLocalResult:
+      description: 本机直接入库结果
+      type: object
+      required: [status, assetId, libraryId, relPath, fileName, mediaType, sizeBytes, sourceKept]
+      properties:
+        status:    { type: string, enum: [ingested, already_present], description: 'ingested=本次落位并入索引；already_present=目标已存在且 size+SHA256 一致（源未动）' }
+        assetId:   { type: string, description: 资产 ID（新入库或已存在目标的既有 ID） }
+        libraryId: { type: string }
+        relPath:   { type: string, description: 库内相对路径（目录 + 文件名） }
+        fileName:  { type: string, description: 实际落盘文件名（经清洗校验后） }
+        mediaType: { type: string, enum: [image, animated_image, video] }
+        sizeBytes: { type: integer, format: int64, description: 落盘文件字节数 }
+        sha256:    { type: string, description: '源/目标 SHA-256（小写十六进制）。复制与幂等比对路径恒有值；同分区纯 rename 快路径不计算（缺省/空）' }
+        sourceKept: { type: boolean, description: '源文件是否仍在原位（move=false 恒 true；跨分区删源失败也会置 true）' }
 
     MoveRequest:
       type: object

@@ -753,6 +753,47 @@ class SessionBudget:
         report["maxUnchanged"] = self.max_repeats
         return report
 
+    def pending_side_effects(self):
+        """列出未决副作用项（只读；供执行端做服务端状态自检）。
+
+        返回最小定位信息（工具名 + 身份白名单），不含路径/凭据。空列表 = 无未决
+        写入。判定逻辑在调用方（execution），预算层不做业务探测。
+        """
+        state, _persisted = self._snapshot_state()
+        entries = []
+        for request_hash, entry in (state.get("pending") or {}).items():
+            if not isinstance(entry, dict) or not entry.get("sideEffects"):
+                continue
+            entries.append({
+                "requestHash": request_hash,
+                "tool": entry.get("tool") or "",
+                "createdAt": entry.get("createdAt"),
+                "identity": copy.deepcopy(entry.get("identity") or {}),
+            })
+        return entries
+
+    def discard_pending(self, request_hash: str, *, reason: str = "reconciled") -> bool:
+        """核销一项未决写入。
+
+        只在执行端用服务端状态自检**可判定**（已生效/未生效）后调用；判定不了
+        必须保留并在错误里给出核销指引，不能为了放行盲目清账。核销记录进
+        discarded（有界），供 report/审计追溯，不再计入 pendingWrites。
+        """
+        with self._state() as state:
+            pending = state.setdefault("pending", {})
+            entry = pending.pop(request_hash, None)
+            if entry is None:
+                return False
+            discarded = state.setdefault("discarded", {})
+            discarded[request_hash] = {
+                "tool": entry.get("tool") or "",
+                "reason": reason,
+                "at": time.time(),
+            }
+            while len(discarded) > 50:
+                discarded.pop(next(iter(discarded)))
+        return True
+
     def pending_entry(self, request_hash: str):
         """只读取待核销项（含最小 identity）；不存在返回 None。"""
         state, _persisted = self._snapshot_state()

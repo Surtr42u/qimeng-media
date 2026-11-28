@@ -151,7 +151,7 @@ func (s *Service) CompleteUploadSession(ctx context.Context, id string) (db.Asse
 		return db.Asset{}, fail(InternalFailure, "落盘分片成品文件", err)
 	}
 	receipt := &db.SaveUploadReceiptParams{UploadID: id, RequestHash: seal.RequestHash}
-	asset, err := s.ingestPlacedUpload(ctx, lib.ID, absolute, rel, name, mediaType, receipt)
+	asset, err := s.ingestPlaced(ctx, lib.ID, absolute, rel, name, mediaType, receipt, true)
 	if err != nil {
 		return db.Asset{}, fail(InternalFailure, "入库上传资产", err)
 	}

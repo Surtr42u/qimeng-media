@@ -24,19 +24,29 @@ import (
 // 调用方保证 finalPath 处的文件已过四道校验与冲突解析（finalName 即落盘名）；
 // 返回资产领域对象；签名直链和响应字段由接口层装配。
 func (s *Service) IngestPlacedUpload(ctx context.Context, libraryID, finalPath, relPath, finalName, mediaType string) (db.Asset, error) {
-	return s.ingestPlacedUpload(ctx, libraryID, finalPath, relPath, finalName, mediaType, nil)
+	return s.ingestPlaced(ctx, libraryID, finalPath, relPath, finalName, mediaType, nil, true)
 }
 
-func (s *Service) ingestPlacedUpload(ctx context.Context, libraryID, finalPath, relPath, finalName, mediaType string, receipt *db.SaveUploadReceiptParams) (db.Asset, error) {
-	sysmon.Default.IncUpload(sysmon.UploadOK)
+// IngestPlacedLocal 本机/局域网直接入库（2026-11-28）的建索引通道：文件已落在
+// 库内最终路径，语义与上传共用（DB 行/探测/富化/library.changed/文件数指标一步
+// 不缺），但不计 upload.* 指标、不发 upload.done 事件——它不是 HTTP 上传，
+// 客户端不该弹「上传完成」。调用方保证路径已过根内校验与不覆盖检查。
+func (s *Service) IngestPlacedLocal(ctx context.Context, libraryID, finalPath, relPath, finalName, mediaType string) (db.Asset, error) {
+	return s.ingestPlaced(ctx, libraryID, finalPath, relPath, finalName, mediaType, nil, false)
+}
+
+func (s *Service) ingestPlaced(ctx context.Context, libraryID, finalPath, relPath, finalName, mediaType string, receipt *db.SaveUploadReceiptParams, asUpload bool) (db.Asset, error) {
 	// 元数据：size/mtime 以落盘事实为准；视频探测失败留空（scanner 同语义）。
 	fi, err := os.Stat(finalPath)
 	if err != nil {
 		return db.Asset{}, fmt.Errorf("读取上传文件信息: %w", err)
 	}
-	// 上传字节计量以落盘事实为准（fi.Size()）：此处曾只计魔数头字节数
-	// （≤512B），upload_bytes_total 严重少计（OBSERVABILITY「累计字节」口径）。
-	sysmon.Default.AddUploadBytes(float64(fi.Size()))
+	if asUpload {
+		sysmon.Default.IncUpload(sysmon.UploadOK)
+		// 上传字节计量以落盘事实为准（fi.Size()）：此处曾只计魔数头字节数
+		// （≤512B），upload_bytes_total 严重少计（OBSERVABILITY「累计字节」口径）。
+		sysmon.Default.AddUploadBytes(float64(fi.Size()))
+	}
 	params_ := db.UpsertAssetParams{
 		AssetID:   newUploadAssetID(),
 		LibraryID: libraryID,
@@ -87,9 +97,11 @@ func (s *Service) ingestPlacedUpload(ctx context.Context, libraryID, finalPath, 
 		s.logger.Warn("上传落库后富化失败（待重扫自愈）", "assetId", asset.AssetID, "err", err)
 	}
 	// upload.done 载荷型为 events.UploadDoneEvent（协议：UploadDoneEvent schema）；
-	// SSE 客户端据此做上传完成刷新。
-	if err := s.bus.Publish(events.Event{Topic: events.TopicUploadDone, Payload: events.UploadDoneEvent{AssetID: asset.AssetID}}); err != nil {
-		s.logger.Warn("发布上传完成事件失败", "err", err)
+	// SSE 客户端据此做上传完成刷新。本机直接入库不是 HTTP 上传，不发本事件。
+	if asUpload {
+		if err := s.bus.Publish(events.Event{Topic: events.TopicUploadDone, Payload: events.UploadDoneEvent{AssetID: asset.AssetID}}); err != nil {
+			s.logger.Warn("发布上传完成事件失败", "err", err)
+		}
 	}
 	s.PublishLibraryChanged(events.LibraryChangeScope{LibraryID: libraryID, AssetID: asset.AssetID})
 	// 上传成功改变了库内文件数：library_files 指标在此刷新（变更点推送，

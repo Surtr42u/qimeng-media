@@ -1,3 +1,14 @@
+## feat(server): 本机直接入库 ingest-local 与未决写入可恢复（2026-11-28 第七百三十九笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash，负责服务端端点/预算恢复/文档与隔离实测；MCP 工具接线按用户决定延后）
+
+- 背景（用户实测）：媒体库与源同机同分区时，`asset.upload` 把 3GB 文件入库要 ~2 分钟（HTTP 流式 + 边算摘要），实际只需同盘 rename；中止上传后 `TASK_OPERATION_PENDING` 在 MCP 进程内形成死锁（账本未持久化、reconcile 够不着），只能重启进程。
+- 服务端：新增 `POST /api/v1/libraries/{libraryId}/ingest-local`（body `{sourcePath, fileName, directory?, move?}`，`move` 缺省 true）。源必须落在新配置读根 `ingest_local.read_roots`（`QIMENG_INGEST_LOCAL_ROOTS`，空=端点拒绝）内，目标必须在库根内；文件名沿用清洗+扩展名白名单并加魔数嗅探；同分区 `os.Rename`，跨分区 `filing.CopyFileVerified`（O_EXCL、边复制边算 SHA-256、回读复核）后才删源；`move=false` 只复制。目标已存在且 size+SHA256 一致 → 200 `already_present`（源不动）并返回既有资产；内容不同 → 409 不覆盖。建索引复用 `mediawrite.IngestPlacedLocal`（同一管线：DB 行/视频探测/富化/library.changed/文件数指标，但不计 upload 指标、不发 upload.done）。新增 `filing.CopyFileVerified`/`FileSHA256`/`IsCrossDeviceError` 原语并在 `mediawrite` 增 `IngestRename` 测试钩子。
+- 未决写入可恢复（保留权限门与预算默认值）：`SessionBudget` 新增 `pending_side_effects()`/`discard_pending()`；`execution.controlled_action` 在 `TASK_OPERATION_PENDING` 时先对 `asset.upload`/`asset.ingest.local` 做服务端**只读**回查（同库按文件名，含撞名变体 `名 (n).ext`），能判定就已核销并重试；判定不了保持拒绝，并在 details 附 `pendingWrites` 与 `reconcileCommand`。权限门、调用数/时长/重复预算默认值未放宽。
+- 文档：`docs/api/files.md` 新增「入库通道选型」（本机/局域网→ingest-local 移动；外网/手机/跨设备→upload 流式；索引结果一致）、SECURITY 新增 ingest-local 边界（三条硬约束）、CAPABILITY_MAP 与 server/README 配置表同步。
+- 验证：`go test ./...`、`gofmt`、`go vet`、`golangci-lint v2.15.0`、`make sdk`；tools 侧 `test_ai_task_controls`（含 5 个新增恢复用例）、`test_ai_task_recovery`/`test_ai_mcp`/`test_ai_regressions` 通过；隔离实例（临时库/临时数据目录/独立端口）实测真移动入库→幂等回读 `already_present`→回收站删除；`check_docs` 通过。云端 build-apk 见交付说明。
+- 限制：MCP 工具 `asset.ingest.local` 未接入（`tools/ai_maintenance` 有用户未提交的本地改动，按用户决定本轮不动该目录）；未决写入回查按文件名启发式（跨库同名/事后被移动可能误判，判定不了仍拒绝）；读根需在服务端配置（与 AI 平台读根相互独立）；真实 3GB/局域网挂载与双端 UI 入口未实测。
+
 ## feat(app): 外挂字幕第二批——随包字体、编码归一、语言/格式矩阵扩宽（2026-11-28 第七百三十八笔）
 
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
@@ -269,12 +280,6 @@
 - httpapi：管理员会话先行验证（行为不变），未命中再验 AI 凭据；AI 按 method+path 强制 scope（GET/HEAD 兜底 read，维护/备份/研究/设备各自 scope，未映射写默认 403 FORBIDDEN_SCOPE），管理员不受限；AI 写请求含被拒写审计；设备级隔离 device.apply + ai_clients.device_ids，列表/详情/领取/段/回传/取消校验 targetDevice，越权不改状态。
 - 管理入口：qimeng ai-client create|list|revoke|rotate -config，直接打开同一 SQLite（先幂等 migration），明文 token 只 stdout 一次；撤销幂等、轮换旧 token 立即失效。验证：go build/vet、aiauth/httpapi/cmd 定向测试通过；未跑全量/CI/真实库。边界：协议化 scope、HTTP 管理端点、限流预算、审计查询、设备配对未实现；异地撤销约 5s 缓存生效。
 
-## fix(server): 维护 worker 租约改为每次领取唯一 fencing token 并校验未过期租约（2026-11-08 第七百零九笔）
-
-执行 AI：DeepSeek V4.1 Flash（子代理 go-worker2）
-
-- 根因：Worker 实例 owner 跨领取复用，Claim/Heartbeat/Complete/Advance 只比较 owner 字符串；租约过期被重领后旧执行上下文仍可续租/覆盖步骤工件终态，同任务可并发执行。修复：实例身份 qimeng-worker-<pid>-<uuid> + 每次领取唯一 fencing token；Heartbeat/Finish/Advance SQL 增 lease_until 未过期条件；StepInput/ArtifactInput 增 LeaseOwner，在同一 _txlock=immediate 事务内校验 owner+未过期后写步骤/工件；ErrLeaseLost 只停止不误标 failed，暂停/取消进行中步骤保留 running。
-- 验证：go test ./internal/maintenance/ -count=2、go vet、go build、gofmt、sqlc 重生成稳定；新增身份/token 唯一、同实例两次领取 token 不同、旧实例接管后不得覆盖、过期租约全链路围栏测试。未加 migration、未改 API/SDK/业务语义。
 
 # CHANGELOG - 变更历史
 

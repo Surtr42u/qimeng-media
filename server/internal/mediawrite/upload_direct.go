@@ -110,7 +110,7 @@ func (s *Service) direct(ctx context.Context, input DirectUpload, receipt *db.Sa
 		sysmon.Default.IncUpload(sysmon.UploadFail)
 		return db.Asset{}, fail(InternalFailure, "落盘上传文件", err)
 	}
-	asset, err := s.ingestPlacedUpload(ctx, lib.ID, filepath.Join(lib.RootPath, filepath.FromSlash(targetRel)), targetRel, finalName, mediaType, receipt)
+	asset, err := s.ingestPlaced(ctx, lib.ID, filepath.Join(lib.RootPath, filepath.FromSlash(targetRel)), targetRel, finalName, mediaType, receipt, true)
 	if err != nil {
 		return db.Asset{}, fail(InternalFailure, "入库上传资产", err)
 	}

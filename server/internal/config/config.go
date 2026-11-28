@@ -299,6 +299,19 @@ type Config struct {
 	MaintenanceWorker MaintenanceWorkerConfig `yaml:"maintenance_worker"`
 	// AI 是独立 AI 客户端接入限制（限流；权限仍由 scope 强制）。
 	AI AIConfig `yaml:"ai"`
+	// IngestLocal 是本机/局域网直接入库（POST /libraries/{id}/ingest-local）的
+	// 授权源目录（2026-11-28 用户拍板「同机/同分区入库不该走 HTTP 流式上传」）。
+	// 空 = 该端点一律拒绝（默认关闭）；源路径必须落在任一读根内，库内目标路径
+	// 仍受库根与命名规则约束（三条硬约束：根内、不覆盖、删除走回收站不在此端点）。
+	IngestLocal IngestLocalConfig `yaml:"ingest_local"`
+}
+
+// IngestLocalConfig 本机直接入库的授权读根。
+type IngestLocalConfig struct {
+	// ReadRoots 允许作为入库源的绝对目录（可多个）。判定用 filing.PathWithinRoot
+	// （含 .. 与符号链接逃逸拒绝），与 AI 平台 QIMENG_AI_READ_ROOTS 各自独立：
+	// 服务端不读取 AI 进程的环境变量，避免跨进程隐式授权。
+	ReadRoots []string `yaml:"read_roots"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -568,6 +581,9 @@ func applyAuthEnv(cfg *Config) error {
 	// Host 白名单是域名列表：分隔符用 ',' 与 ';'（不用 splitPathList——
 	// Unix 上它额外按 ':' 切，会误切带端口的写法）。空值 = 未设置、保留
 	// yaml/默认（空 = 只放行 IP 直连与 localhost）。
+	if v := os.Getenv("QIMENG_INGEST_LOCAL_ROOTS"); v != "" {
+		cfg.IngestLocal.ReadRoots = splitList(v, ",;")
+	}
 	if v := os.Getenv("QIMENG_TRUSTED_HOSTS"); v != "" {
 		cfg.TrustedHosts = splitList(v, ",;")
 	}

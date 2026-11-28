@@ -97,6 +97,16 @@ mediawrite 把完成凭据与资产行同事务提交（migration 0020），七�
 
 环境变量必须为正整数；配置启动生效，不加入客户端设置页。单文件max_bytes及设置页大小限制已退役，不再按min收紧；声明长度/可用空间校验与分片暂存总预算保持。直传每8MiB复核安全余量并在失败时清理临时件。预算不包含目标卷临时复制、直传临时件或其他进程占用，空间预检不等同于磁盘预留。readyz 只读检查，healthz 不受存储状态影响。
 
+### 本机直接入库读根
+
+`POST /api/v1/libraries/{libraryId}/ingest-local` 只接受落在配置读根内的源文件；空配置 = 端点一律拒绝（默认关闭）。
+
+| YAML ingest_local 字段 | 环境变量 | 含义 |
+|---|---|---|
+| read_roots | QIMENG_INGEST_LOCAL_ROOTS | 允许作为入库源的绝对目录列表（逗号/分号分隔）；判定含 `..` 与符号链接逃逸拒绝 |
+
+与 AI 平台 `QIMENG_AI_READ_ROOTS` 各自独立配置（服务端不读 AI 进程环境）。同分区 rename、跨分区复制+摘要复核后删源、目标不覆盖等边界见 [上传 API](../docs/api/files.md#入库通道选型与本机直接入库2026-11-28) 与 [SECURITY](../docs/SECURITY.md#本机直接入库ingest-local2026-11-28)。
+
 HTTP入口的应用流量计数由单个Server持有，原子累计实际读取/写出的正文，经SystemStatus的appRxBytes/appTxBytes提供；保留全机net字段，计量与ReaderFrom/Flusher边界见[监控](../docs/OBSERVABILITY.md#影库服务流量范围)。
 
 ## 构建身份

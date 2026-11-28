@@ -2,6 +2,30 @@
 
 > [API 目录与全局约定](../GUIDE_API.md)。本页解释用法，字段/路径/schema 以 [OpenAPI](../../api/openapi.yaml) 为准；正文日期只标记机制来源。
 
+## 入库通道选型与本机直接入库（2026-11-28）
+
+**选型（用户拍板）**：媒体库与源文件同机/同分区（含局域网挂载）→ 用本机直接入库
+`POST /api/v1/libraries/{libraryId}/ingest-local`（移动/复制文件 + 建索引，毫秒~秒级）；
+外网、手机 App、跨设备 → 继续用 `POST /assets/upload`（/uploads 分片，流式）。两者
+索引结果一致（同一 `mediawrite` 入库管线：DB 行、视频探测、富化、`library.changed`、
+文件数指标），区别只在文件如何进入库根——本机通道不经 HTTP 收流与边算摘要，
+因此 3GB 级文件从「约 2 分钟」降到同盘 rename 的毫秒级。
+
+请求 `{sourcePath, fileName, directory?, move?}`：
+- `sourcePath` 必须是服务端配置的读根 `ingest_local.read_roots`（环境变量
+  `QIMENG_INGEST_LOCAL_ROOTS`，逗号/分号分隔；空 = 端点一律拒绝）内的绝对路径；
+  目标目录必须在库根内；文件名走既有清洗/扩展名白名单 + 内容魔数嗅探（与上传同源）。
+- `move` 缺省 true：同分区直接 rename（原子零拷贝）；跨分区复制 → 长度+SHA256 复核
+  → 建索引成功后才删源。`move=false` 只复制、源保留。任何失败都不丢源。
+- **幂等**：目标已存在且 size+SHA256 一致 → `200 {status:"already_present"}`、源不动、
+  返回既有资产 ID 与摘要；内容不同 → `409`（绝不覆盖）。本通道不删除库内资产，
+  删除仍只走回收站端点。
+
+响应 `IngestLocalResult {status, assetId, libraryId, relPath, fileName, mediaType,
+sizeBytes, sha256?, sourceKept}`；`status=ingested` 为 201。MCP 侧对应工具
+（`asset.ingest.local` prepare/apply）待 AI 平台工具表改动落地后接入；本轮先交付
+服务端端点。
+
 ## 上传整理
 
 当前实现：`mediawrite` 负责直传/会话创建/完成的文件、事务、富化和通知，httpapi 负责请求/响应/错误映射；会话注册表仍为 uploadsess，协议与重启失效边界不变。此处不将结构调整描述为新增 API 能力。

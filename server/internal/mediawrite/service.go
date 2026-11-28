@@ -34,6 +34,9 @@ type Options struct {
 	Enrich   func(context.Context, string, string) error
 	Revision *libraryrevision.Service
 	MoveFile func(string, string) error
+	// IngestRename 是本机直接入库的同卷 rename 原语（默认 os.Rename）；
+	// 隔离测试注入 EXDEV 使流程走「复制+摘要校验」分支。
+	IngestRename func(string, string) error
 	// RenameFile 仅在已打开的库根内改名；隔离测试可注入失败，生产用 filing.RenameInRoot。
 	RenameFile func(*os.Root, string, string) error
 }
@@ -52,6 +55,7 @@ type Service struct {
 	uploads        *uploadsess.Manager
 	revision       *libraryrevision.Service
 	moveFile       func(string, string) error
+	ingestRename   func(string, string) error
 	libraryMetrics *libraryMetricsRefresher
 	renameFile     func(*os.Root, string, string) error
 }
@@ -69,6 +73,9 @@ func New(opts Options) *Service {
 	if opts.MoveFile == nil {
 		opts.MoveFile = filing.MoveFile
 	}
+	if opts.IngestRename == nil {
+		opts.IngestRename = os.Rename
+	}
 	if opts.RenameFile == nil {
 		opts.RenameFile = filing.RenameInRoot
 	}
@@ -77,7 +84,7 @@ func New(opts Options) *Service {
 	service := &Service{conn: opts.Conn, q: opts.Queries, bus: opts.Bus, cfg: opts.Config,
 		thumbs: opts.Thumbs, logger: opts.Logger, now: opts.Now, enrich: opts.Enrich,
 		uploads: manager, revision: opts.Revision,
-		moveFile: opts.MoveFile, renameFile: opts.RenameFile}
+		moveFile: opts.MoveFile, ingestRename: opts.IngestRename, renameFile: opts.RenameFile}
 	service.libraryMetrics = newLibraryMetricsRefresher(service.refreshLibraryFileMetrics, opts.Logger)
 	return service
 }

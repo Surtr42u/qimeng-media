@@ -217,6 +217,82 @@ class BudgetTests(unittest.TestCase):
                 task_controls.SessionBudget({"QIMENG_AI_MAX_CALLS": value})
 
 
+class PendingWriteRecoveryTests(unittest.TestCase):
+    """TASK_OPERATION_PENDING 可恢复（2026-11-28 死锁修复）：服务端自检可判定即
+    核销并继续；判定不了保持拒绝并给出 pendingWrites/核销指引；权限与预算未放宽。"""
+
+    def _config_with_pending(self, directory, tool="asset.upload", payload=None):
+        env = {"QIMENG_AI_TASK_ID": "recover-write", "QIMENG_AI_STATE_DIR": directory}
+        config = execution.load_config(env)
+        payload = payload or {"fileName": "a.png", "directory": "sub", "libraryId": "lib-1"}
+        key = config.budget.reserve(tool, payload, side_effects=True)
+        config.budget.fail(key, {"error": "INTERRUPTED"}, uncertain=True)
+        return env, config, key, payload
+
+    def test_pending_side_effects_are_listed_and_discardable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _env, config, key, _payload = self._config_with_pending(directory)
+            entries = config.budget.pending_side_effects()
+            self.assertEqual(1, len(entries))
+            self.assertEqual(key, entries[0]["requestHash"])
+            self.assertNotIn("path", entries[0]["identity"])
+            self.assertTrue(config.budget.discard_pending(key, reason="server-readback"))
+            self.assertEqual([], config.budget.pending_side_effects())
+            self.assertEqual(0, config.budget.report()["pendingWrites"])
+            self.assertFalse(config.budget.discard_pending(key))
+
+    def test_controlled_action_runs_after_probe_resolves_pending(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env, config, key, payload = self._config_with_pending(directory)
+            with patch.object(execution, "_resolve_pending_writes",
+                              return_value=([key], [])):
+                result = execution.controlled_action(
+                    "asset.upload", payload, lambda mark: {"status": "applied"},
+                    env=env, config=config, side_effects=True)
+            self.assertEqual("applied", result["status"])
+
+    def test_controlled_action_keeps_blocking_when_probe_undetermined(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env, config, key, payload = self._config_with_pending(directory)
+            entry = config.budget.pending_side_effects()[0]
+            with patch.object(execution, "_resolve_pending_writes",
+                              return_value=([], [entry])):
+                with self.assertRaises(errors.ToolError) as caught:
+                    execution.controlled_action(
+                        "asset.upload", {"fileName": "other.png"},
+                        lambda mark: {"status": "applied"},
+                        env=env, config=config, side_effects=True)
+            self.assertEqual("TASK_OPERATION_PENDING", caught.exception.code)
+            self.assertEqual([{"tool": "asset.upload", "requestHash": key}],
+                             caught.exception.details["pendingWrites"])
+            self.assertIn("reconcileCommand", caught.exception.details)
+
+    def test_no_api_client_keeps_pending_unresolved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _env, config, _key, _payload = self._config_with_pending(directory)
+            resolved, unresolved = execution._resolve_pending_writes(config, {})
+            self.assertEqual([], resolved)
+            self.assertEqual(1, len(unresolved))
+
+    def test_probe_matches_exact_and_conflict_variant_names(self):
+        class FakeClient:
+            def __init__(self, items):
+                self.items = items
+
+            def get(self, path, query=None):
+                return {"items": self.items}
+
+        entry = {"identity": {"libraryId": "lib", "fileName": "a.png", "directory": "sub"}}
+        self.assertTrue(execution._probe_pending_entry(
+            entry, FakeClient([{"fileName": "a.png"}])))
+        self.assertTrue(execution._probe_pending_entry(
+            entry, FakeClient([{"fileName": "a (2).png"}])))
+        self.assertFalse(execution._probe_pending_entry(
+            entry, FakeClient([{"fileName": "b.png"}])))
+        self.assertIsNone(execution._probe_pending_entry(
+            {"identity": {}}, FakeClient([{"fileName": "a.png"}])))
+
+
 class LazyDiscoveryTests(unittest.TestCase):
     def test_long_original_rule_is_readable_beyond_excerpt(self):
         config = execution.load_config({})
