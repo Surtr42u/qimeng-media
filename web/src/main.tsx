@@ -12,6 +12,8 @@ import './index.css'
 // 全新设计语言主题层「绮梦流光 · Aurora Glass」（ADR-0031）：必须在 index.css 之后
 // 导入——组件类名契约不变，视觉体系整体更换（玻璃材质/暗色优先/极光画布/现代动效）
 import './styles/glass.css'
+// 外挂字幕随包字体（@font-face 家族名别名，2026-11-28）：必须在 assjs 渲染前生效
+import './styles/subtitle-fonts.css'
 import './pwa'
 
 /**

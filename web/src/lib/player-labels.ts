@@ -131,6 +131,20 @@ export function humanLanguageLabel(raw: string): string {
   return LANG_MAP[s] ?? raw.trim()
 }
 
+/**
+ * 外挂字幕菜单项文案（Web 播放器字幕 selector 用）：语言友好名 + 格式标记。
+ * 语言码按 BCP 47 主标签归一（zh-Hans → 中文、en-US → 英语），未知语言原样；
+ * 格式大写（ASS/SRT/VTT）让用户能区分同语言的不同文件（服务端同语言只下发一条，
+ * 这里保留标记是为了未来多格式并存时不歧义）。
+ */
+export function externalSubtitleLabel(lang: string, format: string): string {
+  const tag = lang.trim()
+  const primary = tag.toLowerCase().split('-')[0] ?? ''
+  const name = tag ? (LANG_MAP[tag.toLowerCase()] ?? LANG_MAP[primary] ?? tag) : '字幕'
+  const fmt = format.trim().toUpperCase()
+  return fmt ? `${name} · ${fmt}` : name
+}
+
 /** 一条字幕轨的显示名：标题优先（支持语言归一），其次语言码归一，都没有则「轨道 <id>」 */
 export function subtitleLabel(track: { id: number; title?: string; lang?: string }): string {
   const title = (track.title ?? '').trim()

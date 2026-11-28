@@ -145,6 +145,15 @@ AI 不需要先读源码/完整文档才知道做什么：任务入口是**任�
 
 工具包1.7.1、工具契约2.1.0、规则2026-11-22.1；旧计划须重新 prepare。配置/续读契约见[工具 README](../tools/ai_maintenance/README.md#配置)，构建、部署、失败记录与实际完成情况只以[HANDOVER](HANDOVER.md)为准；本节列源码与验收要求，不提前宣称测试通过。
 
+2026-11-28 增量：工具包1.8.1/契约2.2.0/规则2026-11-28.2 新增本机直接入库
+`asset.ingest.local.prepare` → `asset.ingest.local`（[工具 README「本机直接入库」](../tools/ai_maintenance/README.md#本机直接入库assetingestlocal2026-11-28)）：源须在
+`QIMENG_AI_STORAGES` 根内且不在库根内（拒绝 `..`/符号链接逃逸、单次 ≤50 文件/64GiB），
+确认后逐文件 `POST /libraries/{libraryId}/ingest-local` 并按 assetId 回读；`already_present`
+是幂等成功、内容不同 409 不覆盖。复用 `asset.upload` 权限，不新增权限门；手机/外网/
+跨设备继续上传。规则节 `ingestLocal` 给出选型与边界。审查修复（1.8.1）：单请求超时
+60s+60s/GiB（封顶 600s）、失败统一附已完成清单、确定未写入不进未决、move 后源未删
+报 `SOURCE_NOT_REMOVED`、already_present 本地复算 sha256 不符报 `CONTENT_MISMATCH`。
+
 2026-11-14 后续实现：按[后续优化与合并任务书](AI_PLATFORM_OPTIMIZATION_MERGE_TASKBOOK.md)新增纯素材只读研究 `research.work`、研究产物 `artifactRef`/`platform.artifact.read`、可信端 `admin task status/reconcile/renew` 与最小可移植分发 `package.py`；研究与业务写入分开，候选恒 unconfirmed，未决写入只接受可验证 GET 回读核销，预算按实例/凭据隔离且续期只增不清零。写入仍复用既有 `author.discover` 与正式 API；远程 Streamable HTTP、动作级确认 token、真实 NAS/多执行器与独立模型验收仍未因此完成。实际云端门禁、真实图/视频与独立模型结果以 HANDOVER 为准。
 
 验收增量（2026-11-14）：代码10753707云端CI/安全/文档与AI闭环通过，333项AI回归（12跳过）、7项真实Go+MCP通过。全新Luna测试完成作者查询、简介修改/清空及复制媒体上传关联；精确改名首轮发现能力缺口，新增`asset.rename.prepare/apply`复用正式move API，不改变批量编号规则，修正返回契约后回读一致。原库33表与5份原件守恒。当前Codex原生客户端lazy列表未刷新，full54项兼容成功，因此C01在该宿主没有初始Schema节省证据。识图/视频研究有候选、外部访问和环境配置失败，不宣称全部自主任务通过；详情及独立来源见HANDOVER与私有报告。

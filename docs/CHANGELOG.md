@@ -1,10 +1,59 @@
-## fix(ai): 规则包新增 fieldNotes 现场经验节并修复依赖漏洞（2026-11-23 第七百三十七笔）
+## feat(ai): MCP 工具 asset.ingest.local 本机直接入库（2026-11-28 第七百四十一笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash，负责工具实现/规则/文档与隔离实测）
+
+- 工具：新增 `asset.ingest.local.prepare`（只读计划）与 `asset.ingest.local`（确认后逐文件执行），复用 `POST /api/v1/libraries/{libraryId}/ingest-local`。prepare 校验库存在、源在 AI 侧存储根 `QIMENG_AI_STORAGES` 内、源不在任何库根内（`SOURCE_IN_LIBRARY_ROOT`）、单次 ≤50 文件/64GiB，拒绝相对路径/`..`/符号链接/junction 逃逸，并给出每个文件的目标相对路径、字节数、源时间与预期状态（`move`/`already_present`/`conflict`/`unknown`）；不做全文件哈希（保留毫秒级入库），摘要由服务端在复制/幂等比对路径回传。apply 重新核对库根与每个源（大小/时间/摘要），逐文件 POST 后用返回 assetId `GET /assets/{id}` 回读库/relPath/sizeBytes，不一致即 `READBACK_MISMATCH`；`already_present` 视为幂等成功，内容不同 `TARGET_EXISTS`（409 不覆盖），失败即停止并在 details.completed 列出已完成文件；403/404/405/409/507 分别映射 `NOT_IN_STORAGE_ROOT`/`API_UNAVAILABLE`/`LIBRARY_NOT_FOUND`/`TARGET_EXISTS`/`STORAGE_UNAVAILABLE`，确定未写入的拒绝标记 `mutation_rejected` 不进入未决写入。
+- 审查修复（1.0.1）：单请求超时按 60s 基础 + 每 GiB 60s（封顶 600s）计算，注册表声明取封顶值，跨分区大文件不再被 20s 客户端超时打断；所有失败出口统一附 `details.completed=[{assetId,status,relPath}]`；401 鉴权与 403 FORBIDDEN_SCOPE 在服务端任何文件操作前拒绝，标 `mutation_rejected` 不进未决；`status=ingested` 但 `sourceKept=true` 报 `SOURCE_NOT_REMOVED`，`already_present` 用服务端 sha256 与本地源复算不符报 `CONTENT_MISMATCH`、缺摘要报 `READBACK_MISMATCH`（纯 rename 快路径仍不算全文件哈希）。
+- 规则与元数据：`rules.json` 新增 `ingestLocal` 节（选型、invariants、workflow、readback、错误码、risk、env），`permissions.toolPermissions.asset.upload` 说明覆盖上传与本机移动两种通道；工具复用 `asset.upload` 权限，按用户要求**不新增权限门/预算闸门**，服务端硬不变量不变。版本：工具包 `1.8.1`、工具契约 `2.2.0`、规则 `2026-11-28.2`；`platform.catalog`/`platform.tool.describe` 可见两工具（domain=media）。
+- 入参：`libraryId`、`paths[]`、可选 `directory`（库内相对目录）、可选 `operationId`（持久化 UUID，写入计划供重跑定位；幂等由计划指纹 + 服务端 already_present 保证）。
+- 文档：`tools/ai_maintenance/README.md` 新增「本机直接入库」节（何时用 ingest.local/upload、为什么本地不要上传）、工具目录与测试表行；`docs/api/files.md` 补 MCP 工具衔接与两套读根说明；`docs/CAPABILITY_MAP.md` 更新实现状态；`docs/AI_PLATFORM_TASKBOOK.md`、`tools/README.md` 同步版本与边界。
+- 验证：`python -m unittest discover -s tools -p 'test_*.py'` 569 项通过（新增 `tools/test_ai_platform_20261128.py` 37 项：入参/上限、`..`/符号链接逃逸/库根内源拒绝、计划预期状态、确认/指纹/实例、already_present 幂等、回读不一致、超时预算与按字节传入、401/403 不入未决、SOURCE_NOT_REMOVED、CONTENT_MISMATCH、缺 sha256、回读失败保留 completed、403/404/405/409/507 映射与部分失败上报；既有 532 项保持通过，7 跳过）；`python -X utf8 tools/check_docs.py` 0 错误。隔离实例（同 revision Go 二进制、临时 data/库根/读根、独立端口、dev-login、合成 PNG）实测真移动入库→幂等回读 `already_present`（sha256 回传、sourceKept=true、源保留、资产数 1）→同名不同内容 409 `TARGET_EXISTS` 且源保留；stub 慢响应验证 25s 跨分区预算、401/403 未决标记与 SOURCE_NOT_REMOVED/CONTENT_MISMATCH。未向 8420/qimeng-data 写入。
+- 限制：真实 3GB 级文件/局域网挂载与真实「跨分区删源失败」未在真机复现（以 stub 慢响应与合成小文件模拟）；AI 侧存储根与服务端读根 `QIMENG_INGEST_LOCAL_ROOTS` 是两套配置，服务端未配时端点 403；工具不改名（文件名取源文件名，正式编号命名用 `asset.rename`）；不支持单文件 >64GiB（单次调用总字节上限，可分批）。
+
+## fix(app): 播放器字幕完全不显示/首帧过大/播控面板三修（2026-11-28 第七百四十笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash，负责 Web/Android 实现、Playwright 实拍验证与文档）
+
+- Web/桌面“字幕完全不显示”根因：assjs 每次 resize 用 `cssText` 重写 `.ASS-box` 内联样式，原代码只写一次的 `z-index:20` 被抹掉，画布落回 `<video>`（z-index:10）之下；DOM 与 `media/sub` 请求都正常（200 `text/x-ssa`），但视觉上被视频完全盖住。修法=新增 `.qm-ass-subtitle-layer` 外层固定 z-index=20（位置仍按 ASS `MarginV`），不再把层级写在 assjs 节点上。
+- Web/桌面播控：清晰度/倍速/字幕由官方 hover selector 改为点击常驻面板（复用 `.art-control-selector`/`.art-selector-list` 视觉类与主题变量，带 `role="menu"`/`aria-expanded`）；点按钮/选项/面板外/ESC 关闭，面板打开期间控制条禁止自动隐藏，关闭后 3s 自动隐藏恢复。字幕菜单语义不变：关闭恒第一项、外挂在前、内嵌在后、默认中文轨；`applySubtitle` 与 `ext:`/`emb:` 编码不变。面板键盘可达：roving tabindex，打开聚焦首项，↑↓/Home/End 移动，Enter/Space 选中，Esc 关闭并还焦点给按钮，Tab 移出自动收起。
+- 外挂层并发防护（审查必修）：`applySubtitle` 每次递增挂载令牌，异步 fetch/字体回调只认自己的令牌；挂载前再无条件拆旧层，保证 A→关闭→A 或加载中重复选同轨时 `.ASS-box`/`<track>` 至多一个、关闭后无残留。令牌收敛纯函数 `createSubtitleApplyGate` 并补单测。
+- 字幕位置：按用户 2026-11-28 明确否决，撤销“控制条可见时上移字幕”方案（Web assjs/原生 track 与 Android SubtitleView 均无位移）；控制条可见时允许压住底部字幕，自动隐藏后字幕在原位置可见。
+- Android 首帧：SubtitleView 先 `INVISIBLE`，等有效视频尺寸且播放器离开 IDLE（与 PlayerView 采用比例同口径）后再显示，避免按全舞台高度换算 ASS 相对字号（NX721J 首帧大 3~4 倍、左缘裁切）；adopt 已 READY 播放器时 `setPlayer` 立即补判定。纯函数 `subtitleViewportReady` 单测锁定。
+- 验证：Web 8421 dev 与 `npm run build` 后静态托管 dist 均用 Edge/Playwright 实拍（4.5s 字幕、控制条隐藏/划回字幕 Y 不变、面板打开 10s 不隐藏、面板关闭 3.5s 内恢复隐藏；`media/sub` 200 `text/x-ssa`，无 console error）；审查补验：延迟字幕响应下 A→关闭→A 后 `.ASS-box`/外挂 track 均 1 个、关闭后 0 个，键盘 Enter 开面板→首项聚焦→↑↓→Enter 选中→焦点回按钮、Esc 回按钮、Tab 收起；截图与 JSON 证据在 `audit/`（未入库）。Web `npx tsc --noEmit`、`npx vitest run`（403 项）、`npm run build`、`npx oxlint src`（0 errors）；Android `:app:assembleDebug` + `:feature:detail:testDebugUnitTest`（JDK 17 / API 35 SDK）通过。
+- 文档：GUIDE_UI 视频字幕、web/README 外挂字幕、android/README 外挂字幕、CAPABILITY_MAP 外挂字幕行、本 CHANGELOG。未改 OpenAPI/SDK/生成物。
+
+## feat(server): 本机直接入库 ingest-local 与未决写入可恢复（2026-11-28 第七百三十九笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash，负责服务端端点/预算恢复/文档与隔离实测；MCP 工具接线按用户决定延后）
+
+- 背景（用户实测）：媒体库与源同机同分区时，`asset.upload` 把 3GB 文件入库要 ~2 分钟（HTTP 流式 + 边算摘要），实际只需同盘 rename；中止上传后 `TASK_OPERATION_PENDING` 在 MCP 进程内形成死锁（账本未持久化、reconcile 够不着），只能重启进程。
+- 服务端：新增 `POST /api/v1/libraries/{libraryId}/ingest-local`（body `{sourcePath, fileName, directory?, move?}`，`move` 缺省 true）。源必须落在新配置读根 `ingest_local.read_roots`（`QIMENG_INGEST_LOCAL_ROOTS`，空=端点拒绝）内，目标必须在库根内；文件名沿用清洗+扩展名白名单并加魔数嗅探；同分区 `os.Rename`，跨分区 `filing.CopyFileVerified`（O_EXCL、边复制边算 SHA-256、回读复核）后才删源；`move=false` 只复制。目标已存在且 size+SHA256 一致 → 200 `already_present`（源不动）并返回既有资产；内容不同 → 409 不覆盖。建索引复用 `mediawrite.IngestPlacedLocal`（同一管线：DB 行/视频探测/富化/library.changed/文件数指标，但不计 upload 指标、不发 upload.done）。新增 `filing.CopyFileVerified`/`FileSHA256`/`IsCrossDeviceError` 原语并在 `mediawrite` 增 `IngestRename` 测试钩子。
+- 未决写入可恢复（保留权限门与预算默认值）：`SessionBudget` 新增 `pending_side_effects()`/`discard_pending()`；`execution.controlled_action` 在 `TASK_OPERATION_PENDING` 时先对 `asset.upload`/`asset.ingest.local` 做服务端**只读**回查（同库按文件名，含撞名变体 `名 (n).ext`），能判定就已核销并重试；判定不了保持拒绝，并在 details 附 `pendingWrites` 与 `reconcileCommand`。权限门、调用数/时长/重复预算默认值未放宽。
+- 文档：`docs/api/files.md` 新增「入库通道选型」（本机/局域网→ingest-local 移动；外网/手机/跨设备→upload 流式；索引结果一致）、SECURITY 新增 ingest-local 边界（三条硬约束）、CAPABILITY_MAP 与 server/README 配置表同步。
+- 验证：`go test ./...`、`gofmt`、`go vet`、`golangci-lint v2.15.0`、`make sdk`；tools 侧 `test_ai_task_controls`（含 5 个新增恢复用例）、`test_ai_task_recovery`/`test_ai_mcp`/`test_ai_regressions` 通过；隔离实例（临时库/临时数据目录/独立端口）实测真移动入库→幂等回读 `already_present`→回收站删除；`check_docs` 通过。云端 build-apk 见交付说明。
+- 限制：MCP 工具 `asset.ingest.local` 未接入（`tools/ai_maintenance` 有用户未提交的本地改动，按用户决定本轮不动该目录）；未决写入回查按文件名启发式（跨库同名/事后被移动可能误判，判定不了仍拒绝）；读根需在服务端配置（与 AI 平台读根相互独立）；真实 3GB/局域网挂载与双端 UI 入口未实测。
+
+## feat(app): 外挂字幕第二批——随包字体、编码归一、语言/格式矩阵扩宽（2026-11-28 第七百三十八笔）
 
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
 
-- 规则包 `rulepackVersion` 由 2026-11-15.1 升至 2026-11-22.1：新增顶层节 `fieldNotes`，记录本机现场验证过的 9 类问题与处理（`files.search` 未配存储时的假空结果、任务预算 900 秒默认值与硬上限、失败写入留下的未决项、Go 服务端 scope 独立于 MCP 权限、Windows 大小写重名导致的 ` (2)` 自动后缀、图片与视频编号规则、下载截断 MP4 的识别方法、Git Bash 改写 adb 远端路径、Lens sidecar 未启用时的替代路径），并附按需取上下文的四步工作流；该节已挂入 `media.organize`、`media.ingest` 的 `ruleSections`，`platform.context` 取任务卡时自动带出。同步 CAPABILITY_MAP、HANDOVER、AI_PLATFORM_TASKBOOK、tools README 的当前版本号与三份单测的版本断言。
-- 依赖安全：定时任务 2026-11-23 12:47 的 `cargo audit` 报 2 个漏洞，`desktop/src-tauri/Cargo.lock` 升级 `cookie 0.18.2 → 0.18.3`（RUSTSEC-2026-0594，6.5 medium）、`url 2.5.8 → 2.5.9`（RUSTSEC-2026-0592）及传递依赖 `form_urlencoded 1.2.2 → 1.2.3`；源码零改动，`cargo metadata --no-deps --locked` 通过。
-- 验证：改动模块 `python -m unittest` 通过；`privacy`、`docs` 与 `cargo-vulnerabilities` 以 PR #65 的检查结果为准。
+- 字体：随包 Noto Sans SC Bold 与 Liberation Sans Bold（均 SIL OFL 1.1；来源、SHA-256、许可全文与已知差异见 `docs/FONTS.md`）。Web/桌面用 `@font-face` 家族名别名（`Microsoft YaHei`→Noto、`Arial`→Liberation），assjs 构造前 `document.fonts.load` 预载；Android API 29+ 用 `Typeface.CustomFallbackBuilder` 组「拉丁→Liberation、汉字→Noto」备用链、API 26–28 统一 Noto，经 `CaptionStyleCompat.typeface` 交给 SubtitleView。Media3 SSA 解析器不保留 Fontname、无按名注入 API，故 Android 为视图级覆盖（取舍已记档）。
+- 编码：新增 `subtitle.DecodeToUTF8`——BOM 优先（UTF-8/UTF-16LE/BE），无 BOM 时严格 UTF-8 校验失败后依次 GB18030→Big5→Shift-JIS；下发恒 `charset=utf-8`；单文件读取上限 8 MiB（超限 413，防内存打满）。
+- 语言：`NormalizeLang` 放宽并统一 BCP 47（zh/zh_cn/chs/GB→zh-Hans，zh_tw/cht/big5/zh-hk→zh-Hant，eng→en、jp/jpn→ja、kor→ko；无语言段=und 仍列）；`label`（中文（简体）/English…）与 `isDefault`（简体>繁体）由服务端下发，Web/Android 预选与菜单文案改为消费这两个字段，不再各自判断。
+- 格式：新增 `sub`(MicroDVD)/`sbv`/`lrc`/`smi`(SAMI) 服务端转 WebVTT 下发（优先级 ass>ssa>srt>vtt>sub>sbv>lrc>smi）；协议 `format` 为下发格式（转换轨恒 vtt），客户端零改动。转换仅内存生成、不写回磁盘。
+- 协议：`AssetSubtitle` 增 `isDefault`/`label` 必填字段，字幕路径描述补编码/格式/语言矩阵；`make sdk` 三端再生 + `api/sdk.lock` 同批更新。
+- 验证：`go test ./...`（新增编码四形态、语言归一矩阵、四种转换格式、HTTP 端到端 GB18030/VTT 用例）、`gofmt`、`go vet`、`golangci-lint v2.15.0`（0 issues）、`make sdk`、Web `tsc`/`vitest`/`build`/`oxlint`/`knip`、Android `assembleDebug testDebugUnitTest`（JDK 21）、`check_docs` 全部通过；云端 build-apk 见交付说明。
+- 限制：Big5/Shift-JIS 排在 GB18030 之后，多数会被 GB18030 先「成功」解出错字（尽力而为）；MicroDVD 无帧率指令按 25fps；SAMI 只保留时间轴+文本；Noto SC 子集不含韩文与扩展 B 区生僻字；ASS 矢量绘图/卡拉 OK 两端仍不支持。
+
+## feat(app): 外挂字幕 sidecar（5  字幕）三端加载（2026-11-28 第七百三十七笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
+
+- 服务端：新增 `internal/subtitle` 目录约定解析（`<库根父目录>/5  字幕/<库文件夹名>/<资产相对路径>.<lang>.ass`，文件名主干逐字节匹配，语言取 `.ass` 前最后一段扩展名；同语言多格式按 ass > ssa > srt > vtt 取一条，避免叠加渲染）与 `GET /media/sub/{assetId}?lang=&exp=&sig=`（`http.ServeContent` 原生 Range/206，Content-Type 按格式，签名与 `/media/orig` 同款，`PathWithinRoot` + readdir 枚举双重限界）；`GET /assets/{assetId}` 的视频资产新增可选 `subtitles[]`（lang/format/sizeBytes/url），无字幕时字段缺省、旧客户端零感知。「5  字幕」是库根同级目录，scanner 只遍历库根，不经索引。
+- Web/桌面：桌面 Tauri 壳托管的即本 Web UI，故只改 `web/src/components/media/video-player.tsx`——字幕菜单合并外挂（`AssetDetail.subtitles`）与内嵌轨，`关闭` 恒第一项、外挂在前、有中文默认选中；ASS/SSA 由 assjs 按脚本样式/定位/描边渲染（新增运行时依赖 assjs，MIT、零传递依赖），SRT 仅换时间轴逗号后转 blob `<track>`，VTT 原样。
+- Android：`DetailSubtitle`/`SubtitleFormat` 领域模型 + SDK 映射；`VideoPlayerState` 以 `MediaItem.SubtitleConfiguration` 挂轨（ass/ssa→TEXT_SSA、srt→APPLICATION_SUBRIP、vtt→TEXT_VTT，zh 标 `SELECTION_FLAG_DEFAULT` 并显式置 preferredTextLanguage）；`BiliPlayerView` 给播放器自带 SubtitleView 配可读默认样式，设置面板新增「字幕」行（关闭 + 当前媒体全部文本轨语言，`TrackSelectionParameters` 选轨不重装媒体源）。
+- 验证：`go test ./internal/subtitle ./internal/httpapi`（新增路径推导/语言解析/多语言/缺目录/签名与语言码穿越用例）、`gofmt`、`make sdk`（三端再生 + `api/sdk.lock` 389 项）；Web `npx tsc --noEmit`、`npx vitest run`、`npm run lint`、`npm run build`；Android 本地 JDK 21 `./gradlew assembleDebug testDebugUnitTest` 通过；文档 `python tools/check_docs.py`。云端完整 CI 与 APK 出包记录见本次交付说明。
+- 限制：ASS 高级特性（矢量绘图 `\p`、卡拉 OK 时序、字体嵌入）assjs 与 Media3 SsaParser 均不完整，字体依赖系统已装；内嵌轨与同名外挂轨同语言并存时由播放器轨道选择裁决（无强制外挂优先）；Web 端 ASS 层 z-index 依赖 assjs 的 `.ASS-box` 结构类名，升级 assjs 需复核叠层。
 
 ## fix(server): SPA 静态目录按可执行文件位置兜底（2026-11-16 第七百三十六笔）
 
@@ -238,36 +287,6 @@
 - 依据 go-worker 对 7ce3bc79 的只读复核修复残余窗口：process 为每笔任务建 jobCtx，心跳 ErrLeaseLost/连续非租约失败/租约余量过小时 cancel，handler.Execute 改用 jobCtx；Execute 返回后按 jobCtx 判定 interrupted，不写终态、不误标 failed，已提交步骤保留、重领后重跑未完成步骤（P2-1）。
 - 步骤边界心跳非租约错误不再 failJob（warn+cancel+停止本槽，等 TTL 重领）；AdvanceStatus/settleStages 临时错误同策略（P2-2）。Claim 提交后 Get 失败时新增 ReleaseMaintenanceLease 尽力释放本次租约再返回错误（P3-3）。main 等待 worker 收敛加 shutdownTimeout，超时记录后继续关库（P3-5）。
 - 新增测试：Start+Concurrency=2+阻塞 handler+Pause/Resume 取消、瞬时心跳错误不 failed、领取后详情失败可立即重领；go build/vet/maintenance 定向测试通过。残余：取消依赖心跳发现（最长一个心跳间隔）；立即 resume 的极短窗口仍未完全消除，需后续协调/可重试语义评估；未改 API/协议/migration。
-
-## feat(app): Android 后台设备结果包 Worker、设备级令牌与 SAF/权限适配（2026-11-08 第七百一十一笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理代提交；独立子代理实现与 JVM 验证）
-
-- 复用设备结果包协议与维护账本实现后台 Worker：core/data/device 14 个文件（Runner 编排领取-校验-应用-回读-回传；Worker/Scheduler/WorkSpec 15min 周期+一次性、CONNECTED、unique work+Mutex；Remote/Policy/Authorization/SegmentVerifier/ResultPlanner/LocalBackup/Readback/SettingsRepository/Models）；feature/manage 设备领取页/VM 与维护页入口（设备标签、口令式设备令牌、后台开关、立即应用、最近摘要）。
-- 设备授权：专用 AI 令牌（device.apply + device_ids）只用于设备端点，无令牌不回退会话 token；本机模式先拉起内嵌服务；维护根+所有文件访问门禁，缺失回 failed 并提示 UI 授权；先导出两代备份再 import-txt/qimeng-backup，按 expectedReadback 回读比较后回传 result，清理临时段；409 先对账终态不覆盖。
-- 验证：:core:data:testDebugUnitTest device.* 34 tests 通过、feature:manage/app compileDebugKotlin 通过、check_docs 0 错误、check_privacy passed。未安装、未真机；Doze/厂商后台、后台拉起内嵌 FGS、SAF/存储授权撤回、PC→手机端到端、断网/进程被杀恢复待验证；无段级进度持久化，进程强杀可能重下整包。
-
-## feat(server): 独立 AI 客户端凭据、scope 强制校验与写审计（2026-11-08 第七百一十笔）
-
-执行 AI：DeepSeek V4.1 Flash（子代理 go-worker 实现与本地定向验证）
-
-- ADR-0057 P1 首批（不改 OpenAPI/sdk.lock/三端、不加 HTTP 管理端点）：migration 0025 只增 ai_clients（token_hash 唯一、scopes_json/device_ids_json、expires/revoked/last_used）与 ai_audit（只增、无外键）；新包 server/internal/aiauth（scope 白名单/未知拒绝、token 生成+auth.TokenHash、过期/撤销 fail-closed、5s 缓存+Reload、审计、Create/List/Revoke/Rotate）。
-- httpapi：管理员会话先行验证（行为不变），未命中再验 AI 凭据；AI 按 method+path 强制 scope（GET/HEAD 兜底 read，维护/备份/研究/设备各自 scope，未映射写默认 403 FORBIDDEN_SCOPE），管理员不受限；AI 写请求含被拒写审计；设备级隔离 device.apply + ai_clients.device_ids，列表/详情/领取/段/回传/取消校验 targetDevice，越权不改状态。
-- 管理入口：qimeng ai-client create|list|revoke|rotate -config，直接打开同一 SQLite（先幂等 migration），明文 token 只 stdout 一次；撤销幂等、轮换旧 token 立即失效。验证：go build/vet、aiauth/httpapi/cmd 定向测试通过；未跑全量/CI/真实库。边界：协议化 scope、HTTP 管理端点、限流预算、审计查询、设备配对未实现；异地撤销约 5s 缓存生效。
-
-## fix(server): 维护 worker 租约改为每次领取唯一 fencing token 并校验未过期租约（2026-11-08 第七百零九笔）
-
-执行 AI：DeepSeek V4.1 Flash（子代理 go-worker2）
-
-- 根因：Worker 实例 owner 跨领取复用，Claim/Heartbeat/Complete/Advance 只比较 owner 字符串；租约过期被重领后旧执行上下文仍可续租/覆盖步骤工件终态，同任务可并发执行。修复：实例身份 qimeng-worker-<pid>-<uuid> + 每次领取唯一 fencing token；Heartbeat/Finish/Advance SQL 增 lease_until 未过期条件；StepInput/ArtifactInput 增 LeaseOwner，在同一 _txlock=immediate 事务内校验 owner+未过期后写步骤/工件；ErrLeaseLost 只停止不误标 failed，暂停/取消进行中步骤保留 running。
-- 验证：go test ./internal/maintenance/ -count=2、go vet、go build、gofmt、sqlc 重生成稳定；新增身份/token 唯一、同实例两次领取 token 不同、旧实例接管后不得覆盖、过期租约全链路围栏测试。未加 migration、未改 API/SDK/业务语义。
-
-## fix(web): 两代备份写入中断恢复与轮换幂等（2026-11-08 第七百零八笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 web-client 实现与定向验证）
-
-- 根因：先整代轮换当前→上次再写新当前且无事务标记；中断后重复轮换/半成品被当上次代/正文摘要分开写导致永久摘要不符或丢失完整旧代。修复：新增 maintenance-generation.ts 两代写入原语与恢复判定；写快照前落 .两代轮换状态.json（old/next 摘要），整代轮换（相同跳过、缺摘要补）、写新当前（正文先摘要后）、最后删状态；下次写入按断点自愈，不可判定拒绝并保留现场；相同数据重复导出只刷新当前并修复过期摘要；旧 flat3 只读兼容不变。
-- 验证：maintenance-folder.test.ts 24/24、tsc --noEmit、oxlint 0；未跑全量 vitest/Playwright/vite build/真实服务端。待测：真实浏览器崩溃中断自愈、真实 FS removeEntry 失败、跨浏览器差异。
 
 # CHANGELOG - 变更历史
 

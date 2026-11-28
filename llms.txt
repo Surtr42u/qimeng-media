@@ -35,6 +35,7 @@
 - [GUIDE_UI](docs/GUIDE_UI.md)：现行交互约束与各端定位
 - [Android 背景对比度记录](docs/ANDROID_UI_TASKBOOK.md)：当前主题试调与已取消布局方案的边界
 - [CAPABILITY_MAP](docs/CAPABILITY_MAP.md)：能力、真缺口与触发条件
+- [FONTS](docs/FONTS.md)：外挂字幕随包字体的来源、许可、SHA-256 与加载方式
 
 ## API 与工程
 

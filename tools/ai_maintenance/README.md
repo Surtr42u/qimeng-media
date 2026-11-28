@@ -30,6 +30,7 @@
 | `tools_research.py` | research_kit 适配：argv 组装、路径/超时边界、产物枚举（算法仍在 `../research_kit/`）；`research.media.probe` 接受 `fileRefs`，为帧/JSONL 发布 `frameRefs`/`artifactRefs`，返回的 argv 对 fileRef/artifactRef 输入脱敏。 |
 | `tools_research_work.py` | `research.work`：单图/视频只读作品研究；媒体探测/抽帧复用 `media_primitives`，Lens/provider 只作弱线索，输出 candidates/workSources/evidence/excluded/unresolved 且 `businessWrites=0`。 |
 | `tools_files.py` | `files.storages` / `files.search`：授权存储枚举与有界文件搜索，返回不透明 `fileRef` 与相对路径，不返回物理绝对路径。 |
+| `tools_ingest_local.py` | `asset.ingest.local.prepare` / `asset.ingest.local`：同机/同分区源文件移动入库（不经 HTTP 上传），源须在 `QIMENG_AI_STORAGES` 根内、不在库根内；逐文件 POST 后按 assetId 回读，already_present 幂等。 |
 | `tools_trash.py` | trash.list / trash.restore（需确认 + 回读）。 |
 | `pathguard.py` | 本地读写授权边界：`QIMENG_AI_READ_ROOTS`/`QIMENG_AI_WRITE_ROOTS`/媒体根/忽略工作根、链接与 reparse 检查、TOCTOU 复核与文件摘要。 |
 | `safefile.py` | 本地文件安全发布：同文件/硬链接身份判断、同目录临时文件、无覆盖/原子覆盖发布；不承载业务规则。 |
@@ -56,6 +57,7 @@
 | [test_media_naming.py](../test_media_naming.py) | 命名引擎纯函数回归（工作编号/页码/补图/缺页/锁/回读）。 |
 | [test_ai_platform_20261108.py](../test_ai_platform_20261108.py) | 外部 AI 工具平台回归（41 项）：备份 3MiB 流式落盘、设备 prepare/submit/status、执行器 200/204/409、研究 argv/边界/超时、回收站与标签。 |
 | [test_ai_platform_20261110.py](../test_ai_platform_20261110.py) | 规则漂移（endpoint+method+必需字段、apiStatus/实现状态分离）、`platform.context` 输出/权限/CLI+MCP 一致性、media.organize scan 的对齐/去重/序号/越界与 apply planned。 |
+| [test_ai_platform_20261128.py](../test_ai_platform_20261128.py) | 本机直接入库（30 项）：注册/目录可见性、入参与数量/总字节上限、`..`/符号链接逃逸/库根内源拒绝、计划预期状态、确认/指纹/实例、already_present 幂等、回读不一致、服务端错误映射与部分失败上报。 |
 | [test_ai_recipes.py](../test_ai_recipes.py) | recipe/原语回归：任务卡边界、工具引用、门禁与续跑、条件跳过、能力缺失、author.create、name 查重、视频抽帧/dHash 缓存与拼图。 |
 | [test_ai_files_refs.py](../test_ai_files_refs.py) | 本地执行域回归（39 项）：读写根授权、未授权/穿越/链接/junction 拒绝、fileRef 生成/失效/替换、原语只读/权限/门禁、transfer 覆盖与恢复幂等、产物篡改/running 步骤/版本变化、研究结果脱敏。 |
 | [test_ai_contract_consistency.py](../test_ai_contract_consistency.py) | 契约一致性：领域发现与 MCP 元工具可见性、工具状态维度、规则点路径/截断、示例 Schema、playbook/recipe 引用、files 工具契约、版本同源。 |
@@ -90,6 +92,10 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 `task`（精简任务卡，当前体积见下文）或 `task-context --task ...`，不要默认整包读取。
 
 ## 配置
+
+2026-11-28 本机直接入库新增 `asset.ingest.local.prepare`/`asset.ingest.local`（规则节
+`ingestLocal`），工具包 `1.8.1`、工具契约 `2.2.0`、规则 `2026-11-28.2`；同一
+`asset.upload` 权限覆盖上传与本机移动两种入库通道，不新增权限门。
 
 2026-11-15 审查修复后源码契约更新：工具包 `1.7.1`、工具契约 `2.1.0`、规则
 `2026-11-22.1`。新增纯素材作品研究 `research.work`、受控研究产物引用
@@ -486,6 +492,61 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 错误输出结构化 JSON（`error` 稳定 code、`category`、`recovery`）；HTTP 错误为
 `{status,error:"http_error",body,target}`，`target` 只有 host:port，任何输出不含 token。
 
+## 本机直接入库（asset.ingest.local，2026-11-28）
+
+**什么时候用 ingest.local**：媒体库与源文件**同机/同分区**（含内网挂载）时，入库
+本质是「移动文件 + 建索引」。本地下载/整理好的目录直接用
+`asset.ingest.local.prepare` → 确认 → `asset.ingest.local`，服务端同盘 `rename`
+零拷贝并复用上传的入库管线（DB 行/视频探测/富化/`library.changed`/文件数指标）。
+
+**什么时候用 upload**：手机 App、外网、跨设备，或源文件不在服务端读根可见范围内
+（服务端只接受本机读根 `QIMENG_INGEST_LOCAL_ROOTS` 内的源）→ 继续
+`asset.upload.prepare`/`asset.upload` 流式上传。两者索引结果一致，区别只在文件
+如何进入库根。
+
+**为什么本地不要上传**：本机已有文件时上传要多绕 HTTP 收流并边算摘要（3GB 约
+2 分钟），还额外占用暂存空间与一份临时副本——这些开销在本机入库里都是白花的
+（同盘移动即可）。这也是用户 2026-11-28 的明确取舍：上传只服务手机/外网/跨设备。
+
+**边界与流程**：
+
+- 源必须落在 AI 侧授权存储根 `QIMENG_AI_STORAGES`（与 `files.search` 同源）内；
+  拒绝相对路径、`..`、符号链接/junction/reparse 段与解析逃逸；源不得位于任何媒体
+  库根内（库内文件走 `media.organize`/`asset.rename`/回收站）。
+- 服务端另有独立读根 `QIMENG_INGEST_LOCAL_ROOTS`（环境变量）；未配置时端点一律
+  403 —— AI 侧授权不能替代服务端配置。
+- 单次上限 50 个文件 / 64 GiB（`MAX_PATHS_PER_CALL`/`MAX_TOTAL_BYTES`）；更多分批，
+  `already_present` 可安全重跑。
+- `prepare` 只读并给出每个文件的目标相对路径、字节数、源时间与预期状态
+  （`move`/`already_present`/`conflict`/`unknown`）；不做全文件哈希（那会把毫秒级
+  入库变回分钟级），摘要由服务端在复制/幂等比对路径计算并回传。
+- 请求超时预算：60s 基础 + 每 GiB 60s（不足 1 GiB 按 1 GiB 计），封顶 600s；声明的
+  `timeout_seconds` 取封顶值（MCP/CLI 外壳按 max(默认120, 声明+25) 放行），跨分区大
+  文件不会被默认 20s 客户端超时打断，也不会「客户端先超时、服务端还在复制」。
+- `apply` 重新核对库根与每个源（大小/时间/摘要），逐文件 POST，然后用返回的
+  `assetId` 逐个 `GET /assets/{id}` 回读库/`relPath`/`sizeBytes`；不一致即
+  `READBACK_MISMATCH`，不静默成功。任何失败都在 `details.completed` 带已完成文件的
+  `{assetId,status,relPath}`，供按 assetId 回读而不是整批重传。
+- 目标同名同内容 → `already_present`（源不动，幂等成功），并用服务端回传的 `sha256`
+  与本地源复算比对，不一致报 `CONTENT_MISMATCH`；不同内容 → `TARGET_EXISTS`
+  （409，绝不覆盖）。`status=ingested` 但源仍在原位（跨分区删源失败）报
+  `SOURCE_NOT_REMOVED`：资产已入库，不要重复入库，确认后手工清理源。
+- 本通道不删除库内资产。
+- 文件名取源文件名：本工具不改名。要正式编号命名时先在源侧命名，或入库后用
+  `asset.rename.prepare`/`asset.rename.apply` 精确改名。
+- 错误码：`NOT_IN_STORAGE_ROOT`、`SOURCE_IN_LIBRARY_ROOT`、`TARGET_EXISTS`、
+  `LIBRARY_NOT_FOUND`、`API_UNAVAILABLE`、`STORAGE_UNAVAILABLE`、
+  `SOURCE_NOT_REMOVED`、`CONTENT_MISMATCH`、`READBACK_MISMATCH`（规则节
+  `ingestLocal` 有同口径说明）。401 鉴权/403 scope 等确定未写入的拒绝标
+  `mutation_rejected`，不进入未决写入。
+- 不新增权限门：两个工具复用 `asset.upload` 权限，仍受服务端 AI scope 约束；服务端
+  硬不变量（库根内、不覆盖、不跟随符号链接）不变。
+
+```powershell
+qai tool call asset.ingest.local.prepare --input-json '{"libraryId":"<libId>","paths":["D:\\inbox\\合成 1.png"],"directory":"合成目录","operationId":"<持久化 UUID>"}'
+qai tool call asset.ingest.local --input-json '{"planRef":"<prepare 返回的 planRef>","confirm":true}'
+```
+
 ## 工具目录
 
 2026-11-12 增量：platform/toolContract 1.5.0、rules 2026-11-12.1；新增 `asset.upload.prepare` / `asset.upload` / `library.scan` 和 `media.ingest` recipe。工具 permission `asset.upload` 对应服务端 `read`（库/资产回读）+ `asset.upload`；`library.write` 对应 `read` + `library.write`。服务端凭据必须另行签发，工具许可不代替 scope。
@@ -519,6 +580,7 @@ python -X utf8 tools/ai_maintenance/cli.py playbook --name media.organize
 | `maintenance.claim` / `heartbeat` / `step.record` / `artifact.record` / `complete` | supported | 外部 AI 执行器控制面（ADR-0058）：领取租约/fencing token、续租、幂等步骤、工件元数据、终态回传；409 统一映射 `LEASE_LOST`。 |
 | `research.image.pipeline` / `research.image.search` | supported | research_kit 适配：Lens→Yandex→SauceNAO 阶梯与单工具调用，只返回退出码/产物/有界摘要。 |
 | `files.storages` / `files.search` | supported | 本地文件发现：授权 storage 枚举、有界搜索、分页与不透明 `fileRef`；只读、不返回物理绝对路径。 |
+| `asset.ingest.local.prepare` / `asset.ingest.local` | supported（apply 需确认） | 本机/同分区直接入库：源在 `QIMENG_AI_STORAGES` 根内、不在库根内，单次 ≤50 文件/64GiB；apply 逐文件 POST ingest-local 并按 assetId 回读；`already_present` 幂等、不同内容 409 不覆盖；外网/手机/跨设备仍用 upload。 |
 | `research.author.probe` / `research.media.probe` / `research.avatar.fetch` | supported | fxtwitter/kemono 公开字段、ffprobe 抽帧、头像下载；算法在 `../research_kit/`；`research.media.probe` 支持 `fileRefs` 并发布 `frameRefs`/`artifactRefs`。 |
 | `trash.list` / `trash.restore` | supported | 回收站只读列表与恢复（需 confirm、前置检查与回读）。 |
 | `asset.trash` / `asset.tags.replace` | supported | 删除一律进回收站（回读 404）；标签整体替换（读详情出计划、确认指纹、回读）。 |
@@ -667,7 +729,10 @@ capture）→status 与源文件漂移、执行器 200/204/409 LEASE_LOST 与 to
 2026-11-14 批次另覆盖 artifactRef 生命周期/越权/篡改/过期/替换/并发、`research.work`
 纯素材研究与降级、可信端 reconcile/renew 与读回三态、可移植分发与仓外运行；新增测试
 与既有回归统一由云端执行，实际通过数量与失败保留以 HANDOVER 和 CI 记录为准，不在
-本地用“手动测试”替代。
+本地用“手动测试”替代。2026-11-28 批次（`test_ai_platform_20261128.py`，30 项）覆盖
+本机直接入库：入参与数量/总字节上限、`..`/符号链接逃逸/库根内源拒绝、计划预期状态、
+确认/指纹/实例、already_present 幂等、回读不一致、服务端 403/404/405/409/507 映射与
+部分失败上报（合成文件 + 回环 stub，不移动真实媒体）。
 
 ## 备份导出、设备结果包与执行器控制面
 

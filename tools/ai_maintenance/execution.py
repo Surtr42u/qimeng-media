@@ -207,9 +207,106 @@ def _client_context(spec: registry.ToolSpec, env) -> ToolContext:
     return client
 
 
+# 未决写入的服务端自检白名单（2026-11-28 死锁修复）：这些工具的 identity 足以
+# 在服务端按「库 + 文件名」回查目标是否已存在，从而把 TASK_OPERATION_PENDING
+# 从「永久阻塞」改成「可判定即核销、判定不了仍拒绝并给核销指引」。
+# 只做只读 GET，不触发任何写入；查询失败/缺 identity 一律视为「判定不了」。
+PENDING_PROBE_TOOLS = frozenset({"asset.upload", "asset.ingest.local"})
+PENDING_PROBE_TIMEOUT_SECONDS = 10.0
+
+
+def _probe_pending_entry(entry, client):
+    """返回 True=服务端已有该目标（视为已生效）、False=未找到、None=无法判定。"""
+    identity = entry.get("identity") if isinstance(entry.get("identity"), dict) else {}
+    library = identity.get("libraryId")
+    name = identity.get("fileName")
+    if not isinstance(library, str) or not library or not isinstance(name, str) or not name:
+        return None
+    stem = Path(name).stem
+    try:
+        page = client.get("/api/v1/assets", {"libraryId": library, "q": stem, "limit": 50})
+    except Exception:
+        return None
+    items = page.get("items") if isinstance(page, dict) else None
+    if not isinstance(items, list):
+        return None
+    suffix = Path(name).suffix
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        found = item.get("fileName")
+        if not isinstance(found, str):
+            continue
+        # 精确名或冲突改名的变体（"stem (2).ext"）都算已生效：上传通道撞名时
+        # 服务端按变体编号落盘，pending 身份里只有原名。
+        if found == name or (suffix and found.startswith(stem + " (") and found.endswith(suffix)):
+            return True
+    return False
+
+
+def _resolve_pending_writes(config, env):
+    """自检未决写入：返回 (可核销的 requestHash 列表, 仍无法判定的条目)。
+
+    没有可用 API 客户端时全部视为无法判定（保守：保持原拒绝），绝不因为自检
+    设施缺失就放行——放行只发生在服务端状态已能证明已生效/未生效之后。
+    """
+    entries = config.budget.pending_side_effects()
+    if not entries:
+        return [], []
+    base = env.get("QIMENG_API_BASE", "")
+    token = env.get("QIMENG_API_TOKEN", "")
+    client = None
+    if base and token:
+        try:
+            client = http_client.ApiClient(http_client.validate_base_url(base), token,
+                                           timeout=PENDING_PROBE_TIMEOUT_SECONDS)
+        except (http_client.ConfigError, ValueError):
+            client = None
+    resolved, unresolved = [], []
+    for entry in entries:
+        if entry.get("tool") not in PENDING_PROBE_TOOLS or client is None:
+            unresolved.append(entry)
+            continue
+        applied = _probe_pending_entry(entry, client)
+        if applied is None:
+            unresolved.append(entry)
+            continue
+        resolved.append(entry["requestHash"])
+    return resolved, unresolved
+
+
+def _reserve_with_recovery(tool_id, payload, *, env, config, side_effects):
+    """预算预留；未决写入先做服务端自检，可判定即核销并重试，否则带上核销指引拒绝。"""
+    try:
+        return config.budget.reserve(tool_id, payload, side_effects=side_effects)
+    except errors.ToolError as exc:
+        if exc.code != "TASK_OPERATION_PENDING" or not side_effects:
+            raise
+        resolved, unresolved = _resolve_pending_writes(config, env)
+        for request_hash in resolved:
+            config.budget.discard_pending(request_hash, reason="server-readback")
+        if unresolved:
+            details = dict(exc.details or {})
+            details["pendingWrites"] = [
+                {"tool": entry.get("tool") or "", "requestHash": entry["requestHash"]}
+                for entry in unresolved
+            ]
+            details["reconcileCommand"] = (
+                "qimeng-ai admin task reconcile --task <taskId>（账本已持久化时）；"
+                "内存账本（未配置 QIMENG_AI_TASK_ID/QIMENG_AI_STATE_DIR）需重启执行进程释放"
+            )
+            raise errors.ToolError(
+                exc.code, exc.message, category=exc.category, exit_code=exc.exit_code,
+                recovery="先按 pendingWrites 逐项回读服务端结果；无法判定时勿循环重试。",
+                details=details,
+            ) from None
+        return config.budget.reserve(tool_id, payload, side_effects=side_effects)
+
+
 def controlled_action(tool_id, payload, operation, *, env, config, side_effects=False):
     """One lifecycle for registered tools and recipe primitives, including pending writes."""
-    request_key = config.budget.reserve(tool_id, payload, side_effects=side_effects)
+    request_key = _reserve_with_recovery(tool_id, payload, env=env, config=config,
+                                         side_effects=side_effects)
     started = False
 
     def mark_started():

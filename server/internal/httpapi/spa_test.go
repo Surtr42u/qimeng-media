@@ -26,7 +26,7 @@ import (
 // 布局：dist/index.html + dist/assets/*-hash.js + dist/icons/*.png）。
 func writeDist(t *testing.T, dir string) {
 	t.Helper()
-	for _, sub := range []string{"assets", "icons"} {
+	for _, sub := range []string{"assets", "icons", "fonts"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
 			t.Fatalf("创建 dist 子目录失败: %v", err)
 		}
@@ -35,6 +35,7 @@ func writeDist(t *testing.T, dir string) {
 		"index.html":         "<!doctype html><html><body>M2-DIST-INDEX</body></html>",
 		"assets/app-hash.js": "console.log('dist')",
 		"icons/favicon.png":  "PNGDATA",
+		"fonts/test.woff2":   "WOF2DATA",
 	}
 	for rel, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(rel)), []byte(content), 0o644); err != nil {
@@ -127,6 +128,22 @@ func TestSPAServedFromDist(t *testing.T) {
 		}
 		if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
 			t.Errorf("%s 的 Content-Type 应为 text/html，得到 %q", p, ct)
+		}
+	}
+
+	// 随包字体：显式 font/woff2（Go 内置表与精简镜像的 mime.types 不含该扩展名，
+	// 不声明会被嗅探成 application/octet-stream）；字体不是 hash 文件名 → no-cache。
+	{
+		resp := get(t, "/fonts/test.woff2")
+		body := readAll(t, resp)
+		if resp.StatusCode != http.StatusOK || string(body) != "WOF2DATA" {
+			t.Fatalf("字体应直发，得到 %d %q", resp.StatusCode, body)
+		}
+		if ct := resp.Header.Get("Content-Type"); ct != "font/woff2" {
+			t.Errorf("woff2 Content-Type = %q, want font/woff2", ct)
+		}
+		if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "no-cache") {
+			t.Errorf("字体应带 no-cache（非 hash 文件名），得到 %q", cc)
 		}
 	}
 

@@ -125,6 +125,12 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 长缓存；HTML 与其他文件 → no-cache（短缓存/不缓存）。
 func (h *spaHandler) serveFile(w http.ResponseWriter, r *http.Request, rel string, f *os.File) {
 	w.Header().Set("Cache-Control", spaCacheControl(rel))
+	// 字体 MIME：Go 内置表与部分精简 Linux 镜像的 /etc/mime.types 不含 woff2，
+	// ServeContent 会按内容嗅探成 application/octet-stream。浏览器 @font-face
+	// 通常仍能解码，但显式声明类型更稳（缓存/CDN/排障都依赖它）。
+	if ct, ok := webFontContentTypes[strings.ToLower(filepath.Ext(rel))]; ok {
+		w.Header().Set("Content-Type", ct)
+	}
 	// modTime 参与 ServeContent 的 If-Modified-Since 条件请求；
 	// 文件名带扩展名喂给 ServeContent 做 Content-Type 推断（js/css/svg/...）。
 	info, statErr := f.Stat()
@@ -133,6 +139,14 @@ func (h *spaHandler) serveFile(w http.ResponseWriter, r *http.Request, rel strin
 		mod = info.ModTime()
 	}
 	http.ServeContent(w, r, filepath.Base(rel), mod, f)
+}
+
+// webFontContentTypes 静态字体扩展名 → MIME（外挂字幕随包字体，2026-11-28 第二批）。
+var webFontContentTypes = map[string]string{
+	".woff2": "font/woff2",
+	".woff":  "font/woff",
+	".ttf":   "font/ttf",
+	".otf":   "font/otf",
 }
 
 // spaCacheControl 判定单文件缓存头（见 serveFile 注释）。

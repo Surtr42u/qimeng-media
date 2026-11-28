@@ -51,7 +51,33 @@ data class AssetDetail(
      * SDK 可空兜底空串；空 = 服务端未返回，UI 沿用「null/0 不渲染」口径隐藏行
      */
     val relPath: String = "",
+    /**
+     * 外挂字幕轨（协议 AssetDetail.subtitles，2026-11-28 新增）。
+     * 空 = 无外挂字幕（继续用内嵌轨），服务端已按语言去重（同语言多格式只下发一条）。
+     */
+    val subtitles: List<DetailSubtitle> = emptyList(),
 )
+
+/**
+ * 外挂字幕轨（协议 AssetSubtitle）。服务端按「5  字幕」目录约定解析，客户端只消费。
+ * @param lang 规范化 BCP 47 语言码（服务端已把 zh_cn/chs/GB 归一为 zh-Hans 等）
+ * @param format 下发格式（ass/ssa/srt/vtt；sub/sbv/lrc/smi 已由服务端转成 vtt）
+ * @param sizeBytes 源文件字节数（列表展示/诊断用）
+ * @param url 已拼 base 的签名直链（签名 URL 禁改写，ADR-0002）
+ * @param isDefault 服务端首选轨（简体优先、其次繁体）——预选依据，三端同源
+ * @param label 服务端人类可读标签（中文（简体）/English…），三端统一展示
+ */
+data class DetailSubtitle(
+    val lang: String,
+    val format: SubtitleFormat,
+    val sizeBytes: Long,
+    val url: String,
+    val isDefault: Boolean = false,
+    val label: String = "",
+)
+
+/** 外挂字幕格式（协议 AssetSubtitle.format 枚举的客户端镜像）。 */
+enum class SubtitleFormat { ASS, SSA, SRT, VTT }
 
 /** 详情标签（详情/弹窗共用；id 是关联操作主键） */
 data class DetailTag(val id: String, val name: String)

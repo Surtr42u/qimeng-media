@@ -1,0 +1,50 @@
+/*
+ * 外挂字幕随包字体（2026-11-28 第二批，用户拍板「三端观感一致」）。
+ *
+ * .ass 里写的是 Microsoft YaHei（中文）与 Arial（英文），Windows 有、Android /
+ * Linux 浏览器不一定有，会各自回落成不同字体。这里用 @font-face 的家族名别名
+ * 接管这两个名字，指向随包分发的 OFL 字体（仅 Bold 字重）：
+ *   - Microsoft YaHei → Noto Sans SC Bold（web/public/fonts/NotoSansSC-Bold.woff2）
+ *   - Arial           → Liberation Sans Bold（与 Arial 度量兼容）
+ * Android 端用同一对 TTF 通过 Typeface 备用链实现同样的「拉丁→Liberation、
+ * 汉字→Noto」效果（见 android feature/detail 的 SubtitleFonts.kt）。
+ *
+ * 注意：家族名别名是文档级的。ArtPlayer 默认字体栈里含 Arial/Microsoft YaHei，
+ * 若不管，播放器控件文字也会被换成随包粗体——故下方显式重设播放器 UI 栈
+ * （不含这两个名字），把别名留给字幕层。
+ *
+ * 字体在 assjs 渲染前由 lib/external-subtitles.ts 的 ensureSubtitleFonts()
+ * 用 document.fonts.load() 预载（否则首帧会用系统回落字体量宽/渲染）。
+ */
+
+@font-face {
+  font-family: 'Microsoft YaHei';
+  src: url('/fonts/NotoSansSC-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Arial';
+  src: url('/fonts/LiberationSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 中文名别名：部分剪辑端把 Fontname 写成「微软雅黑」，同样指向 Noto。 */
+@font-face {
+  font-family: '微软雅黑';
+  src: url('/fonts/NotoSansSC-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 播放器控件 UI 不消费字幕别名（随包字体仅 Bold 字重，套到控件会整体变粗）。
+   两级类名提高特异性：ArtPlayer 运行时注入的 .art-video-player 规则晚于本文件，
+   同级比较会被它覆盖。 */
+.video-player-box .art-video-player {
+  font-family: 'Geist Variable', 'PingFang SC', 'Microsoft YaHei UI', system-ui, sans-serif;
+}

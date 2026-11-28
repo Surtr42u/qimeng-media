@@ -9,6 +9,7 @@ import {
   ASPECT_OPTIONS,
   PLAYBACK_RATES,
   codecLabel,
+  externalSubtitleLabel,
   formatTime,
   qualityLabel,
   rateLabel,
@@ -74,6 +75,20 @@ describe('formatTime（时间文案）', () => {
     expect(formatTime(59.9)).toBe('00:59')
     expect(formatTime(-3)).toBe('00:00')
     expect(formatTime(Number.NaN)).toBe('00:00')
+  })
+})
+
+describe('externalSubtitleLabel（外挂字幕菜单项）', () => {
+  it('语言友好名 + 格式标记；BCP 47 子标签按主标签归一', () => {
+    expect(externalSubtitleLabel('zh', 'ass')).toBe('中文 · ASS')
+    expect(externalSubtitleLabel('zh-Hans', 'ass')).toBe('中文 · ASS')
+    expect(externalSubtitleLabel('en-US', 'srt')).toBe('英语 · SRT')
+    expect(externalSubtitleLabel('ja', 'vtt')).toBe('日语 · VTT')
+  })
+
+  it('未知语言原样保留（不猜），空语言回「字幕」', () => {
+    expect(externalSubtitleLabel('tlh', 'ssa')).toBe('tlh · SSA')
+    expect(externalSubtitleLabel('', 'ass')).toBe('字幕 · ASS')
   })
 })
 

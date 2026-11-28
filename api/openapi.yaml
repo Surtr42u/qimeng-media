@@ -136,6 +136,35 @@ paths:
       parameters: [ { $ref: "#/components/parameters/LibraryId" } ]
       responses:
         "202": { description: 已触发 }
+  /api/v1/libraries/{libraryId}/ingest-local:
+    post:
+      summary: 本机/局域网直接入库（移动或复制文件 + 建索引；不走 HTTP 流式上传）
+      description: |
+        用于服务端与本机源文件同机/同分区（或局域网挂载）的场景：入库 = 文件移动 +
+        索引，毫秒级完成，替代 `POST /assets/upload` 的流式收流（3GB 约 2 分钟）。
+        外网/手机 App/跨设备上传仍走 upload 通道，两者索引结果一致（同一入库管线：
+        DB 行/视频探测/富化/library.changed/文件数指标）。
+        三条硬约束（不放宽）：① sourcePath 必须落在服务端配置的读根
+        `ingest_local.read_roots`（环境变量 `QIMENG_INGEST_LOCAL_ROOTS`，逗号/分号分隔；
+        未配置则该端点一律拒绝）内，目标必须在库根内，判定拒绝 `..` 与符号链接逃逸；
+        ② 绝不覆盖已存在文件——目标存在且 size+SHA256 一致返回 already_present（源不动），
+        内容不同返回 409；③ 本通道不删除库内资产（删除仍只走回收站端点）。
+        移动语义：同分区 rename（原子零拷贝）；跨分区复制 → 长度+SHA256 复核 → 建索引
+        成功后才删源；move=false 只复制、源保留。任何失败都不丢源文件。
+      parameters: [ { $ref: "#/components/parameters/LibraryId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IngestLocalRequest" }
+      responses:
+        "201": { description: 已落位并入索引（status=ingested）, content: { application/json: { schema: { $ref: "#/components/schemas/IngestLocalResult" } } } }
+        "200": { description: 目标已存在且 size+SHA256 一致（status=already_present，源未动）, content: { application/json: { schema: { $ref: "#/components/schemas/IngestLocalResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: '未配置读根，或 sourcePath 不在任何授权读根内', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "507": { $ref: "#/components/responses/StorageUnavailable" }
   /api/v1/libraries/{libraryId}/enabled:
     put:
       summary: 库启用/停用开关（停用仅隐藏浏览面，记录全保留，二次确认场景）
@@ -469,6 +498,40 @@ paths:
         "410": { description: v 已过期，no-store，请刷新资产 URL }
         "403": { description: 签名无效或过期 }
         "404": { description: 资产不存在或缩略图不可用（生成失败给 404 占位语义） }
+
+  /media/sub/{assetId}:
+    get:
+      summary: 外挂字幕直链（.ass/.ssa/.srt/.vtt；HTTP Range 支持；签名参数校验）
+      description: |
+        外挂字幕（sidecar）按目录约定存放，不进库、不参与索引：
+        `<库根父目录>/5  字幕/<库文件夹名>/<资产相对路径>.ass`，文件名主干与视频
+        文件名逐字节一致，语言段取扩展名前的最后一段（.zh.ass/.en.ass/.chs.srt）。
+        语言段放宽为常见写法并统一规范成 BCP 47（zh_cn/chs/GB→zh-Hans、
+        zh_tw/cht/big5→zh-Hant、eng→en、jp/jpn→ja、kor→ko），无语言段的纯
+        `xxx.ass` 记为 und（仍会出现在列表中）。
+        原生格式 ass/ssa/srt/vtt 原样下发；sub(MicroDVD)/sbv/lrc/smi(SAMI) 由
+        服务端转成 WebVTT 后下发（尽力而为：样式/定位/字体丢弃，MicroDVD 无帧率
+        指令时按 25fps 换算，SAMI 结束时间取下一段起点）。
+        正文编码统一转 UTF-8 下发：BOM 优先（UTF-8/UTF-16LE/BE），无 BOM 时严格
+        UTF-8 校验失败则依次尝试 GB18030 → Big5 → Shift-JIS（后两者为尽力而为，
+        GB18030 双字节空间覆盖广，可能先「成功」解出错字）；单文件读取上限 8 MiB。
+        同一语言存在多个格式时按 ass > ssa > srt > vtt > sub > sbv > lrc > smi 取
+        一条（多格式同语言若同时播放会叠加渲染）。lang 只用于与字幕目录项比对，
+        不参与路径拼接。鉴权与 /media/orig 同款：签名参数（topRouter 的 /media/
+        前缀免 Bearer）。
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/AssetId" }
+        - { name: lang, in: query, required: true, schema: { type: string }, description: '语言码（大小写不敏感，与 GET /assets/{assetId} 响应 subtitles[].lang 同值）' }
+        - { name: exp, in: query, required: true, schema: { type: integer }, description: 过期时间戳 }
+        - { name: sig, in: query, required: true, schema: { type: string }, description: HMAC 签名 }
+      responses:
+        "200": { description: '字幕文件内容，正文恒为 UTF-8（源文件编码在服务端归一）。Content-Type 按下发格式：ass/ssa=text/x-ssa、srt=application/x-subrip、vtt=text/vtt，均带 charset=utf-8；sub/sbv/lrc/smi 转换轨按 vtt 下发' }
+        "206": { description: Range 分片 }
+        "403": { description: 签名无效或过期 }
+        "400": { description: 字幕编码无法识别（BOM/UTF-8/GB18030/Big5/Shift-JIS 全部不匹配） }
+        "404": { description: 资产不存在或该语言无字幕 }
+        "413": { description: 字幕文件超过 8 MiB 读取上限 }
 
   # ---------- 上传与文件管理 ----------
   /api/v1/assets/upload:
@@ -2943,7 +3006,23 @@ components:
             totalBrowseSeconds: { type: integer, description: 累计浏览秒数（dwell 事件整数秒累加；事件级向零截断口径见 ViewEventReport.seconds） }
             lastViewedAt: { type: [integer, "null"], format: int64, description: '最近一次 kind=open 事件时刻（Unix 毫秒；null=从未浏览）。2026-09-20 审计清偿批与 HistoryItem.lastViewedAt 统一为毫秒整型——原 date-time 字符串面经全客户端检索零消费，响应侧根修（先例：lastPositionSeconds format double 根修）' }
             origUrl:      { type: string, description: 签名原图/视频直链（查看永远发原件，无缩放副本） }
+            subtitles:
+              type: array
+              description: '外挂字幕轨（仅视频资产、且字幕目录存在匹配文件时返回；缺省/空 = 无外挂字幕，客户端继续用内嵌字幕）。每条一个语言（同语言多格式服务端已按 ass > ssa > srt > vtt > sub > sbv > lrc > smi 取一条）；语言已规范成 BCP 47，label/isDefault 由服务端给定。目录约定、编码归一与解析规则见 GET /media/sub/{assetId}'
+              items: { $ref: "#/components/schemas/AssetSubtitle" }
             thumbUrlMd:   { type: string, description: '签名缩略图直链 md 档（512，与列表网格同源、开机预生成覆盖）。客户端详情海报先用本档立即显示、thumbUrl（lg）就绪后换上——lg 不在预生成范围，首开详情直接等 lg 会触发现场 ffmpeg 生成（秒级起步）。2026-09-18 新增' }
+
+    AssetSubtitle:
+      description: 外挂字幕条目（GET /assets/{assetId} 的 subtitles 元素；文件直链走 GET /media/sub/{assetId}）。2026-11-28 第二批：语言统一 BCP 47、服务端给 label/isDefault、非原生格式由服务端转 VTT 后下发
+      type: object
+      required: [lang, format, sizeBytes, url, isDefault, label]
+      properties:
+        lang:      { type: string, description: '规范化 BCP 47 语言码（zh_cn/chs/GB → zh-Hans，zh_tw/cht → zh-Hant，eng→en、jp/jpn→ja、kor→ko；无语言段=und）。客户端只消费、不再自行归并' }
+        format:    { type: string, enum: [ass, ssa, srt, vtt], description: '下发格式：原生格式原样；sub/sbv/lrc/smi 由服务端转成 VTT 后此处恒为 vtt（客户端零改动）。取用优先级 ass > ssa > srt > vtt > sub > sbv > lrc > smi，同语言只下发一条' }
+        sizeBytes: { type: integer, format: int64, description: 源文件字节数（转换轨也报原件大小；下发正文可能与原件不同） }
+        url:       { type: string, description: '签名直链（/media/sub/{assetId}?lang=...&exp=...&sig=...）。签名 URL 禁止客户端改写任何参数（ADR-0002）' }
+        isDefault: { type: boolean, description: '是否首选轨：有简体中文（zh-Hans）选简体，否则有繁体（zh-Hant）选繁体，都没有则全 false。三端统一按本字段预选，不再各自判断中文' }
+        label:     { type: string, description: '人类可读标签（三端统一直接展示，不各自造词表）：中文（简体）/中文（繁体）/English/日本語/한국어/未标注，未知语言回退语言码本身' }
 
     AssetDetailTag:
       description: 资产详情响应的标签关联条目（GET /assets/{id} 专属视图：标签池条目 + 关联级溯源两字段；标签池端点 GET /tags 不携带溯源——溯源展示只属详情面，ADR-0032 独立提案 2026-10-02）
@@ -2962,6 +3041,31 @@ components:
           properties:
             origin:          { type: [string, "null"], description: 关联溯源通道（ADR-0032 受控词表 client/txt/import/local-sync/scanner/legacy，与备份导出 LegacyAuthorMediaRef.origin 同名同义）。null/缺省=不可考 }
             createdAtMillis: { type: [integer, "null"], format: int64, description: 关联成立毫秒（与备份导出 LegacyAuthorMediaRef.createdAtMillis 同名同义）。null/缺省=不可考（存量行 NULL 哨兵如实记不可考，禁止伪造） }
+
+    IngestLocalRequest:
+      description: 本机直接入库请求（POST /libraries/{libraryId}/ingest-local）
+      type: object
+      required: [sourcePath, fileName]
+      properties:
+        sourcePath: { type: string, description: '源文件绝对路径（必须位于服务端 ingest_local.read_roots 内；不接受相对路径/符号链接源）' }
+        fileName:   { type: string, description: '库内文件名（沿用既有命名清洗与媒体扩展名白名单；可与源文件名不同，如按命名引擎重命名）' }
+        directory:  { type: string, description: '库内目标目录（相对路径，空/缺省 = 库根）' }
+        move:       { type: boolean, default: true, description: 'true=移动（同分区 rename；跨分区复制校验后删源）；false=复制保留源。默认 true（本机入库语义）' }
+
+    IngestLocalResult:
+      description: 本机直接入库结果
+      type: object
+      required: [status, assetId, libraryId, relPath, fileName, mediaType, sizeBytes, sourceKept]
+      properties:
+        status:    { type: string, enum: [ingested, already_present], description: 'ingested=本次落位并入索引；already_present=目标已存在且 size+SHA256 一致（源未动）' }
+        assetId:   { type: string, description: 资产 ID（新入库或已存在目标的既有 ID） }
+        libraryId: { type: string }
+        relPath:   { type: string, description: 库内相对路径（目录 + 文件名） }
+        fileName:  { type: string, description: 实际落盘文件名（经清洗校验后） }
+        mediaType: { type: string, enum: [image, animated_image, video] }
+        sizeBytes: { type: integer, format: int64, description: 落盘文件字节数 }
+        sha256:    { type: string, description: '源/目标 SHA-256（小写十六进制）。复制与幂等比对路径恒有值；同分区纯 rename 快路径不计算（缺省/空）' }
+        sourceKept: { type: boolean, description: '源文件是否仍在原位（move=false 恒 true；跨分区删源失败也会置 true）' }
 
     MoveRequest:
       type: object

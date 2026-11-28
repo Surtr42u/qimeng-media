@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "rulesVersion": "2026-11-22.1",
+  "rulesVersion": "2026-11-28.2",
   "source": {
     "openapi": "api/openapi.yaml",
     "taskbook": "docs/AI_PLATFORM_TASKBOOK.md",
@@ -1374,7 +1374,7 @@
       "维护任务 leaseToken 是能力凭据：只在 claim 工具结果出现，不写日志/证据包/任务记录。"
     ],
     "toolPermissions": {
-      "asset.upload": "正式上传入库：源摘要/时间/目标计划、确认、稳定 uploadId、最终路径回读。",
+      "asset.upload": "正式上传入库（外网/手机/跨设备）与本机直接入库（asset.ingest.local，同机/同分区移动）：计划/确认/回读、不覆盖、already_present 幂等。",
       "library.write": "指定库扫描：仅受理不等于业务完成；scope 为 library.write。",
       "read": "只读查询，不写业务数据。",
       "research": "研究辅助；默认关闭，不伪造证据。",
@@ -1540,10 +1540,10 @@
       "已入库文件的改名/移动只能通过 media.organize.apply 的命名计划执行；本地搜索不替代 asset.*/author.* 业务工具。"
     ]
   },
-  "rulepackVersion": "2026-11-22.1",
+  "rulepackVersion": "2026-11-28.2",
   "platform": {
-    "platformVersion": "1.7.1",
-    "toolContractVersion": "2.1.0",
+    "platformVersion": "1.8.1",
+    "toolContractVersion": "2.2.0",
     "planVersion": "1.0",
     "note": "三版本独立：平台发行版本、工具契约版本由代码常量定义；规则包版本随本文件递增。rules.json 的副本必须与代码一致，否则规则包生成失败。"
   },
@@ -2028,5 +2028,54 @@
       "modelTokensAndCost": "仅宿主可得的实际遥测，不从字节估造；不控制外部账号所有消费"
     },
     "authorQuery": "正式/api/v1/authors/query服务端检索/游标分页，默认20条；AI返回分页对象。旧/authors数组不变。"
+  },
+  "ingestLocal": {
+    "scope": "本机/局域网直接入库（POST /api/v1/libraries/{libraryId}/ingest-local；工具 asset.ingest.local.prepare → asset.ingest.local）。语义=移动：源文件移入库根并建索引，成功后源路径消失；目标已存在且 size+SHA256 一致返回 already_present（源不动）。",
+    "whenToUse": [
+      "媒体库与源文件同机/同分区（或内网挂载）时入库：移动 + 建索引，毫秒~秒级，替代逐个流式上传。",
+      "批量把本机下载/整理好的目录移入库内目标目录；文件名取源文件名，需要正式编号命名时先在源侧改名，或入库后用 asset.rename 精确改名。",
+      "手机 App/外网/跨设备上传仍用 asset.upload；两者索引结果一致（同一入库管线）。"
+    ],
+    "whyNotUpload": "本机已有文件时上传要多绕 HTTP 收流并边算摘要（3GB≈2 分钟），还额外占用暂存空间；本机入库同盘 rename 零拷贝。传输方式不同不影响索引结果，外网/跨设备仍必须上传。",
+    "invariants": [
+      "源必须落在 AI 侧授权存储根 QIMENG_AI_STORAGES（与 files.search 同源）内；拒绝相对路径、..、符号链接/junction/reparse 段与解析逃逸。",
+      "服务端另有独立读根 QIMENG_INGEST_LOCAL_ROOTS（环境变量）；未配置时端点一律 403，AI 侧授权不能替代该配置。",
+      "源不得位于任何媒体库根内：库内文件已建索引，只能走 media.organize/asset.rename/回收站。",
+      "单次上限 50 个文件 / 64 GiB；更多请分批（already_present 可安全重跑）。",
+      "单请求超时预算：60s 基础 + 每 GiB 60s，封顶 600s；跨分区大文件不会因默认 20s 客户端超时提前中断。",
+      "绝不覆盖已存在文件：同内容 already_present、不同内容 TARGET_EXISTS；本通道不删除库内资产。"
+    ],
+    "workflow": [
+      "asset.ingest.local.prepare（只读）：校验库/源/目录，返回每个文件的目标相对路径、字节数、源时间、预期状态（move|already_present|conflict|unknown）与计划指纹。",
+      "核对计划后传 planRef（或完整 plan）+ confirm=true。",
+      "asset.ingest.local 逐文件 POST ingest-local，并用返回的 assetId 逐个 GET /assets/{id} 回读库/relPath/sizeBytes。",
+      "回读不一致 → READBACK_MISMATCH：停止并交人工，不要整批重传。"
+    ],
+    "readback": [
+      "资产存在，libraryId/relPath/sizeBytes 与计划一致。",
+      "already_present 时 sourceKept=true（源未动）。",
+      "库内不出现第二份同名资产；不自动改名、不覆盖。"
+    ],
+    "errors": {
+      "NOT_IN_STORAGE_ROOT": "源不在 QIMENG_AI_STORAGES 根内，或服务端未配置/不包含 QIMENG_INGEST_LOCAL_ROOTS。",
+      "SOURCE_IN_LIBRARY_ROOT": "源在某个媒体库根内：库内文件不走本机入库。",
+      "TARGET_EXISTS": "目标同名不同内容：不覆盖，改名/换目录后重新 prepare。",
+      "LIBRARY_NOT_FOUND": "libraryId 不属于该实例：先 library.query。",
+      "API_UNAVAILABLE": "服务端缺少端点或网络失败：先按 assetId/文件名回读，勿盲目重试。",
+      "STORAGE_UNAVAILABLE": "库根所在卷空间/挂载异常。",
+      "SOURCE_NOT_REMOVED": "status=ingested 但源仍存在（跨分区删源失败）：资产已入库，不要重复入库，手工清理源。",
+      "CONTENT_MISMATCH": "already_present 但本地源 sha256 与服务端回传不一致：改名/换目录后重新 prepare，不覆盖不删源。",
+      "READBACK_MISMATCH": "回读与计划/响应不一致：停止后续写入并交人工处理。"
+    },
+    "risk": "medium：移动源文件（成功入库后源消失），但绝不覆盖、失败不丢源、不删除库内资产。",
+    "permission": "asset.upload（与上传同一写入能力，不新增权限门；仍受服务端 AI scope 约束）",
+    "tools": [
+      "asset.ingest.local.prepare",
+      "asset.ingest.local"
+    ],
+    "envOverrides": [
+      "QIMENG_AI_STORAGES",
+      "QIMENG_INGEST_LOCAL_ROOTS"
+    ]
   }
 }

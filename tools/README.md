@@ -4,6 +4,16 @@
 
 ## AI 工具平台任务卡与可执行 recipe
 
+2026-11-28 工具包1.8.1/契约2.2.0/规则2026-11-28.2：新增本机直接入库
+`asset.ingest.local.prepare` → `asset.ingest.local`（媒体库与源文件同机/同分区时
+直接移动入库并建索引，替代本地大文件的 HTTP 流式上传；源须在 `QIMENG_AI_STORAGES`
+根内且不在库根内，单次 ≤50 文件/64GiB；`already_present` 幂等、逐 assetId 回读、
+不同内容 409 不覆盖）。复用 `asset.upload` 权限，不新增权限门；手机/外网/跨设备继续
+走 `asset.upload`。审查修复（1.8.1）：单请求超时按 60s+60s/GiB（封顶 600s）放大、
+所有失败附 `details.completed`、401/403 等确定未写入不进未决、move 后源未删报
+`SOURCE_NOT_REMOVED`、already_present 本地复算 sha256 不符报 `CONTENT_MISMATCH`。
+边界见[工具说明「本机直接入库」](ai_maintenance/README.md#本机直接入库assetingestlocal2026-11-28)。
+
 2026-11-15 工具包1.7.1/契约2.1.0/规则2026-11-22.1：在默认只读、稳定MCP清单与
 可选按需发布、作者正式检索分页、有界展示/续读/planRef、可信任务授权与调用/时间/
 无进展预算之上，新增纯素材作品研究 `research.work`、受控研究产物 `artifactRef`
@@ -63,7 +73,7 @@ python -X utf8 tools/import_creator_profiles.py audit/authors-public-research.lo
 
 ## 隐私与密钥门禁
 
-`check_privacy.py` 用标准库补充私人文件路径/个人邮箱/设备标识/实际库汇总和 Git 作者元数据检查；密钥规则复用 [Gitleaks](https://github.com/gitleaks/gitleaks) **8.30.1** 默认规则，`.gitleaks.toml` 只对 auth 测试的一条明确合成 token 作精确放行，不豁免测试目录。扫描器云端下载经过固定 SHA-256 核对，不引入应用运行时依赖。
+`check_privacy.py` 用标准库补充私人文件路径/个人邮箱/设备标识/实际库汇总和 Git 作者元数据检查（外挂字幕随包字体按**精确文件名**放行，来源/许可/SHA-256 登记在 `docs/FONTS.md`，不放行整个目录）；密钥规则复用 [Gitleaks](https://github.com/gitleaks/gitleaks) **8.30.1** 默认规则，`.gitleaks.toml` 只对 auth 测试的一条明确合成 token 作精确放行，不豁免测试目录。扫描器云端下载经过固定 SHA-256 核对，不引入应用运行时依赖。
 
 AI 负责本机安装预编译扫描器，配置 `git config privacy.gitleaksPath <扫描器路径>`（或 `QIMENG_GITLEAKS`），再设置 `git config core.hooksPath .githooks`。本机额外标识放忽略的 `.privacy-policy.local.json` 的 `privateIdentifiers` 字符串数组，只在本机读取，不写规则源码/测试/文档。重新检出后须重新启用 Git 本地 hooks 配置；CI 同时兜底，但云端检查发生在推送之后，不能代替本地拦截。
 

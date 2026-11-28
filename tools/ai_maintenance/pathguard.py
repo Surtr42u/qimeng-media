@@ -89,6 +89,16 @@ def is_linkish(path: Path) -> bool:
     return _is_linkish(Path(path))
 
 
+def assert_no_link_segments(path, root, *, kind: str = "路径") -> None:
+    """公开：拒绝授权根以下路径段中的符号链接/junction/reparse。
+
+    根自身允许是链接（可信配置解析后参与包含判断）；根以下任何一段是链接都拒绝，
+    防止 `根/链接目录/..` 这类看起来仍在根内的逃逸。本机直接入库与写路径共用同一
+    实现，不维护第二套链接判定。
+    """
+    _assert_no_link_segments(Path(path), Path(root), kind)
+
+
 def _is_linkish(path: Path) -> bool:
     """符号链接、junction 或任意 Windows reparse point。"""
     try:

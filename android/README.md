@@ -37,6 +37,23 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 
 邻位范围仍为已加载批次前1后2；详情元数据到齐后重新检查实际预取资格。当前图就绪/生命周期状态在组合阶段订阅，当前图成功后才串行预取，目标增加保留有效在途任务，移除/URL变化/暂停才取消；一次完成或失败不因无关重组反复重入。机会性原图预取限压缩体积8MiB、已知ARGB8888像素32MiB；尺寸未知与长边超4096共用最多一张名额，内存占用达到0.6暂停原图预取，视频只取海报。两类内存占用均对照应用堆预算，不把native当前分配区大小当内存上限。服务端后台预先补齐缺失尺寸；准备完成前，已完成的当前图解码补充会话内有界尺寸缓存，客户端不回写服务端；预算不限制用户查看原件。
 
+## 视频外挂字幕（2026-11-28）
+
+详情响应 `AssetDetail.subtitles` 的每条轨在 `VideoPlayerState` 装配为 `MediaItem.SubtitleConfiguration`
+（ass/ssa→`MimeTypes.TEXT_SSA`、srt→`APPLICATION_SUBRIP`、vtt→`TEXT_VTT`，语言码原样），与视频同一次
+`setMediaItem` 装入；签名 URL 原样使用，不追加 header。中文轨标 `SELECTION_FLAG_DEFAULT` 并显式置
+preferredTextLanguage（默认选中）；`BiliPlayerView` 给 PlayerView 自带 SubtitleView 配可读默认样式
+（白字 + 半透明黑底，ASS 自带样式优先），设置面板「字幕」行列出当前媒体全部文本轨语言 + 关闭档
+（`TrackSelectionParameters` 选轨，不重装媒体源；菜单文案用服务端 `label`，默认轨用服务端 `isDefault`）。无外挂字幕时行为与旧版一致。
+
+首帧尺寸：SubtitleView 先 `INVISIBLE`，等 Media3 回调有效视频尺寸（且播放器离开 IDLE，与 PlayerView
+采用画面比例的时机同口径）后再显示——视频尺寸未知时 `exo_content_frame` 比例为 0、SubtitleView 铺满
+全舞台，Media3 会按该高度换算 ASS 相对字号，真机实测首帧大 3~4 倍并裁掉左缘；adopt 复挂已 READY 的
+播放器时在 `setPlayer` 立即补判定。字幕位置保持 ASS/Media3 自身定位，控制条显隐不做任何上移/内边距
+补偿（用户 2026-11-28 明确否决抬升方案；条子可见时压住底部字幕可接受，自动隐藏后原位置可见）。
+
+字幕字体随包分发：`feature:detail` 的 `res/font/` 放 Noto Sans SC Bold 与 Liberation Sans Bold，`SubtitleFonts.kt` 在 API 29+ 用 `Typeface.CustomFallbackBuilder` 组「拉丁→Liberation、汉字→Noto」备用链，API 26–28 统一 Noto；typeface 经 `CaptionStyleCompat` 传给 SubtitleView。许可/SHA-256/已知差异见 [FONTS](../docs/FONTS.md)（Media3 SSA 解析器不保留 Fontname，只能视图级覆盖）。
+
 ## 缩略图表示版本与备份兼容
 
 稳定键继续只剥 exp/sig，保留 size/v。预取 revision 快照携带 thumbnailVersion，DataStore 与上次完成 revision 同次写入；策略指纹变化或旧记录无指纹时重拉，避免策略升级后错误跳过。当前仅接收v2备份，BackupValidator写前拦住旧v1/缺失/未知版本及缺事件数组，确认摘要按原始事件数展示；生成SDK和域句柄透传不变。旧聚合回放已退役（ADR-0050），已有legacy/无键历史身份仍保留；精简版已同签名覆盖原手机，当前来源与现场验证见HANDOVER。

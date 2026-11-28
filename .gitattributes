@@ -12,3 +12,8 @@
 
 # 安全补丁的第三方快照按官方归档逐字节校验，不能自动转换行尾。
 desktop/vendor/glib/** -text
+
+# 外挂字幕随包字体（2026-11-28 第二批）：二进制资源，禁止行尾/文本转换。
+# 来源、许可与 SHA-256 见 docs/FONTS.md。
+web/public/fonts/*.woff2 -text
+android/feature/detail/src/main/res/font/*.ttf -text
