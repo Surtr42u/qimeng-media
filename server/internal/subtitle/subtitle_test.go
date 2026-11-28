@@ -54,8 +54,9 @@ func TestDir(t *testing.T) {
 	}
 }
 
-// TestTracksLanguagesAndPriority 覆盖多语言列举、同语言多格式只留优先级最高
-// 的一条、非字幕文件与大小写不一致的 stem 被忽略、语言码排序。
+// TestTracksLanguagesAndPriority 覆盖多语言列举、语言段归一（zh_cn/chs → zh-Hans）、
+// 同语言多格式只留优先级最高的一条、非字幕文件与大小写不一致的 stem 被忽略、
+// 首选轨标记与标签。
 func TestTracksLanguagesAndPriority(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "3  视频", "1  3D")
@@ -65,14 +66,14 @@ func TestTracksLanguagesAndPriority(t *testing.T) {
 		t.Fatal(err)
 	}
 	zhAss := writeFile(t, subDir, "守望先锋  DVA 39.zh.ass", []byte("ass-bytes"))
-	writeFile(t, subDir, "守望先锋  DVA 39.zh.srt", []byte("srt"))
-	enSrt := writeFile(t, subDir, "守望先锋  DVA 39.en.srt", []byte("en-sub"))
-	jaVtt := writeFile(t, subDir, "守望先锋  DVA 39.ja.vtt", []byte("ja"))
+	writeFile(t, subDir, "守望先锋  DVA 39.chs.srt", []byte("srt")) // 同一语言 zh-Hans，低优先
+	enSrt := writeFile(t, subDir, "守望先锋  DVA 39.eng.srt", []byte("en-sub"))
+	jaVtt := writeFile(t, subDir, "守望先锋  DVA 39.jp.vtt", []byte("ja"))
 	// 以下文件不应进入结果
 	writeFile(t, subDir, "其他视频.zh.ass", []byte("other"))
 	writeFile(t, subDir, "守望先锋   DVA 39.zh.ass", []byte("stem-space-mismatch"))
 	writeFile(t, subDir, "守望先锋  DVA 39.zh.txt", []byte("unsupported"))
-	writeFile(t, subDir, "守望先锋  DVA 39.ass", nil) // 无语言码
+	writeFile(t, subDir, "守望先锋  DVA 39..ass", nil) // 空语言段（异常命名）
 
 	tracks, err := Tracks(root, video)
 	if err != nil {
@@ -82,14 +83,67 @@ func TestTracksLanguagesAndPriority(t *testing.T) {
 		t.Fatalf("tracks 数量 = %d, want 3: %+v", len(tracks), tracks)
 	}
 	want := []Track{
-		{Lang: "en", Format: "srt", Path: enSrt, SizeBytes: int64(len("en-sub"))},
-		{Lang: "ja", Format: "vtt", Path: jaVtt, SizeBytes: int64(len("ja"))},
-		{Lang: "zh", Format: "ass", Path: zhAss, SizeBytes: int64(len("ass-bytes"))},
+		{Lang: "en", Label: "English", Format: "srt", ServeFormat: "srt", Path: enSrt, SizeBytes: int64(len("en-sub"))},
+		{Lang: "ja", Label: "日本語", Format: "vtt", ServeFormat: "vtt", Path: jaVtt, SizeBytes: int64(len("ja"))},
+		{Lang: "zh-Hans", Label: "中文（简体）", IsDefault: true, Format: "ass", ServeFormat: "ass", Path: zhAss, SizeBytes: int64(len("ass-bytes"))},
 	}
 	for i := range want {
 		if tracks[i] != want[i] {
 			t.Fatalf("tracks[%d] = %+v, want %+v", i, tracks[i], want[i])
 		}
+	}
+}
+
+// TestTracksConvertedFormatsAndUnd 覆盖：无语言段 → und；转换格式的 ServeFormat
+// 恒 vtt；同语言原生格式优先于转换格式；繁体中文在无简体时成为首选。
+func TestTracksConvertedFormatsAndUnd(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "lib")
+	video := filepath.Join(root, "v.mp4")
+	subDir, _ := Dir(root, video)
+	writeFile(t, subDir, "v.ass", []byte("und"))
+	zhHantLrc := writeFile(t, subDir, "v.zh_tw.lrc", []byte("[00:01.00]繁体"))
+	writeFile(t, subDir, "v.big5.smi", []byte("<SAMI></SAMI>")) // 同 zh-Hant，低优先
+	zhHansSub := writeFile(t, subDir, "v.GB.sub", []byte("{1}{1}text"))
+	writeFile(t, subDir, "v.gb.sbv", []byte("0:00:01.000,0:00:02.000\nx\n"))
+
+	tracks, err := Tracks(root, video)
+	if err != nil {
+		t.Fatalf("Tracks 报错: %v", err)
+	}
+	if len(tracks) != 3 {
+		t.Fatalf("tracks = %+v, want 3 条（und/zh-Hans/zh-Hant）", tracks)
+	}
+	byLang := map[string]Track{}
+	for _, tr := range tracks {
+		byLang[tr.Lang] = tr
+	}
+	if got := byLang["und"]; got.Format != "ass" || got.Label != "未标注" || got.IsDefault {
+		t.Fatalf("und = %+v", got)
+	}
+	// .sub 优先于 .sbv（同语言 zh-Hans）；下发格式是 vtt，size 报原件。
+	if got := byLang["zh-Hans"]; got.Format != "sub" || got.ServeFormat != "vtt" || !got.Converted() || !got.IsDefault || got.Path != zhHansSub {
+		t.Fatalf("zh-Hans = %+v", got)
+	}
+	// 有简体时繁体不是首选（首选规则：简体 > 繁体 > 无）。
+	if got := byLang["zh-Hant"]; got.Format != "lrc" || got.ServeFormat != "vtt" || got.IsDefault || got.Path != zhHantLrc || got.Label != "中文（繁体）" {
+		t.Fatalf("zh-Hant = %+v", got)
+	}
+}
+
+// TestTracksTraditionalBecomesDefault 覆盖：只有繁体中文时繁体成为首选。
+func TestTracksTraditionalBecomesDefault(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "lib")
+	video := filepath.Join(root, "v.mp4")
+	subDir, _ := Dir(root, video)
+	writeFile(t, subDir, "v.cht.srt", []byte("1"))
+	tracks, err := Tracks(root, video)
+	if err != nil || len(tracks) != 1 {
+		t.Fatalf("tracks=%+v err=%v", tracks, err)
+	}
+	if tracks[0].Lang != "zh-Hant" || !tracks[0].IsDefault {
+		t.Fatalf("繁体应为默认轨: %+v", tracks[0])
 	}
 }
 
@@ -116,7 +170,7 @@ func TestTracksMissingDir(t *testing.T) {
 	}
 }
 
-// TestResolve 覆盖按语言取用（大小写不敏感）、未知语言与路径穿越形态的语言码。
+// TestResolve 覆盖按语言取用（别名/大小写/下划线），未知语言与路径穿越形态的语言码。
 func TestResolve(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "lib")
@@ -124,12 +178,14 @@ func TestResolve(t *testing.T) {
 	subDir, _ := Dir(root, video)
 	zh := writeFile(t, subDir, "v.zh.ass", []byte("zh"))
 
-	got, ok, err := Resolve(root, video, "ZH")
-	if err != nil || !ok {
-		t.Fatalf("Resolve(zh) ok=%v err=%v", ok, err)
-	}
-	if got.Path != zh {
-		t.Fatalf("Resolve(zh).Path = %q, want %q", got.Path, zh)
+	for _, q := range []string{"zh", "ZH", "zh_cn", "chs", "gb", "zh-Hans"} {
+		got, ok, err := Resolve(root, video, q)
+		if err != nil || !ok {
+			t.Fatalf("Resolve(%q) ok=%v err=%v", q, ok, err)
+		}
+		if got.Path != zh {
+			t.Fatalf("Resolve(%q).Path = %q, want %q", q, got.Path, zh)
+		}
 	}
 	for _, lang := range []string{"", "en", "../../etc/passwd"} {
 		if _, ok, err := Resolve(root, video, lang); err != nil || ok {

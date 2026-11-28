@@ -77,6 +77,9 @@ internal object SdkDetailMappers {
         },
         sizeBytes = sub.sizeBytes,
         url = SdkMappers.absolutize(sub.url, baseUrl),
+        // 服务端给的首选标记与标签（2026-11-28 第二批）：预选与展示都不再各自判断
+        isDefault = sub.isDefault,
+        label = sub.label,
     )
 
     // 详情关联条目自 2026-10-02 协议批（第四百三十九笔）起为 AssetDetailTag/

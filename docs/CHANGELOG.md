@@ -1,3 +1,15 @@
+## feat(app): 外挂字幕第二批——随包字体、编码归一、语言/格式矩阵扩宽（2026-11-28 第七百三十八笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
+
+- 字体：随包 Noto Sans SC Bold 与 Liberation Sans Bold（均 SIL OFL 1.1；来源、SHA-256、许可全文与已知差异见 `docs/FONTS.md`）。Web/桌面用 `@font-face` 家族名别名（`Microsoft YaHei`→Noto、`Arial`→Liberation），assjs 构造前 `document.fonts.load` 预载；Android API 29+ 用 `Typeface.CustomFallbackBuilder` 组「拉丁→Liberation、汉字→Noto」备用链、API 26–28 统一 Noto，经 `CaptionStyleCompat.typeface` 交给 SubtitleView。Media3 SSA 解析器不保留 Fontname、无按名注入 API，故 Android 为视图级覆盖（取舍已记档）。
+- 编码：新增 `subtitle.DecodeToUTF8`——BOM 优先（UTF-8/UTF-16LE/BE），无 BOM 时严格 UTF-8 校验失败后依次 GB18030→Big5→Shift-JIS；下发恒 `charset=utf-8`；单文件读取上限 8 MiB（超限 413，防内存打满）。
+- 语言：`NormalizeLang` 放宽并统一 BCP 47（zh/zh_cn/chs/GB→zh-Hans，zh_tw/cht/big5/zh-hk→zh-Hant，eng→en、jp/jpn→ja、kor→ko；无语言段=und 仍列）；`label`（中文（简体）/English…）与 `isDefault`（简体>繁体）由服务端下发，Web/Android 预选与菜单文案改为消费这两个字段，不再各自判断。
+- 格式：新增 `sub`(MicroDVD)/`sbv`/`lrc`/`smi`(SAMI) 服务端转 WebVTT 下发（优先级 ass>ssa>srt>vtt>sub>sbv>lrc>smi）；协议 `format` 为下发格式（转换轨恒 vtt），客户端零改动。转换仅内存生成、不写回磁盘。
+- 协议：`AssetSubtitle` 增 `isDefault`/`label` 必填字段，字幕路径描述补编码/格式/语言矩阵；`make sdk` 三端再生 + `api/sdk.lock` 同批更新。
+- 验证：`go test ./...`（新增编码四形态、语言归一矩阵、四种转换格式、HTTP 端到端 GB18030/VTT 用例）、`gofmt`、`go vet`、`golangci-lint v2.15.0`（0 issues）、`make sdk`、Web `tsc`/`vitest`/`build`/`oxlint`/`knip`、Android `assembleDebug testDebugUnitTest`（JDK 21）、`check_docs` 全部通过；云端 build-apk 见交付说明。
+- 限制：Big5/Shift-JIS 排在 GB18030 之后，多数会被 GB18030 先「成功」解出错字（尽力而为）；MicroDVD 无帧率指令按 25fps；SAMI 只保留时间轴+文本；Noto SC 子集不含韩文与扩展 B 区生僻字；ASS 矢量绘图/卡拉 OK 两端仍不支持。
+
 ## feat(app): 外挂字幕 sidecar（5  字幕）三端加载（2026-11-28 第七百三十七笔）
 
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
@@ -263,13 +275,6 @@
 
 - 根因：Worker 实例 owner 跨领取复用，Claim/Heartbeat/Complete/Advance 只比较 owner 字符串；租约过期被重领后旧执行上下文仍可续租/覆盖步骤工件终态，同任务可并发执行。修复：实例身份 qimeng-worker-<pid>-<uuid> + 每次领取唯一 fencing token；Heartbeat/Finish/Advance SQL 增 lease_until 未过期条件；StepInput/ArtifactInput 增 LeaseOwner，在同一 _txlock=immediate 事务内校验 owner+未过期后写步骤/工件；ErrLeaseLost 只停止不误标 failed，暂停/取消进行中步骤保留 running。
 - 验证：go test ./internal/maintenance/ -count=2、go vet、go build、gofmt、sqlc 重生成稳定；新增身份/token 唯一、同实例两次领取 token 不同、旧实例接管后不得覆盖、过期租约全链路围栏测试。未加 migration、未改 API/SDK/业务语义。
-
-## fix(web): 两代备份写入中断恢复与轮换幂等（2026-11-08 第七百零八笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 web-client 实现与定向验证）
-
-- 根因：先整代轮换当前→上次再写新当前且无事务标记；中断后重复轮换/半成品被当上次代/正文摘要分开写导致永久摘要不符或丢失完整旧代。修复：新增 maintenance-generation.ts 两代写入原语与恢复判定；写快照前落 .两代轮换状态.json（old/next 摘要），整代轮换（相同跳过、缺摘要补）、写新当前（正文先摘要后）、最后删状态；下次写入按断点自愈，不可判定拒绝并保留现场；相同数据重复导出只刷新当前并修复过期摘要；旧 flat3 只读兼容不变。
-- 验证：maintenance-folder.test.ts 24/24、tsc --noEmit、oxlint 0；未跑全量 vitest/Playwright/vite build/真实服务端。待测：真实浏览器崩溃中断自愈、真实 FS removeEntry 失败、跨浏览器差异。
 
 # CHANGELOG - 变更历史
 

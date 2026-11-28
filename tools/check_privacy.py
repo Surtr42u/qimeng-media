@@ -23,7 +23,13 @@ PUBLIC_MEDIA_PREFIXES = ('android/app/src/main/res/', 'desktop/src-tauri/icons/'
 PUBLIC_MEDIA_NAMES = {'desktop/app-icon.png', 'desktop/ui/app-icon.png', 'web/public/favicon.ico',
                       'web/public/apple-touch-icon-180x180.png',
                       'web/public/maskable-icon-512x512.png', 'web/public/pwa-192x192.png',
-                      'web/public/pwa-512x512.png', 'web/public/pwa-64x64.png'}
+                      'web/public/pwa-512x512.png', 'web/public/pwa-64x64.png',
+                      # 外挂字幕随包字体（OFL，2026-11-28 第二批）：内容确定、来源/许可/SHA-256
+                      # 全部登记在 docs/FONTS.md，逐文件名放行（不放行整个目录）。
+                      'web/public/fonts/NotoSansSC-Bold.woff2',
+                      'web/public/fonts/LiberationSans-Bold.woff2',
+                      'android/feature/detail/src/main/res/font/noto_sans_sc_bold.ttf',
+                      'android/feature/detail/src/main/res/font/liberation_sans_bold.ttf'}
 PERSONAL_EMAIL = re.compile(rb'(?i)\b[\w.+%-]+@(?:qq|163|126|gmail|outlook|hotmail)\.com\b')
 PROFILE = re.compile(rb'(?i)[a-z]:[\\/]+Users[\\/]+([^\\/\s\x00\"\'<>]+)')
 # 这些是项目/上游代码中明确的模板或合成路径，不是通配忽略真实用户名。

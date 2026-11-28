@@ -149,16 +149,30 @@ GET `/media/thumb/{assetId}` 新增表示版本 v：当前版本使用 immutable
 
 ## 外挂字幕轨 `subtitles` 与 `GET /media/sub/{assetId}`
 
-（2026-11-28，用户拍板：字幕以独立 `.ass` 等文件放在视频目录之外，App/Web/桌面加载）：
+（2026-11-28，用户拍板：字幕以独立 `.ass` 等文件放在视频目录之外，三端加载；第二批扩宽字体/编码/语言/格式）：
 字幕按固定目录约定存放，不入库、不参与索引——`<库根父目录>/5  字幕/<库文件夹名>/<资产相对路径>.ass`
-（目录名 = 数字 5 + 两个空格 + 字幕；文件名主干与视频逐字节一致，语言码取 `.ass` 前最后一段扩展名，
-如 `.zh.ass`/`.en.ass`）。`5  字幕` 是库根的同级目录，scanner 只遍历库根，天然不会收录。
+（目录名 = 数字 5 + 两个空格 + 字幕；文件名主干与视频逐字节一致）。`5  字幕` 是库根的同级目录，
+scanner 只遍历库根，天然不会收录。
 
-`GET /assets/{assetId}` 的视频资产新增可选 `subtitles: AssetSubtitle[]`（`lang`/`format`/`sizeBytes`/`url`），
-服务端已按语言去重（同语言多格式按 ass > ssa > srt > vtt 取一条，多格式同时播放会叠加渲染）；
-无字幕目录/无匹配文件时字段缺省（客户端继续用内嵌轨）。`url` 是签名直链
-`/media/sub/{assetId}?lang=...&exp=...&sig=...`，与 `/media/orig` 同一签名协议（exp 窗口对齐，
-ADR-0027）：`lang` 只用于与本资产字幕目录项比对、不参与路径拼接，签名仍只锚定路径（与 thumb 的 `size` 同理）。
-响应支持 HTTP Range（播放器断点续读），`Content-Type` 按格式：ass/ssa=`text/x-ssa`、
-srt=`application/x-subrip`、vtt=`text/vtt`（均 `charset=utf-8`），缓存头与原件直链同款
-（`private, max-age=token_ttl`）。未知语言/无该语言字幕 404，缺签名/签名无效 403（与 `/media/**` 同款）。
+**语言**：扩展名前的最后一段是语言段（`.zh.ass`/`.chs.srt`/`.zh_cn.lrc`），服务端放宽后统一成 BCP 47：
+`zh`/`zh-cn`/`zh_cn`/`zh-hans`/`chs`/`sc`/`gb` → `zh-Hans`；`zh-tw`/`zh_tw`/`zh-hant`/`cht`/`tc`/`big5`/`zh-hk` → `zh-Hant`；
+`en`/`eng` → `en`，`ja`/`jp`/`jpn` → `ja`，`ko`/`kor` → `ko`；无语言段的纯 `xxx.ass` → `und`（仍出现在列表中）。
+列表按规范化语言去重，同语言多格式按 `ass > ssa > srt > vtt > sub > sbv > lrc > smi` 只下发一条。
+
+**格式**：原生 `ass`/`ssa`/`srt`/`vtt` 原样下发；`sub`(MicroDVD)、`sbv`、`lrc`、`smi`(SAMI) 由服务端转成 WebVTT
+再下发（尽力而为：样式/定位/字体丢弃，MicroDVD 无帧率指令时按 25fps，SAMI 结束时间取下一段起点）。
+协议里的 `format` 是**下发格式**：转换轨恒为 `vtt`，客户端按 `vtt` 挂轨即可。
+
+**编码**：服务端读文件时统一转 UTF-8 再下发——BOM 优先（UTF-8 / UTF-16LE / UTF-16BE），无 BOM 时严格
+UTF-8 校验失败则依次尝试 GB18030 → Big5 → Shift-JIS（后两者为尽力而为：GB18030 双字节空间覆盖广，
+可能先“成功”解出错字）。单文件读取上限 8 MiB（超限 413），编码无法识别返回 400。
+
+`GET /assets/{assetId}` 的视频资产新增可选 `subtitles: AssetSubtitle[]`
+（`lang`/`format`/`sizeBytes`/`url`/`isDefault`/`label`）：`isDefault` 由服务端给（简体中文优先、其次繁体，
+都没有则全 false），三端统一按它预选；`label` 是服务端人类可读标签（中文（简体）/中文（繁体）/English/
+日本語/한국어/未标注），三端直接展示、不再各自造词表；`sizeBytes` 是源文件大小（转换轨同）。
+`url` 是签名直链 `/media/sub/{assetId}?lang=...&exp=...&sig=...`，与 `/media/orig` 同一签名协议（ADR-0027）：
+`lang` 只用于与本资产字幕目录项比对（先规范化，`?lang=chs` 等价 `zh-Hans`）、不参与路径拼接，签名仍只锚定路径。
+响应支持 HTTP Range（播放器断点续读），`Content-Type` 按下发格式：ass/ssa=`text/x-ssa`、srt=`application/x-subrip`、
+vtt=`text/vtt`（均 `charset=utf-8`），缓存头与原件直链同款（`private, max-age=token_ttl`）。
+未知语言/无该语言字幕 404，缺签名/签名无效 403（与 `/media/**` 同款）。

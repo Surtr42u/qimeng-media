@@ -476,10 +476,20 @@ paths:
       description: |
         外挂字幕（sidecar）按目录约定存放，不进库、不参与索引：
         `<库根父目录>/5  字幕/<库文件夹名>/<资产相对路径>.ass`，文件名主干与视频
-        文件名逐字节一致，语言码取 .ass 前最后一个扩展名（.zh.ass/.en.ass）。
-        同一语言存在多个格式时按 ass > ssa > srt > vtt 取一条（多格式同语言若同时
-        播放会叠加渲染）。lang 只用于与字幕目录项比对，不参与路径拼接。
-        鉴权与 /media/orig 同款：使用签名参数（topRouter 的 /media/ 前缀免 Bearer）。
+        文件名逐字节一致，语言段取扩展名前的最后一段（.zh.ass/.en.ass/.chs.srt）。
+        语言段放宽为常见写法并统一规范成 BCP 47（zh_cn/chs/GB→zh-Hans、
+        zh_tw/cht/big5→zh-Hant、eng→en、jp/jpn→ja、kor→ko），无语言段的纯
+        `xxx.ass` 记为 und（仍会出现在列表中）。
+        原生格式 ass/ssa/srt/vtt 原样下发；sub(MicroDVD)/sbv/lrc/smi(SAMI) 由
+        服务端转成 WebVTT 后下发（尽力而为：样式/定位/字体丢弃，MicroDVD 无帧率
+        指令时按 25fps 换算，SAMI 结束时间取下一段起点）。
+        正文编码统一转 UTF-8 下发：BOM 优先（UTF-8/UTF-16LE/BE），无 BOM 时严格
+        UTF-8 校验失败则依次尝试 GB18030 → Big5 → Shift-JIS（后两者为尽力而为，
+        GB18030 双字节空间覆盖广，可能先「成功」解出错字）；单文件读取上限 8 MiB。
+        同一语言存在多个格式时按 ass > ssa > srt > vtt > sub > sbv > lrc > smi 取
+        一条（多格式同语言若同时播放会叠加渲染）。lang 只用于与字幕目录项比对，
+        不参与路径拼接。鉴权与 /media/orig 同款：签名参数（topRouter 的 /media/
+        前缀免 Bearer）。
       security: []
       parameters:
         - { $ref: "#/components/parameters/AssetId" }
@@ -487,10 +497,12 @@ paths:
         - { name: exp, in: query, required: true, schema: { type: integer }, description: 过期时间戳 }
         - { name: sig, in: query, required: true, schema: { type: string }, description: HMAC 签名 }
       responses:
-        "200": { description: '字幕文件内容（Content-Type 按格式：ass/ssa=text/x-ssa、srt=application/x-subrip、vtt=text/vtt，均带 charset=utf-8）' }
+        "200": { description: '字幕文件内容，正文恒为 UTF-8（源文件编码在服务端归一）。Content-Type 按下发格式：ass/ssa=text/x-ssa、srt=application/x-subrip、vtt=text/vtt，均带 charset=utf-8；sub/sbv/lrc/smi 转换轨按 vtt 下发' }
         "206": { description: Range 分片 }
         "403": { description: 签名无效或过期 }
+        "400": { description: 字幕编码无法识别（BOM/UTF-8/GB18030/Big5/Shift-JIS 全部不匹配） }
         "404": { description: 资产不存在或该语言无字幕 }
+        "413": { description: 字幕文件超过 8 MiB 读取上限 }
 
   # ---------- 上传与文件管理 ----------
   /api/v1/assets/upload:
@@ -2967,19 +2979,21 @@ components:
             origUrl:      { type: string, description: 签名原图/视频直链（查看永远发原件，无缩放副本） }
             subtitles:
               type: array
-              description: '外挂字幕轨（仅视频资产、且字幕目录存在匹配文件时返回；缺省/空 = 无外挂字幕，客户端继续用内嵌字幕）。每条一个语言（同语言多格式服务端已按 ass > ssa > srt > vtt 取一条）。目录约定与解析规则见 GET /media/sub/{assetId}'
+              description: '外挂字幕轨（仅视频资产、且字幕目录存在匹配文件时返回；缺省/空 = 无外挂字幕，客户端继续用内嵌字幕）。每条一个语言（同语言多格式服务端已按 ass > ssa > srt > vtt > sub > sbv > lrc > smi 取一条）；语言已规范成 BCP 47，label/isDefault 由服务端给定。目录约定、编码归一与解析规则见 GET /media/sub/{assetId}'
               items: { $ref: "#/components/schemas/AssetSubtitle" }
             thumbUrlMd:   { type: string, description: '签名缩略图直链 md 档（512，与列表网格同源、开机预生成覆盖）。客户端详情海报先用本档立即显示、thumbUrl（lg）就绪后换上——lg 不在预生成范围，首开详情直接等 lg 会触发现场 ffmpeg 生成（秒级起步）。2026-09-18 新增' }
 
     AssetSubtitle:
-      description: 外挂字幕条目（GET /assets/{assetId} 的 subtitles 元素；文件直链走 GET /media/sub/{assetId}）
+      description: 外挂字幕条目（GET /assets/{assetId} 的 subtitles 元素；文件直链走 GET /media/sub/{assetId}）。2026-11-28 第二批：语言统一 BCP 47、服务端给 label/isDefault、非原生格式由服务端转 VTT 后下发
       type: object
-      required: [lang, format, sizeBytes, url]
+      required: [lang, format, sizeBytes, url, isDefault, label]
       properties:
-        lang:      { type: string, description: '语言码（文件名中 .ass 前最后一段扩展名，原样保留大小写，如 zh/en/ja）' }
-        format:    { type: string, enum: [ass, ssa, srt, vtt], description: '字幕格式（取用优先级 ass > ssa > srt > vtt，同语言只下发一条）' }
-        sizeBytes: { type: integer, format: int64, description: 字幕文件字节数 }
+        lang:      { type: string, description: '规范化 BCP 47 语言码（zh_cn/chs/GB → zh-Hans，zh_tw/cht → zh-Hant，eng→en、jp/jpn→ja、kor→ko；无语言段=und）。客户端只消费、不再自行归并' }
+        format:    { type: string, enum: [ass, ssa, srt, vtt], description: '下发格式：原生格式原样；sub/sbv/lrc/smi 由服务端转成 VTT 后此处恒为 vtt（客户端零改动）。取用优先级 ass > ssa > srt > vtt > sub > sbv > lrc > smi，同语言只下发一条' }
+        sizeBytes: { type: integer, format: int64, description: 源文件字节数（转换轨也报原件大小；下发正文可能与原件不同） }
         url:       { type: string, description: '签名直链（/media/sub/{assetId}?lang=...&exp=...&sig=...）。签名 URL 禁止客户端改写任何参数（ADR-0002）' }
+        isDefault: { type: boolean, description: '是否首选轨：有简体中文（zh-Hans）选简体，否则有繁体（zh-Hant）选繁体，都没有则全 false。三端统一按本字段预选，不再各自判断中文' }
+        label:     { type: string, description: '人类可读标签（三端统一直接展示，不各自造词表）：中文（简体）/中文（繁体）/English/日本語/한국어/未标注，未知语言回退语言码本身' }
 
     AssetDetailTag:
       description: 资产详情响应的标签关联条目（GET /assets/{id} 专属视图：标签池条目 + 关联级溯源两字段；标签池端点 GET /tags 不携带溯源——溯源展示只属详情面，ADR-0032 独立提案 2026-10-02）

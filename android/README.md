@@ -44,7 +44,9 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 `setMediaItem` 装入；签名 URL 原样使用，不追加 header。中文轨标 `SELECTION_FLAG_DEFAULT` 并显式置
 preferredTextLanguage（默认选中）；`BiliPlayerView` 给 PlayerView 自带 SubtitleView 配可读默认样式
 （白字 + 半透明黑底，ASS 自带样式优先），设置面板「字幕」行列出当前媒体全部文本轨语言 + 关闭档
-（`TrackSelectionParameters` 选轨，不重装媒体源）。无外挂字幕时行为与旧版一致。
+（`TrackSelectionParameters` 选轨，不重装媒体源；菜单文案用服务端 `label`，默认轨用服务端 `isDefault`）。无外挂字幕时行为与旧版一致。
+
+字幕字体随包分发：`feature:detail` 的 `res/font/` 放 Noto Sans SC Bold 与 Liberation Sans Bold，`SubtitleFonts.kt` 在 API 29+ 用 `Typeface.CustomFallbackBuilder` 组「拉丁→Liberation、汉字→Noto」备用链，API 26–28 统一 Noto；typeface 经 `CaptionStyleCompat` 传给 SubtitleView。许可/SHA-256/已知差异见 [FONTS](../docs/FONTS.md)（Media3 SSA 解析器不保留 Fontname，只能视图级覆盖）。
 
 ## 缩略图表示版本与备份兼容
 

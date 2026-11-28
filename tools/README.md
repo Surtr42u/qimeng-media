@@ -63,7 +63,7 @@ python -X utf8 tools/import_creator_profiles.py audit/authors-public-research.lo
 
 ## 隐私与密钥门禁
 
-`check_privacy.py` 用标准库补充私人文件路径/个人邮箱/设备标识/实际库汇总和 Git 作者元数据检查；密钥规则复用 [Gitleaks](https://github.com/gitleaks/gitleaks) **8.30.1** 默认规则，`.gitleaks.toml` 只对 auth 测试的一条明确合成 token 作精确放行，不豁免测试目录。扫描器云端下载经过固定 SHA-256 核对，不引入应用运行时依赖。
+`check_privacy.py` 用标准库补充私人文件路径/个人邮箱/设备标识/实际库汇总和 Git 作者元数据检查（外挂字幕随包字体按**精确文件名**放行，来源/许可/SHA-256 登记在 `docs/FONTS.md`，不放行整个目录）；密钥规则复用 [Gitleaks](https://github.com/gitleaks/gitleaks) **8.30.1** 默认规则，`.gitleaks.toml` 只对 auth 测试的一条明确合成 token 作精确放行，不豁免测试目录。扫描器云端下载经过固定 SHA-256 核对，不引入应用运行时依赖。
 
 AI 负责本机安装预编译扫描器，配置 `git config privacy.gitleaksPath <扫描器路径>`（或 `QIMENG_GITLEAKS`），再设置 `git config core.hooksPath .githooks`。本机额外标识放忽略的 `.privacy-policy.local.json` 的 `privateIdentifiers` 字符串数组，只在本机读取，不写规则源码/测试/文档。重新检出后须重新启用 Git 本地 hooks 配置；CI 同时兜底，但云端检查发生在推送之后，不能代替本地拦截。
 

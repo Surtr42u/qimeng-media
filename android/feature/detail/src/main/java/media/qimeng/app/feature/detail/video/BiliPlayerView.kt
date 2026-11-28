@@ -336,6 +336,9 @@ class BiliPlayerView @JvmOverloads constructor(
         }
         // 适配点⑮：字幕可读性默认样式。无样式的 srt/vtt 用白字 + 半透明黑底；
         // 带样式的 ASS 由 applyEmbeddedStyles（默认 true）覆盖，不被这里压制。
+        // typeface = 随包字幕字体（Noto Sans SC Bold + Liberation Sans Bold 备用链，
+        // 与 Web 端 @font-face 别名同源；Media3 的 SSA 解析器不保留 Fontname，
+        // 视图级 typeface 是当前唯一可控点，取舍见 docs/FONTS.md）。
         playerView.subtitleView?.setStyle(
             CaptionStyleCompat(
                 Color.WHITE,
@@ -343,7 +346,7 @@ class BiliPlayerView @JvmOverloads constructor(
                 Color.TRANSPARENT,
                 CaptionStyleCompat.EDGE_TYPE_NONE,
                 Color.BLACK,
-                null,
+                subtitleTypeface(context),
             )
         )
         addView(playerView)
@@ -1048,10 +1051,10 @@ class BiliPlayerView @JvmOverloads constructor(
         loopRow.addView(loopSwitch)
         container.addView(loopRow)
 
-        // 3. 字幕轨（适配点⑮，2026-11-28 外挂字幕批）：关闭 + 当前媒体全部文本轨语言。
+        // 3. 字幕轨（适配点⑮，2026-11-28 外挂字幕批）：关闭 + 当前媒体全部文本轨。
         // 无文本轨（含无外挂字幕的普通视频）整段不渲染，面板与旧版一致。
-        val subtitleLangs = subtitleLangOptions()
-        if (subtitleLangs.isNotEmpty()) {
+        val subtitleTracks = subtitleOptions()
+        if (subtitleTracks.isNotEmpty()) {
             val divider3 = View(context).apply {
                 setBackgroundColor(0x26FFFFFF.toInt())
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1.dp(context)).apply {
@@ -1074,11 +1077,12 @@ class BiliPlayerView @JvmOverloads constructor(
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            for (lang in listOf<String?>(null) + subtitleLangs) {
+            for (option in listOf<SubtitleOption?>(null) + subtitleTracks) {
+                val lang = option?.lang
                 // 未选中任何文本轨时「关闭」高亮；否则按当前渲染轨语言高亮
                 val isSelected = if (lang == null) selectedLang == null else lang.equals(selectedLang, ignoreCase = true)
                 val pill = TextView(context).apply {
-                    text = if (lang == null) "关闭" else subtitleLangLabel(lang)
+                    text = option?.label ?: "关闭"
                     setTextColor(if (isSelected) SPEED_SELECTED_COLOR else Color.WHITE)
                     textSize = 12f
                     typeface = if (isSelected) Typeface.create(Typeface.DEFAULT, Typeface.BOLD) else Typeface.DEFAULT
@@ -1099,7 +1103,7 @@ class BiliPlayerView @JvmOverloads constructor(
                     }
                     setOnClickListener {
                         applySubtitleLang(lang)
-                        showTopIndicator(if (lang == null) "字幕：关闭" else "字幕：" + subtitleLangLabel(lang))
+                        showTopIndicator(if (option == null) "字幕：关闭" else "字幕：" + option.label)
                         dismissAllPopups()
                         showController(true)
                     }
@@ -1131,24 +1135,32 @@ class BiliPlayerView @JvmOverloads constructor(
         popup.showAtLocation(this, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, bottomBar.height + 14.dp(context))
     }
 
+    /** 字幕轨选项：语言码（选轨用）+ 展示名（菜单用）。 */
+    private data class SubtitleOption(val lang: String, val label: String)
+
     /**
-     * 当前媒体的文本轨语言（外挂 + 内嵌合并去重，保持播放器轨道顺序）。
+     * 当前媒体的文本轨选项（外挂 + 内嵌合并去重，保持播放器轨道顺序）。
      * 数据源 = ExoPlayer currentTracks（外挂轨由 VideoPlayerState 的
      * MediaItem.SubtitleConfiguration 提供，内嵌轨来自容器），与 Web 端
      * 字幕 selector 同一语义：只列出真实存在的轨，不做猜测。
+     * 展示名优先 Format.label（外挂轨的服务端 label 随 SubtitleConfiguration 下发），
+     * 内嵌轨/旧服务端无 label 时回退本地语言表。
      */
-    private fun subtitleLangOptions(): List<String> {
+    private fun subtitleOptions(): List<SubtitleOption> {
         val player = playerView.player ?: return emptyList()
-        val langs = mutableListOf<String>()
+        val out = mutableListOf<SubtitleOption>()
         for (group in player.currentTracks.groups) {
             if (group.type != C.TRACK_TYPE_TEXT) continue
             for (i in 0 until group.length) {
-                val lang = group.getTrackFormat(i).language ?: continue
+                val format = group.getTrackFormat(i)
+                val lang = format.language ?: continue
                 if (lang.isBlank()) continue
-                if (langs.none { it.equals(lang, ignoreCase = true) }) langs += lang
+                if (out.any { it.lang.equals(lang, ignoreCase = true) }) continue
+                val label = format.label?.takeIf { it.isNotBlank() } ?: subtitleLangLabel(lang)
+                out += SubtitleOption(lang, label)
             }
         }
-        return langs
+        return out
     }
 
     /** 当前正在渲染的文本轨语言；null = 未选中任何文本轨（面板「关闭」档）。 */

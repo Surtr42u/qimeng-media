@@ -60,16 +60,20 @@ data class AssetDetail(
 
 /**
  * 外挂字幕轨（协议 AssetSubtitle）。服务端按「5  字幕」目录约定解析，客户端只消费。
- * @param lang 语言码（文件名 .zh.ass → zh；大小写原样，比较用忽略大小写）
- * @param format 格式（决定 Media3 MIME 与 Web 端渲染器）
- * @param sizeBytes 文件字节数（列表展示/诊断用）
+ * @param lang 规范化 BCP 47 语言码（服务端已把 zh_cn/chs/GB 归一为 zh-Hans 等）
+ * @param format 下发格式（ass/ssa/srt/vtt；sub/sbv/lrc/smi 已由服务端转成 vtt）
+ * @param sizeBytes 源文件字节数（列表展示/诊断用）
  * @param url 已拼 base 的签名直链（签名 URL 禁改写，ADR-0002）
+ * @param isDefault 服务端首选轨（简体优先、其次繁体）——预选依据，三端同源
+ * @param label 服务端人类可读标签（中文（简体）/English…），三端统一展示
  */
 data class DetailSubtitle(
     val lang: String,
     val format: SubtitleFormat,
     val sizeBytes: Long,
     val url: String,
+    val isDefault: Boolean = false,
+    val label: String = "",
 )
 
 /** 外挂字幕格式（协议 AssetSubtitle.format 枚举的客户端镜像）。 */

@@ -16,6 +16,8 @@
 描边/黑边条绘制，不降级成 VTT 文本）；srt 只把时间轴逗号换成点后以 blob `<track>` 交给浏览器，vtt 原样。
 `assjs` 是新增运行时依赖（MIT，零传递依赖），仅本文件消费；专业限制见 CAPABILITY_MAP「外挂字幕」行。
 
+字幕字体随包分发：`public/fonts/` 下 Noto Sans SC Bold（4.3 MB woff2）与 Liberation Sans Bold，`styles/subtitle-fonts.css` 用 @font-face 把家族名 `Microsoft YaHei`/`微软雅黑`/`Arial` 指过去，`lib/external-subtitles.ts` 的 `ensureSubtitleFonts()` 在 assjs 构造前 `document.fonts.load` 预载。许可、SHA-256、覆盖范围与已知差异见 [FONTS](../docs/FONTS.md)。
+
 ## 技术栈（定论，禁止擅改）
 
 React + Vite + TypeScript(strict) + Tailwind CSS 4 + shadcn/ui + TanStack Query + PWA 插件。

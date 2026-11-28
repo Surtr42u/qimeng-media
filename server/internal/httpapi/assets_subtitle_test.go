@@ -27,33 +27,41 @@ func (e *testEnv) writeSubtitle(t *testing.T, relName string, content []byte) st
 	return p
 }
 
-// TestAssetDetailSubtitlesAndServing 覆盖：详情 subtitles 数组（语言/格式/大小/签名
-// 直链）、按语言取用（大小写不敏感）、Range 分片、Content-Type、同语言多格式去重。
+const (
+	testSubtitleASSText = "[Script Info]\nTitle: 测试\n\n[Events]\nDialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,你好\n"
+	testSubtitleSRTText = "1\n00:00:00,000 --> 00:00:02,000\nhello\n"
+)
+
+// TestAssetDetailSubtitlesAndServing 覆盖：详情 subtitles 数组（语言规范化为
+// BCP 47、label/isDefault、格式/大小/签名直链）、按语言别名取用、Range 分片、
+// Content-Type、同语言多格式去重。
 func TestAssetDetailSubtitlesAndServing(t *testing.T) {
 	env := newTestEnv(t)
 	id, ok := env.assetIDByName(t, "c.mp4")
 	if !ok {
 		t.Fatal("合成视频缺失")
 	}
-	ass := []byte("[Script Info]\nTitle: 测试\n\n[Events]\nDialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,你好\n")
+	ass := []byte(testSubtitleASSText)
 	env.writeSubtitle(t, "c.zh.ass", ass)
-	// 同语言低优先格式：不应出现在响应里，也不应被选中。
-	env.writeSubtitle(t, "c.zh.srt", []byte("1\n00:00:00,000 --> 00:00:02,000\nhi\n"))
-	env.writeSubtitle(t, "c.en.srt", []byte("1\n00:00:00,000 --> 00:00:02,000\nhello\n"))
+	// 同语言低优先格式（chs 也归并为 zh-Hans）：不应出现在响应里，也不应被选中。
+	env.writeSubtitle(t, "c.chs.srt", []byte(testSubtitleSRTText))
+	env.writeSubtitle(t, "c.eng.srt", []byte(testSubtitleSRTText))
 	// 非字幕文件与不匹配主干：忽略。
 	env.writeSubtitle(t, "c.zh.nfo", []byte("nfo"))
 	env.writeSubtitle(t, "d.zh.ass", []byte("other"))
 
 	d := env.detail(t, id)
 	if d.Subtitles == nil || len(*d.Subtitles) != 2 {
-		t.Fatalf("subtitles = %+v, want 2 条（en/zh）", d.Subtitles)
+		t.Fatalf("subtitles = %+v, want 2 条（en/zh-Hans）", d.Subtitles)
 	}
 	subs := *d.Subtitles
-	if subs[0].Lang != "en" || subs[0].Format != gen.Srt || subs[0].SizeBytes != int64(len("1\n00:00:00,000 --> 00:00:02,000\nhello\n")) {
+	if subs[0].Lang != "en" || subs[0].Format != gen.Srt || subs[0].Label != "English" || subs[0].IsDefault ||
+		subs[0].SizeBytes != int64(len(testSubtitleSRTText)) {
 		t.Fatalf("subtitles[0] = %+v", subs[0])
 	}
-	if subs[1].Lang != "zh" || subs[1].Format != gen.Ass || subs[1].SizeBytes != int64(len(ass)) {
-		t.Fatalf("subtitles[1] = %+v（同语言应选 ass）", subs[1])
+	if subs[1].Lang != "zh-Hans" || subs[1].Format != gen.Ass || subs[1].Label != "中文（简体）" ||
+		!subs[1].IsDefault || subs[1].SizeBytes != int64(len(ass)) {
+		t.Fatalf("subtitles[1] = %+v（同语言应选 ass 且为默认轨）", subs[1])
 	}
 
 	for _, c := range []struct {
@@ -61,7 +69,7 @@ func TestAssetDetailSubtitlesAndServing(t *testing.T) {
 		want                   []byte
 	}{
 		{"ass 全量", subs[1].Url, "text/x-ssa; charset=utf-8", ass},
-		{"srt 全量", subs[0].Url, "application/x-subrip; charset=utf-8", []byte("1\n00:00:00,000 --> 00:00:02,000\nhello\n")},
+		{"srt 全量", subs[0].Url, "application/x-subrip; charset=utf-8", []byte(testSubtitleSRTText)},
 	} {
 		resp, err := http.Get(env.ts.URL + c.url)
 		if err != nil {
@@ -96,12 +104,17 @@ func TestAssetDetailSubtitlesAndServing(t *testing.T) {
 		t.Fatalf("Range 内容 = %q, want %q", got, ass[:10])
 	}
 
-	// 语言码大小写不敏感（BCP 47），签名只锚定路径——改 lang 参数仍通过验签。
-	lower := strings.Replace(subs[1].Url, "lang=zh", "lang=ZH", 1)
-	if resp, err := http.Get(env.ts.URL + lower); err != nil || resp.StatusCode != http.StatusOK {
-		t.Fatalf("大写语言码应可命中: err=%v", err)
-	} else {
+	// 语言码别名/大小写统一归一到 zh-Hans；签名只锚定路径，改 lang 仍通过验签。
+	for _, alias := range []string{"ZH", "zh_cn", "chs", "GB"} {
+		aliasURL := strings.Replace(subs[1].Url, "lang=zh-Hans", "lang="+alias, 1)
+		resp, err := http.Get(env.ts.URL + aliasURL)
+		if err != nil {
+			t.Fatalf("语言别名 %q 请求失败: %v", alias, err)
+		}
 		closeBody(resp)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("语言别名 %q 状态 %d, want 200", alias, resp.StatusCode)
+		}
 	}
 }
 
@@ -138,8 +151,8 @@ func TestAssetSubtitlesAbsent(t *testing.T) {
 		url  string
 		want int
 	}{
-		{"未知语言", strings.Replace(good, "lang=zh", "lang=ja", 1), http.StatusNotFound},
-		{"穿越形态语言码", strings.Replace(good, "lang=zh", "lang="+url.QueryEscape("../../etc/passwd"), 1), http.StatusNotFound},
+		{"未知语言", strings.Replace(good, "lang=zh-Hans", "lang=ja", 1), http.StatusNotFound},
+		{"穿越形态语言码", strings.Replace(good, "lang=zh-Hans", "lang="+url.QueryEscape("../../etc/passwd"), 1), http.StatusNotFound},
 		{"缺签名参数", "/media/sub/" + vid + "?lang=zh", http.StatusForbidden},
 	} {
 		resp, err := http.Get(env.ts.URL + c.url)
@@ -150,5 +163,61 @@ func TestAssetSubtitlesAbsent(t *testing.T) {
 		if resp.StatusCode != c.want {
 			t.Fatalf("%s: 状态 %d, want %d", c.name, resp.StatusCode, c.want)
 		}
+	}
+}
+
+// TestSubtitleEncodingAndConversion 覆盖：GB18030 源文件按 UTF-8 下发；lrc 源文件
+// 服务端转 VTT 下发（协议 format=vtt、Content-Type text/vtt、无语言段=und）。
+func TestSubtitleEncodingAndConversion(t *testing.T) {
+	env := newTestEnv(t)
+	id, ok := env.assetIDByName(t, "c.mp4")
+	if !ok {
+		t.Fatal("合成视频缺失")
+	}
+	// GB18030「中文」：D6 D0 CE C4（Windows 记事本常见编码形态）
+	env.writeSubtitle(t, "c.zh.ass", []byte{0xD6, 0xD0, 0xCE, 0xC4, '\n'})
+	env.writeSubtitle(t, "c.ja.lrc", []byte("[00:01.00]こんにちは\n"))
+	env.writeSubtitle(t, "c.ass", []byte("und-track"))
+
+	d := env.detail(t, id)
+	if d.Subtitles == nil || len(*d.Subtitles) != 3 {
+		t.Fatalf("subtitles = %+v, want 3 条", d.Subtitles)
+	}
+	byLang := map[string]gen.AssetSubtitle{}
+	for _, sub := range *d.Subtitles {
+		byLang[sub.Lang] = sub
+	}
+	zh, ja, und := byLang["zh-Hans"], byLang["ja"], byLang["und"]
+	if zh.Format != gen.Ass || !zh.IsDefault {
+		t.Fatalf("zh = %+v", zh)
+	}
+	if ja.Format != gen.Vtt || ja.Label != "日本語" || ja.IsDefault {
+		t.Fatalf("ja = %+v", ja)
+	}
+	if und.Format != gen.Ass || und.Label != "未标注" || und.IsDefault {
+		t.Fatalf("und = %+v", und)
+	}
+
+	resp, err := http.Get(env.ts.URL + zh.Url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := readAll(t, resp); string(body) != "中文\n" {
+		t.Fatalf("GB18030 应归一为 UTF-8，得到 %q", body)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/x-ssa; charset=utf-8" {
+		t.Fatalf("ass Content-Type = %q", ct)
+	}
+
+	resp, err = http.Get(env.ts.URL + ja.Url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readAll(t, resp)
+	if !strings.HasPrefix(string(body), "WEBVTT\n\n") || !strings.Contains(string(body), "00:00:01.000 --> 00:00:06.000") {
+		t.Fatalf("lrc 应转成 VTT，得到 %q", body)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/vtt; charset=utf-8" {
+		t.Fatalf("lrc Content-Type = %q", ct)
 	}
 }

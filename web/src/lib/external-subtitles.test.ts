@@ -3,7 +3,7 @@
  * SRT→VTT 时间轴归一与中文默认轨判定（与 Android 端同口径）。
  */
 import { describe, expect, it } from 'vitest'
-import { isChineseSubtitle, srtToVtt } from './external-subtitles'
+import { defaultSubtitleIndex, isChineseSubtitle, srtToVtt } from './external-subtitles'
 
 describe('srtToVtt（SRT 时间轴 → WebVTT）', () => {
   it('只把毫秒逗号换成点，正文与序号原样保留', () => {
@@ -29,5 +29,19 @@ describe('isChineseSubtitle（默认轨判定）', () => {
     expect(isChineseSubtitle('en')).toBe(false)
     expect(isChineseSubtitle('zho')).toBe(false)
     expect(isChineseSubtitle('')).toBe(false)
+  })
+})
+
+describe('defaultSubtitleIndex（默认轨选择）', () => {
+  it('服务端 isDefault 优先（三端同源）', () => {
+    expect(defaultSubtitleIndex([{ lang: 'en' }, { lang: 'zh-Hans', isDefault: true }])).toBe(1)
+    // 即便排序在前的是中文，也认服务端标记（繁体被标默认时同样生效）
+    expect(defaultSubtitleIndex([{ lang: 'zh-Hans' }, { lang: 'zh-Hant', isDefault: true }])).toBe(1)
+  })
+
+  it('旧服务端无 isDefault 时回退第一条中文轨；无中文返回 -1', () => {
+    expect(defaultSubtitleIndex([{ lang: 'en' }, { lang: 'zh-Hans' }])).toBe(1)
+    expect(defaultSubtitleIndex([{ lang: 'en' }, { lang: 'ja' }])).toBe(-1)
+    expect(defaultSubtitleIndex([])).toBe(-1)
   })
 })

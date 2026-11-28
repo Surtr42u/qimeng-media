@@ -19,7 +19,7 @@ import ASS from 'assjs'
 import Artplayer from 'artplayer'
 import { useEffect, useRef, useState } from 'react'
 import { stepPlayGate, type PlayGateState } from '@/lib/engagement-reporting'
-import { fetchSubtitleText, isChineseSubtitle, srtToVtt } from '@/lib/external-subtitles'
+import { defaultSubtitleIndex, ensureSubtitleFonts, fetchSubtitleText, srtToVtt } from '@/lib/external-subtitles'
 import { PLAYBACK_RATES, externalSubtitleLabel, humanLanguageLabel, qualityLabel } from '@/lib/player-labels'
 import { attachFullscreenChrome } from '@/lib/player-fullscreen'
 
@@ -35,9 +35,15 @@ export interface PlayerHighlight {
  * fetch 原样请求即可，禁止改写任何参数（ADR-0002）。
  */
 export interface ExternalSubtitle {
+  /** 规范化 BCP 47 语言码（服务端已归一，如 zh-Hans） */
   lang: string
+  /** 下发格式（ass/ssa/srt/vtt；转换轨服务端已转成 vtt） */
   format: string
   url: string
+  /** 服务端给的人类可读标签（三端统一展示，不各自造） */
+  label?: string
+  /** 服务端首选轨（简体中文优先、其次繁体）；旧服务端缺省时回退中文判定 */
+  isDefault?: boolean
 }
 
 export interface VideoPlayerProps {
@@ -271,11 +277,17 @@ export default function VideoPlayer({
     let externalBlobUrl: string | null = null
     let selectedSubtitle = 'off'
     let defaultSubtitleApplied = false
+    // 组件销毁后异步回调（字体预载/字幕文本次加载）不得再建 DOM 实例
+    let disposed = false
     const subtitleTextCache = new Map<string, Promise<string>>()
-    // 默认轨 = 第一条中文外挂轨（与 Android 端 SELECTION_FLAG_DEFAULT 同口径）；
-    // 无中文则保持「关闭」，内嵌轨行为与旧版一致
-    const zhExternalIndex = externalSubs.findIndex((sub) => isChineseSubtitle(sub.lang))
-    const defaultSubtitleValue = zhExternalIndex >= 0 ? EXTERNAL_PREFIX + zhExternalIndex : 'off'
+    // 默认轨下标由服务端 isDefault 决定（三端同源）；旧服务端缺字段时回退
+    // 「第一条中文轨」。-1 = 保持「关闭」，内嵌轨行为与旧版一致。
+    const defaultExternalIndex = defaultSubtitleIndex(externalSubs)
+    const defaultSubtitleValue = defaultExternalIndex >= 0 ? EXTERNAL_PREFIX + defaultExternalIndex : 'off'
+
+    /** 外挂轨展示名：服务端 label 优先，旧服务端回退本地语言表 */
+    const externalTrackLabel = (sub: ExternalSubtitle) =>
+      sub.label || externalSubtitleLabel(sub.lang, sub.format)
 
     /** 内嵌字幕轨（排除 ArtPlayer 自带 kind=metadata 的空占位轨） */
     const embeddedTextTracks = (): TextTrack[] => {
@@ -318,22 +330,27 @@ export default function VideoPlayer({
       subtitleTextCache.set(sub.url, cached)
       cached
         .then((text) => {
-          if (selectedSubtitle !== value) return // 加载期间用户已切走
+          if (disposed || selectedSubtitle !== value) return // 已离场 / 加载期间用户已切走
           if (sub.format === 'ass' || sub.format === 'ssa') {
-            const layer = video.parentElement ?? container
-            assInstance = new ASS(text, video, { container: layer })
-            // assjs 字幕层默认 z-index:auto，会被 z-index:10 的 <video> 盖住：
-            // 抬到视频之上、控制层（z-index:60）之下（.ASS-box 是 assjs 的结构类名）
-            const box = layer.querySelector<HTMLElement>('.ASS-box')
-            if (box) box.style.zIndex = '20'
-            assInstance.show()
+            // 随包字体就绪后再构造 assjs：它在构造时按家族名量字体度量，
+            // 字体未加载会用系统回落字体量宽，位置/行高整体跑偏。
+            void ensureSubtitleFonts().then(() => {
+              if (disposed || selectedSubtitle !== value) return
+              const layer = video.parentElement ?? container
+              assInstance = new ASS(text, video, { container: layer })
+              // assjs 字幕层默认 z-index:auto，会被 z-index:10 的 <video> 盖住：
+              // 抬到视频之上、控制层（z-index:60）之下（.ASS-box 是 assjs 的结构类名）
+              const box = layer.querySelector<HTMLElement>('.ASS-box')
+              if (box) box.style.zIndex = '20'
+              assInstance.show()
+            })
             return
           }
           const vtt = sub.format === 'srt' ? srtToVtt(text) : text
           externalBlobUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }))
           const trackEl = document.createElement('track')
           trackEl.kind = 'subtitles'
-          trackEl.label = externalSubtitleLabel(sub.lang, sub.format)
+          trackEl.label = externalTrackLabel(sub)
           trackEl.srclang = sub.lang
           trackEl.src = externalBlobUrl
           video.appendChild(trackEl)
@@ -341,6 +358,8 @@ export default function VideoPlayer({
           externalTrackEl = trackEl
         })
         .catch((err: unknown) => {
+          // 失败不缓存：链接过期/瞬时网络错误后重新选同一轨应能重试
+          subtitleTextCache.delete(sub.url)
           console.warn('[player] 外挂字幕加载失败', sub.url, err)
         })
     }
@@ -349,12 +368,12 @@ export default function VideoPlayer({
     const syncSubtitleControl = () => {
       const embedded = embeddedTextTracks()
       if (externalSubs.length === 0 && embedded.length === 0) return
-      const selector = [{ html: '关闭', value: 'off', default: zhExternalIndex < 0 }]
+      const selector = [{ html: '关闭', value: 'off', default: defaultExternalIndex < 0 }]
       externalSubs.forEach((sub, index) => {
         selector.push({
-          html: externalSubtitleLabel(sub.lang, sub.format),
+          html: externalTrackLabel(sub),
           value: EXTERNAL_PREFIX + index,
-          default: index === zhExternalIndex,
+          default: index === defaultExternalIndex,
         })
       })
       embedded.forEach((track, index) => {
@@ -364,15 +383,13 @@ export default function VideoPlayer({
           default: false,
         })
       })
-      const zhLabel =
-        zhExternalIndex >= 0
-          ? externalSubtitleLabel(externalSubs[zhExternalIndex].lang, externalSubs[zhExternalIndex].format)
-          : '字幕'
+      const defaultLabel =
+        defaultExternalIndex >= 0 ? externalTrackLabel(externalSubs[defaultExternalIndex]) : '字幕'
       art.controls.update({
         name: 'subtitle',
         position: 'right',
         index: 14,
-        html: zhLabel,
+        html: defaultLabel,
         selector,
         onSelect: function (item) {
           applySubtitle(String(item.value))
@@ -581,6 +598,7 @@ export default function VideoPlayer({
     const detachFullscreenChrome = attachFullscreenChrome(art)
 
     return () => {
+      disposed = true
       container.removeEventListener('click', onControlClick)
       container.removeEventListener('mouseout', onControlMouseOut)
       container.removeEventListener('mouseover', onControlMouseOver)

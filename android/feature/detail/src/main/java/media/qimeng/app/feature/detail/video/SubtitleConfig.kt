@@ -46,6 +46,9 @@ internal fun subtitleLangLabel(lang: String): String =
         else -> lang
     }
 
-/** 默认轨：第一条中文轨；无中文回 null = 不预选（播放器保持原内嵌轨行为）。 */
+/**
+ * 默认轨：服务端 isDefault 优先（三端同源，简体 > 繁体）；旧服务端缺该字段时
+ * 回退「第一条中文轨」；都没有返回 null = 不预选（播放器保持原内嵌轨行为）。
+ */
 internal fun defaultSubtitle(subtitles: List<DetailSubtitle>): DetailSubtitle? =
-    subtitles.firstOrNull { isDefaultSubtitleLang(it.lang) }
+    subtitles.firstOrNull { it.isDefault } ?: subtitles.firstOrNull { isDefaultSubtitleLang(it.lang) }

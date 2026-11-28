@@ -6,8 +6,10 @@
 package httpapi
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -72,12 +74,16 @@ func (s *Server) assetSubtitles(row db.GetAssetWithLibraryRow) []gen.AssetSubtit
 	}
 	out := make([]gen.AssetSubtitle, 0, len(tracks))
 	for _, t := range tracks {
-		format, ok := subtitleProtocolFormat(t.Format)
+		// 协议 format 是「下发格式」：转换轨（sub/sbv/lrc/smi）服务端已转成 VTT，
+		// 客户端按 vtt 挂轨即可，无需认识源格式（零改动）。
+		format, ok := subtitleProtocolFormat(t.ServeFormat)
 		if !ok {
 			continue
 		}
 		out = append(out, gen.AssetSubtitle{
 			Lang:      t.Lang,
+			Label:     t.Label,
+			IsDefault: t.IsDefault,
 			Format:    format,
 			SizeBytes: t.SizeBytes,
 			// lang 是「本资产哪条字幕」的选择参数，与 thumb 的 size 同属选择面
@@ -152,15 +158,49 @@ func (s *Server) GetMediaSubAssetId(w http.ResponseWriter, r *http.Request, asse
 			s.logger.Warn("关闭字幕文件失败", "err", cerr)
 		}
 	}()
+	// 字幕是纯文本、正常几十 KB：整份读入内存才能做编码归一与格式转换。
+	// 上限只防损坏/恶意大文件把内存打满（SECURITY 资源预算），不是业务限制。
+	fi, statErr := f.Stat()
+	if statErr != nil {
+		s.internalErr(w, "读取字幕文件信息", statErr)
+		return
+	}
+	if fi.Size() > subtitle.MaxFileBytes {
+		writeErr(w, http.StatusRequestEntityTooLarge, codeTooLarge, "字幕文件过大")
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, subtitle.MaxFileBytes+1))
+	if err != nil {
+		s.internalErr(w, "读取字幕文件", err)
+		return
+	}
+	if len(raw) > subtitle.MaxFileBytes {
+		writeErr(w, http.StatusRequestEntityTooLarge, codeTooLarge, "字幕文件过大")
+		return
+	}
+	body, err := subtitle.DecodeToUTF8(raw)
+	if err != nil {
+		// 编码无法识别属文件内容问题（非服务端故障），按 400 反馈。
+		s.logger.Warn("字幕编码无法识别", "assetId", row.AssetID, "format", track.Format)
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "字幕编码无法识别")
+		return
+	}
+	if track.Converted() {
+		converted, ok := subtitle.ConvertToVTT(track.Format, body)
+		if !ok {
+			// 源格式在支持清单内却无转换器：清单/分派不一致（编码错误，非数据错误）。
+			s.logger.Error("字幕格式缺少转换器", "assetId", row.AssetID, "format", track.Format)
+			writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
+			return
+		}
+		body = converted
+	}
 	// 缓存策略与原件直链同源（ADR-0027）：同窗 URL 恒定，max-age=直链窗口长，
 	// 条目寿命不超过 URL 有效期下界。字幕几乎不变更，换字幕即换签名 URL。
-	w.Header().Set("Content-Type", subtitleContentType(track.Format))
+	w.Header().Set("Content-Type", subtitleContentType(track.ServeFormat))
 	w.Header().Set("Cache-Control", signedOrigCacheControl(s.ttl))
-	name := filepath.Base(track.Path)
-	modTime := parseStoreTime(row.Mtime)
-	if fi, statErr := f.Stat(); statErr == nil {
-		modTime = fi.ModTime()
-	}
 	// 文件名只喂 ServeContent 做扩展名推断；Content-Type 已显式设置，优先于推断。
-	http.ServeContent(w, r, name, modTime, f)
+	// 正文已归一为 UTF-8（并按需转成 VTT），用内存 reader 发：字节数小，
+	// ServeContent 对 bytes.Reader 同样支持 Range/206。
+	http.ServeContent(w, r, "sub."+track.ServeFormat, fi.ModTime(), bytes.NewReader(body))
 }

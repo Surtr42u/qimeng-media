@@ -128,8 +128,10 @@ internal fun buildMediaItem(uri: String, subtitles: List<DetailSubtitle>): Media
                 MediaItem.SubtitleConfiguration.Builder(Uri.parse(sub.url))
                     .setMimeType(subtitleMimeType(sub.format))
                     .setLanguage(sub.lang)
+                    // label 来自服务端（三端统一展示；设置面板字幕轨菜单直接读 Format.label）
+                    .setLabel(sub.label)
                     .setSelectionFlags(
-                        if (isDefaultSubtitleLang(sub.lang)) C.SELECTION_FLAG_DEFAULT else 0,
+                        if (sub.isDefault) C.SELECTION_FLAG_DEFAULT else 0,
                     )
                     .build()
             },

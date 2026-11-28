@@ -16,11 +16,17 @@ import org.junit.Test
  */
 class SubtitleConfigTest {
 
-    private fun track(lang: String, format: SubtitleFormat = SubtitleFormat.ASS) = DetailSubtitle(
+    private fun track(
+        lang: String,
+        format: SubtitleFormat = SubtitleFormat.ASS,
+        isDefault: Boolean = false,
+    ) = DetailSubtitle(
         lang = lang,
         format = format,
         sizeBytes = 1L,
         url = "/media/sub/x?lang=$lang&exp=1&sig=s",
+        isDefault = isDefault,
+        label = lang,
     )
 
     @Test
@@ -68,6 +74,16 @@ class SubtitleConfigTest {
         val zhHans = track("zh-Hans", SubtitleFormat.SSA)
         assertEquals(zh, defaultSubtitle(listOf(en, zh, zhHans)))
         assertEquals(zhHans, defaultSubtitle(listOf(zhHans)))
+    }
+
+    @Test
+    fun serverDefaultFlagWinsOverLanguageHeuristic() {
+        // 服务端 isDefault 是三端同源依据：即便语言不是中文也照用（如繁体被标默认）
+        val en = track("en")
+        val hant = track("zh-Hant", isDefault = true)
+        assertEquals(hant, defaultSubtitle(listOf(en, hant)))
+        // 旧服务端无 isDefault 且无中文时不预选（回退判定不猜）
+        assertNull(defaultSubtitle(listOf(en, track("ja"))))
     }
 
     @Test
