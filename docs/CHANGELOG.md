@@ -1,3 +1,13 @@
+## feat(app): 外挂字幕 sidecar（5  字幕）三端加载（2026-11-28 第七百三十七笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
+
+- 服务端：新增 `internal/subtitle` 目录约定解析（`<库根父目录>/5  字幕/<库文件夹名>/<资产相对路径>.<lang>.ass`，文件名主干逐字节匹配，语言取 `.ass` 前最后一段扩展名；同语言多格式按 ass > ssa > srt > vtt 取一条，避免叠加渲染）与 `GET /media/sub/{assetId}?lang=&exp=&sig=`（`http.ServeContent` 原生 Range/206，Content-Type 按格式，签名与 `/media/orig` 同款，`PathWithinRoot` + readdir 枚举双重限界）；`GET /assets/{assetId}` 的视频资产新增可选 `subtitles[]`（lang/format/sizeBytes/url），无字幕时字段缺省、旧客户端零感知。「5  字幕」是库根同级目录，scanner 只遍历库根，不经索引。
+- Web/桌面：桌面 Tauri 壳托管的即本 Web UI，故只改 `web/src/components/media/video-player.tsx`——字幕菜单合并外挂（`AssetDetail.subtitles`）与内嵌轨，`关闭` 恒第一项、外挂在前、有中文默认选中；ASS/SSA 由 assjs 按脚本样式/定位/描边渲染（新增运行时依赖 assjs，MIT、零传递依赖），SRT 仅换时间轴逗号后转 blob `<track>`，VTT 原样。
+- Android：`DetailSubtitle`/`SubtitleFormat` 领域模型 + SDK 映射；`VideoPlayerState` 以 `MediaItem.SubtitleConfiguration` 挂轨（ass/ssa→TEXT_SSA、srt→APPLICATION_SUBRIP、vtt→TEXT_VTT，zh 标 `SELECTION_FLAG_DEFAULT` 并显式置 preferredTextLanguage）；`BiliPlayerView` 给播放器自带 SubtitleView 配可读默认样式，设置面板新增「字幕」行（关闭 + 当前媒体全部文本轨语言，`TrackSelectionParameters` 选轨不重装媒体源）。
+- 验证：`go test ./internal/subtitle ./internal/httpapi`（新增路径推导/语言解析/多语言/缺目录/签名与语言码穿越用例）、`gofmt`、`make sdk`（三端再生 + `api/sdk.lock` 389 项）；Web `npx tsc --noEmit`、`npx vitest run`、`npm run lint`、`npm run build`；Android 本地 JDK 21 `./gradlew assembleDebug testDebugUnitTest` 通过；文档 `python tools/check_docs.py`。云端完整 CI 与 APK 出包记录见本次交付说明。
+- 限制：ASS 高级特性（矢量绘图 `\p`、卡拉 OK 时序、字体嵌入）assjs 与 Media3 SsaParser 均不完整，字体依赖系统已装；内嵌轨与同名外挂轨同语言并存时由播放器轨道选择裁决（无强制外挂优先）；Web 端 ASS 层 z-index 依赖 assjs 的 `.ASS-box` 结构类名，升级 assjs 需复核叠层。
+
 ## fix(server): SPA 静态目录按可执行文件位置兜底（2026-11-16 第七百三十六笔）
 
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash）
@@ -260,13 +270,6 @@
 
 - 根因：先整代轮换当前→上次再写新当前且无事务标记；中断后重复轮换/半成品被当上次代/正文摘要分开写导致永久摘要不符或丢失完整旧代。修复：新增 maintenance-generation.ts 两代写入原语与恢复判定；写快照前落 .两代轮换状态.json（old/next 摘要），整代轮换（相同跳过、缺摘要补）、写新当前（正文先摘要后）、最后删状态；下次写入按断点自愈，不可判定拒绝并保留现场；相同数据重复导出只刷新当前并修复过期摘要；旧 flat3 只读兼容不变。
 - 验证：maintenance-folder.test.ts 24/24、tsc --noEmit、oxlint 0；未跑全量 vitest/Playwright/vite build/真实服务端。待测：真实浏览器崩溃中断自愈、真实 FS removeEntry 失败、跨浏览器差异。
-
-## fix(app): 修复两代布局历史备份恢复读取（上次代跨目录/旧 flat3 只读回退）（2026-11-08 第七百零七笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理代提交；子代理 android-client 实现与 JVM 验证）
-
-- 根因：上次代在独立目录 上次/备份/影库备份.json，恢复入口仍按当前目录+影库备份（上次）.json 拼路径，历史恢复永远读不到；偏好改指当前代后旧 flat3 历史文件也不可达。修复：新增纯 JVM MaintenanceBackupSlots 按槽解析真实文件（两代优先/旧 flat3 只读回退/摘要核对）；MaintenanceFolderRepository 增 readManagedBackup+managedBackupStatus；AutoBackupRunner.readBackup 返回真实文件名+字节，BackupViewModel 以真实名进 v2 校验链并按上次/上上次分槽提示；维护/备份页三代文案改两代。
-- 验证：本机 kotlinc+JUnit 28 项 JVM 通过（临时目录）；未跑 Gradle/CI/真机。待测：恢复上次成功路径、旧 flat3 回退、64MB 摘要、SAF 旧目录回退；UI 历史列表/迁移入口未接线。
 
 # CHANGELOG - 变更历史
 

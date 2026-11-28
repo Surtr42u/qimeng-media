@@ -8,6 +8,14 @@
 搜索页复用 `GET /assets` 的 `q` 语义（共享 Go 搜索层，客户端不重写匹配规则）；搜索结果标题取完整文件名（含作品编号/组图页码）并单行省略，普通浏览网格保持 cosWork 优先两行。换搜索词时以 settledQ 遮蔽旧词占位结果并显示「正在搜索…」，同词内筛选/分区切换保留 keepPreviousData 不闪；详情完整文件名由 `components/detail/AssetFileName` 展示与复制。
 
 
+## 视频外挂字幕（2026-11-28）
+
+播放器字幕数据源 = 详情响应 `AssetDetail.subtitles`（服务端按「5  字幕」目录约定解析的 sidecar 轨，
+签名 URL 与视频直链同款，`fetch` 原样请求即可）。控制条「字幕」菜单把外挂轨与内嵌轨合并：`关闭` 恒第一项、
+外挂在前，有中文外挂轨时默认选中。渲染分工：ass/ssa 走 `assjs`（纯前端 ASS 渲染，按脚本样式/定位/
+描边/黑边条绘制，不降级成 VTT 文本）；srt 只把时间轴逗号换成点后以 blob `<track>` 交给浏览器，vtt 原样。
+`assjs` 是新增运行时依赖（MIT，零传递依赖），仅本文件消费；专业限制见 CAPABILITY_MAP「外挂字幕」行。
+
 ## 技术栈（定论，禁止擅改）
 
 React + Vite + TypeScript(strict) + Tailwind CSS 4 + shadcn/ui + TanStack Query + PWA 插件。

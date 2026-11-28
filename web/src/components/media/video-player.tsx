@@ -6,7 +6,7 @@
  *    - 清晰度：官方 selector 控件，精准定位在清晰度按钮正上方，绝不错位；
  *    - 倍速：官方 selector 控件，使用 PLAYBACK_RATES 档位表，精准居中于倍速按钮正上方；
  *    - 设置：官方 setting 面板，支持画面比例调节（默认/16:9/4:3/拉伸）与单片循环；
- *    - 字幕：检测视频内置轨道，动态生成官方 selector；
+ *    - 字幕：外挂（服务端 AssetDetail.subtitles）+ 内嵌轨道合并进同一个官方 selector；
  * 2. 界面与尺寸：
  *    - 播放器直接铺满舞台（.video-player-box），绝无外层冗余 flex 包装挤压，恢复饱满大气的高度；
  *    - 底栏与弹出层注入现代毛玻璃质感，暂停时屏蔽中央大播放图标；
@@ -15,16 +15,29 @@
  *      彻底超越所有父级弹层 transform 与 Header 层叠限制，全屏与退出零冲突、桌面端绝对不上移。
  */
 
+import ASS from 'assjs'
 import Artplayer from 'artplayer'
 import { useEffect, useRef, useState } from 'react'
 import { stepPlayGate, type PlayGateState } from '@/lib/engagement-reporting'
-import { PLAYBACK_RATES, qualityLabel } from '@/lib/player-labels'
+import { fetchSubtitleText, isChineseSubtitle, srtToVtt } from '@/lib/external-subtitles'
+import { PLAYBACK_RATES, externalSubtitleLabel, humanLanguageLabel, qualityLabel } from '@/lib/player-labels'
 import { attachFullscreenChrome } from '@/lib/player-fullscreen'
 
 /** 进度条打点 */
 export interface PlayerHighlight {
   time: number
   text: string
+}
+
+/**
+ * 外挂字幕轨（协议 AssetSubtitle，2026-11-28）：url 是服务端签好的直链
+ * （/media/sub/{assetId}?lang=...&exp=...&sig=...），与视频直链同款鉴权——
+ * fetch 原样请求即可，禁止改写任何参数（ADR-0002）。
+ */
+export interface ExternalSubtitle {
+  lang: string
+  format: string
+  url: string
 }
 
 export interface VideoPlayerProps {
@@ -41,6 +54,8 @@ export interface VideoPlayerProps {
   onPause?: (positionSeconds: number) => void
   /** 起播（页面侧上报 play 事件，口径 B 防重闸门） */
   onPlay?: () => void
+  /** 外挂字幕轨（detail.subtitles；缺省/空 = 无外挂字幕，仅内嵌轨可用） */
+  subtitles?: ExternalSubtitle[]
 }
 
 /** 运行时读主题 token */
@@ -104,12 +119,13 @@ export default function VideoPlayer({
   poster,
   startTime = 0,
   highlights = [],
+  subtitles = [],
   onTimeUpdate,
   onPause,
   onPlay,
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [initial] = useState({ src, poster, startTime, highlights })
+  const [initial] = useState({ src, poster, startTime, highlights, subtitles })
   const handlersRef = useRef({ onTimeUpdate, onPause, onPlay })
   useEffect(() => {
     handlersRef.current = { onTimeUpdate, onPause, onPlay }
@@ -241,6 +257,131 @@ export default function VideoPlayer({
       }
     }
 
+    // 4.5 外挂字幕（2026-11-28 外挂字幕批）：服务端详情响应 AssetDetail.subtitles 下发的
+    // sidecar 轨，与内嵌轨合并进同一个官方 selector（关闭恒第一项，外挂在前）。
+    // 渲染器分两类：
+    //  - ass/ssa：assjs 按脚本样式/定位/描边/黑边条绘制（Chrome 不能原生渲染 ASS；
+    //    ArtPlayer 自带的 ass→vtt 转换会丢样式，明确不用）；
+    //  - srt/vtt：转成 <track> 由浏览器渲染（srt 只把时间轴逗号换成点）。
+    const EXTERNAL_PREFIX = 'ext:'
+    const EMBEDDED_PREFIX = 'emb:'
+    const externalSubs = initial.subtitles
+    let assInstance: ASS | null = null
+    let externalTrackEl: HTMLTrackElement | null = null
+    let externalBlobUrl: string | null = null
+    let selectedSubtitle = 'off'
+    let defaultSubtitleApplied = false
+    const subtitleTextCache = new Map<string, Promise<string>>()
+    // 默认轨 = 第一条中文外挂轨（与 Android 端 SELECTION_FLAG_DEFAULT 同口径）；
+    // 无中文则保持「关闭」，内嵌轨行为与旧版一致
+    const zhExternalIndex = externalSubs.findIndex((sub) => isChineseSubtitle(sub.lang))
+    const defaultSubtitleValue = zhExternalIndex >= 0 ? EXTERNAL_PREFIX + zhExternalIndex : 'off'
+
+    /** 内嵌字幕轨（排除 ArtPlayer 自带 kind=metadata 的空占位轨） */
+    const embeddedTextTracks = (): TextTrack[] => {
+      const out: TextTrack[] = []
+      const list = art.video?.textTracks
+      if (!list) return out
+      for (let i = 0; i < list.length; i += 1) {
+        if (list[i].kind !== 'metadata') out.push(list[i])
+      }
+      return out
+    }
+
+    const detachExternalSubtitle = () => {
+      assInstance?.destroy()
+      assInstance = null
+      externalTrackEl?.remove()
+      externalTrackEl = null
+      if (externalBlobUrl) {
+        URL.revokeObjectURL(externalBlobUrl)
+        externalBlobUrl = null
+      }
+    }
+
+    /** 应用字幕选择：off | ext:<i>（外挂）| emb:<i>（内嵌）；先拆旧渲染再挂新轨 */
+    const applySubtitle = (value: string) => {
+      const video = art.video
+      if (!video) return
+      selectedSubtitle = value
+      detachExternalSubtitle()
+      for (const track of embeddedTextTracks()) track.mode = 'hidden'
+      if (value.startsWith(EMBEDDED_PREFIX)) {
+        const track = embeddedTextTracks()[Number(value.slice(EMBEDDED_PREFIX.length))]
+        if (track) track.mode = 'showing'
+        return
+      }
+      if (!value.startsWith(EXTERNAL_PREFIX)) return
+      const sub = externalSubs[Number(value.slice(EXTERNAL_PREFIX.length))]
+      if (!sub) return
+      const cached = subtitleTextCache.get(sub.url) ?? fetchSubtitleText(sub.url)
+      subtitleTextCache.set(sub.url, cached)
+      cached
+        .then((text) => {
+          if (selectedSubtitle !== value) return // 加载期间用户已切走
+          if (sub.format === 'ass' || sub.format === 'ssa') {
+            const layer = video.parentElement ?? container
+            assInstance = new ASS(text, video, { container: layer })
+            // assjs 字幕层默认 z-index:auto，会被 z-index:10 的 <video> 盖住：
+            // 抬到视频之上、控制层（z-index:60）之下（.ASS-box 是 assjs 的结构类名）
+            const box = layer.querySelector<HTMLElement>('.ASS-box')
+            if (box) box.style.zIndex = '20'
+            assInstance.show()
+            return
+          }
+          const vtt = sub.format === 'srt' ? srtToVtt(text) : text
+          externalBlobUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }))
+          const trackEl = document.createElement('track')
+          trackEl.kind = 'subtitles'
+          trackEl.label = externalSubtitleLabel(sub.lang, sub.format)
+          trackEl.srclang = sub.lang
+          trackEl.src = externalBlobUrl
+          video.appendChild(trackEl)
+          if (trackEl.track) trackEl.track.mode = 'showing'
+          externalTrackEl = trackEl
+        })
+        .catch((err: unknown) => {
+          console.warn('[player] 外挂字幕加载失败', sub.url, err)
+        })
+    }
+
+    /** 重建字幕 selector：外挂（语言 + 格式）在前，内嵌在后，关闭恒第一项 */
+    const syncSubtitleControl = () => {
+      const embedded = embeddedTextTracks()
+      if (externalSubs.length === 0 && embedded.length === 0) return
+      const selector = [{ html: '关闭', value: 'off', default: zhExternalIndex < 0 }]
+      externalSubs.forEach((sub, index) => {
+        selector.push({
+          html: externalSubtitleLabel(sub.lang, sub.format),
+          value: EXTERNAL_PREFIX + index,
+          default: index === zhExternalIndex,
+        })
+      })
+      embedded.forEach((track, index) => {
+        selector.push({
+          html: track.label || humanLanguageLabel(track.language) || '字幕 ' + (index + 1),
+          value: EMBEDDED_PREFIX + index,
+          default: false,
+        })
+      })
+      const zhLabel =
+        zhExternalIndex >= 0
+          ? externalSubtitleLabel(externalSubs[zhExternalIndex].lang, externalSubs[zhExternalIndex].format)
+          : '字幕'
+      art.controls.update({
+        name: 'subtitle',
+        position: 'right',
+        index: 14,
+        html: zhLabel,
+        selector,
+        onSelect: function (item) {
+          applySubtitle(String(item.value))
+          closeSelector(container.querySelector<HTMLElement>('.art-control-subtitle'))
+          return item.html
+        },
+      })
+    }
+
     // 5. 监听 loadedmetadata 动态更新清晰度与内置字幕
     art.on('video:loadedmetadata', () => {
       const v = art.video
@@ -269,32 +410,12 @@ export default function VideoPlayer({
         },
       })
 
-      // 若视频包含内嵌字幕轨，动态挂载官方字幕 selector 控件
-      if (v.textTracks && v.textTracks.length > 0) {
-        const subSelectors = [{ default: true, html: '关闭', value: 0 }]
-        for (let i = 0; i < v.textTracks.length; i++) {
-          const t = v.textTracks[i]
-          subSelectors.push({
-            default: false,
-            html: t.label || `字幕 ${i + 1}`,
-            value: i + 1,
-          })
-        }
-        art.controls.add({
-          name: 'subtitle',
-          position: 'right',
-          index: 14,
-          html: '字幕',
-          selector: subSelectors,
-          onSelect: function (item) {
-            const sid = Number(item.value)
-            for (let i = 0; i < v.textTracks.length; i++) {
-              v.textTracks[i].mode = sid === i + 1 ? 'showing' : 'hidden'
-            }
-            closeSelector(container.querySelector<HTMLElement>('.art-control-subtitle'))
-            return item.html
-          },
-        })
+      // 外挂 + 内嵌字幕合并进同一个官方 selector 控件（外挂在前，关闭恒第一项）
+      syncSubtitleControl()
+      // 默认中文外挂轨：元数据就绪后应用一次（assjs 要读视频尺寸，<track> 要等元素可挂）
+      if (!defaultSubtitleApplied) {
+        defaultSubtitleApplied = true
+        if (defaultSubtitleValue !== 'off') applySubtitle(defaultSubtitleValue)
       }
     })
 
@@ -468,9 +589,10 @@ export default function VideoPlayer({
       themeObserver.disconnect()
       detachSeekFix()
       detachFullscreenChrome()
+      detachExternalSubtitle()
       art.destroy()
     }
-  }, [initial.src, initial.poster, initial.startTime, initial.highlights])
+  }, [initial.src, initial.poster, initial.startTime, initial.highlights, initial.subtitles])
 
   return <div className="video-player-box" ref={containerRef} />
 }

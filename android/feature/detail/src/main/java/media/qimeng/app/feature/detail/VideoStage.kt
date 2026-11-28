@@ -420,8 +420,13 @@ internal fun VideoStage(
                 playerState.player.seekTo(0L)
             }
         } else {
-            // ENDED 路径 restartFromZero=true → 回 0（G9；实际该路径由控件内按钮承担，此处对齐口径）
-            playerState.prepare(uri, if (command.restartFromZero) 0L else startPositionMs)
+            // ENDED 路径 restartFromZero=true → 回 0（G9；实际该路径由控件内按钮承担，此处对齐口径）。
+            // 外挂字幕随视频源一次装配（asset.subtitles 为空时与旧实现完全一致）。
+            playerState.prepare(
+                uri,
+                asset.subtitles,
+                if (command.restartFromZero) 0L else startPositionMs,
+            )
         }
         playerState.play()
     }

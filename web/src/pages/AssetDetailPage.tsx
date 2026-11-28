@@ -223,6 +223,7 @@ export default function AssetDetailPage() {
                   onTimeUpdate={progress.tick}
                   onPause={progress.flush}
                   onPlay={reportPlay}
+                  subtitles={d.subtitles ?? []}
                 />
               )
             ) : d.origUrl ? (

@@ -32,6 +32,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import media.qimeng.app.feature.detail.R
 import media.qimeng.app.feature.detail.TimelineTagColors
@@ -118,6 +119,13 @@ import kotlin.math.min
  *      - 增加画质微胶囊 [qualityBtn] 与清晰度面板（展示原画与真实分辨率标签）；
  *      - 扩展倍速档位至 6 档（对齐 Web 端 PLAYBACK_RATES 0.5x~2.0x 规范）；
  *      - 增加播放设置齿轮 [settingsBtn] 与设置面板（画面比例：默认/16:9/4:3/拉伸铺满 + 单片循环开关）。
+ *   ⑮ 2026-11-28 外挂字幕批：PlayerView 默认布局自带的 SubtitleView 配置可读默认样式
+ *      （白字 + 半透明黑底）。字幕数据源不在本控件——外挂轨由 VideoPlayerState 经
+ *      MediaItem.SubtitleConfiguration 挂入，内嵌轨照旧；ASS 自带样式（描边/定位/
+ *      BorderStyle=3 黑边条）由 applyEmbeddedStyles=true 原样生效，与 Web 端 assjs
+ *      渲染同一份 .ass 样式源。设置面板新增「字幕」轨选择（关闭 + 当前媒体全部文本轨语言，
+ *      外挂/内嵌同列），选择走 TrackSelectionParameters（禁用文本轨 / 首选语言），
+ *      不改播放器内核与手势。G1~G9 与既有控件行为零变化。
  *
  * 手势冻结口径（G1~G9；G1/G2 已由 2026-09-19 拍板改版，沿革见适配点⑪）：
  * G1 单击（双向）显隐控制器；G2 双击（双向）播停；
@@ -326,6 +334,18 @@ class BiliPlayerView @JvmOverloads constructor(
             useController = false
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         }
+        // 适配点⑮：字幕可读性默认样式。无样式的 srt/vtt 用白字 + 半透明黑底；
+        // 带样式的 ASS 由 applyEmbeddedStyles（默认 true）覆盖，不被这里压制。
+        playerView.subtitleView?.setStyle(
+            CaptionStyleCompat(
+                Color.WHITE,
+                0x99000000.toInt(),
+                Color.TRANSPARENT,
+                CaptionStyleCompat.EDGE_TYPE_NONE,
+                Color.BLACK,
+                null,
+            )
+        )
         addView(playerView)
 
         gestureIndicator = LinearLayout(context).apply {
@@ -1028,6 +1048,71 @@ class BiliPlayerView @JvmOverloads constructor(
         loopRow.addView(loopSwitch)
         container.addView(loopRow)
 
+        // 3. 字幕轨（适配点⑮，2026-11-28 外挂字幕批）：关闭 + 当前媒体全部文本轨语言。
+        // 无文本轨（含无外挂字幕的普通视频）整段不渲染，面板与旧版一致。
+        val subtitleLangs = subtitleLangOptions()
+        if (subtitleLangs.isNotEmpty()) {
+            val divider3 = View(context).apply {
+                setBackgroundColor(0x26FFFFFF.toInt())
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1.dp(context)).apply {
+                    topMargin = 12.dp(context)
+                    bottomMargin = 10.dp(context)
+                }
+            }
+            container.addView(divider3)
+
+            val subtitleLabel = TextView(context).apply {
+                text = "字幕"
+                setTextColor(0x99FFFFFF.toInt())
+                textSize = 12f
+                setPadding(0, 0, 0, 6.dp(context))
+            }
+            container.addView(subtitleLabel)
+
+            val selectedLang = selectedSubtitleLang()
+            val subtitleRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            for (lang in listOf<String?>(null) + subtitleLangs) {
+                // 未选中任何文本轨时「关闭」高亮；否则按当前渲染轨语言高亮
+                val isSelected = if (lang == null) selectedLang == null else lang.equals(selectedLang, ignoreCase = true)
+                val pill = TextView(context).apply {
+                    text = if (lang == null) "关闭" else subtitleLangLabel(lang)
+                    setTextColor(if (isSelected) SPEED_SELECTED_COLOR else Color.WHITE)
+                    textSize = 12f
+                    typeface = if (isSelected) Typeface.create(Typeface.DEFAULT, Typeface.BOLD) else Typeface.DEFAULT
+                    gravity = Gravity.CENTER
+                    val pillBg = GradientDrawable().apply {
+                        cornerRadius = 8.dp(context).toFloat()
+                        if (isSelected) {
+                            setColor(0x2E4FC3F7.toInt())
+                            setStroke(1, 0x804FC3F7.toInt())
+                        } else {
+                            setColor(0x22FFFFFF.toInt())
+                        }
+                    }
+                    background = pillBg
+                    setPadding(10.dp(context), 6.dp(context), 10.dp(context), 6.dp(context))
+                    layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+                        marginEnd = 6.dp(context)
+                    }
+                    setOnClickListener {
+                        applySubtitleLang(lang)
+                        showTopIndicator(if (lang == null) "字幕：关闭" else "字幕：" + subtitleLangLabel(lang))
+                        dismissAllPopups()
+                        showController(true)
+                    }
+                }
+                subtitleRow.addView(pill)
+            }
+            // 多语言时横向滚动，不撑破 270dp 面板
+            container.addView(HorizontalScrollView(context).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(subtitleRow)
+            })
+        }
+
         container.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
         val popupHeight = container.measuredHeight
         val popupWidth = 270.dp(context)
@@ -1044,6 +1129,54 @@ class BiliPlayerView @JvmOverloads constructor(
         settingsPopup = popup
         // 在播放器底部中央弹出，彻底解决偏右导致面板被屏幕截断只剩一半的缺陷
         popup.showAtLocation(this, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, bottomBar.height + 14.dp(context))
+    }
+
+    /**
+     * 当前媒体的文本轨语言（外挂 + 内嵌合并去重，保持播放器轨道顺序）。
+     * 数据源 = ExoPlayer currentTracks（外挂轨由 VideoPlayerState 的
+     * MediaItem.SubtitleConfiguration 提供，内嵌轨来自容器），与 Web 端
+     * 字幕 selector 同一语义：只列出真实存在的轨，不做猜测。
+     */
+    private fun subtitleLangOptions(): List<String> {
+        val player = playerView.player ?: return emptyList()
+        val langs = mutableListOf<String>()
+        for (group in player.currentTracks.groups) {
+            if (group.type != C.TRACK_TYPE_TEXT) continue
+            for (i in 0 until group.length) {
+                val lang = group.getTrackFormat(i).language ?: continue
+                if (lang.isBlank()) continue
+                if (langs.none { it.equals(lang, ignoreCase = true) }) langs += lang
+            }
+        }
+        return langs
+    }
+
+    /** 当前正在渲染的文本轨语言；null = 未选中任何文本轨（面板「关闭」档）。 */
+    private fun selectedSubtitleLang(): String? {
+        val player = playerView.player ?: return null
+        for (group in player.currentTracks.groups) {
+            if (group.type != C.TRACK_TYPE_TEXT) continue
+            for (i in 0 until group.length) {
+                if (group.isTrackSelected(i)) return group.getTrackFormat(i).language
+            }
+        }
+        return null
+    }
+
+    /**
+     * 应用字幕选择（适配点⑮）：null = 关闭（禁用文本轨类型），非 null = 启用并按
+     * BCP 47 语言码选轨。只改 TrackSelectionParameters，不重装媒体源（进度不丢）。
+     */
+    private fun applySubtitleLang(lang: String?) {
+        val player = playerView.player ?: return
+        val builder = player.trackSelectionParameters.buildUpon()
+        if (lang == null) {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        } else {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setPreferredTextLanguage(lang)
+        }
+        player.trackSelectionParameters = builder.build()
     }
 
     private fun applyAspectRatio(ratio: PlayerAspectRatio) {

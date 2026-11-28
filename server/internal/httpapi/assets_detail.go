@@ -14,6 +14,7 @@ import (
 	"net/http"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -208,6 +209,14 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 	// 保持字段缺省即协议 null 语义。
 	if w := s.fetchAssetCosWork(ctx, row.AssetID); w != "" {
 		detail.CosWork = &w
+	}
+	// 外挂字幕（2026-11-28 协议新增）：仅视频资产、且「5  字幕」目录存在匹配
+	// 文件时返回；零字幕保持字段缺省（协议 null = 无外挂字幕，客户端内嵌轨行为
+	// 不变）。目录约定与选轨规则见 internal/subtitle 与 GET /media/sub/{assetId}。
+	if row.MediaType == scanner.MediaTypeVideo {
+		if subs := s.assetSubtitles(row); len(subs) > 0 {
+			detail.Subtitles = &subs
+		}
 	}
 	orig := s.signedMediaURL(mediaPathOrig + row.AssetID)
 	detail.OrigUrl = &orig

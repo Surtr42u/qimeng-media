@@ -1,0 +1,79 @@
+package media.qimeng.app.feature.detail.video
+
+import androidx.media3.common.MimeTypes
+import media.qimeng.app.core.model.DetailSubtitle
+import media.qimeng.app.core.model.SubtitleFormat
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * 外挂字幕纯映射单测（2026-11-28 外挂字幕批）：
+ * 格式 → Media3 MIME、zh 默认语言判定、默认轨选取。
+ * 口径 = 协议 AssetSubtitle + Android 端「中文默认、无中文不预选」（与 Web 端同口径）。
+ */
+class SubtitleConfigTest {
+
+    private fun track(lang: String, format: SubtitleFormat = SubtitleFormat.ASS) = DetailSubtitle(
+        lang = lang,
+        format = format,
+        sizeBytes = 1L,
+        url = "/media/sub/x?lang=$lang&exp=1&sig=s",
+    )
+
+    @Test
+    fun assAndSsaShareSsaMime() {
+        // ASS/SSA 同族，Media3 走 SsaParser（样式/定位/描边解析）
+        assertEquals(MimeTypes.TEXT_SSA, subtitleMimeType(SubtitleFormat.ASS))
+        assertEquals(MimeTypes.TEXT_SSA, subtitleMimeType(SubtitleFormat.SSA))
+    }
+
+    @Test
+    fun srtAndVttUseTheirOwnMime() {
+        assertEquals(MimeTypes.APPLICATION_SUBRIP, subtitleMimeType(SubtitleFormat.SRT))
+        assertEquals(MimeTypes.TEXT_VTT, subtitleMimeType(SubtitleFormat.VTT))
+    }
+
+    @Test
+    fun chinesePrimaryTagIsDefaultCaseInsensitively() {
+        assertTrue(isDefaultSubtitleLang("zh"))
+        assertTrue(isDefaultSubtitleLang("ZH"))
+        // BCP 47 子标签（zh-Hans/zh-CN）主标签仍是 zh
+        assertTrue(isDefaultSubtitleLang("zh-Hans"))
+        assertTrue(isDefaultSubtitleLang("zh-CN"))
+        // 其他语言不默认选中（含 zho/yue 等：只认协议下发的语言码主标签，不做等价推断）
+        assertFalse(isDefaultSubtitleLang("en"))
+        assertFalse(isDefaultSubtitleLang("ja"))
+        assertFalse(isDefaultSubtitleLang(""))
+        assertFalse(isDefaultSubtitleLang("zhx"))
+    }
+
+    @Test
+    fun languageLabelsMatchWebTable() {
+        assertEquals("中文", subtitleLangLabel("zh"))
+        assertEquals("中文", subtitleLangLabel("zh-Hans"))
+        assertEquals("英语", subtitleLangLabel("en-US"))
+        assertEquals("日语", subtitleLangLabel("ja"))
+        assertEquals("韩语", subtitleLangLabel("ko"))
+        // 未知语言原样（不猜）
+        assertEquals("tlh", subtitleLangLabel("tlh"))
+    }
+
+    @Test
+    fun defaultSubtitlePicksFirstChineseTrack() {
+        val en = track("en", SubtitleFormat.SRT)
+        val zh = track("zh", SubtitleFormat.ASS)
+        val zhHans = track("zh-Hans", SubtitleFormat.SSA)
+        assertEquals(zh, defaultSubtitle(listOf(en, zh, zhHans)))
+        assertEquals(zhHans, defaultSubtitle(listOf(zhHans)))
+    }
+
+    @Test
+    fun noChineseMeansNoDefaultSelection() {
+        // 无中文轨 → 不预选（播放器保持内嵌轨行为，用户可在字幕菜单手动选）
+        assertNull(defaultSubtitle(emptyList()))
+        assertNull(defaultSubtitle(listOf(track("en"), track("ja"))))
+    }
+}

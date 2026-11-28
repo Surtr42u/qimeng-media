@@ -115,6 +115,8 @@ const (
 	mediaPathOrig = "/media/orig/"
 	// mediaPathThumb 缩略图直链前缀（thumbURL 生成侧）。
 	mediaPathThumb = "/media/thumb/"
+	// mediaPathSub 外挂字幕直链前缀（assetSubtitles 生成侧）。
+	mediaPathSub = "/media/sub/"
 )
 
 // readyzTimeout 就绪探针的数据库 Ping 上限：探针必须快速失败，

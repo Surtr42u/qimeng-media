@@ -2,9 +2,11 @@ package media.qimeng.app.core.data.repository
 
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.DetailAuthor
+import media.qimeng.app.core.model.DetailSubtitle
 import media.qimeng.app.core.model.DetailTag
 import media.qimeng.app.core.model.LikeToggleResult
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.model.SubtitleFormat
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.core.model.ViewEventKind
@@ -12,6 +14,7 @@ import media.qimeng.sdk.models.ApiV1AssetsAssetIdTimelineTagsPostRequest
 import media.qimeng.sdk.models.AssetDetail as SdkAssetDetail
 import media.qimeng.sdk.models.AssetDetailAuthor
 import media.qimeng.sdk.models.AssetDetailTag
+import media.qimeng.sdk.models.AssetSubtitle
 import media.qimeng.sdk.models.LikeState
 import media.qimeng.sdk.models.MediaType
 import media.qimeng.sdk.models.ProgressUpdate
@@ -59,6 +62,21 @@ internal object SdkDetailMappers {
         directory = detail.directory,
         // 库内相对路径（任务X X3 详细信息 Sheet「路径」行）；SDK 可空兜底空串 = 服务端未返回
         relPath = detail.relPath.orEmpty(),
+        // 外挂字幕（2026-11-28 协议）：服务端已按语言去重，客户端按 URL 直连
+        subtitles = detail.subtitles.orEmpty().map { toDetailSubtitle(it, baseUrl) },
+    )
+
+    /** 外挂字幕映射：URL 同直链一次性绝对化（签名 URL 禁改写，ADR-0002）。 */
+    fun toDetailSubtitle(sub: AssetSubtitle, baseUrl: String): DetailSubtitle = DetailSubtitle(
+        lang = sub.lang,
+        format = when (sub.format) {
+            AssetSubtitle.Format.ass -> SubtitleFormat.ASS
+            AssetSubtitle.Format.ssa -> SubtitleFormat.SSA
+            AssetSubtitle.Format.srt -> SubtitleFormat.SRT
+            AssetSubtitle.Format.vtt -> SubtitleFormat.VTT
+        },
+        sizeBytes = sub.sizeBytes,
+        url = SdkMappers.absolutize(sub.url, baseUrl),
     )
 
     // 详情关联条目自 2026-10-02 协议批（第四百三十九笔）起为 AssetDetailTag/

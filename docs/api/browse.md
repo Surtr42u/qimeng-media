@@ -146,3 +146,19 @@ PUT 缺省=保持现值、显式空数组=清空回基线（与 groups 整体替
 ## 缩略图表示版本
 
 GET `/media/thumb/{assetId}` 新增表示版本 v：当前版本使用 immutable；旧版本 410/no-store，缺省版本 private/no-cache。表示版本随原件 size+mtime、策略、输出格式及配置变化；强 ETag 另含实际输出字节哈希，交由 ServeContent 处理条件请求。
+
+## 外挂字幕轨 `subtitles` 与 `GET /media/sub/{assetId}`
+
+（2026-11-28，用户拍板：字幕以独立 `.ass` 等文件放在视频目录之外，App/Web/桌面加载）：
+字幕按固定目录约定存放，不入库、不参与索引——`<库根父目录>/5  字幕/<库文件夹名>/<资产相对路径>.ass`
+（目录名 = 数字 5 + 两个空格 + 字幕；文件名主干与视频逐字节一致，语言码取 `.ass` 前最后一段扩展名，
+如 `.zh.ass`/`.en.ass`）。`5  字幕` 是库根的同级目录，scanner 只遍历库根，天然不会收录。
+
+`GET /assets/{assetId}` 的视频资产新增可选 `subtitles: AssetSubtitle[]`（`lang`/`format`/`sizeBytes`/`url`），
+服务端已按语言去重（同语言多格式按 ass > ssa > srt > vtt 取一条，多格式同时播放会叠加渲染）；
+无字幕目录/无匹配文件时字段缺省（客户端继续用内嵌轨）。`url` 是签名直链
+`/media/sub/{assetId}?lang=...&exp=...&sig=...`，与 `/media/orig` 同一签名协议（exp 窗口对齐，
+ADR-0027）：`lang` 只用于与本资产字幕目录项比对、不参与路径拼接，签名仍只锚定路径（与 thumb 的 `size` 同理）。
+响应支持 HTTP Range（播放器断点续读），`Content-Type` 按格式：ass/ssa=`text/x-ssa`、
+srt=`application/x-subrip`、vtt=`text/vtt`（均 `charset=utf-8`），缓存头与原件直链同款
+（`private, max-age=token_ttl`）。未知语言/无该语言字幕 404，缺签名/签名无效 403（与 `/media/**` 同款）。
