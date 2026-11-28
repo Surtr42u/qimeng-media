@@ -27,6 +27,7 @@ import ASS from 'assjs'
 import Artplayer from 'artplayer'
 import { useEffect, useRef, useState } from 'react'
 import { stepPlayGate, type PlayGateState } from '@/lib/engagement-reporting'
+import { createAutoHideScheduler } from '@/lib/control-autohide'
 import {
   buildSubtitleMenu,
   createSubtitleApplyGate,
@@ -363,6 +364,8 @@ export default function VideoPlayer({
             if (isOpen) {
               setOpenState(false)
               if (openMenu === handle) openMenu = null
+              // 面板收起后重新开始自动隐藏倒计时（不要依赖残留状态）
+              syncAutoHide()
             }
             if (focusButton) {
               // 选中项可能在本次 click 里被 setItems 重建：重建引发 focusout 会先以
@@ -381,6 +384,8 @@ export default function VideoPlayer({
             if (art.setting?.show) art.setting.show = false
             if (handle) openMenu = handle
             setOpenState(true)
+            // 面板打开期间停表，避免控制条把面板一起收起
+            syncAutoHide()
             // 键盘打开即进入第一项；鼠标打开同样把焦点交给菜单，Tab/方向键可直接用
             scheduleFocusFirst()
           }
@@ -483,12 +488,39 @@ export default function VideoPlayer({
     document.addEventListener('pointerdown', onDocumentPointerDown, true)
     document.addEventListener('keydown', onDocumentKeyDown)
 
-    // 面板打开期间禁止控制条自动隐藏（ArtPlayer 的 3s 自动隐藏会在静止/触屏时把面板一起
-    // 藏走）：在它发出 control(false) 的同一任务里同步拉回，浏览器不会画出中间帧；
-    // 面板关闭后不再拦截，自动隐藏在 3s 内自然恢复。
-    art.on('control', (visible: boolean) => {
-      if (!visible && openMenu) art.controls.show = true
+    // 控制条自动隐藏：ArtPlayer 5.4 已移除内置 autoHide（option.d.ts 无该字段、
+    // dist 中无该字符串），控制条只支持显式 show/hide，因此由播放器层调度。
+    // 旧的「control(false) 时若有 openMenu 就拉回」写法在 openMenu 残留时会永久阻止
+    // 隐藏，这里改为：活动→显示并重新计时；到点且菜单/设置面板都没开才真正收起。
+    const AUTO_HIDE_MS = 3000
+    const isOverlayOpen = () => openMenu !== null || Boolean(art.setting?.show)
+    const autoHide = createAutoHideScheduler({
+      hideMs: AUTO_HIDE_MS,
+      setTimer: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimer: (id) => window.clearTimeout(id),
+      onHide: () => {
+        art.controls.show = false
+      },
+      isBlocked: isOverlayOpen,
     })
+    const revealControls = () => {
+      art.controls.show = true
+      autoHide.schedule()
+    }
+    const hideControlsOnLeave = () => {
+      autoHide.cancel()
+      if (!isOverlayOpen()) art.controls.show = false
+    }
+    container.addEventListener('mousemove', revealControls)
+    container.addEventListener('touchstart', revealControls, { passive: true })
+    container.addEventListener('mouseleave', hideControlsOnLeave)
+    // 菜单/设置面板开关后重新计时：打开即停表，关闭后才重新开始倒计时
+    const syncAutoHide = () => {
+      if (isOverlayOpen()) autoHide.cancel()
+      else autoHide.schedule()
+    }
+    // 初始化：进页面时控制条是显示的，先起一次倒计时，静止 3s 后自动收起
+    autoHide.schedule()
 
     // 清晰度面板：默认「原画」，loadedmetadata 后换成真实分辨率标签
     let qualityMenu: MenuHandle | null = null
@@ -769,6 +801,10 @@ export default function VideoPlayer({
 
     return () => {
       disposed = true
+      autoHide.cancel()
+      container.removeEventListener('mousemove', revealControls)
+      container.removeEventListener('touchstart', revealControls)
+      container.removeEventListener('mouseleave', hideControlsOnLeave)
       document.removeEventListener('pointerdown', onDocumentPointerDown, true)
       document.removeEventListener('keydown', onDocumentKeyDown)
       themeObserver.disconnect()
