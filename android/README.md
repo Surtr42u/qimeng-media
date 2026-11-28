@@ -46,6 +46,12 @@ preferredTextLanguage（默认选中）；`BiliPlayerView` 给 PlayerView 自带
 （白字 + 半透明黑底，ASS 自带样式优先），设置面板「字幕」行列出当前媒体全部文本轨语言 + 关闭档
 （`TrackSelectionParameters` 选轨，不重装媒体源；菜单文案用服务端 `label`，默认轨用服务端 `isDefault`）。无外挂字幕时行为与旧版一致。
 
+首帧尺寸：SubtitleView 先 `INVISIBLE`，等 Media3 回调有效视频尺寸（且播放器离开 IDLE，与 PlayerView
+采用画面比例的时机同口径）后再显示——视频尺寸未知时 `exo_content_frame` 比例为 0、SubtitleView 铺满
+全舞台，Media3 会按该高度换算 ASS 相对字号，真机实测首帧大 3~4 倍并裁掉左缘；adopt 复挂已 READY 的
+播放器时在 `setPlayer` 立即补判定。字幕位置保持 ASS/Media3 自身定位，控制条显隐不做任何上移/内边距
+补偿（用户 2026-11-28 明确否决抬升方案；条子可见时压住底部字幕可接受，自动隐藏后原位置可见）。
+
 字幕字体随包分发：`feature:detail` 的 `res/font/` 放 Noto Sans SC Bold 与 Liberation Sans Bold，`SubtitleFonts.kt` 在 API 29+ 用 `Typeface.CustomFallbackBuilder` 组「拉丁→Liberation、汉字→Noto」备用链，API 26–28 统一 Noto；typeface 经 `CaptionStyleCompat` 传给 SubtitleView。许可/SHA-256/已知差异见 [FONTS](../docs/FONTS.md)（Media3 SSA 解析器不保留 Fontname，只能视图级覆盖）。
 
 ## 缩略图表示版本与备份兼容

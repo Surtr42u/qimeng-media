@@ -1,3 +1,15 @@
+## fix(app): 播放器字幕完全不显示/首帧过大/播控面板三修（2026-11-28 第七百四十笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash，负责 Web/Android 实现、Playwright 实拍验证与文档）
+
+- Web/桌面“字幕完全不显示”根因：assjs 每次 resize 用 `cssText` 重写 `.ASS-box` 内联样式，原代码只写一次的 `z-index:20` 被抹掉，画布落回 `<video>`（z-index:10）之下；DOM 与 `media/sub` 请求都正常（200 `text/x-ssa`），但视觉上被视频完全盖住。修法=新增 `.qm-ass-subtitle-layer` 外层固定 z-index=20（位置仍按 ASS `MarginV`），不再把层级写在 assjs 节点上。
+- Web/桌面播控：清晰度/倍速/字幕由官方 hover selector 改为点击常驻面板（复用 `.art-control-selector`/`.art-selector-list` 视觉类与主题变量，带 `role="menu"`/`aria-expanded`）；点按钮/选项/面板外/ESC 关闭，面板打开期间控制条禁止自动隐藏，关闭后 3s 自动隐藏恢复。字幕菜单语义不变：关闭恒第一项、外挂在前、内嵌在后、默认中文轨；`applySubtitle` 与 `ext:`/`emb:` 编码不变。面板键盘可达：roving tabindex，打开聚焦首项，↑↓/Home/End 移动，Enter/Space 选中，Esc 关闭并还焦点给按钮，Tab 移出自动收起。
+- 外挂层并发防护（审查必修）：`applySubtitle` 每次递增挂载令牌，异步 fetch/字体回调只认自己的令牌；挂载前再无条件拆旧层，保证 A→关闭→A 或加载中重复选同轨时 `.ASS-box`/`<track>` 至多一个、关闭后无残留。令牌收敛纯函数 `createSubtitleApplyGate` 并补单测。
+- 字幕位置：按用户 2026-11-28 明确否决，撤销“控制条可见时上移字幕”方案（Web assjs/原生 track 与 Android SubtitleView 均无位移）；控制条可见时允许压住底部字幕，自动隐藏后字幕在原位置可见。
+- Android 首帧：SubtitleView 先 `INVISIBLE`，等有效视频尺寸且播放器离开 IDLE（与 PlayerView 采用比例同口径）后再显示，避免按全舞台高度换算 ASS 相对字号（NX721J 首帧大 3~4 倍、左缘裁切）；adopt 已 READY 播放器时 `setPlayer` 立即补判定。纯函数 `subtitleViewportReady` 单测锁定。
+- 验证：Web 8421 dev 与 `npm run build` 后静态托管 dist 均用 Edge/Playwright 实拍（4.5s 字幕、控制条隐藏/划回字幕 Y 不变、面板打开 10s 不隐藏、面板关闭 3.5s 内恢复隐藏；`media/sub` 200 `text/x-ssa`，无 console error）；审查补验：延迟字幕响应下 A→关闭→A 后 `.ASS-box`/外挂 track 均 1 个、关闭后 0 个，键盘 Enter 开面板→首项聚焦→↑↓→Enter 选中→焦点回按钮、Esc 回按钮、Tab 收起；截图与 JSON 证据在 `audit/`（未入库）。Web `npx tsc --noEmit`、`npx vitest run`（403 项）、`npm run build`、`npx oxlint src`（0 errors）；Android `:app:assembleDebug` + `:feature:detail:testDebugUnitTest`（JDK 17 / API 35 SDK）通过。
+- 文档：GUIDE_UI 视频字幕、web/README 外挂字幕、android/README 外挂字幕、CAPABILITY_MAP 外挂字幕行、本 CHANGELOG。未改 OpenAPI/SDK/生成物。
+
 ## feat(server): 本机直接入库 ingest-local 与未决写入可恢复（2026-11-28 第七百三十九笔）
 
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash，负责服务端端点/预算恢复/文档与隔离实测；MCP 工具接线按用户决定延后）
@@ -271,15 +283,6 @@
 - 复用设备结果包协议与维护账本实现后台 Worker：core/data/device 14 个文件（Runner 编排领取-校验-应用-回读-回传；Worker/Scheduler/WorkSpec 15min 周期+一次性、CONNECTED、unique work+Mutex；Remote/Policy/Authorization/SegmentVerifier/ResultPlanner/LocalBackup/Readback/SettingsRepository/Models）；feature/manage 设备领取页/VM 与维护页入口（设备标签、口令式设备令牌、后台开关、立即应用、最近摘要）。
 - 设备授权：专用 AI 令牌（device.apply + device_ids）只用于设备端点，无令牌不回退会话 token；本机模式先拉起内嵌服务；维护根+所有文件访问门禁，缺失回 failed 并提示 UI 授权；先导出两代备份再 import-txt/qimeng-backup，按 expectedReadback 回读比较后回传 result，清理临时段；409 先对账终态不覆盖。
 - 验证：:core:data:testDebugUnitTest device.* 34 tests 通过、feature:manage/app compileDebugKotlin 通过、check_docs 0 错误、check_privacy passed。未安装、未真机；Doze/厂商后台、后台拉起内嵌 FGS、SAF/存储授权撤回、PC→手机端到端、断网/进程被杀恢复待验证；无段级进度持久化，进程强杀可能重下整包。
-
-## feat(server): 独立 AI 客户端凭据、scope 强制校验与写审计（2026-11-08 第七百一十笔）
-
-执行 AI：DeepSeek V4.1 Flash（子代理 go-worker 实现与本地定向验证）
-
-- ADR-0057 P1 首批（不改 OpenAPI/sdk.lock/三端、不加 HTTP 管理端点）：migration 0025 只增 ai_clients（token_hash 唯一、scopes_json/device_ids_json、expires/revoked/last_used）与 ai_audit（只增、无外键）；新包 server/internal/aiauth（scope 白名单/未知拒绝、token 生成+auth.TokenHash、过期/撤销 fail-closed、5s 缓存+Reload、审计、Create/List/Revoke/Rotate）。
-- httpapi：管理员会话先行验证（行为不变），未命中再验 AI 凭据；AI 按 method+path 强制 scope（GET/HEAD 兜底 read，维护/备份/研究/设备各自 scope，未映射写默认 403 FORBIDDEN_SCOPE），管理员不受限；AI 写请求含被拒写审计；设备级隔离 device.apply + ai_clients.device_ids，列表/详情/领取/段/回传/取消校验 targetDevice，越权不改状态。
-- 管理入口：qimeng ai-client create|list|revoke|rotate -config，直接打开同一 SQLite（先幂等 migration），明文 token 只 stdout 一次；撤销幂等、轮换旧 token 立即失效。验证：go build/vet、aiauth/httpapi/cmd 定向测试通过；未跑全量/CI/真实库。边界：协议化 scope、HTTP 管理端点、限流预算、审计查询、设备配对未实现；异地撤销约 5s 缓存生效。
-
 
 # CHANGELOG - 变更历史
 

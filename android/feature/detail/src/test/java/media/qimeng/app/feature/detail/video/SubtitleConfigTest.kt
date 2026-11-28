@@ -1,6 +1,7 @@
 package media.qimeng.app.feature.detail.video
 
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.Player
 import media.qimeng.app.core.model.DetailSubtitle
 import media.qimeng.app.core.model.SubtitleFormat
 import org.junit.Assert.assertEquals
@@ -91,5 +92,23 @@ class SubtitleConfigTest {
         // 无中文轨 → 不预选（播放器保持内嵌轨行为，用户可在字幕菜单手动选）
         assertNull(defaultSubtitle(emptyList()))
         assertNull(defaultSubtitle(listOf(track("en"), track("ja"))))
+    }
+
+    @Test
+    fun subtitleViewportRequiresKnownVideoSize() {
+        // 首帧回归（适配点⑯）：尺寸未回调时 SubtitleView 必须保持隐藏，
+        // 否则 Media3 按全舞台高度换算 ASS 相对字号（真机大 3~4 倍并裁左缘）
+        assertFalse(subtitleViewportReady(0, 0, Player.STATE_BUFFERING))
+        assertFalse(subtitleViewportReady(3840, 0, Player.STATE_READY))
+        assertFalse(subtitleViewportReady(0, 2160, Player.STATE_READY))
+        assertFalse(subtitleViewportReady(-1, 2160, Player.STATE_READY))
+        assertTrue(subtitleViewportReady(3840, 2160, Player.STATE_READY))
+        assertTrue(subtitleViewportReady(1920, 1080, Player.STATE_BUFFERING))
+    }
+
+    @Test
+    fun subtitleViewportRejectsIdleLikePlayerViewAspectRatio() {
+        // 与 PlayerView.onVideoSizeChanged 同口径：STATE_IDLE 时不采用比例，字幕也不显示
+        assertFalse(subtitleViewportReady(3840, 2160, Player.STATE_IDLE))
     }
 }

@@ -69,3 +69,78 @@ export function defaultSubtitleIndex(subtitles: { lang: string; isDefault?: bool
   if (marked >= 0) return marked
   return subtitles.findIndex((sub) => isChineseSubtitle(sub.lang))
 }
+
+/** 字幕菜单关闭档的值（恒第一项） */
+export const SUBTITLE_OFF = 'off'
+
+/** 外挂轨菜单值前缀（后接服务端 subtitles 数组下标） */
+export const EXTERNAL_PREFIX = 'ext:'
+
+/** 内嵌轨菜单值前缀（后接 video.textTracks 过滤后的下标） */
+export const EMBEDDED_PREFIX = 'emb:'
+
+/**
+ * 字幕挂载令牌（2026-11-28 审查修复）：每次 applySubtitle 递增，异步回调只认自己那次
+ * 的令牌。只比较“当前选中值”挡不住 A→关闭→A：旧请求回来时值又变成 A，会再挂一层
+ * assjs/track，旧节点无引用则关不掉。纯逻辑，单测覆盖连续切轨序列。
+ */
+export interface SubtitleApplyGate {
+  /** 开始一次新的应用，返回本次令牌（单调递增） */
+  begin(): number
+  /** 该令牌是否仍是最近一次应用（false = 已被后续选择取代） */
+  isCurrent(token: number): boolean
+}
+
+export function createSubtitleApplyGate(): SubtitleApplyGate {
+  let current = 0
+  return {
+    begin: () => {
+      current += 1
+      return current
+    },
+    isCurrent: (token) => token === current,
+  }
+}
+
+export interface SubtitleMenuEntry {
+  /** 选项值：off / ext:<i> / emb:<i> */
+  value: string
+  /** 菜单与按钮展示名（服务端 label 或本地回退） */
+  label: string
+  /** 是否默认选中（仅外挂轨可能命中，直接采用 defaultSubtitleIndex 结果） */
+  isDefault: boolean
+}
+
+/**
+ * 字幕菜单条目装配（2026-11-28 播控修复）：`关闭` 恒第一项、外挂在前、内嵌在后，
+ * 默认标记只落在服务端/中文兜底选出的外挂轨上。抽成纯函数锁定顺序与默认语义，
+ * 组件只负责 DOM 渲染与点击应用（applySubtitle 的 ext:/emb: 值编码不变）。
+ */
+export function buildSubtitleMenu(
+  external: readonly { label: string }[],
+  embedded: readonly { label: string }[],
+  defaultExternalIndex: number,
+): { entries: SubtitleMenuEntry[]; defaultLabel: string } {
+  const entries: SubtitleMenuEntry[] = [
+    { value: SUBTITLE_OFF, label: '关闭', isDefault: defaultExternalIndex < 0 },
+  ]
+  external.forEach((sub, index) => {
+    entries.push({
+      value: EXTERNAL_PREFIX + index,
+      label: sub.label,
+      isDefault: index === defaultExternalIndex,
+    })
+  })
+  embedded.forEach((track, index) => {
+    entries.push({
+      value: EMBEDDED_PREFIX + index,
+      label: track.label,
+      isDefault: false,
+    })
+  })
+  const defaultLabel =
+    defaultExternalIndex >= 0 && external[defaultExternalIndex]
+      ? external[defaultExternalIndex].label
+      : '字幕'
+  return { entries, defaultLabel }
+}

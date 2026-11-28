@@ -126,6 +126,14 @@ import kotlin.math.min
  *      渲染同一份 .ass 样式源。设置面板新增「字幕」轨选择（关闭 + 当前媒体全部文本轨语言，
  *      外挂/内嵌同列），选择走 TrackSelectionParameters（禁用文本轨 / 首选语言），
  *      不改播放器内核与手势。G1~G9 与既有控件行为零变化。
+ *   ⑯ 2026-11-28 用户真机反馈（NX721J）：首帧字幕尺寸错误——视频尺寸回调前 PlayerView
+ *      的 exo_content_frame 比例=0，SubtitleView 铺满全舞台，Media3 按 View 高度换算
+ *      ASS 相对字号 → 首帧约 3~4 倍且左缘裁切，尺寸回调后才重绘正常。修法=SubtitleView
+ *      先 INVISIBLE，视频尺寸有效且播放器离开 IDLE（与 PlayerView 采用比例的时机同口径）
+ *      后再显示；adopt 复挂已有尺寸的播放器时在 setPlayer 立即复查（同 W5 #50 的补同步
+ *      思路），判定收敛纯函数 subtitleViewportReady（单测锁定）。字幕位置保持 ASS/Media3
+ *      自身定位，不随控制条上下移动（2026-11-28 用户明确否决抬升方案；条子可见时压住
+ *      底部字幕可接受，条子隐藏后字幕按原位置显示）。
  *
  * 手势冻结口径（G1~G9；G1/G2 已由 2026-09-19 拍板改版，沿革见适配点⑪）：
  * G1 单击（双向）显隐控制器；G2 双击（双向）播停；
@@ -229,14 +237,21 @@ class BiliPlayerView @JvmOverloads constructor(
                 // W5 #50：赋值判定收敛到 syncTotalTimeText（与 setPlayer 挂载补同步同源同口径）
                 syncTotalTimeText()
                 updateQualityButtonText()
+                // 适配点⑯：尺寸回调若发生在 IDLE（PlayerView 不采用比例），READY 时补复查
+                syncSubtitleVisibility()
             } else if (playbackState == Player.STATE_ENDED) {
                 // G9：播完强制显示控制器（再点播放由 togglePlayPause/startPlayback seekTo(0)）
                 showController(true)
+            } else if (playbackState == Player.STATE_IDLE) {
+                // 换源/错误回退时先收起字幕，避免旧尺寸基准下的残留（下次尺寸回调再显示）
+                syncSubtitleVisibility()
             }
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             updateQualityButtonText()
+            // 适配点⑯：尺寸有效且已离开 IDLE 才显示字幕（PlayerView 同拍采用比例）
+            syncSubtitleVisibility(videoSize)
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -349,6 +364,10 @@ class BiliPlayerView @JvmOverloads constructor(
                 subtitleTypeface(context),
             )
         )
+        // 适配点⑯：尺寸基准未就绪前不画字幕（INVISIBLE 仍参与布局，只跳过绘制）。
+        // 首帧若先按全舞台高度渲染 ASS 相对字号，会大 3~4 倍并裁掉左缘；等
+        // onVideoSizeChanged/READY 把 exo_content_frame 比例落到布局后再显示。
+        playerView.subtitleView?.visibility = View.INVISIBLE
         addView(playerView)
 
         gestureIndicator = LinearLayout(context).apply {
@@ -628,6 +647,9 @@ class BiliPlayerView @JvmOverloads constructor(
         // W5 #50：全屏覆盖层等 adopt 场景挂载时 READY 转换早已发生（Listener 只报状态变化，
         // 原唯一赋值点 onPlaybackStateChanged 在新视图上永不触发 → 总时长恒 00:00），挂载即补同步
         syncTotalTimeText()
+        // 适配点⑯：adopt 复挂已 READY 的播放器不会再收到 onVideoSizeChanged，按播放器
+        // 当前 videoSize 立即复查；首次 prepare 路径此时尺寸未知 → 保持隐藏等回调。
+        syncSubtitleVisibility()
         // G8：挂载即按静音位压 volume（搬运件 isMuted 初始 true → 首挂即静音）；
         // adopt 路径取快照（见上），交接不丢用户已调状态
         applyMuteAndSpeed(muted = targetMuted, speed = targetSpeed)
@@ -665,6 +687,8 @@ class BiliPlayerView @JvmOverloads constructor(
     fun detachPlayer() {
         playerView.player?.removeListener(playerListener)
         playerView.player = null
+        // 适配点⑯：退场视图不再保留可见字幕（下次挂载由 syncSubtitleVisibility 重新判定）
+        playerView.subtitleView?.visibility = View.INVISIBLE
     }
 
     /**
@@ -677,6 +701,20 @@ class BiliPlayerView @JvmOverloads constructor(
      */
     private fun syncTotalTimeText() {
         totalTimeText.text = totalDurationText(duration) ?: TOTAL_TIME_PLACEHOLDER
+    }
+
+    /**
+     * 字幕尺寸基准门（适配点⑯）：视频尺寸有效且播放器已离开 IDLE 才显示 SubtitleView。
+     * 判定单源 = [subtitleViewportReady]（纯函数，单测锁定）；[videoSize] 缺省读播放器当前值，
+     * 供 setPlayer/READY 的补同步使用。视频尺寸来自 Media3，覆盖 ASS 的 PlayRes 映射基准。
+     */
+    private fun syncSubtitleVisibility(videoSize: VideoSize? = playerView.player?.videoSize) {
+        val subtitleView = playerView.subtitleView ?: return
+        val width = videoSize?.width ?: 0
+        val height = videoSize?.height ?: 0
+        val playbackState = playerView.player?.playbackState ?: Player.STATE_IDLE
+        subtitleView.visibility =
+            if (subtitleViewportReady(width, height, playbackState)) View.VISIBLE else View.INVISIBLE
     }
 
     /** 静音位/倍速的「镜像字段 + 控件 + 播放器」三处对齐（交接路径共用，防镜像与实况脱节） */

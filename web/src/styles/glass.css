@@ -1987,36 +1987,30 @@ button.pill.detail-tag-manage { cursor: pointer; }
   white-space: nowrap !important;
   opacity: 0 !important;
   pointer-events: none !important;
-  visibility: hidden !important;
-  transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0, 0, 0.2, 1), visibility 0.15s !important;
+  /* 刻意不用 visibility:hidden：隐藏态若不可见，focus() 会落空，键盘打开后无法进首项。
+     收起态由 opacity/pointer-events + 项 tabIndex=-1 + aria-hidden 共同保证不可达。 */
+  transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0, 0, 0.2, 1) !important;
   z-index: 100 !important;
 }
 
-/* 悬停防抖透明连接桥：跨过按钮与菜单之间的 10px 间隙 */
-.art-video-player .art-control-selector .art-selector-list::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  height: 12px;
-}
-
-.art-video-player .art-control-selector:hover:not(.art-selector-closed) .art-selector-list,
-.art-video-player .art-control-selector:focus-within:not(.art-selector-closed) .art-selector-list,
-.art-video-player .art-control-selector.art-selector-show:not(.art-selector-closed) .art-selector-list {
+/* 展开态只认 art-selector-show（2026-11-28 播控修复）：清晰度/倍速/字幕已从官方
+   hover selector 改为点击常驻面板，hover / focus-within 不再展开。上游
+   `.art-control-selector:hover` 的 opacity/transform/pointer-events 被上面基础态的
+   !important 压住，因此指针离开按钮移入面板也不会收起。 */
+.art-video-player .art-control-selector.art-selector-show .art-selector-list {
   opacity: 1 !important;
   transform: translateX(-50%) translateY(0) !important;
   pointer-events: auto !important;
-  visibility: visible !important;
 }
 
-/* 选项选完或主动收起时立即强制隐藏菜单（对标 Bilibili Web 主流交互，防止 hover 残留） */
-.art-video-player .art-control-selector.art-selector-closed .art-selector-list {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
+/* 清晰度条目第二行（真实分辨率）；主文案沿用 .art-selector-item 的居中样式 */
+.art-video-player .art-selector-item .art-selector-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  opacity: 0.72;
 }
 
 .art-video-player .art-selector-item {
@@ -2039,6 +2033,25 @@ button.pill.detail-tag-manage { cursor: pointer; }
 .art-video-player .art-selector-item.art-current {
   color: var(--qm-primary) !important;
   font-weight: 600 !important;
+}
+
+/* 键盘焦点可见（2026-11-28 审查必修）：按钮与菜单项都可 Tab/方向键到达 */
+.art-video-player .art-control-selector:focus-visible,
+.art-video-player .art-selector-item:focus-visible {
+  outline: 2px solid var(--qm-primary) !important;
+  outline-offset: -2px !important;
+}
+
+/* 外挂 ASS 画布层（2026-11-28）：只固定层级，不做任何上下位移（用户明确否决“字幕
+   随控制条上移”）。ASS 不能把 z-index 写进 .ASS-box：assjs 每次 resize 用 cssText
+   重写内联样式会抹掉，画布会掉到 <video>(z-index:10) 之下——这是本次“字幕完全不
+   显示”的根因，故外层独立成层。位置保持 ASS 自身 MarginV/定位；控制条可见时允许
+   遮挡底部字幕，条子自动隐藏后同一位置直接可见。 */
+.art-video-player .qm-ass-subtitle-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
 }
 
 /* 官方设置面板（齿轮弹层）：精准悬浮于右下角播控栏上方，消除顶部阴影 */

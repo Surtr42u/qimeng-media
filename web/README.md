@@ -12,9 +12,16 @@
 
 播放器字幕数据源 = 详情响应 `AssetDetail.subtitles`（服务端按「5  字幕」目录约定解析的 sidecar 轨，
 签名 URL 与视频直链同款，`fetch` 原样请求即可）。控制条「字幕」菜单把外挂轨与内嵌轨合并：`关闭` 恒第一项、
-外挂在前，有中文外挂轨时默认选中。渲染分工：ass/ssa 走 `assjs`（纯前端 ASS 渲染，按脚本样式/定位/
-描边/黑边条绘制，不降级成 VTT 文本）；srt 只把时间轴逗号换成点后以 blob `<track>` 交给浏览器，vtt 原样。
-`assjs` 是新增运行时依赖（MIT，零传递依赖），仅本文件消费；专业限制见 CAPABILITY_MAP「外挂字幕」行。
+外挂在前，有中文外挂轨时默认选中。清晰度/倍速/字幕均为点击展开的常驻面板（再次点击、点选项、点面板外
+或 ESC 关闭；面板打开期间控制条禁止自动隐藏），不再用 ArtPlayer 随 hover 收起的官方 selector；面板支持
+键盘（Enter/Space 打开，↑↓/Home/End 移动，Enter/Space 选中，Esc 关闭并还焦点，Tab 移出收起）。
+渲染分工：ass/ssa 走 `assjs`（纯前端 ASS 渲染，按脚本样式/定位/描边/黑边条绘制，不降级成 VTT 文本），
+画布外层 `.qm-ass-subtitle-layer` 固定 z-index=20——不能把 z-index 写在 assjs 的 `.ASS-box` 上，它每次
+resize 都用 cssText 重写内联样式会把 z-index 抹掉，画布掉到 `<video>`(z-index:10) 之下就会“完全不显示”；
+srt 只把时间轴逗号换成点后以 blob `<track>` 交给浏览器原生渲染，vtt 原样。字幕位置按 ASS `MarginV`/
+原生定位固定，控制条显隐不移动字幕（用户 2026-11-28 否决上移方案；条子可见时压住底部字幕可接受，
+自动隐藏后原位置可见）。`assjs` 是新增运行时依赖（MIT，零传递依赖），仅本文件消费；专业限制见
+CAPABILITY_MAP「外挂字幕」行。
 
 字幕字体随包分发：`public/fonts/` 下 Noto Sans SC Bold（4.3 MB woff2）与 Liberation Sans Bold，`styles/subtitle-fonts.css` 用 @font-face 把家族名 `Microsoft YaHei`/`微软雅黑`/`Arial` 指过去，`lib/external-subtitles.ts` 的 `ensureSubtitleFonts()` 在 assjs 构造前 `document.fonts.load` 预载。许可、SHA-256、覆盖范围与已知差异见 [FONTS](../docs/FONTS.md)。
 
