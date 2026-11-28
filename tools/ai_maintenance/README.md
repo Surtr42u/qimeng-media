@@ -98,7 +98,7 @@ python -X utf8 tools/ai_maintenance/cli.py tools list
 `asset.upload` 权限覆盖上传与本机移动两种入库通道，不新增权限门。
 
 2026-11-15 审查修复后源码契约更新：工具包 `1.7.1`、工具契约 `2.1.0`、规则
-`2026-11-15.1`。新增纯素材作品研究 `research.work`、受控研究产物引用
+`2026-11-22.1`。新增纯素材作品研究 `research.work`、受控研究产物引用
 `artifactRef`（`platform.artifact.read`）、可信端未决写入核销/预算续期入口与
 可移植分发工具包；旧计划须重新 prepare。默认权限仍为仅 `read`；自动化写入须在
 可信配置中明确授予权限，并由服务端 AI scope 再次约束。`author.query` 返回分页

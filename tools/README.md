@@ -14,7 +14,7 @@
 `SOURCE_NOT_REMOVED`、already_present 本地复算 sha256 不符报 `CONTENT_MISMATCH`。
 边界见[工具说明「本机直接入库」](ai_maintenance/README.md#本机直接入库assetingestlocal2026-11-28)。
 
-2026-11-15 工具包1.7.1/契约2.1.0/规则2026-11-15.1：在默认只读、稳定MCP清单与
+2026-11-15 工具包1.7.1/契约2.1.0/规则2026-11-22.1：在默认只读、稳定MCP清单与
 可选按需发布、作者正式检索分页、有界展示/续读/planRef、可信任务授权与调用/时间/
 无进展预算之上，新增纯素材作品研究 `research.work`、受控研究产物 `artifactRef`
 （抽帧/证据可跨工具接续）、可信端未决写入核销/预算续期（`admin task`）与可移植
