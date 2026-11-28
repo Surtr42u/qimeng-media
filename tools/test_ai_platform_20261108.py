@@ -223,12 +223,12 @@ class RegistrationTest(unittest.TestCase):
         self.assertIn("research.image.pipeline", domains["research"]["tools"])
 
     def test_versions_and_rules_sections(self):
-        self.assertEqual("1.7.1", versions.PLATFORM_VERSION)
-        self.assertEqual("2.1.0", versions.TOOL_CONTRACT_VERSION)
+        self.assertEqual("1.8.1", versions.PLATFORM_VERSION)
+        self.assertEqual("2.2.0", versions.TOOL_CONTRACT_VERSION)
         rules = rulepack.load_rules(RULES)
-        self.assertEqual("2026-11-15.1", rules["rulepackVersion"])
+        self.assertEqual("2026-11-28.2", rules["rulepackVersion"])
         self.assertEqual(rules["rulesVersion"], rules["rulepackVersion"])
-        self.assertEqual("1.7.1", rules["platform"]["platformVersion"])
+        self.assertEqual("1.8.1", rules["platform"]["platformVersion"])
         for section in ("research", "deviceApply", "maintenanceExecutor", "trash"):
             self.assertIn(section, rules)
         for code in ("PERMISSION_DENIED", "TOOL_DEPRECATED", "FORBIDDEN_SCOPE", "LEASE_LOST"):

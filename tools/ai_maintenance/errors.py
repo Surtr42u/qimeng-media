@@ -395,13 +395,15 @@ def recipe_artifact_tampered(step_id: str, details=None) -> ToolError:
     )
 
 
-def configuration_error(message: str) -> ToolError:
+def configuration_error(message: str, *, mutation_rejected: bool = False) -> ToolError:
+    """配置/凭据问题。调用方确认尚未写入时传 mutation_rejected=True（不进入未决写入）。"""
     return ToolError(
         "CONFIGURATION_ERROR",
         message,
         category="config",
         exit_code=2,
         recovery="检查 QIMENG_API_BASE / QIMENG_API_TOKEN / QIMENG_AI_* 环境变量；不回显或记录 token。",
+        mutation_rejected=mutation_rejected,
     )
 
 
@@ -511,5 +513,150 @@ def internal_error(message: str = "工具内部错误", details=None) -> ToolErr
         category="internal",
         exit_code=1,
         recovery="这是工具缺陷；保留输入与错误详情以便修复，不要重复写入。",
+        details=details,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 本机直接入库（asset.ingest.local）：源/目标不变量与服务端拒绝的稳定分类
+# --------------------------------------------------------------------------- #
+
+
+def not_in_storage_root(message: str = "源路径不在已授权的本地存储根内",
+                        details=None) -> ToolError:
+    """源文件不在 AI 侧授权存储根内，或经 `..`/符号链接解析后逃逸。"""
+    payload = dict(details or {})
+    payload.setdefault("env", ["QIMENG_AI_STORAGES"])
+    return ToolError(
+        "NOT_IN_STORAGE_ROOT",
+        message,
+        category="permission",
+        exit_code=2,
+        recovery=(
+            "由可信执行端用 QIMENG_AI_STORAGES 配置 storageId=绝对路径；源文件必须已在该根内，"
+            "不要拼接跨根路径或用 .. / 符号链接取巧。服务端读根 QIMENG_INGEST_LOCAL_ROOTS 是另一套配置。"
+        ),
+        details=payload,
+        # 读根/链接校验都在移动之前完成：拒绝时源文件未动，不进入未决写入。
+        mutation_rejected=True,
+    )
+
+
+def source_in_library_root(message: str = "源文件位于媒体库根内，禁止经本机入库通道再次移动",
+                           details=None) -> ToolError:
+    """源落在任一媒体库根内：库内文件只能走媒体/回收站通道，不能跨库根搬运。"""
+    return ToolError(
+        "SOURCE_IN_LIBRARY_ROOT",
+        message,
+        category="usage",
+        exit_code=2,
+        recovery=(
+            "库内文件已建索引，移动/改名走 media.organize.apply 或 asset.rename；"
+            "删除走回收站。只有库根之外的源文件才用 asset.ingest.local。"
+        ),
+        details=details,
+        mutation_rejected=True,
+    )
+
+
+def target_exists(message: str = "目标已存在且内容不同，未覆盖（源文件未动）",
+                  details=None) -> ToolError:
+    return ToolError(
+        "TARGET_EXISTS",
+        message,
+        category="conflict",
+        exit_code=1,
+        recovery=(
+            "改名/换目标目录，或先处理既有目标后再执行；本通道绝不覆盖已存在文件。"
+            "同内容目标会返回 already_present（源不动），不是失败。"
+        ),
+        details=details,
+        # 409 在落位前返回，源文件未动。
+        mutation_rejected=True,
+    )
+
+
+def library_not_found(library_id: str = "", details=None) -> ToolError:
+    payload = dict(details or {})
+    if library_id:
+        payload.setdefault("libraryId", library_id)
+    return ToolError(
+        "LIBRARY_NOT_FOUND",
+        "libraryId 未指向已注册的媒体库",
+        category="usage",
+        exit_code=2,
+        recovery="先调用 library.query 取当前实例的库 ID；不要猜测或复用其他实例的 ID。",
+        details=payload or None,
+        mutation_rejected=True,
+    )
+
+
+def api_unavailable(endpoint: str = "", message: str = "", details=None, *,
+                    mutation_rejected: bool = False) -> ToolError:
+    """目标实例缺少/不可达本机入库端点，或网络失败导致结果未知。
+
+    明确的 404/405（端点不存在）在写入前返回，调用方传 mutation_rejected=True；
+    网络失败/超时结果未知，保持 False 以进入未决写入核对。
+    """
+    payload = dict(details or {})
+    if endpoint:
+        payload.setdefault("endpoint", endpoint)
+    return ToolError(
+        "API_UNAVAILABLE",
+        message or "目标实例未提供本机直接入库端点（POST /libraries/{libraryId}/ingest-local）",
+        category="capability",
+        exit_code=2,
+        recovery=(
+            "升级/切换目标实例到包含 ingest-local 的版本后重试；网络错误/超时时写入结果可能未知，"
+            "先按 assetId 或库内文件名回读，不要换操作盲目重传。传输方式不同不影响索引结果，"
+            "也可以退回 asset.upload（仅更慢）。"
+        ),
+        details=payload or None,
+        mutation_rejected=mutation_rejected,
+    )
+
+
+def storage_unavailable(message: str = "存储目录不可用或剩余空间不足", details=None, *,
+                        mutation_rejected: bool = False) -> ToolError:
+    """库根卷不可用/余量不足（服务端在复制前检查；move=false/跨分区复制路径）。"""
+    return ToolError(
+        "STORAGE_UNAVAILABLE",
+        message,
+        category="config",
+        exit_code=2,
+        recovery="检查库根所在卷的空间/挂载状态后重试；本次未确认写入成功，先回读目标目录。",
+        details=details,
+        mutation_rejected=mutation_rejected,
+    )
+
+
+def source_not_removed(message: str = "资产已入库，但源文件仍留在原位（move 未完成）",
+                       details=None) -> ToolError:
+    """服务端 move 复制并建索引成功、但删源失败：资产已存在，源不能当作已移动。"""
+    return ToolError(
+        "SOURCE_NOT_REMOVED",
+        message,
+        category="conflict",
+        exit_code=1,
+        recovery=(
+            "资产已入库（assetId 见 details），不要重复入库（重跑只会 already_present）；"
+            "确认源文件可删后手工清理，或排查占用/权限/只读属性后重试删除。"
+        ),
+        details=details,
+    )
+
+
+def content_mismatch(message: str = "already_present 的本地源内容与服务端摘要不一致",
+                     details=None) -> ToolError:
+    """服务端报 already_present 但本地源哈希与回传 sha256 不同：不得当作同一文件。"""
+    return ToolError(
+        "CONTENT_MISMATCH",
+        message,
+        category="verification",
+        exit_code=1,
+        recovery=(
+            "同名目标与本地源内容不一致：改名/换目录后重新 prepare；不要覆盖既有目标，"
+            "也不要删除源文件。"
+        ),
         details=details,
     )

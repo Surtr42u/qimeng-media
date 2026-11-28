@@ -4,6 +4,16 @@
 
 ## AI 工具平台任务卡与可执行 recipe
 
+2026-11-28 工具包1.8.1/契约2.2.0/规则2026-11-28.2：新增本机直接入库
+`asset.ingest.local.prepare` → `asset.ingest.local`（媒体库与源文件同机/同分区时
+直接移动入库并建索引，替代本地大文件的 HTTP 流式上传；源须在 `QIMENG_AI_STORAGES`
+根内且不在库根内，单次 ≤50 文件/64GiB；`already_present` 幂等、逐 assetId 回读、
+不同内容 409 不覆盖）。复用 `asset.upload` 权限，不新增权限门；手机/外网/跨设备继续
+走 `asset.upload`。审查修复（1.8.1）：单请求超时按 60s+60s/GiB（封顶 600s）放大、
+所有失败附 `details.completed`、401/403 等确定未写入不进未决、move 后源未删报
+`SOURCE_NOT_REMOVED`、already_present 本地复算 sha256 不符报 `CONTENT_MISMATCH`。
+边界见[工具说明「本机直接入库」](ai_maintenance/README.md#本机直接入库assetingestlocal2026-11-28)。
+
 2026-11-15 工具包1.7.1/契约2.1.0/规则2026-11-15.1：在默认只读、稳定MCP清单与
 可选按需发布、作者正式检索分页、有界展示/续读/planRef、可信任务授权与调用/时间/
 无进展预算之上，新增纯素材作品研究 `research.work`、受控研究产物 `artifactRef`

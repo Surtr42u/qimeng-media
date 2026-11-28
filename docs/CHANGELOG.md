@@ -1,3 +1,15 @@
+## feat(ai): MCP 工具 asset.ingest.local 本机直接入库（2026-11-28 第七百四十一笔）
+
+执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash，负责工具实现/规则/文档与隔离实测）
+
+- 工具：新增 `asset.ingest.local.prepare`（只读计划）与 `asset.ingest.local`（确认后逐文件执行），复用 `POST /api/v1/libraries/{libraryId}/ingest-local`。prepare 校验库存在、源在 AI 侧存储根 `QIMENG_AI_STORAGES` 内、源不在任何库根内（`SOURCE_IN_LIBRARY_ROOT`）、单次 ≤50 文件/64GiB，拒绝相对路径/`..`/符号链接/junction 逃逸，并给出每个文件的目标相对路径、字节数、源时间与预期状态（`move`/`already_present`/`conflict`/`unknown`）；不做全文件哈希（保留毫秒级入库），摘要由服务端在复制/幂等比对路径回传。apply 重新核对库根与每个源（大小/时间/摘要），逐文件 POST 后用返回 assetId `GET /assets/{id}` 回读库/relPath/sizeBytes，不一致即 `READBACK_MISMATCH`；`already_present` 视为幂等成功，内容不同 `TARGET_EXISTS`（409 不覆盖），失败即停止并在 details.completed 列出已完成文件；403/404/405/409/507 分别映射 `NOT_IN_STORAGE_ROOT`/`API_UNAVAILABLE`/`LIBRARY_NOT_FOUND`/`TARGET_EXISTS`/`STORAGE_UNAVAILABLE`，确定未写入的拒绝标记 `mutation_rejected` 不进入未决写入。
+- 审查修复（1.0.1）：单请求超时按 60s 基础 + 每 GiB 60s（封顶 600s）计算，注册表声明取封顶值，跨分区大文件不再被 20s 客户端超时打断；所有失败出口统一附 `details.completed=[{assetId,status,relPath}]`；401 鉴权与 403 FORBIDDEN_SCOPE 在服务端任何文件操作前拒绝，标 `mutation_rejected` 不进未决；`status=ingested` 但 `sourceKept=true` 报 `SOURCE_NOT_REMOVED`，`already_present` 用服务端 sha256 与本地源复算不符报 `CONTENT_MISMATCH`、缺摘要报 `READBACK_MISMATCH`（纯 rename 快路径仍不算全文件哈希）。
+- 规则与元数据：`rules.json` 新增 `ingestLocal` 节（选型、invariants、workflow、readback、错误码、risk、env），`permissions.toolPermissions.asset.upload` 说明覆盖上传与本机移动两种通道；工具复用 `asset.upload` 权限，按用户要求**不新增权限门/预算闸门**，服务端硬不变量不变。版本：工具包 `1.8.1`、工具契约 `2.2.0`、规则 `2026-11-28.2`；`platform.catalog`/`platform.tool.describe` 可见两工具（domain=media）。
+- 入参：`libraryId`、`paths[]`、可选 `directory`（库内相对目录）、可选 `operationId`（持久化 UUID，写入计划供重跑定位；幂等由计划指纹 + 服务端 already_present 保证）。
+- 文档：`tools/ai_maintenance/README.md` 新增「本机直接入库」节（何时用 ingest.local/upload、为什么本地不要上传）、工具目录与测试表行；`docs/api/files.md` 补 MCP 工具衔接与两套读根说明；`docs/CAPABILITY_MAP.md` 更新实现状态；`docs/AI_PLATFORM_TASKBOOK.md`、`tools/README.md` 同步版本与边界。
+- 验证：`python -m unittest discover -s tools -p 'test_*.py'` 569 项通过（新增 `tools/test_ai_platform_20261128.py` 37 项：入参/上限、`..`/符号链接逃逸/库根内源拒绝、计划预期状态、确认/指纹/实例、already_present 幂等、回读不一致、超时预算与按字节传入、401/403 不入未决、SOURCE_NOT_REMOVED、CONTENT_MISMATCH、缺 sha256、回读失败保留 completed、403/404/405/409/507 映射与部分失败上报；既有 532 项保持通过，7 跳过）；`python -X utf8 tools/check_docs.py` 0 错误。隔离实例（同 revision Go 二进制、临时 data/库根/读根、独立端口、dev-login、合成 PNG）实测真移动入库→幂等回读 `already_present`（sha256 回传、sourceKept=true、源保留、资产数 1）→同名不同内容 409 `TARGET_EXISTS` 且源保留；stub 慢响应验证 25s 跨分区预算、401/403 未决标记与 SOURCE_NOT_REMOVED/CONTENT_MISMATCH。未向 8420/qimeng-data 写入。
+- 限制：真实 3GB 级文件/局域网挂载与真实「跨分区删源失败」未在真机复现（以 stub 慢响应与合成小文件模拟）；AI 侧存储根与服务端读根 `QIMENG_INGEST_LOCAL_ROOTS` 是两套配置，服务端未配时端点 403；工具不改名（文件名取源文件名，正式编号命名用 `asset.rename`）；不支持单文件 >64GiB（单次调用总字节上限，可分批）。
+
 ## fix(app): 播放器字幕完全不显示/首帧过大/播控面板三修（2026-11-28 第七百四十笔）
 
 执行 AI：ZCode 主代理（opencode-go-chat/deepseek-v4.1-flash，负责 Web/Android 实现、Playwright 实拍验证与文档）
@@ -275,14 +287,6 @@
 - 依据 go-worker 对 7ce3bc79 的只读复核修复残余窗口：process 为每笔任务建 jobCtx，心跳 ErrLeaseLost/连续非租约失败/租约余量过小时 cancel，handler.Execute 改用 jobCtx；Execute 返回后按 jobCtx 判定 interrupted，不写终态、不误标 failed，已提交步骤保留、重领后重跑未完成步骤（P2-1）。
 - 步骤边界心跳非租约错误不再 failJob（warn+cancel+停止本槽，等 TTL 重领）；AdvanceStatus/settleStages 临时错误同策略（P2-2）。Claim 提交后 Get 失败时新增 ReleaseMaintenanceLease 尽力释放本次租约再返回错误（P3-3）。main 等待 worker 收敛加 shutdownTimeout，超时记录后继续关库（P3-5）。
 - 新增测试：Start+Concurrency=2+阻塞 handler+Pause/Resume 取消、瞬时心跳错误不 failed、领取后详情失败可立即重领；go build/vet/maintenance 定向测试通过。残余：取消依赖心跳发现（最长一个心跳间隔）；立即 resume 的极短窗口仍未完全消除，需后续协调/可重试语义评估；未改 API/协议/migration。
-
-## feat(app): Android 后台设备结果包 Worker、设备级令牌与 SAF/权限适配（2026-11-08 第七百一十一笔）
-
-执行 AI：DeepSeek V4.1 Flash（主代理代提交；独立子代理实现与 JVM 验证）
-
-- 复用设备结果包协议与维护账本实现后台 Worker：core/data/device 14 个文件（Runner 编排领取-校验-应用-回读-回传；Worker/Scheduler/WorkSpec 15min 周期+一次性、CONNECTED、unique work+Mutex；Remote/Policy/Authorization/SegmentVerifier/ResultPlanner/LocalBackup/Readback/SettingsRepository/Models）；feature/manage 设备领取页/VM 与维护页入口（设备标签、口令式设备令牌、后台开关、立即应用、最近摘要）。
-- 设备授权：专用 AI 令牌（device.apply + device_ids）只用于设备端点，无令牌不回退会话 token；本机模式先拉起内嵌服务；维护根+所有文件访问门禁，缺失回 failed 并提示 UI 授权；先导出两代备份再 import-txt/qimeng-backup，按 expectedReadback 回读比较后回传 result，清理临时段；409 先对账终态不覆盖。
-- 验证：:core:data:testDebugUnitTest device.* 34 tests 通过、feature:manage/app compileDebugKotlin 通过、check_docs 0 错误、check_privacy passed。未安装、未真机；Doze/厂商后台、后台拉起内嵌 FGS、SAF/存储授权撤回、PC→手机端到端、断网/进程被杀恢复待验证；无段级进度持久化，进程强杀可能重下整包。
 
 # CHANGELOG - 变更历史
 

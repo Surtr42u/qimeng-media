@@ -23,8 +23,12 @@
 
 响应 `IngestLocalResult {status, assetId, libraryId, relPath, fileName, mediaType,
 sizeBytes, sha256?, sourceKept}`；`status=ingested` 为 201。MCP 侧对应工具
-（`asset.ingest.local` prepare/apply）待 AI 平台工具表改动落地后接入；本轮先交付
-服务端端点。
+`asset.ingest.local.prepare`（只读计划，源须在 AI 侧 `QIMENG_AI_STORAGES` 根内、
+不在库根内，单次 ≤50 文件/64GiB）与 `asset.ingest.local`（确认后逐文件调用本端点，
+再用返回 assetId `GET /assets/{id}` 回读库/relPath/sizeBytes；`already_present`
+视为幂等成功，回读不一致报 `READBACK_MISMATCH`），见
+[工具 README](../../tools/ai_maintenance/README.md#本机直接入库assetingestlocal2026-11-28)。
+服务端读根 `QIMENG_INGEST_LOCAL_ROOTS` 与 AI 侧存储根是两套配置，不能互相替代。
 
 ## 上传整理
 

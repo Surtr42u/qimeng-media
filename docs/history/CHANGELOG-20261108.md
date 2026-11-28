@@ -1,6 +1,6 @@
 # CHANGELOG 历史归档：2026-11-08
 
-> 第七百零五～七百一十笔，完整原文迁入；现行状态见 HANDOVER。
+> 第七百零五～七百一十一笔，完整原文迁入；现行状态见 HANDOVER。
 
 ## fix(web): 两代备份写入中断恢复与轮换幂等（2026-11-08 第七百零八笔）
 
@@ -45,3 +45,11 @@
 - ADR-0057 P1 首批（不改 OpenAPI/sdk.lock/三端、不加 HTTP 管理端点）：migration 0025 只增 ai_clients（token_hash 唯一、scopes_json/device_ids_json、expires/revoked/last_used）与 ai_audit（只增、无外键）；新包 server/internal/aiauth（scope 白名单/未知拒绝、token 生成+auth.TokenHash、过期/撤销 fail-closed、5s 缓存+Reload、审计、Create/List/Revoke/Rotate）。
 - httpapi：管理员会话先行验证（行为不变），未命中再验 AI 凭据；AI 按 method+path 强制 scope（GET/HEAD 兜底 read，维护/备份/研究/设备各自 scope，未映射写默认 403 FORBIDDEN_SCOPE），管理员不受限；AI 写请求含被拒写审计；设备级隔离 device.apply + ai_clients.device_ids，列表/详情/领取/段/回传/取消校验 targetDevice，越权不改状态。
 - 管理入口：qimeng ai-client create|list|revoke|rotate -config，直接打开同一 SQLite（先幂等 migration），明文 token 只 stdout 一次；撤销幂等、轮换旧 token 立即失效。验证：go build/vet、aiauth/httpapi/cmd 定向测试通过；未跑全量/CI/真实库。边界：协议化 scope、HTTP 管理端点、限流预算、审计查询、设备配对未实现；异地撤销约 5s 缓存生效。
+
+## feat(app): Android 后台设备结果包 Worker、设备级令牌与 SAF/权限适配（2026-11-08 第七百一十一笔）
+
+执行 AI：DeepSeek V4.1 Flash（主代理代提交；独立子代理实现与 JVM 验证）
+
+- 复用设备结果包协议与维护账本实现后台 Worker：core/data/device 14 个文件（Runner 编排领取-校验-应用-回读-回传；Worker/Scheduler/WorkSpec 15min 周期+一次性、CONNECTED、unique work+Mutex；Remote/Policy/Authorization/SegmentVerifier/ResultPlanner/LocalBackup/Readback/SettingsRepository/Models）；feature/manage 设备领取页/VM 与维护页入口（设备标签、口令式设备令牌、后台开关、立即应用、最近摘要）。
+- 设备授权：专用 AI 令牌（device.apply + device_ids）只用于设备端点，无令牌不回退会话 token；本机模式先拉起内嵌服务；维护根+所有文件访问门禁，缺失回 failed 并提示 UI 授权；先导出两代备份再 import-txt/qimeng-backup，按 expectedReadback 回读比较后回传 result，清理临时段；409 先对账终态不覆盖。
+- 验证：:core:data:testDebugUnitTest device.* 34 tests 通过、feature:manage/app compileDebugKotlin 通过、check_docs 0 错误、check_privacy passed。未安装、未真机；Doze/厂商后台、后台拉起内嵌 FGS、SAF/存储授权撤回、PC→手机端到端、断网/进程被杀恢复待验证；无段级进度持久化，进程强杀可能重下整包。

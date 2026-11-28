@@ -461,6 +461,73 @@ TOOLS: tuple[ToolSpec, ...] = (
         requirements=(_req("/api/v1/libraries", "GET"), _req("/api/v1/libraries/{libraryId}/scan", "POST")),
     ),
     ToolSpec(
+        id="asset.ingest.local.prepare", version="1.0.0", kind="plan",
+        description=("本机直接入库计划：同机/同分区源文件移入库根并建索引（不经 HTTP 上传）；"
+                     "只读，绑定每个源的大小/时间/目标相对路径、库根与单次上限。"),
+        handler_ref="ai_maintenance.tools_ingest_local:asset_ingest_local_prepare",
+        permission="asset.upload",
+        input_schema=_schema({
+            "libraryId": _string("目标库 ID", 1, 512),
+            "paths": {"type": "array", "minItems": 1, "maxItems": 50,
+                      "items": _string("已授权存储根（QIMENG_AI_STORAGES）内的源文件绝对路径", 1, 4096)},
+            "directory": _string("库内相对目录，空=库根（本批所有文件共用）"),
+            "operationId": _string("可选：本次操作的持久化 UUID；同一操作重试保持不变", 1, 36),
+        }, required=("libraryId", "paths")),
+        output_schema=_PLAN_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/libraries", "GET"),),
+        runtime_checks=(
+            "只读：不移动文件、不建索引，不需要确认",
+            "源必须在 QIMENG_AI_STORAGES 存储根内；拒绝 ..、相对路径、符号链接/junction 与库根内文件",
+            "单次上限 50 个文件 / 64 GiB，超出请分批（already_present 可安全重跑）",
+            "不做全文件哈希：摘要由服务端在复制/幂等比对路径计算",
+        ),
+    ),
+    ToolSpec(
+        id="asset.ingest.local", version="1.0.1", kind="write",
+        description=("按计划把本机源文件移动入库并回读：同分区 rename、跨分区复制+长度/SHA256 复核后删源；"
+                     "目标同内容返回 already_present（源不动，本地再比对 sha256），内容不同 409 不覆盖。"
+                     "超时预算：60s 基础 + 每 GiB 60s（不足 1 GiB 按 1 GiB 计），封顶 600s（跨分区大文件不会被 20s 客户端超时打断）。"
+                     "外网/手机/跨设备仍用 asset.upload。"),
+        handler_ref="ai_maintenance.tools_ingest_local:asset_ingest_local",
+        permission="asset.upload",
+        read_only=False, side_effects=True, requires_confirmation=True, confirmation_mode="always",
+        # 声明值取动态预算封顶：MCP/CLI 外壳按 max(默认120, 声明+25) 放行整次调用，
+        # 声明 300 会让 >4GiB 的单请求在 325s 被外壳取消。单请求超时由 handler 按字节计算。
+        timeout_seconds=600.0,
+        input_schema=_schema({"plan": _PLAN_REF, "confirm": _boolean("核对计划后 true")},
+                             required=("plan", "confirm")),
+        output_schema=_WRITE_RESULT_OUTPUT,
+        requirements=(_req("/api/v1/libraries", "GET"),
+                      _req("/api/v1/libraries/{libraryId}/ingest-local", "POST",
+                           schema="IngestLocalRequest", fields=("sourcePath", "fileName"),
+                           body_properties=("sourcePath", "fileName", "directory", "move")),
+                      _req("/api/v1/assets/{assetId}", "GET")),
+        error_codes=(
+            {"code": "NOT_IN_STORAGE_ROOT", "category": "permission", "exitCode": 2,
+             "recovery": "源必须在 QIMENG_AI_STORAGES 根内且无链接段；服务端另有 QIMENG_INGEST_LOCAL_ROOTS 读根。"},
+            {"code": "SOURCE_IN_LIBRARY_ROOT", "category": "usage", "exitCode": 2,
+             "recovery": "库内文件走 media.organize/asset.rename/回收站，不走本机入库。"},
+            {"code": "TARGET_EXISTS", "category": "conflict", "exitCode": 1,
+             "recovery": "同名不同内容不覆盖：改名/换目录后重新 prepare。"},
+            {"code": "API_UNAVAILABLE", "category": "capability", "exitCode": 2,
+             "recovery": "服务端版本缺少 ingest-local 或网络失败：先按 assetId/文件名回读，勿盲目重试。"},
+            {"code": "STORAGE_UNAVAILABLE", "category": "config", "exitCode": 2,
+             "recovery": "检查库根所在卷空间/挂载状态后重试。"},
+            {"code": "SOURCE_NOT_REMOVED", "category": "conflict", "exitCode": 1,
+             "recovery": "资产已入库但源仍在原位：不要重复入库（会 already_present），确认可删后手工清理源。"},
+            {"code": "CONTENT_MISMATCH", "category": "verification", "exitCode": 1,
+             "recovery": "already_present 但本地源与服务端 sha256 不同：改名/换目录后重新 prepare，不覆盖不删源。"},
+        ),
+        runtime_checks=(
+            "按 assetId GET /assets/{id} 回读存在性、库、relPath、sizeBytes；不一致即失败",
+            "already_present 是幂等成功（源不动），并用服务端 sha256 与本地源复算比对",
+            "status=ingested 且 sourceKept=true 报 SOURCE_NOT_REMOVED（move 未真正完成）",
+            "绝不覆盖已存在文件、不删除库内资产、不跟随符号链接",
+            "失败即停止并在 details.completed 保留已完成清单；跨分区复制失败不丢源",
+            "单请求超时 60s+60s/GiB（封顶 600s），跨分区大文件不会先于服务端超时",
+        ),
+    ),
+    ToolSpec(
         id="project.context", version="1.0.0", kind="context",
         description="返回规则包/版本/能力/工具清单（纯本地，不联网）；可选 markdown 中文指南。",
         handler_ref="ai_maintenance.tools_query:project_context", network=False, permission="read",
@@ -1556,6 +1623,13 @@ TOOL_EXAMPLES: dict = {
     "platform.tool.describe": ({"toolId": "author.profile.prepare"},),
     "platform.rules": ({"sections": ["mediaNaming", "permissions"]},),
     "platform.playbook": ({"name": "media.organize"},),
+    "asset.ingest.local.prepare": (
+        {"libraryId": "lib-synthetic",
+         "operationId": "00000000-0000-4000-8000-000000000002",
+         "paths": ["<QIMENG_AI_STORAGES 根内的绝对路径>\\合成 1.png"],
+         "directory": "合成目录"},
+    ),
+    "asset.ingest.local": ({"planRef": "<prepare 返回的 planRef>", "confirm": True},),
 }
 
 # 工具与规则节引用：按需描述时只摘录相关规则，避免整包加载进上下文。
@@ -1604,6 +1678,8 @@ TOOL_RULES_REFS: dict = {
     "asset.tags.replace": ("tags", "permissions", "errors"),
     "files.storages": ("localFiles", "permissions"),
     "files.search": ("localFiles", "permissions", "errors"),
+    "asset.ingest.local.prepare": ("ingestLocal", "localFiles", "permissions"),
+    "asset.ingest.local": ("ingestLocal", "localFiles", "permissions", "errors"),
 }
 
 # 领域 → 默认规则节（platform.rules domain 模式）。
